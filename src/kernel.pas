@@ -26,6 +26,7 @@ implementation
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: DWORD); stdcall; [public, alias: 'kmain'];
 begin
         kclearscreen();
+	kwritestr('FUCK YOU!');
         kwritestr('Freepascal barebone OS booted!');
         xpos := 0;
         ypos += 1;

@@ -1,5 +1,6 @@
 #!/bin/sh
 ERRCOUNT=0
+echo " "
 echo "======================="
 echo "== ASURO COMPILATION =="
 echo "======================="
