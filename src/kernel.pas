@@ -25,48 +25,30 @@ implementation
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: DWORD); stdcall; [public, alias: 'kmain'];
 begin
-        kclearscreen();
-        ktest();
-	kwritestr('FUCK YOU!');
-        kwritestr('Freepascal barebone OS booted!');
-        xpos := 0;
-        ypos += 1;
- 
-        if (mbmagic <> MULTIBOOT_BOOTLOADER_MAGIC) then
-        begin
-                kwritestr('Halting system, a multiboot-compliant boot loader needed!');
-                asm
-                        cli
-                        hlt
-                end;
-        end
-        else
-        begin
-                kwritestr('Booted by a multiboot-compliant boot loader!');
-                xpos := 0;
-                ypos += 2;
-                kwritestr('Multiboot information:');
-                xpos := 0;
-                ypos += 2;
-                kwritestr('                       Lower memory  = ');
-                kwriteint(mbinfo^.mem_lower);
-                kwritestr('KB');
-                xpos := 0;
-                ypos += 1;
-                kwritestr('                       Higher memory = ');
-                kwriteint(mbinfo^.mem_upper);
-                kwritestr('KB');
-                xpos := 0;
-                ypos += 1;
-                kwritestr('                       Total memory  = ');
-                kwriteint(((mbinfo^.mem_upper + 1000) div 1024) +1);
-                kwritestr('MB');
-        end;
- 
+     console_init();
+     console_writestringln('Asuro Booting...', #7);
+     if (mbmagic <> MULTIBOOT_BOOTLOADER_MAGIC) then begin
+        console_writestringln('Multiboot Compliant Boot-Loader Needed!', #7);
+        console_writestringln('HALTING', #7);
         asm
-                @loop:
-                jmp @loop
+           cli
+           hlt
         end;
+     end;
+     console_writestringln('Asuro Booted Correctly!', #7);
+     console_writestring('Lower Memory = ', #7);
+     console_writeint(mbinfo^.mem_lower, #7);
+     console_writestringln('KB', #7);
+     console_writestring('Higher Memory = ', #7);
+     console_writeint(mbinfo^.mem_upper, #7);
+     console_writestringln('KB', #7);
+     console_writestring('Total Memory = ', #7);
+     console_writeint(((mbinfo^.mem_upper + 1000) div 1024) +1, #7);
+     console_writestringln('MB', #7);
+     asm
+        @loop:
+        jmp @loop
+     end;
 end;
  
 end.
