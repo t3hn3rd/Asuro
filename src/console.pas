@@ -12,13 +12,14 @@
 }
  
 unit console;
- 
+
 interface
- 
+
 var
         xpos: Integer = 0;
         ypos: Integer = 0;
- 
+
+procedure ktest();
 procedure kclearscreen();
 procedure kwritechr(c: Char);
 procedure kwritestr(s: PChar);
@@ -26,10 +27,36 @@ procedure kwriteint(i: Integer);
 procedure kwritedword(i: DWORD);
  
 implementation
- 
+
+type
+    TCharacter = bitpacked record
+      Character  : Char;
+      Attributes : Char;
+    end;
+    PCharacter = ^TCharacter;
+
+    TVideoMemory = Array[0..1999] of TCharacter;
+    PVideoMemory = ^TVideoMemory;
+
+    T2DVideoMemory = Array[0..24] of Array[0..79] of TCharacter;
+    P2DVideoMemory = ^T2DVideoMemory;
+
+
 var
-        vidmem: PChar = PChar($b8000);
- 
+   vidmem : PChar = PChar($b8000);
+   memory : PVideoMemory = PVideoMemory($b8000);
+   mem2d  : P2DVideoMemory = P2DVideoMemory($b8000);
+
+procedure ktest(); [public, alias: 'ktest'];
+begin
+     memory^[0].Attributes:= #7;
+     memory^[0].Character:= 'T';
+     mem2d^[1][0].Attributes:=#7;
+     mem2d^[1][0].Character:='E';
+     while true do begin
+     end;
+end;
+
 procedure kclearscreen(); [public, alias: 'kclearscreen'];
 var
         i: Integer;

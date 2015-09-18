@@ -7,7 +7,7 @@ echo "======================="
 echo " "
 echo "Compiling ASM Stub..."
 echo " "
-nasm -f elf src/stub.asm -o lib/stub.o
+nasm -f elf src/stub/stub.asm -o lib/stub.o
 if [ $? -ne 0 ]
 then
 	echo "Failed to compile stub!"
@@ -21,7 +21,7 @@ echo "======================="
 echo " "
 echo "Compiling FPC Sources..."
 echo " "
-fpc -Aelf -n -O3 -Op3 -Si -Sc -Sg -Xd -CX -XXs -Rintel -Tlinux -FElib/ src/kernel.pas
+fpc -Aelf -n -va -O3 -Op3 -Si -Sc -Sg -Xd -CX -XXs -Rintel -Tlinux -FElib/ src/kernel.pas
 if [ $? -ne 0 ]
 then
 	echo "Failed to compile FPC Sources!"
@@ -35,7 +35,13 @@ echo "======================="
 echo " "
 echo "Linking..."
 echo " "
-ld -m elf_i386 -s --gc-sections -Tlinker.script -o bin/kernel.bin lib/stub.o lib/kernel.o lib/multiboot.o lib/system.o lib/console.o
+objstring=""; 
+for object in `find lib/ -name "*.o"`; do 
+	objstring=$objstring$object" "; 
+done; 
+echo "Object Files: "$objstring
+echo " "
+ld -m elf_i386 -s --gc-sections -Tlinker.script -o bin/kernel.bin $objstring
 if [ $? -ne 0 ]
 then
 	echo "Failed linking!"
