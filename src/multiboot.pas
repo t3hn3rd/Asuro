@@ -4,7 +4,6 @@ interface
  
 const
         KERNEL_STACKSIZE = $4000;
- 
         MULTIBOOT_BOOTLOADER_MAGIC = $2BADB002;
  
 type
@@ -19,8 +18,8 @@ type
         Pmultiboot_info_t = ^multiboot_info_t;
         multiboot_info_t = packed record
           flags: DWORD;
-          mem_lower: DWORD; { Amount of memory available below 1mb }
-          mem_upper: DWORD; { Amount of memory available above 1mb }
+          mem_lower: DWORD;
+          mem_upper: DWORD;
           boot_device: DWORD;
           cmdline: DWORD;
           mods_count: DWORD;
@@ -41,13 +40,9 @@ type
         Pmemory_map_t = ^memory_map_t;
         memory_map_t = packed record
           size: DWORD;
-          { You can declare these two as a single qword if your compiler supports it }
-          base_addr_low: DWORD;
-          base_addr_high: DWORD;
-          { And again, these can be made into one qword variable. }
-          length_low: DWORD;
-          length_high: DWORD;
-          mtype: DWORD;
+		base_addr : QWORD;
+		length : QWORD;          
+		mtype: DWORD;
         end;
  
 implementation

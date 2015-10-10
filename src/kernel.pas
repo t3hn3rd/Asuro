@@ -1,16 +1,3 @@
-{
-/////////////////////////////////////////////////////////
-//                                                     //
-//               Freepascal barebone OS                //
-//                      kernel.pas                     //
-//                                                     //
-/////////////////////////////////////////////////////////
-//
-//      By:             De Deyn Kim <kimdedeyn@skynet.be>
-//      License:        Public domain
-//
-}
- 
 unit kernel;
  
 interface

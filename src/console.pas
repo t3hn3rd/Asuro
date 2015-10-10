@@ -1,16 +1,3 @@
-{
-/////////////////////////////////////////////////////////
-//                                                     //
-//               Freepascal barebone OS                //
-//                       console.pas                   //
-//                                                     //
-/////////////////////////////////////////////////////////
-//
-//      By:             De Deyn Kim <kimdedeyn@skynet.be>
-//      License:        Public domain
-//
-}
- 
 unit console;
 
 interface

@@ -1,14 +1,3 @@
-;/////////////////////////////////////////////////////////
-;//                                                     //
-;//               Freepascal barebone OS                //
-;//                      stub.asm                       //
-;//                                                     //
-;/////////////////////////////////////////////////////////
-;//
-;//     By:             De Deyn Kim <kimdedeyn@skynet.be>
-;//     License:        Public domain
-;//
- 
 ;
 ; Kernel stub
 ;
