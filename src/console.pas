@@ -2,18 +2,49 @@ unit console;
 
 interface
 
+type
+    TColor = ( Black   = $0,
+               Blue    = $1,
+               Green   = $2,
+               Aqua    = $3,
+               Red     = $4,
+               Purple  = $5,
+               Yellow  = $6,
+               White   = $7,
+               Gray    = $8,
+               lBlue   = $9,
+               lGreen  = $A,
+               lAqua   = $B,
+               lRed    = $C,
+               lPurple = $D,
+               lYellow = $E,
+               lWhite  = $F );
+
 procedure console_init();
 procedure console_clear();
+procedure console_setdefaultattribute(attribute : char);
 
-procedure console_writechar(character : char; attributes : char);
-procedure console_writestring(str: PChar; attributes : char);
-procedure console_writeint(i: Integer; attributes : char);
-procedure console_writedword(i: DWORD; attributes : char);
+procedure console_writechar(character : char);
+procedure console_writestring(str: PChar);
+procedure console_writeint(i: Integer);
+procedure console_writeword(i: DWORD);
 
-procedure console_writecharln(character : char; attributes : char);
-procedure console_writestringln(str: PChar; attributes : char);
-procedure console_writeintln(i: Integer; attributes : char);
-procedure console_writedwordln(i: DWORD; attributes : char);
+procedure console_writecharln(character : char);
+procedure console_writestringln(str: PChar);
+procedure console_writeintln(i: Integer);
+procedure console_writewordln(i: DWORD);
+
+procedure console_writecharex(character : char; attributes : char);
+procedure console_writestringex(str: PChar; attributes : char);
+procedure console_writeintex(i: Integer; attributes : char);
+procedure console_writewordex(i: DWORD; attributes : char);
+
+procedure console_writecharlnex(character : char; attributes : char);
+procedure console_writestringlnex(str: PChar; attributes : char);
+procedure console_writeintlnex(i: Integer; attributes : char);
+procedure console_writewordlnex(i: DWORD; attributes : char);
+
+function console_combinecolors(Foreground, Background : TColor) : char;
 
 procedure _console_increment_x();
 procedure _console_increment_y();
@@ -24,6 +55,10 @@ procedure _console_newline();
 implementation
 
 type
+    TConsoleProperties = record
+      Default_Attribute : Char;
+    end;
+
     TCharacter = bitpacked record
       Character  : Char;
       Attributes : Char;
@@ -42,12 +77,14 @@ type
     end;
 
 var
-   Console_Memory : PVideoMemory = PVideoMemory($b8000);
-   Console_Matrix : P2DVideoMemory = P2DVideoMemory($b8000);
-   Console_Cursor : TCoord;
+   Console_Properties : TConsoleProperties;
+   Console_Memory     : PVideoMemory = PVideoMemory($b8000);
+   Console_Matrix     : P2DVideoMemory = P2DVideoMemory($b8000);
+   Console_Cursor     : TCoord;
 
 procedure console_init(); [public, alias: 'console_init'];
 Begin
+     Console_Properties.Default_Attribute:= console_combinecolors(White, Black);
      console_clear();
 end;
 
@@ -58,34 +95,79 @@ var
 begin
      for x:=0 to 79 do begin
          for y:=0 to 24 do begin
-	     Console_Matrix^[y][x].Character:=#0;
-	     Console_Matrix^[y][x].Attributes:=#7;
+	     Console_Matrix^[y][x].Character:= #0;
+	     Console_Matrix^[y][x].Attributes:= Console_Properties.Default_Attribute;
 	 end;
      end;
      Console_Cursor.X:= 0;
      Console_Cursor.Y:= 0;
 end;
 
-procedure console_writechar(character: char; attributes: char); [public, alias: 'console_writechar'];
+procedure console_setdefaultattribute(attribute: char); [public, alias: 'console_setdefaultattribute'];
+begin
+     Console_Properties.Default_Attribute:= attribute;
+end;
+
+procedure console_writechar(character: char); [public, alias: 'console_writechar'];
+begin
+     console_writecharex(character, Console_Properties.Default_Attribute);
+end;
+
+procedure console_writestring(str: PChar); [public, alias: 'console_writestring'];
+begin
+     console_writestringex(str, Console_Properties.Default_Attribute);
+end;
+
+procedure console_writeint(i: Integer); [public, alias: 'console_writeint'];
+begin
+     console_writeintex(i, Console_Properties.Default_Attribute);
+end;
+
+procedure console_writeword(i: DWORD); [public, alias: 'console_writeword'];
+begin
+     console_writewordex(i, Console_Properties.Default_Attribute);
+end;
+
+procedure console_writecharln(character: char); [public, alias: 'console_writecharln'];
+begin
+     console_writecharlnex(character, Console_Properties.Default_Attribute);
+end;
+
+procedure console_writestringln(str: PChar); [public, alias: 'console_writestringln'];
+begin
+     console_writestringlnex(str, Console_Properties.Default_Attribute);
+end;
+
+procedure console_writeintln(i: Integer); [public, alias: 'console_writeintln'];
+begin
+     console_writeintlnex(i, Console_Properties.Default_Attribute);
+end;
+
+procedure console_writewordln(i: DWORD); [public, alias: 'console_writewordln'];
+begin
+     console_writewordlnex(i, Console_Properties.Default_Attribute);
+end;
+
+procedure console_writecharex(character: char; attributes: char); [public, alias: 'console_writecharex'];
 begin
      Console_Matrix^[Console_Cursor.Y][Console_Cursor.X].Character:= character;
      Console_Matrix^[Console_Cursor.Y][Console_Cursor.X].Attributes:= attributes;
      _console_safeincrement_x();
 end;
 
-procedure console_writestring(str: PChar; attributes: char); [public, alias: 'console_writestring'];
+procedure console_writestringex(str: PChar; attributes: char); [public, alias: 'console_writestringex'];
 var
    i : integer;
 
 begin
      i:= 0;
      while (str[i] <> #0) do begin
-           console_writechar(str[i], attributes);
+           console_writecharex(str[i], attributes);
            i:=i+1;
      end;
 end;
 
-procedure console_writeint(i: Integer; attributes : char); [public, alias: 'console_writeint'];
+procedure console_writeintex(i: Integer; attributes : char); [public, alias: 'console_writeintex'];
 var
         buffer: array [0..11] of Char;
         str: PChar;
@@ -110,10 +192,10 @@ begin
                 Dec(str);
                 str^ := '-';
         end;
-        console_writestring(str, attributes);
+        console_writestringex(str, attributes);
 end;
  
-procedure console_writedword(i: DWORD; attributes : char); [public, alias: 'console_writedword'];
+procedure console_writewordex(i: DWORD; attributes : char); [public, alias: 'console_writedwordex'];
 var
         buffer: array [0..11] of Char;
         str: PChar;
@@ -128,37 +210,54 @@ begin
                 str^ := Char((digit mod 10) + Byte('0'));
                 digit := digit div 10;
         until (digit = 0);
-        console_writestring(@Buffer[0], attributes);
+        console_writestringex(@Buffer[0], attributes);
 end;
 
-procedure console_writecharln(character: char; attributes: char); [public, alias: 'console_writecharln'];
+procedure console_writecharlnex(character: char; attributes: char); [public, alias: 'console_writecharlnex'];
 begin
-     console_writechar(character, attributes);
+     console_writecharex(character, attributes);
      _console_safeincrement_y();
 end;
 
-procedure console_writestringln(str: PChar; attributes: char); [public, alias: 'console_writestringln'];
+procedure console_writestringlnex(str: PChar; attributes: char); [public, alias: 'console_writestringlnex'];
 begin
-     console_writestring(str, attributes);
+     console_writestringex(str, attributes);
      _console_safeincrement_y();
 end;
 
-procedure console_writeintln(i: Integer; attributes: char); [public, alias: 'console_writeintln'];
+procedure console_writeintlnex(i: Integer; attributes: char); [public, alias: 'console_writeintlnex'];
 begin
-     console_writeint(i, attributes);
+     console_writeintex(i, attributes);
      _console_safeincrement_y();
 end;
 
-procedure console_writedwordln(i: DWORD; attributes: char); [public, alias: 'console_writedwordln'];
+procedure console_writewordlnex(i: DWORD; attributes: char); [public, alias: 'console_writewordlnex'];
 begin
-     console_writedword(i, attributes);
+     console_writewordex(i, attributes);
      _console_safeincrement_y();
+end;
+
+function console_combinecolors(Foreground, Background: TColor): char; [public, alias: 'console_combinecolors'];
+begin
+     console_combinecolors:= char(((ord(Background) shl 4) or ord(Foreground)));
+end;
+
+procedure _console_update_cursor(); [public, alias: '_console_update_cursor'];
+begin
+     {asm
+        MOV AH, $02
+        MOV BH, $00
+        MOV DH, Console_Cursor.Y
+        MOV DL, Console_Cursor.X
+        INT $10
+     end; }
 end;
 
 procedure _console_increment_x(); [public, alias: '_console_increment_x'];
 begin
      Console_Cursor.X:= Console_Cursor.X+1;
      If Console_Cursor.X > 79 then Console_Cursor.X:= 0;
+     _console_update_cursor;
 end;
 
 procedure _console_increment_y(); [public, alias: '_console_increment_y'];
@@ -168,6 +267,7 @@ begin
              _console_newline();
              Console_Cursor.Y:= 24;
      end;
+     _console_update_cursor;
 end;
 
 procedure _console_safeincrement_x(); [public, alias: '_console_safeincrement_x'];
@@ -176,6 +276,7 @@ begin
      If Console_Cursor.X > 79 then begin
         _console_safeincrement_y();
      end;
+     _console_update_cursor;
 end;
 
 procedure _console_safeincrement_y(); [public, alias: '_console_safeincrement_y'];
@@ -186,6 +287,7 @@ begin
              Console_Cursor.Y:= 24;
      end;
      Console_Cursor.X:= 0;
+     _console_update_cursor;
 end;
 
 procedure _console_newline(); [public, alias: '_console_newline'];
@@ -202,6 +304,7 @@ begin
          Console_Matrix^[24][x].Character:= #0;
          Console_Matrix^[24][x].Attributes:= #7;
      end;
+     _console_update_cursor
 end;
  
 end.
