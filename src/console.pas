@@ -251,6 +251,7 @@ begin
         MOV DL, Console_Cursor.X
         INT $10
      end; }
+	
 end;
 
 procedure _console_increment_x(); [public, alias: '_console_increment_x'];

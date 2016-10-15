@@ -35,6 +35,8 @@ begin
      console_writestring('Total Memory = ');
      console_writeint(((mbinfo^.mem_upper + 1000) div 1024) +1);
      console_writestringln('MB');
+	console_setdefaultattribute(console_combinecolors(Red, Black));
+	console_writestringln('Entering Login Queue... You are number #RAN in the Queue.');
      asm
         cli
         hlt
