@@ -4,8 +4,7 @@ interface
  
 uses
         multiboot,
-        console,
-        util;
+        console;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: DWORD); stdcall;
  
@@ -14,7 +13,7 @@ implementation
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: DWORD); stdcall; [public, alias: 'kmain'];
 begin
      console_init();
-     console_writestringln('Asuro Booting...');
+     console_writestringln('Booting Asuro...');
      if (mbmagic <> MULTIBOOT_BOOTLOADER_MAGIC) then begin
         console_setdefaultattribute(console_combinecolors(Red, Black));
         console_writestringln('Multiboot Compliant Boot-Loader Needed!');

@@ -71,7 +71,27 @@ else
 	echo "Success."
 fi
 
+echo " "
+echo "Installing xorriso..."
+sudo apt-get install xorriso
+if [ $? -ne 0 ]
+then
+	echo "Failed to install!"
+	ERRCOUNT=$((ERRCOUNT+1))	
+else
+	echo "Success."
+fi
 
+echo " "
+echo "Installing GRUB PC Bin..."
+sudo apt-get install grub-pc-bin
+if [ $? -ne 0 ]
+then
+	echo "Failed to install!"
+	ERRCOUNT=$((ERRCOUNT+1))	
+else
+	echo "Success."
+fi
 
 echo " "
 echo "WARNING: We assume you already have Grub installed."
