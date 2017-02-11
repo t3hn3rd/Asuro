@@ -2,6 +2,9 @@ unit console;
 
 interface
 
+uses
+     util, bda;
+
 type
     TColor = ( Black   = $0,
                Blue    = $1,
@@ -243,15 +246,18 @@ begin
 end;
 
 procedure _console_update_cursor(); [public, alias: '_console_update_cursor'];
+var
+   pos : word;
+   b   : byte;
+   
 begin
-     {asm
-        MOV AH, $02
-        MOV BH, $00
-        MOV DH, Console_Cursor.Y
-        MOV DL, Console_Cursor.X
-        INT $10
-     end; }
-	
+     pos:= (Console_Cursor.Y * 80) + Console_Cursor.X;
+     outb($3D4, $0F);
+     b:= pos and $00FF;
+     outb($3D5, b);
+     outb($3D4, $0E);
+     b:= pos shr 8;
+     outb($3D5, b);
 end;
 
 procedure _console_increment_x(); [public, alias: '_console_increment_x'];
