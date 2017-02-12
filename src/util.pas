@@ -4,28 +4,29 @@ unit util;
 
 interface
 
-function util_hi(b : byte) : byte;
-function util_lo(b : byte) : byte;
-function util_switchendian(b : byte) : byte;
+function hi(b : byte) : byte;
+function lo(b : byte) : byte;
+function switchendian(b : byte) : byte;
 procedure outb(port : word; val : byte);
 procedure outw(port : word; val : word);
 procedure outl(port : word; val : longword);
+procedure halt_and_catch_fire();
 
 implementation
 
-function util_hi(b : byte) : byte; [public, alias: 'util_hi'];
+function hi(b : byte) : byte; [public, alias: 'util_hi'];
 begin
-     util_hi:= (b AND $F0) SHR 4;
+     hi:= (b AND $F0) SHR 4;
 end;
 
-function util_lo(b : byte) : byte; [public, alias: 'util_lo'];
+function lo(b : byte) : byte; [public, alias: 'util_lo'];
 begin
-     util_lo:= b AND $0F;
+     lo:= b AND $0F;
 end;
 
-function util_switchendian(b : byte) : byte; [public, alias: 'util_switchendian'];
+function switchendian(b : byte) : byte; [public, alias: 'util_switchendian'];
 begin
-     util_switchendian:= (util_lo(b) SHL 4) OR util_hi(b);
+     switchendian:= (lo(b) SHL 4) OR hi(b);
 end;
 
 procedure outl(port : word; val : longword); [public, alias: 'outl'];
@@ -64,6 +65,14 @@ begin
           OUT DX, AL
           POP EDX
           POP EAX
+     end;
+end;
+
+procedure halt_and_catch_fire(); [public, alias: 'halt_and_catch_fire'];
+begin
+     asm
+          cli
+          hlt
      end;
 end;
 

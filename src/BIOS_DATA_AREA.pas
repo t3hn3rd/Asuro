@@ -1,4 +1,4 @@
-unit bda;
+unit BIOS_DATA_AREA;
 
 interface
 
@@ -24,6 +24,9 @@ type
           Keyboard_State  : Byte;
      end;
      PBDA = ^TBDA;
+
+const
+     BDA : PBDA = PBDA($0400);
 
 implementation
 
