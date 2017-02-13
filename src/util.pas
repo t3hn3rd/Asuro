@@ -11,6 +11,9 @@ procedure outb(port : word; val : byte);
 procedure outw(port : word; val : word);
 procedure outl(port : word; val : longword);
 procedure halt_and_catch_fire();
+function inb(port : word) : byte;
+function inw(port : word) : word;
+function inl(port : word) : dword;
 
 implementation
 
@@ -73,6 +76,45 @@ begin
      asm
           cli
           hlt
+     end;
+end;
+
+function inl(port : word) : dword; [public, alias: 'inl'];
+begin
+     asm
+          PUSH EAX
+          PUSH EDX
+          MOV DX, port
+          IN EAX, DX
+          MOV inl, EAX
+          POP EDX
+          POP EAX
+     end;
+end;
+
+function inw(port : word) : word; [public, alias: 'inw'];
+begin
+     asm
+          PUSH EAX
+          PUSH EDX
+          MOV DX, port
+          IN AX, DX
+          MOV inw, AX
+          POP EDX
+          POP EAX
+     end;
+end;
+
+function inb(port : word) : byte; [public, alias: 'inb'];
+begin
+     asm
+          PUSH EAX
+          PUSH EDX
+          MOV DX, port
+          IN AL, DX
+          MOV inb, AL
+          POP EDX
+          POP EAX
      end;
 end;
 

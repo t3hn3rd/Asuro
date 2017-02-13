@@ -4,7 +4,7 @@ interface
 
 uses
      util, 
-     BIOS_DATA_AREA;
+     bios_data_area;
 
 type
     TColor = ( Black   = $0,
@@ -32,21 +32,25 @@ procedure writechar(character : char);
 procedure writestring(str: PChar);
 procedure writeint(i: Integer);
 procedure writeword(i: DWORD);
+procedure writehex(i: DWORD);
 
 procedure writecharln(character : char);
 procedure writestringln(str: PChar);
 procedure writeintln(i: Integer);
 procedure writewordln(i: DWORD);
+procedure writehexln(i: DWORD);
 
 procedure writecharex(character : char; attributes : char);
 procedure writestringex(str: PChar; attributes : char);
 procedure writeintex(i: Integer; attributes : char);
 procedure writewordex(i: DWORD; attributes : char);
+procedure writehexex(i : DWORD; attributes : char);
 
 procedure writecharlnex(character : char; attributes : char);
 procedure writestringlnex(str: PChar; attributes : char);
 procedure writeintlnex(i: Integer; attributes : char);
 procedure writewordlnex(i: DWORD; attributes : char);
+procedure writehexlnex(i: DWORD; attributes : char);
 
 function combinecolors(Foreground, Background : TColor) : char;
 
@@ -157,6 +161,68 @@ begin
      Console_Matrix^[Console_Cursor.Y][Console_Cursor.X].Character:= character;
      Console_Matrix^[Console_Cursor.Y][Console_Cursor.X].Attributes:= attributes;
      console._safeincrement_x();
+end;
+
+procedure writehexex(i : dword; attributes: char); [public, alias: 'console_writehexex'];
+var
+   Hex : Array[0..7] of Byte;
+   Res : DWORD;
+   Rem : DWORD;
+   c   : Integer;
+   
+begin
+     for c:=0 to 7 do begin
+          Hex[c]:= 255;
+     end;
+     c:=0;
+     Res:= i;
+     Rem:= Res mod 16;
+     while Res > 0 do begin
+          Hex[c]:= Rem;
+          Res:= Res div 16;
+          Rem:= Res mod 16;
+          c:=c+1;
+     end;
+     writestringex('0x', attributes);
+     for c:=7 downto 0 do begin
+          if Hex[c] <> 255 then begin
+               case Hex[c] of
+                    0:writecharex('0', attributes);
+                    1:writecharex('1', attributes);
+                    2:writecharex('2', attributes);
+                    3:writecharex('3', attributes);
+                    4:writecharex('4', attributes);
+                    5:writecharex('5', attributes);
+                    6:writecharex('6', attributes);
+                    7:writecharex('7', attributes);
+                    8:writecharex('8', attributes);
+                    9:writecharex('9', attributes);
+                    10:writecharex('A', attributes);
+                    11:writecharex('B', attributes);
+                    12:writecharex('C', attributes);
+                    13:writecharex('D', attributes);
+                    14:writecharex('E', attributes);
+                    15:writecharex('F', attributes);
+                    else writecharex('?', attributes);
+               end;
+          end;
+     end;
+end;
+
+procedure writehex(i : dword); [public, alias: 'console_writehex'];
+begin
+     console.writehexex(i, Console_Properties.Default_Attribute);
+end;
+
+procedure writehexlnex(i : dword; attributes : char);
+begin
+     console.writehexex(i, attributes);
+     console._safeincrement_y();
+end;
+
+procedure writehexln(i : dword);
+begin
+     writehexlnex(i, Console_Properties.Default_Attribute);
 end;
 
 procedure writestringex(str: PChar; attributes: char); [public, alias: 'console_writestringex'];

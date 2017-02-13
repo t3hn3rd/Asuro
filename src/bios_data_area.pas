@@ -1,4 +1,4 @@
-unit BIOS_DATA_AREA;
+unit bios_data_area;
 
 interface
 

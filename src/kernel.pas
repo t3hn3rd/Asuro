@@ -6,13 +6,17 @@ uses
      multiboot,
      util,
      console,
-     BIOS_DATA_AREA;
+     bios_data_area,
+     keyboard;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: DWORD); stdcall;
  
 implementation
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: DWORD); stdcall; [public, alias: 'kmain'];   
+var
+   c : byte;
+   
 begin
      console.init();
      console.writestringln('Booting Asuro...');
@@ -37,6 +41,10 @@ begin
      console.writeint(((mbinfo^.mem_upper + 1000) div 1024) +1);
      console.writestringln('MB');
      console.setdefaultattribute(console.combinecolors(lYellow, Black));
+     while true do begin
+          c:= keyboard.get_scancode;
+          console.writehexln(c);  
+     end;
      util.halt_and_catch_fire;
 end;
  
