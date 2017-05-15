@@ -13,10 +13,11 @@ type
         limit_n_flags : Byte;
         base_high     : Byte;
     end;
+    PSegmentDescriptor = ^TSegmentDescriptor;
 
 var
-    GDTarr : array[0..3] of TSegementDescriptor;
-    GDTptr : ^TSegementDescriptor;    
+    GDTarr : array of TSegementDescriptor;
+    GDTptr : PSegmentDescriptor;    
     GDT_length : integer = 0;
 
     procedure init();
@@ -46,47 +47,51 @@ end;
     
 procedure create(base : dword; limit : dword; flags : byte);
 var
-    descriptor : array[0..8] of Byte;
-    descriptor_ptr : ^Byte = @descriptor[0];
-    s_descriptor : TSegementDescriptor;
+    descriptor       : array[0..8] of Byte;
+    descriptor_ptr   : ^Byte = @descriptor[0];
+    s_descriptor     : TSegementDescriptor;
     s_descriptor_ptr : ^TSegementDescriptor = @s_descriptor;
+
 begin
-    if limit <= 65536 then
-        descriptor[6] := $40
-    else
-        if (limit and $FFF) <> $FFF then
-            limit := (limit >> 12) -1
-        else
-            limit := limit >> 12;
-        descriptor[6] := $C0;
+    	if limit <= 65536 then begin
+		descriptor[6] := $40
+    	end else begin
+     	if (limit and $FFF) <> $FFF then begin
+     		limit := (limit SHR 12) -1
+        	end else begin
+    			limit := limit SHR 12;
+          end;
+     end;
+     
+	descriptor[6] := $C0;
 
-    descriptor[0] := limit and $FF;
-    descriptor[1] := (limit shr 8) and $FF;
-    descriptor[6] := limit or ((limit shr 16) and $F);
+     descriptor[0] := limit and $FF;
+     descriptor[1] := (limit shr 8) and $FF;
+     descriptor[6] := limit or ((limit shr 16) and $F);
 
-    descriptor[2] := base and $FF;
-    descriptor[3] := (base shr 8) and $FF;
-    descriptor[4] := (base shr 16) and $FF;
-    descriptor[7] := (base shr 24) and $FF;
+     descriptor[2] := base and $FF;
+     descriptor[3] := (base shr 8) and $FF;
+     descriptor[4] := (base shr 16) and $FF;
+     descriptor[7] := (base shr 24) and $FF;
 
-    descriptor[5] := flags;
+     descriptor[5] := flags;
 
-    asm 
-        MOV EAX, descriptor_ptr
-        MOV s_descriptor_ptr, EAX
-    end;
+     asm 
+     	MOV EAX, descriptor_ptr
+        	MOV s_descriptor_ptr, EAX
+    	end;
 
-    descriptor_ptr = @descriptor[4];
+     descriptor_ptr = @descriptor[4];
 
-    asm
+     asm
         MOV EAX, descriptor_ptr
         MOV EBX, s_descriptor_ptr
         ADD EBX, 1
         MOV (EBX), EAX
-    end;
+     end;
 
-    GDTarr[GDT_length] := s_descriptor;
-    GDT_length := GDT_length + 1;
+     GDTarr[GDT_length] := s_descriptor;
+     GDT_length := GDT_length + 1;
 end;
 
     
