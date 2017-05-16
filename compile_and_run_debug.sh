@@ -1,2 +1,7 @@
 #!/bin/sh
-./compile_and_run.sh -d
+ERRCOUNT=0
+echo "======================="
+echo "==       ASURO       =="
+echo "======================="
+./compile.sh -d
+./run.sh -d

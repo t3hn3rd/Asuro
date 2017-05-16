@@ -6,7 +6,15 @@ echo "==  ASURO OPERATION  =="
 echo "======================="
 echo " "
 echo "Running Asaro..."
-qemu-system-i386 -cdrom Asuro.iso
+if [ "$1" = "-d" ]
+then
+	qemu-system-i386 -s -S -cdrom Asuro.iso&
+	sleep 1
+	gdb -ex "target remote localhost:1234"
+else
+	qemu-system-i386 -cdrom Asuro.iso
+fi
+
 if [ $? -ne 0 ]
 then
 	echo "Failed to run Asaro!"
