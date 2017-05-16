@@ -2,6 +2,9 @@ unit multiboot;
  
 interface
  
+uses
+    types;
+
 const
         KERNEL_STACKSIZE = $4000;
         MULTIBOOT_BOOTLOADER_MAGIC = $2BADB002;

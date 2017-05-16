@@ -2,6 +2,9 @@ unit bios_data_area;
 
 interface
 
+uses
+    types;
+
 type
      TBDA = bitpacked record
           COM1            : uint16;

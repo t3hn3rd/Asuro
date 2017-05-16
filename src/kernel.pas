@@ -3,6 +3,7 @@ unit kernel;
 interface
  
 uses
+     types,
      multiboot,
      util,
      gdt,

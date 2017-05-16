@@ -5,6 +5,7 @@ unit keyboard;
 interface
 
 uses
+     types,
      util;
 
 function get_scancode() : uint8;
