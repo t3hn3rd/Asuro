@@ -776,3 +776,4 @@ i440fxsupport: enabled=1
 # floppya: 1_44=[fd:], status=inserted
 #=======================================================================
 display_library: sdl
+magic_break: enabled=1

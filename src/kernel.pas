@@ -24,7 +24,7 @@ var
 begin
      mbi:= mbinfo;
      mbm:= mbmagic;
-     //gdt.init();
+     gdt.init();
      console.init();
      console.writestringln('Booting Asuro...');
      if (mbm <> MULTIBOOT_BOOTLOADER_MAGIC) then begin
@@ -34,11 +34,6 @@ begin
         util.halt_and_catch_fire;
      end;
      console.clear();
-     asm
-        MOV dds, DS
-     end;
-     console.writehexln(dds);
-     util.halt_and_catch_fire;
      console.setdefaultattribute(console.combinecolors(Green, Black));
      console.writestringln('Asuro Booted Correctly!');
      console.writestringln('');
