@@ -1,101 +1,71 @@
 unit gdt;
-    
+
 interface
 
 uses
-    util,
-    types,
-    console;
-
-procedure create(base : dword; limit : dword; flags : byte);
-procedure init();
+    types;
 
 type
-    TSegmentDescriptor = bitpacked record
-        limit_low     : WORD;
-        base_low      : WORD;
-        access        : Byte;
-        limit_n_flags : Byte;
-        base_high     : Byte;
+    TGDT_Entry = bitpacked record
+        limit_low   : int16;
+        base_low    : int16;
+        base_middle : int8;
+        access      : int8;
+        granularity : int8;
+        base_high   : int8;
     end;
-    PSegmentDescriptor = ^TSegmentDescriptor;
+    PGDT_Entry = ^TGDT_Entry;
 
+    TGDT_Pointer = bitpacked record
+        limit : int16;
+        base  : int32;
+    end;
+
+var
+    gdt_entries : array[0..4] of TGDT_Entry;
+    gdt_pointer : TGDT_Pointer;
+
+procedure init();
+    
 implementation
 
-var
-   GDTarr : array [0..2] of TSegmentDescriptor;
-   GDTptr : PSegmentDescriptor;
-   GDT_length : integer = 0;
-    
-procedure create(base : dword; limit : dword; flags : byte);
-var
-    descriptor       : array[0..8] of Byte;
-    descriptor_ptr   : PByte;
+procedure flush_gdt(gdt_pointer : int32); assembler; nostackframe;
+asm
+    MOV EAX, gdt_pointer
+    LGDT [EAX]
+    MOV AX, $10
+    MOV DS, AX
+    MOV ES, AX
+    MOV FS, AX
+    MOV GS, AX
+    MOV SS, AX
+    db $EA          // Bypass stupid inline ASM restrictions-
+    dw @@flush, $08 // by assembling the farjump instruction ourselves.
+                    // It's just data, honest gov'.
+@@flush:
+    RET
+end;
 
-    s_descriptor     : TSegmentDescriptor;
-    s_descriptor_ptr : PSegmentDescriptor;
-
+procedure set_gate(Gate_Number : int32; Base : int32; Limit : int32; Access : int8; Granularity : int8);
 begin
-     descriptor_ptr:= @descriptor[0];
-     s_descriptor_ptr:= @s_descriptor;
-     if limit <= 65536 then begin
-        descriptor[6] := $40;
-     end else begin
-         if (limit and $FFF) <> $FFF then begin
-     	    limit := (limit SHR 12) - 1;
-         end else begin
-    	     limit := limit SHR 12;
-         end;
-         descriptor[6] := $C0;
-     end;
-
-     descriptor[0] := limit and $FF;
-     descriptor[1] := (limit shr 8) and $FF;
-     descriptor[6] := descriptor[6] or ((limit shr 16) and $F); 
-
-     descriptor[2] := base and $FF;
-     descriptor[3] := (base shr 8) and $FF;
-     descriptor[4] := (base shr 16) and $FF;
-     descriptor[7] := (base shr 24) and $FF;
-
-     descriptor[5] := flags;
-
-     asm 
-         MOV EAX, descriptor_ptr
-         MOV s_descriptor_ptr, EAX
-     end;
-
-     descriptor_ptr:= @descriptor[4];
-
-     asm
-        MOV EAX, descriptor_ptr
-        MOV EBX, s_descriptor_ptr
-        ADD EBX, 1
-        MOV [EBX], EAX
-     end;
-
-     GDTarr[GDT_length] := s_descriptor;
-     GDT_length := GDT_length + 1;
+    gdt_entries[Gate_Number].base_low    := (Base AND $FFFF);
+    gdt_entries[Gate_Number].base_middle := (Base SHR 16) AND $FF;
+    gdt_entries[Gate_Number].base_high   := (Base SHR 24) AND $FF;
+    gdt_entries[Gate_Number].limit_low   := (Limit AND $FFFF);
+    gdt_entries[Gate_Number].granularity := ((Limit SHR 16) AND $0F) OR (Granularity AND $F0);
+    gdt_entries[Gate_Number].access      := Access;    
 end;
 
 procedure init();
-var
-    data_addr : dword;
 begin
-    GDTptr := @GDTarr[0];
-    data_addr := (@GDTarr[2] - @GDTarr[0]) shr 16;
-    create($0000, $0000, $00); //null segment / GDT pointer
-    create($0000, $FFFF, $9A); //code descriptor
-    create($0000, $FFFF, $92); //data descriptor
-    asm
-        LGDT GDTptr
-        MOV EAX, data_addr
-        MOV DS, AX
-        MOV SS, AX
-        MOV ES, AX
-        MOV FS, AX
-        MOV GS, AX
-    end;
+    gdt_pointer.limit := (sizeof(TGDT_Entry) * 5) - 1;
+    gdt_pointer.base  := int32(@gdt_entries);
+    set_gate($00, $00, $00,       $00, $00);
+    set_gate($01, $00, $FFFFFFFF, $9A, $CF);
+    set_gate($02, $00, $FFFFFFFF, $92, $CF);
+    set_gate($03, $00, $FFFFFFFF, $FA, $CF);
+    set_gate($04, $00, $FFFFFFFF, $F2, $CF);
+    flush_gdt(int32(@gdt_pointer))
 end;
 
 end.
