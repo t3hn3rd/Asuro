@@ -32,7 +32,7 @@ begin
      switchendian:= (lo(b) SHL 4) OR hi(b);
 end;
 
-procedure outl(port : word; val : longword); [public, alias: 'outl'];
+procedure outl(port : word; val : longword); [public, alias: 'util_outl'];
 begin
      asm
           PUSH EAX
@@ -45,7 +45,7 @@ begin
      end;
 end;
 
-procedure outw(port : word; val : word); [public, alias: 'outw'];
+procedure outw(port : word; val : word); [public, alias: 'util_outw'];
 begin
      asm
           PUSH EAX
@@ -58,7 +58,7 @@ begin
      end;
 end;
 
-procedure outb(port : word; val : byte); [public, alias: 'outb'];
+procedure outb(port : word; val : byte); [public, alias: 'util_outb'];
 begin
      asm
           PUSH EAX
@@ -71,7 +71,7 @@ begin
      end;
 end;
 
-procedure halt_and_catch_fire(); [public, alias: 'halt_and_catch_fire'];
+procedure halt_and_catch_fire(); [public, alias: 'util_halt_and_catch_fire'];
 begin
      asm
           cli
@@ -79,7 +79,7 @@ begin
      end;
 end;
 
-function inl(port : word) : dword; [public, alias: 'inl'];
+function inl(port : word) : dword; [public, alias: 'util_inl'];
 begin
      asm
           PUSH EAX
@@ -92,7 +92,7 @@ begin
      end;
 end;
 
-function inw(port : word) : word; [public, alias: 'inw'];
+function inw(port : word) : word; [public, alias: 'util_inw'];
 begin
      asm
           PUSH EAX
@@ -105,7 +105,7 @@ begin
      end;
 end;
 
-function inb(port : word) : byte; [public, alias: 'inb'];
+function inb(port : word) : byte; [public, alias: 'util_inb'];
 begin
      asm
           PUSH EAX

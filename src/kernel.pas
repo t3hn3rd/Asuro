@@ -5,6 +5,7 @@ interface
 uses
      multiboot,
      util,
+     gdt,
      console,
      bios_data_area,
      keyboard;
@@ -18,6 +19,7 @@ var
    c : byte;
    
 begin
+     gdt.init();
      console.init();
      console.writestringln('Booting Asuro...');
      if (mbmagic <> MULTIBOOT_BOOTLOADER_MAGIC) then begin
