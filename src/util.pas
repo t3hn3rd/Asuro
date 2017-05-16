@@ -4,35 +4,35 @@ unit util;
 
 interface
 
-function hi(b : byte) : byte;
-function lo(b : byte) : byte;
-function switchendian(b : byte) : byte;
-procedure outb(port : word; val : byte);
-procedure outw(port : word; val : word);
-procedure outl(port : word; val : longword);
+function hi(b : uint8) : uint8;
+function lo(b : uint8) : uint8;
+function switchendian(b : uint8) : uint8;
+procedure outb(port : uint16; val : uint8);
+procedure outw(port : uint16; val : uint16);
+procedure outl(port : uint16; val : uint32);
 procedure halt_and_catch_fire();
-function inb(port : word) : byte;
-function inw(port : word) : word;
-function inl(port : word) : dword;
+function inb(port : uint16) : uint8;
+function inw(port : uint16) : uint16;
+function inl(port : uint16) : uint32;
 
 implementation
 
-function hi(b : byte) : byte; [public, alias: 'util_hi'];
+function hi(b : uint8) : uint8; [public, alias: 'util_hi'];
 begin
      hi:= (b AND $F0) SHR 4;
 end;
 
-function lo(b : byte) : byte; [public, alias: 'util_lo'];
+function lo(b : uint8) : uint8; [public, alias: 'util_lo'];
 begin
      lo:= b AND $0F;
 end;
 
-function switchendian(b : byte) : byte; [public, alias: 'util_switchendian'];
+function switchendian(b : uint8) : uint8; [public, alias: 'util_switchendian'];
 begin
      switchendian:= (lo(b) SHL 4) OR hi(b);
 end;
 
-procedure outl(port : word; val : longword); [public, alias: 'util_outl'];
+procedure outl(port : uint16; val : uint32); [public, alias: 'util_outl'];
 begin
      asm
           PUSH EAX
@@ -45,7 +45,7 @@ begin
      end;
 end;
 
-procedure outw(port : word; val : word); [public, alias: 'util_outw'];
+procedure outw(port : uint16; val : uint16); [public, alias: 'util_outw'];
 begin
      asm
           PUSH EAX
@@ -58,7 +58,7 @@ begin
      end;
 end;
 
-procedure outb(port : word; val : byte); [public, alias: 'util_outb'];
+procedure outb(port : uint16; val : uint8); [public, alias: 'util_outb'];
 begin
      asm
           PUSH EAX
@@ -79,7 +79,7 @@ begin
      end;
 end;
 
-function inl(port : word) : dword; [public, alias: 'util_inl'];
+function inl(port : uint16) : uint32; [public, alias: 'util_inl'];
 begin
      asm
           PUSH EAX
@@ -92,7 +92,7 @@ begin
      end;
 end;
 
-function inw(port : word) : word; [public, alias: 'util_inw'];
+function inw(port : uint16) : uint16; [public, alias: 'util_inw'];
 begin
      asm
           PUSH EAX
@@ -105,7 +105,7 @@ begin
      end;
 end;
 
-function inb(port : word) : byte; [public, alias: 'util_inb'];
+function inb(port : uint16) : uint8; [public, alias: 'util_inb'];
 begin
      asm
           PUSH EAX

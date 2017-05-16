@@ -4,24 +4,24 @@ interface
 
 type
      TBDA = bitpacked record
-          COM1            : WORD;
-          COM2            : WORD;
-          COM3            : WORD;
-          COM4            : WORD;
-          LPT1            : WORD;
-          LPT2            : WORD;
-          LPT3            : WORD;
-          EBDA            : WORD;
-          Hardware_Flags  : WORD;
-          Keyboard_Flags  : WORD;
-          Keyboard_Buffer : ARRAY[0..31] OF BYTE;
-          Display_Mode    : BYTE;
-          BaseIO          : WORD;
-          Ticks           : WORD;
-          HDD_Count       : BYTE;
-          Keyboard_Start  : WORD;
-          Keyboard_End    : WORD;
-          Keyboard_State  : Byte;
+          COM1            : uint16;
+          COM2            : uint16;
+          COM3            : uint16;
+          COM4            : uint16;
+          LPT1            : uint16;
+          LPT2            : uint16;
+          LPT3            : uint16;
+          EBDA            : uint16;
+          Hardware_Flags  : uint16;
+          Keyboard_Flags  : uint16;
+          Keyboard_Buffer : ARRAY[0..31] OF uint8;
+          Display_Mode    : uint8;
+          BaseIO          : uint16;
+          Ticks           : uint16;
+          HDD_Count       : uint8;
+          Keyboard_Start  : uint16;
+          Keyboard_End    : uint16;
+          Keyboard_State  : uint8;
      end;
      PBDA = ^TBDA;
 

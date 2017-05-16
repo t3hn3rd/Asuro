@@ -14,12 +14,12 @@ procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: DWORD); stdcall;
  
 implementation
  
-procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: DWORD); stdcall; [public, alias: 'kmain'];   
+procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall; [public, alias: 'kmain'];   
 var
-   c : byte;
+   c : uint8;
    mbi : Pmultiboot_info_t;
-   mbm : DWORD;
-   dds  : DWORD;
+   mbm : uint32;
+   dds  : uint32;
    
 begin
      mbi:= mbinfo;
@@ -41,8 +41,6 @@ begin
      console.setdefaultattribute(console.combinecolors(Red, Black));
      if dds = $08 then console.setdefaultattribute(console.combinecolors(Green, Black));
      console.writehexln(dds);
-     util.halt_and_catch_fire;
-
      console.setdefaultattribute(console.combinecolors(Green, Black));
      console.writestringln('Asuro Booted Correctly!');
      console.writestringln('');
@@ -57,11 +55,11 @@ begin
      console.writeint(((mbinfo^.mem_upper + 1000) div 1024) +1);
      console.writestringln('MB');
      console.setdefaultattribute(console.combinecolors(lYellow, Black));
-     while true do begin
+     {while true do begin
           c:= keyboard.get_scancode;
           console.writehexln(c);  
      end;
-     util.halt_and_catch_fire;
+     util.halt_and_catch_fire;}
 end;
  
 end.

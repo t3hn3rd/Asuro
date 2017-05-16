@@ -7,13 +7,13 @@ interface
 uses
      util;
 
-function get_scancode() : byte;
+function get_scancode() : uint8;
 
 implementation
 
-function get_scancode() : byte; [public, alias: 'get_scancode'];
+function get_scancode() : uint8; [public, alias: 'get_scancode'];
 var
-   c : byte;
+   c : uint8;
    
 begin
      c:= 0;
