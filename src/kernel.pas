@@ -34,6 +34,15 @@ begin
         util.halt_and_catch_fire;
      end;
      console.clear();
+     console.writestring('If this reads "0x8" then we have a GDT: ');
+     asm
+        MOV dds, CS
+     end;
+     console.setdefaultattribute(console.combinecolors(Red, Black));
+     if dds = $08 then console.setdefaultattribute(console.combinecolors(Green, Black));
+     console.writehexln(dds);
+     util.halt_and_catch_fire;
+
      console.setdefaultattribute(console.combinecolors(Green, Black));
      console.writestringln('Asuro Booted Correctly!');
      console.writestringln('');
