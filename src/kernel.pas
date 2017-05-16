@@ -7,6 +7,7 @@ uses
      multiboot,
      util,
      gdt,
+     idt,
      console,
      bios_data_area,
      keyboard;
@@ -26,6 +27,7 @@ begin
      mbi:= mbinfo;
      mbm:= mbmagic;
      gdt.init();
+     idt.init();
      console.init();
      console.writestringln('Booting Asuro...');
      if (mbm <> MULTIBOOT_BOOTLOADER_MAGIC) then begin

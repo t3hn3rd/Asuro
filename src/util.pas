@@ -17,6 +17,7 @@ procedure halt_and_catch_fire();
 function inb(port : uint16) : uint8;
 function inw(port : uint16) : uint16;
 function inl(port : uint16) : uint32;
+procedure memset(location : uint32; value : uint8; size : uint32);
 
 implementation
 
@@ -119,6 +120,18 @@ begin
           POP EDX
           POP EAX
      end;
+end;
+
+procedure memset(location : uint32; value : uint8; size : uint32);
+var
+    loc : puint8;
+    i   : uint32;
+
+begin
+    for i:=0 to size do begin
+        loc:= puint8(location + i);
+        loc^:= value;
+    end;
 end;
 
 end.
