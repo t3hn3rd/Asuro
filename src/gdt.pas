@@ -51,7 +51,7 @@ begin
 
      descriptor[0] := limit and $FF;
      descriptor[1] := (limit shr 8) and $FF;
-     descriptor[6] := limit or ((limit shr 16) and $F); //3 <-- has now overwritten both $C0 and $40 is now equal to limit or'd with limit shifted right 16 bits and constant $0F
+     descriptor[6] := descriptor[6] or ((limit shr 16) and $F); //3 <-- has now overwritten both $C0 and $40 is now equal to limit or'd with limit shifted right 16 bits and constant $0F
 
      descriptor[2] := base and $FF;
      descriptor[3] := (base shr 8) and $FF;
