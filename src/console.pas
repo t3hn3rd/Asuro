@@ -26,33 +26,33 @@ type
 
 procedure init();
 procedure clear();
-procedure setdefaultattribute(attribute : sint8);
+procedure setdefaultattribute(attribute : char);
 
-procedure writechar(character : sint8);
-procedure writestring(str: psint8);
-procedure writeint(i: sint32);
-procedure writeword(i: uint32);
-procedure writehex(i: uint32);
+procedure writechar(character : char);
+procedure writestring(str: PChar);
+procedure writeint(i: Integer);
+procedure writeword(i: DWORD);
+procedure writehex(i: DWORD);
 
-procedure writecharln(character : sint8);
-procedure writestringln(str: psint8);
-procedure writeintln(i: sint32);
-procedure writewordln(i: uint32);
-procedure writehexln(i: uint32);
+procedure writecharln(character : char);
+procedure writestringln(str: PChar);
+procedure writeintln(i: Integer);
+procedure writewordln(i: DWORD);
+procedure writehexln(i: DWORD);
 
-procedure writecharex(character : sint8; attributes : sint8);
-procedure writestringex(str: psint8; attributes : sint8);
-procedure writeintex(i: sint32; attributes : sint8);
-procedure writewordex(i: uint32; attributes : sint8);
-procedure writehexex(i : uint32; attributes : sint8);
+procedure writecharex(character : char; attributes : char);
+procedure writestringex(str: PChar; attributes : char);
+procedure writeintex(i: Integer; attributes : char);
+procedure writewordex(i: DWORD; attributes : char);
+procedure writehexex(i : DWORD; attributes : char);
 
-procedure writecharlnex(character : sint8; attributes : sint8);
-procedure writestringlnex(str: psint8; attributes : sint8);
-procedure writeintlnex(i: sint32; attributes : sint8);
-procedure writewordlnex(i: uint32; attributes : sint8);
-procedure writehexlnex(i: uint32; attributes : sint8);
+procedure writecharlnex(character : char; attributes : char);
+procedure writestringlnex(str: PChar; attributes : char);
+procedure writeintlnex(i: Integer; attributes : char);
+procedure writewordlnex(i: DWORD; attributes : char);
+procedure writehexlnex(i: DWORD; attributes : char);
 
-function combinecolors(Foreground, Background : TColor) : sint8;
+function combinecolors(Foreground, Background : TColor) : char;
 
 procedure _increment_x();
 procedure _increment_y();
@@ -64,12 +64,12 @@ implementation
 
 type
     TConsoleProperties = record
-      Default_Attribute : sint8;
+      Default_Attribute : Char;
     end;
 
     TCharacter = bitpacked record
-      Character  : sint8;
-      Attributes : sint8;
+      Character  : Char;
+      Attributes : Char;
     end;
     PCharacter = ^TCharacter;
 
@@ -80,8 +80,8 @@ type
     P2DVideoMemory = ^T2DVideoMemory;
 
     TCoord = record
-      X : uint8;
-      Y : uint8;
+      X : Byte;
+      Y : Byte;
     end;
 
 var
@@ -98,7 +98,7 @@ end;
 
 procedure clear(); [public, alias: 'console_clear'];
 var
-   x,y: uint8;
+   x,y: Byte;
 
 begin
      for x:=0 to 79 do begin
@@ -111,64 +111,64 @@ begin
      Console_Cursor.Y:= 0;
 end;
 
-procedure setdefaultattribute(attribute: sint8); [public, alias: 'console_setdefaultattribute'];
+procedure setdefaultattribute(attribute: char); [public, alias: 'console_setdefaultattribute'];
 begin
      Console_Properties.Default_Attribute:= attribute;
 end;
 
-procedure writechar(character: sint8); [public, alias: 'console_writechar'];
+procedure writechar(character: char); [public, alias: 'console_writechar'];
 begin
      console.writecharex(character, Console_Properties.Default_Attribute);
 end;
 
-procedure writestring(str: psint8); [public, alias: 'console_writestring'];
+procedure writestring(str: PChar); [public, alias: 'console_writestring'];
 begin
      console.writestringex(str, Console_Properties.Default_Attribute);
 end;
 
-procedure writeint(i: sint32); [public, alias: 'console_writeint'];
+procedure writeint(i: Integer); [public, alias: 'console_writeint'];
 begin
      console.writeintex(i, Console_Properties.Default_Attribute);
 end;
 
-procedure writeword(i: uint32); [public, alias: 'console_writeword'];
+procedure writeword(i: DWORD); [public, alias: 'console_writeword'];
 begin
      console.writewordex(i, Console_Properties.Default_Attribute);
 end;
 
-procedure writecharln(character: sint8); [public, alias: 'console_writecharln'];
+procedure writecharln(character: char); [public, alias: 'console_writecharln'];
 begin
      console.writecharlnex(character, Console_Properties.Default_Attribute);
 end;
 
-procedure writestringln(str: psint8); [public, alias: 'console_writestringln'];
+procedure writestringln(str: PChar); [public, alias: 'console_writestringln'];
 begin
      console.writestringlnex(str, Console_Properties.Default_Attribute);
 end;
 
-procedure writeintln(i: sint32); [public, alias: 'console_writeintln'];
+procedure writeintln(i: Integer); [public, alias: 'console_writeintln'];
 begin
      console.writeintlnex(i, Console_Properties.Default_Attribute);
 end;
 
-procedure writewordln(i: uint32); [public, alias: 'console_writewordln'];
+procedure writewordln(i: DWORD); [public, alias: 'console_writewordln'];
 begin
      console.writewordlnex(i, Console_Properties.Default_Attribute);
 end;
 
-procedure writecharex(character: sint8; attributes: sint8); [public, alias: 'console_writecharex'];
+procedure writecharex(character: char; attributes: char); [public, alias: 'console_writecharex'];
 begin
      Console_Matrix^[Console_Cursor.Y][Console_Cursor.X].Character:= character;
      Console_Matrix^[Console_Cursor.Y][Console_Cursor.X].Attributes:= attributes;
      console._safeincrement_x();
 end;
 
-procedure writehexex(i : uint32; attributes: sint8); [public, alias: 'console_writehexex'];
+procedure writehexex(i : dword; attributes: char); [public, alias: 'console_writehexex'];
 var
-   Hex : Array[0..7] of uint8;
-   Res : uint32;
-   Rem : uint32;
-   c   : sint32;
+   Hex : Array[0..7] of Byte;
+   Res : DWORD;
+   Rem : DWORD;
+   c   : Integer;
    
 begin
      for c:=0 to 7 do begin
@@ -209,25 +209,25 @@ begin
      end;
 end;
 
-procedure writehex(i : uint32); [public, alias: 'console_writehex'];
+procedure writehex(i : dword); [public, alias: 'console_writehex'];
 begin
      console.writehexex(i, Console_Properties.Default_Attribute);
 end;
 
-procedure writehexlnex(i : uint32; attributes : sint8);
+procedure writehexlnex(i : dword; attributes : char);
 begin
      console.writehexex(i, attributes);
      console._safeincrement_y();
 end;
 
-procedure writehexln(i : uint32);
+procedure writehexln(i : dword);
 begin
      writehexlnex(i, Console_Properties.Default_Attribute);
 end;
 
-procedure writestringex(str: psint8; attributes: sint8); [public, alias: 'console_writestringex'];
+procedure writestringex(str: PChar; attributes: char); [public, alias: 'console_writestringex'];
 var
-   i : sint32;
+   i : integer;
 
 begin
      i:= 0;
@@ -237,11 +237,11 @@ begin
      end;
 end;
 
-procedure writeintex(i: sint32; attributes : sint8); [public, alias: 'console_writeintex'];
+procedure writeintex(i: Integer; attributes : char); [public, alias: 'console_writeintex'];
 var
-        buffer: array [0..11] of sint8;
-        str: psint8;
-        digit: uint32;
+        buffer: array [0..11] of Char;
+        str: PChar;
+        digit: DWORD;
         minus: Boolean;
 begin
         str := @buffer[11];
@@ -255,7 +255,7 @@ begin
         end;
         repeat
                 Dec(str);
-                str^ := sint8((digit mod 10) + uint8('0'));
+                str^ := Char((digit mod 10) + Byte('0'));
                 digit := digit div 10;
         until (digit = 0);
         if (minus) then begin
@@ -265,11 +265,11 @@ begin
         console.writestringex(str, attributes);
 end;
  
-procedure writewordex(i: uint32; attributes : sint8); [public, alias: 'console_writedwordex'];
+procedure writewordex(i: DWORD; attributes : char); [public, alias: 'console_writedwordex'];
 var
-        buffer: array [0..11] of sint8;
-        str: psint8;
-        digit: uint32;
+        buffer: array [0..11] of Char;
+        str: PChar;
+        digit: DWORD;
 begin
         for digit := 0 to 10 do buffer[digit] := '0';
         str := @buffer[11];
@@ -277,45 +277,45 @@ begin
         digit := i;
         repeat
                 Dec(str);
-                str^ := sint8((digit mod 10) + uint8('0'));
+                str^ := Char((digit mod 10) + Byte('0'));
                 digit := digit div 10;
         until (digit = 0);
         console.writestringex(@Buffer[0], attributes);
 end;
 
-procedure writecharlnex(character: sint8; attributes: sint8); [public, alias: 'console_writecharlnex'];
+procedure writecharlnex(character: char; attributes: char); [public, alias: 'console_writecharlnex'];
 begin
      console.writecharex(character, attributes);
      console._safeincrement_y();
 end;
 
-procedure writestringlnex(str: sint8; attributes: sint8); [public, alias: 'console_writestringlnex'];
+procedure writestringlnex(str: PChar; attributes: char); [public, alias: 'console_writestringlnex'];
 begin
      console.writestringex(str, attributes);
      console._safeincrement_y();
 end;
 
-procedure writeintlnex(i: sint32; attributes: sint8); [public, alias: 'console_writeintlnex'];
+procedure writeintlnex(i: Integer; attributes: char); [public, alias: 'console_writeintlnex'];
 begin
      console.writeintex(i, attributes);
      console._safeincrement_y();
 end;
 
-procedure writewordlnex(i: uint32; attributes: sint8); [public, alias: 'console_writewordlnex'];
+procedure writewordlnex(i: DWORD; attributes: char); [public, alias: 'console_writewordlnex'];
 begin
      console.writewordex(i, attributes);
      console._safeincrement_y();
 end;
 
-function combinecolors(Foreground, Background: TColor): sint8; [public, alias: 'console_combinecolors'];
+function combinecolors(Foreground, Background: TColor): char; [public, alias: 'console_combinecolors'];
 begin
-     combinecolors:= sint8(((ord(Background) shl 4) or ord(Foreground)));
+     combinecolors:= char(((ord(Background) shl 4) or ord(Foreground)));
 end;
 
 procedure _update_cursor(); [public, alias: '_console_update_cursor'];
 var
-   pos : uint16;
-   b   : uint8;
+   pos : word;
+   b   : byte;
    
 begin
      pos:= (Console_Cursor.Y * 80) + Console_Cursor.X;
@@ -366,7 +366,7 @@ end;
 
 procedure _newline(); [public, alias: '_console_newline'];
 var
-   x, y : uint8;
+   x, y : byte;
 
 begin
      for x:=0 to 79 do begin
