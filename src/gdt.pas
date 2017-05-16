@@ -45,9 +45,8 @@ begin
          end else begin
     	     limit := limit SHR 12;
          end;
+         descriptor[6] := $C0; //2 <-- Will be overwritten by 3;
      end;
-
-     descriptor[6] := $C0; //2 <-- Will be overwritten by 3;
 
      descriptor[0] := limit and $FF;
      descriptor[1] := (limit shr 8) and $FF;
