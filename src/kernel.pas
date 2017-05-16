@@ -10,7 +10,7 @@ uses
      bios_data_area,
      keyboard;
  
-procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: DWORD); stdcall;
+procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
 implementation
  
