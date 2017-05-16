@@ -38,20 +38,20 @@ begin
      descriptor_ptr:= @descriptor[0];
      s_descriptor_ptr:= @s_descriptor;
      if limit <= 65536 then begin
-        descriptor[6] := $40
+        descriptor[6] := $40 //1 <-- Will be overwritten by 2.
      end else begin
          if (limit and $FFF) <> $FFF then begin
-     	    limit := (limit SHR 12) -1
+     	    limit := (limit SHR 12) - 1;
          end else begin
     	     limit := limit SHR 12;
          end;
      end;
-     
-     descriptor[6] := $C0;
+
+     descriptor[6] := $C0; //2 <-- Will be overwritten by 3;
 
      descriptor[0] := limit and $FF;
      descriptor[1] := (limit shr 8) and $FF;
-     descriptor[6] := limit or ((limit shr 16) and $F);
+     descriptor[6] := limit or ((limit shr 16) and $F); //3 <-- has now overwritten both $C0 and $40 is now equal to limit or'd with limit shifted right 16 bits and constant $0F
 
      descriptor[2] := base and $FF;
      descriptor[3] := (base shr 8) and $FF;
