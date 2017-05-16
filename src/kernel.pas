@@ -17,12 +17,16 @@ implementation
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: DWORD); stdcall; [public, alias: 'kmain'];   
 var
    c : byte;
+   mbi : Pmultiboot_info_t;
+   mbm : DWORD;
    
 begin
+     mbi:= mbinfo;
+     mbm:= mbmagic;
      gdt.init();
      console.init();
      console.writestringln('Booting Asuro...');
-     if (mbmagic <> MULTIBOOT_BOOTLOADER_MAGIC) then begin
+     if (mbm <> MULTIBOOT_BOOTLOADER_MAGIC) then begin
         console.setdefaultattribute(console.combinecolors(Red, Black));
         console.writestringln('Multiboot Compliant Boot-Loader Needed!');
         console.writestringln('HALTING');
