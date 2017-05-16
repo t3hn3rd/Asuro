@@ -4,7 +4,8 @@ interface
 
 uses
     util,
-    types;
+    types,
+    console;
 
 procedure create(base : dword; limit : dword; flags : byte);
 procedure init();
@@ -22,7 +23,7 @@ type
 implementation
 
 var
-   GDTarr : array [0..5] of TSegmentDescriptor;
+   GDTarr : array [0..2] of TSegmentDescriptor;
    GDTptr : PSegmentDescriptor;
    GDT_length : integer = 0;
     
@@ -38,19 +39,19 @@ begin
      descriptor_ptr:= @descriptor[0];
      s_descriptor_ptr:= @s_descriptor;
      if limit <= 65536 then begin
-        descriptor[6] := $40 //1 <-- Will be overwritten by 2.
+        descriptor[6] := $40;
      end else begin
          if (limit and $FFF) <> $FFF then begin
      	    limit := (limit SHR 12) - 1;
          end else begin
     	     limit := limit SHR 12;
          end;
-         descriptor[6] := $C0; //2 <-- Will be overwritten by 3;
+         descriptor[6] := $C0;
      end;
 
      descriptor[0] := limit and $FF;
      descriptor[1] := (limit shr 8) and $FF;
-     descriptor[6] := descriptor[6] or ((limit shr 16) and $F); //3 <-- has now overwritten both $C0 and $40 is now equal to limit or'd with limit shifted right 16 bits and constant $0F
+     descriptor[6] := descriptor[6] or ((limit shr 16) and $F); 
 
      descriptor[2] := base and $FF;
      descriptor[3] := (base shr 8) and $FF;

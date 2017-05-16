@@ -19,9 +19,18 @@ fi
 echo " "
 echo "======================="
 echo " "
-echo "Compiling FPC Sources..."
-echo " "
-fpc -Aelf -n -va -O3 -Op3 -Si -Sc -Sg -Xd -CX -XXs -Rintel -Pi386 -Tlinux -FElib/ src/kernel.pas
+
+if [ "$1" = "-d" ]
+then
+	echo "Compiling Debug FPC Sources..."
+	echo " "
+	fpc -Aelf -gw -n -va -O3 -Op3 -Si -Sc -Sg -Xd -CX -XXs -Rintel -Pi386 -Tlinux -FElib/ src/kernel.pas
+else
+	echo "Compiling FPC Sources..."
+	echo " "
+	fpc -Aelf -gw -n -va -O3 -Op3 -Si -Sc -Sg -Xd -CX -XXs -Rintel -Pi386 -Tlinux -FElib/ src/kernel.pas
+fi
+
 if [ $? -ne 0 ]
 then
 	echo "Failed to compile FPC Sources!"
