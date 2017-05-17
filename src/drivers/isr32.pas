@@ -14,8 +14,7 @@ implementation
 procedure Main; interrupt; //IRQ0, called every 55ms
 begin
     CLI;
-
-    util.halt_and_catch_fire;
+    outb($0020, $20);
 end;
 
 procedure register();

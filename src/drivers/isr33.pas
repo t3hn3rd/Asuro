@@ -7,6 +7,9 @@ uses
     console,
     IDT;
 
+var
+    last_key : byte;
+
 procedure register();
 
 implementation
@@ -14,8 +17,8 @@ implementation
 procedure Main; interrupt; //IRQ1, Keyboard Interrupt
 begin
     CLI;
-    
-    util.halt_and_catch_fire;
+    last_key = inb($60);
+    outb($0020, $20);
 end;
 
 procedure register();
