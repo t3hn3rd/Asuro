@@ -15,7 +15,7 @@ uses
      util, 
      bios_data_area;
 
-const DEBUG = FALSE;
+var DEBUG : Boolean;
 
 type
     TColor = ( Black   = $0,
@@ -103,6 +103,7 @@ var
 
 procedure init(); [public, alias: 'console_init'];
 Begin
+     Debug:= False;
      Console_Properties.Default_Attribute:= console.combinecolors(White, Black);
      console.clear();
 end;
@@ -373,7 +374,7 @@ begin
      end;
      Console_Cursor.X:= 0;
      console._update_cursor;
-     if DEBUG then psleep(500);
+     if Debug then psleep(1000);
 end;
 
 procedure _newline(); [public, alias: '_console_newline'];

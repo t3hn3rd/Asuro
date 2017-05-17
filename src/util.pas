@@ -13,6 +13,9 @@ unit util;
 
 interface
 
+uses
+    bios_data_area;
+
 procedure CLI();
 procedure STI();
 function hi(b : uint8) : uint8;
@@ -30,6 +33,9 @@ procedure memset(location : uint32; value : uint8; size : uint32);
 procedure psleep(t : uint16);
 
 implementation
+
+uses
+    console;
 
 function hi(b : uint8) : uint8; [public, alias: 'util_hi'];
 begin
@@ -58,13 +64,13 @@ end;
 
 procedure psleep(t : uint16);
 var
-    i : uint32;
-    t1, t2 : uint32;
+    t1, t2 : uint16;
 
 begin
-    for i:=0 to t*t*t do begin
-        t1:=i;
-        t2:=t1+4444+i;
+    t1:= BDA^.Ticks;
+    t2:= BDA^.Ticks;
+    while t2-t1 < t do begin
+        t2:= BDA^.Ticks;
     end;
 end;
 

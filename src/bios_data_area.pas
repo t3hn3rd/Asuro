@@ -38,6 +38,13 @@ type
 const
      BDA : PBDA = PBDA($0400);
 
+procedure tick_update(data : void);
+
 implementation
+
+procedure tick_update(data : void);
+begin
+    BDA^.Ticks:= BDA^.Ticks + 1;
+end;
 
 end.

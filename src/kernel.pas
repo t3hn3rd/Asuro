@@ -9,7 +9,7 @@ uses
      idt,
      isr,
      irq,
-     isr0,
+     isr32,
      console,
      bios_data_area,
      keyboard;
@@ -17,17 +17,6 @@ uses
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
 implementation
- 
-
-procedure test2(data : void);
-begin
-    console.writestringln('It works 2.');
-end;
-
-procedure test(data : void);
-begin
-    console.writestringln('It works.');
-end;
 
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall; [public, alias: 'kmain'];   
 var
@@ -58,6 +47,10 @@ begin
 
      STI;
 
+     isr32.hook(uint32(@bios_data_area.tick_update));
+
+     console.debug:= true;
+
      asm
         MOV dds, CS
      end;
@@ -84,11 +77,6 @@ begin
      console.writeint(((mbinfo^.mem_upper + 1000) div 1024) +1);
      console.writestringln('MB');
      console.setdefaultattribute(console.combinecolors(lYellow, Black));
-
-     isr0.hook(uint32(@test));
-     isr0.hook(uint32(@test2));
-     isr0.unhook(uint32(@test));
-     asm INT 0 end;
 
      util.halt_and_dont_catch_fire;
 end;
