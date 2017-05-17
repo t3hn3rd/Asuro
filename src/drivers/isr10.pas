@@ -23,6 +23,7 @@ implementation
 
 procedure Main(); interrupt;
 begin
+    CLI;
     console.writestringln('Bad TSS Exception.');
     util.halt_and_catch_fire;
 end;

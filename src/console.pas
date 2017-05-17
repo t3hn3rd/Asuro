@@ -15,6 +15,8 @@ uses
      util, 
      bios_data_area;
 
+const DEBUG = FALSE;
+
 type
     TColor = ( Black   = $0,
                Blue    = $1,
@@ -371,7 +373,7 @@ begin
      end;
      Console_Cursor.X:= 0;
      console._update_cursor;
-     psleep(500);
+     if DEBUG then psleep(500);
 end;
 
 procedure _newline(); [public, alias: '_console_newline'];

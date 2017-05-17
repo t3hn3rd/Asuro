@@ -23,6 +23,7 @@ implementation
 
 procedure Main(); interrupt;
 begin
+    CLI;
     console.writestringln('Divide by Zero Exception.');
     util.halt_and_catch_fire;
 end;
