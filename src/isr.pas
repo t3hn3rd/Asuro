@@ -13,7 +13,8 @@ interface
 
 uses
     ISR0,  ISR1,  ISR2,  ISR3,  ISR4,  ISR5,  ISR6,  ISR7,  ISR8, ISR9, 
-    ISR10, ISR11, ISR12, ISR13, ISR14, ISR15, ISR16, ISR17, ISR18;
+    ISR10, ISR11, ISR12, ISR13, ISR14, ISR15, ISR16, ISR17, ISR18, 
+    ISR33;
 
     
 
@@ -42,6 +43,8 @@ begin
     ISR16.register();
     ISR17.register();
     ISR18.register();
+
+    ISR33.register();
 end;
 
 end.
