@@ -36,6 +36,14 @@ end;
 
 procedure register();
 begin
+    asm
+    mov al, $36
+    out $46, al
+    mov ax, 1165
+    out $40, al
+    mov al, ah
+    out $40, al
+    end;
     IDT.set_gate(32, uint32(@Main), $08, ISR_RING_0);
 end;
 
