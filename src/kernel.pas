@@ -3,11 +3,11 @@ unit kernel;
 interface
  
 uses
-     types,
      multiboot,
      util,
      gdt,
      idt,
+     isr,
      console,
      bios_data_area,
      keyboard;
@@ -21,6 +21,7 @@ var
    c : uint8;
    mbi : Pmultiboot_info_t;
    mbm : uint32;
+   z    : uint32;
    dds  : uint32;
    
 begin
@@ -28,6 +29,7 @@ begin
      mbm:= mbmagic;
      gdt.init();
      idt.init();
+     isr.init();
      console.init();
      console.writestringln('Booting Asuro...');
      if (mbm <> MULTIBOOT_BOOTLOADER_MAGIC) then begin
@@ -41,6 +43,7 @@ begin
      asm
         MOV dds, CS
      end;
+     z:=0;
      console.setdefaultattribute(console.combinecolors(Red, Black));
      if dds = $08 then console.setdefaultattribute(console.combinecolors(Green, Black));
      console.writehexln(dds);
@@ -58,6 +61,8 @@ begin
      console.writeint(((mbinfo^.mem_upper + 1000) div 1024) +1);
      console.writestringln('MB');
      console.setdefaultattribute(console.combinecolors(lYellow, Black));
+     mbm := mbm div z;
+     util.halt_and_catch_fire;
      {while true do begin
           c:= keyboard.get_scancode;
           console.writehexln(c);  

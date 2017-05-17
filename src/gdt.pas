@@ -2,9 +2,6 @@ unit gdt;
 
 interface
 
-uses
-    types;
-
 type
     TGDT_Entry = bitpacked record
         limit_low   : uint16;

@@ -4,9 +4,6 @@ unit util;
 
 interface
 
-uses
-    types;
-
 function hi(b : uint8) : uint8;
 function lo(b : uint8) : uint8;
 function switchendian(b : uint8) : uint8;

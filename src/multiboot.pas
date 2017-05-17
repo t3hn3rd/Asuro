@@ -1,9 +1,6 @@
 unit multiboot;
  
 interface
- 
-uses
-    types;
 
 const
         KERNEL_STACKSIZE = $4000;

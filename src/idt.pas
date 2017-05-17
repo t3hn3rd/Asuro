@@ -3,7 +3,6 @@ unit idt;
 interface
 
 uses
-    types,
     util;
 
 type
@@ -27,6 +26,7 @@ var
     IDT_Pointer : TIDT_Pointer;
 
 procedure init();
+procedure set_gate(Number : uint8; Base : uint32; Selector : uint16; Flags : uint8);
 
 implementation
 
