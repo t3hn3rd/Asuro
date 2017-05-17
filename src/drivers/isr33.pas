@@ -29,14 +29,17 @@ var
 procedure Main(); interrupt;
 var
     i : integer;
-begin
+    b : void;
 
+begin
+    b:= void(inb($60)); 
+    console.writehexln(uint8(b));
     for i:=0 to MAX_HOOKS-1 do begin
         if uint32(Hooks[i]) <> 0 then begin 
-            Hooks[i](void(inb($60)));
+            Hooks[i](b);
         end;
     end;
-    outb($20, $20); 
+    outb($20, $20);
 end;
 
 procedure register();

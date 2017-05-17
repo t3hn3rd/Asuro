@@ -73,7 +73,7 @@ begin
      console.writeint(mbinfo^.mem_upper);
      console.writestringln('KB');
      console.writestring('Total Memory = ');
-     console.writeint(((mbinfo^.mem_upper + 1000) div 1024) +1);
+     console.writeint(((mbinfo^.mem_upper + 1000) div 1024) + 1);
      console.writestringln('MB');
      while(true)do begin end;
      console.setdefaultattribute(console.combinecolors(lYellow, Black));
