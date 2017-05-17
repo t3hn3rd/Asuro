@@ -7,9 +7,11 @@ uses
     console,
     IDT;
 
+type
+    pp_int : procedure(byte);
+
 var
-    last_key : byte;
-    //func pointer to active application
+    procedure_ptr : pp_int = nil;
 
 procedure register();
 
@@ -18,7 +20,9 @@ implementation
 procedure Main; interrupt; //IRQ1, Keyboard Interrupt
 begin
     CLI;
-    last_key = inb($60);
+    if(procedure_ptr <> nil) tehn begin
+        procedure_ptr(inb($60));
+    end;
     outb($0020, $20);
 end;
 

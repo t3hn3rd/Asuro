@@ -20,7 +20,7 @@ implementation
 procedure Main; interrupt; //IRQ0, called every 55ms
 begin
     CLI;
-    if(proc_ptr <> nil) then begin
+    if(procedure_ptr <> nil) then begin
         procedure_ptr();
     end;
     outb($0020, $20);
