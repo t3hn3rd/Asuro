@@ -1,7 +1,7 @@
 { ************************************************
   * Asuro
   * Unit: Drivers/isr32
-  * Description: 55ms Timer interrupt
+  * Description: 1024hz Timer interrupt
   ************************************************
   * Author: Aaron Hance
   * Contributors: 
@@ -17,21 +17,27 @@ uses
     isr_types,
     IDT;
 
-//type 
-//    pp_void = procedure();
-
-//var
-//    procedure_ptr : pp_void = nil;
-
 procedure register();
+procedure hook(hook_method : uint32);
+procedure unhook(hook_method : uint32);
 
 implementation
 
-procedure Main; interrupt; //IRQ0, called every 55ms
+var
+    Hooks : Array[1..MAX_HOOKS] of pp_hook_method;
+
+procedure Main; interrupt; //IRQ0, 1024.19hz aprox
+var
+    i : integer;
+
 begin
-    //if(procedure_ptr <> nil) then begin
-        //procedure_ptr();
-    //end;
+    for i:=0 to MAX_HOOKS-1 do begin
+        if uint32(Hooks[i]) <> 0 then begin 
+            Hooks[i](nil);
+        end else begin 
+            Hooks[i](nil);
+        end;
+    end;
     outb($20, $20);
 end;
 
@@ -45,7 +51,34 @@ begin
         mov al, ah
         out $40, al
     end;
+    memset(uint32(@Hooks[0]), 0, sizeof(pp_hook_method)*MAX_HOOKS);
     IDT.set_gate(32, uint32(@Main), $08, ISR_RING_0);
+end;
+
+procedure hook(hook_method : uint32);
+var
+    i : uint32;
+
+begin
+    for i:=0 to MAX_HOOKS-1 do begin
+        if uint32(Hooks[i]) = hook_method then exit;
+    end;
+    for i:=0 to MAX_HOOKS-1 do begin
+        if uint32(Hooks[i]) = 0 then begin
+            Hooks[i]:= pp_hook_method(hook_method);
+            exit;
+        end;
+    end;
+end;
+
+procedure unhook(hook_method : uint32);
+var
+    i : uint32;
+begin
+    for i:=0 to MAX_HOOKS-1 do begin
+        If uint32(Hooks[i]) = hook_method then Hooks[i]:= nil;
+        exit;
+    end;
 end;
 
 end.

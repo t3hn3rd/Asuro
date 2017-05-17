@@ -17,30 +17,59 @@ uses
     isr_types,
     IDT;
 
-type
-    pp_byte = procedure(key_code : byte);
-
-var
-    procedure_ptr : pp_byte = nil;
-
 procedure register();
+procedure hook(hook_method : uint32);
+procedure unhook(hook_method : uint32);
 
 implementation
 
-procedure Main; interrupt; //IRQ1, Keyboard Interrupt
+var
+    Hooks : Array[1..MAX_HOOKS] of pp_hook_method;
+
+procedure Main(); interrupt;
+var
+    i : integer;
 begin
-    console.writestring('Keyboard: ');
-    console.writehexln(inb($60));
-    if(procedure_ptr <> nil) then begin
-        procedure_ptr(inb($60));
+
+    for i:=0 to MAX_HOOKS-1 do begin
+        if uint32(Hooks[i]) <> 0 then begin 
+            Hooks[i](nil);
+        end else begin 
+            Hooks[i](void(inb($60)));
+        end;
     end;
-    outb($A0, $20);
     outb($20, $20);
 end;
 
 procedure register();
 begin
     IDT.set_gate(33, uint32(@Main), $08, ISR_RING_0);
+end;
+ 
+procedure hook(hook_method : uint32);
+var
+    i : uint32;
+
+begin
+    for i:=0 to MAX_HOOKS-1 do begin
+        if uint32(Hooks[i]) = hook_method then exit;
+    end;
+    for i:=0 to MAX_HOOKS-1 do begin
+        if uint32(Hooks[i]) = 0 then begin
+            Hooks[i]:= pp_hook_method(hook_method);
+            exit;
+        end;
+    end;
+end;
+
+procedure unhook(hook_method : uint32);
+var
+    i : uint32;
+begin
+    for i:=0 to MAX_HOOKS-1 do begin
+        If uint32(Hooks[i]) = hook_method then Hooks[i]:= nil;
+        exit;
+    end;
 end;
 
 end.
