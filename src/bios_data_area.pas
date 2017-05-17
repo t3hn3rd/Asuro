@@ -36,7 +36,7 @@ type
      PBDA = ^TBDA;
 
 const
-     BDA : PBDA = PBDA($0400);
+     BDA : PBDA = PBDA($C0000400);
 
 procedure tick_update(data : void);
 

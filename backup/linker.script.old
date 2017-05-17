@@ -1,16 +1,13 @@
-ENTRY(loader)
+ENTRY(kstart)
 SECTIONS
 {
-  . = 0xC0100000;
-
-  .text : AT(ADDR(.text) - 0xC0000000)
+  .text  0x100000 :
   {
     text = .; _text = .; __text = .;
     *(.text)
-    *(.rodata*)
     . = ALIGN(4096);
   }
-  .data : AT(ADDR(.data) - 0xC0000000)
+  .data  :
   {
     data = .; _data = .; __data = .;
     *(.data)
@@ -24,12 +21,10 @@ SECTIONS
     LONG(end);
     . = ALIGN(4096);
   }
-  .bss : AT(ADDR(.bss) - 0xC0000000)
+  .bss  :
   {
-    bss = .; _bss = .; __bss = .; _sbss = .;
-    *(COMMON)
+    bss = .; _bss = .; __bss = .;
     *(.bss)
-    _ebbbss = .;
     . = ALIGN(4096);
   }
   end = .; _end = .; __end = .;

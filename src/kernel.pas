@@ -20,9 +20,9 @@ implementation
 
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall; [public, alias: 'kmain'];   
 var
-   c : uint8;
-   mbi : Pmultiboot_info_t;
-   mbm : uint32;
+   c    : uint8;
+   mbi  : Pmultiboot_info_t;
+   mbm  : uint32;
    z    : uint32;
    dds  : uint32;
    
@@ -46,9 +46,7 @@ begin
      irq.init();
 
      STI;
-
      isr32.hook(uint32(@bios_data_area.tick_update));
-
      console.debug:= true;
 
      asm
@@ -62,6 +60,7 @@ begin
         console.setdefaultattribute(console.combinecolors(Red, Black));
         console.writestringln('GDT: LOAD FAIL.');
      end;
+
      console.writestringln('');
      console.setdefaultattribute(console.combinecolors(Green, Black));
      console.writestringln('Asuro Booted Correctly!');
@@ -76,6 +75,7 @@ begin
      console.writestring('Total Memory = ');
      console.writeint(((mbinfo^.mem_upper + 1000) div 1024) +1);
      console.writestringln('MB');
+     while(true)do begin end;
      console.setdefaultattribute(console.combinecolors(lYellow, Black));
 
      util.halt_and_dont_catch_fire;

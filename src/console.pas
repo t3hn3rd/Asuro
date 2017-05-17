@@ -97,8 +97,8 @@ type
 
 var
    Console_Properties : TConsoleProperties;
-   Console_Memory     : PVideoMemory = PVideoMemory($b8000);
-   Console_Matrix     : P2DVideoMemory = P2DVideoMemory($b8000);
+   Console_Memory     : PVideoMemory = PVideoMemory($C00b8000);
+   Console_Matrix     : P2DVideoMemory = P2DVideoMemory($C00b8000);
    Console_Cursor     : TCoord;
 
 procedure init(); [public, alias: 'console_init'];
