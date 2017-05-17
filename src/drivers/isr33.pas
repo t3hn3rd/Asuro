@@ -23,7 +23,7 @@ begin
     if(procedure_ptr <> nil) then begin
         procedure_ptr(inb($60));
     end;
-    console.writechar(inb($60));
+    //console.writechar(char(inb($60)));
     outb($0020, $20);
 end;
 
