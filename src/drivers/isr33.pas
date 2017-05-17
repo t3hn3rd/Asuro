@@ -8,10 +8,10 @@ uses
     IDT;
 
 type
-    pp_int : procedure(byte);
+    pp_byte : procedure(byte);
 
 var
-    procedure_ptr : pp_int = nil;
+    procedure_ptr : pp_byte = nil;
 
 procedure register();
 
@@ -20,7 +20,7 @@ implementation
 procedure Main; interrupt; //IRQ1, Keyboard Interrupt
 begin
     CLI;
-    if(procedure_ptr <> nil) tehn begin
+    if(procedure_ptr <> nil) then begin
         procedure_ptr(inb($60));
     end;
     outb($0020, $20);
