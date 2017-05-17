@@ -23,6 +23,7 @@ implementation
 
 procedure Main(); interrupt;
 begin
+    console.writestringln('Segment Not Present Exception.');
     util.halt_and_catch_fire;
 end;
 

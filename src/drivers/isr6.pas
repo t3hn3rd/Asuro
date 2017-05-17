@@ -23,6 +23,8 @@ implementation
 
 procedure Main(); interrupt;
 begin
+        console.writestringln('Invalid OPCode Exception.');
+
     util.halt_and_catch_fire;
 end;
 

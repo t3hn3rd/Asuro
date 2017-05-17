@@ -23,6 +23,7 @@ implementation
 
 procedure Main(); interrupt;
 begin
+    console.writestringln('Coprocessor Fault Exception.');
     util.halt_and_catch_fire;
 end;
 

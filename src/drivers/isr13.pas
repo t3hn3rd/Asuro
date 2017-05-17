@@ -23,6 +23,7 @@ implementation
 
 procedure Main(); interrupt;
 begin
+    console.writestringln('General Protection Fault.');
     util.halt_and_catch_fire;
 end;
 

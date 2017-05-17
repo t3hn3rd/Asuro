@@ -23,6 +23,7 @@ implementation
 
 procedure Main(); interrupt;
 begin
+    console.writestringln('Machine Check Exception.');
     util.halt_and_catch_fire;
 end;
 
