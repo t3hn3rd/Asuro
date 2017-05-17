@@ -1,4 +1,4 @@
-unit isr1;
+unit isr33;
 
 interface
 
@@ -9,6 +9,7 @@ uses
 
 var
     last_key : byte;
+    //func pointer to active application
 
 procedure register();
 
