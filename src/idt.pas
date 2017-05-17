@@ -69,7 +69,7 @@ begin
     IDT_Pointer.limit:= (sizeof(TIDT_Entry) * 256) - 1;
     IDT_Pointer.base:= uint32(@IDT_Entries);
     console.writestringln('IDT: CLEAR.');
-    util.memset(uint32(@IDT_Entries), 0, sizeof(TIDT_Entry) * 256);
+    util.memset(uint32(@IDT_Entries[0]), 0, sizeof(TIDT_Entry) * 256);
     console.writestringln('IDT: LOAD.');
     load(uint32(@IDT_Pointer));
     console.writestringln('IDT: INIT END.');

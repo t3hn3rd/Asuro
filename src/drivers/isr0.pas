@@ -41,6 +41,7 @@ end;
 
 procedure register();
 begin
+    memset(uint32(@Hooks[0]), 0, sizeof(pp_hook_method)*MAX_HOOKS);
     IDT.set_gate(0, uint32(@Main), $08, ISR_RING_0);
 end;
 
@@ -53,7 +54,10 @@ begin
         if uint32(Hooks[i]) = hook_method then exit;
     end;
     for i:=0 to MAX_HOOKS-1 do begin
-        if uint32(Hooks[i]) = 0 then Hooks[i]:= pp_hook_method(hook_method);
+        if uint32(Hooks[i]) = 0 then begin
+            Hooks[i]:= pp_hook_method(hook_method);
+            exit;
+        end;
     end;
 end;
 
