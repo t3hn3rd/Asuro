@@ -10,6 +10,7 @@
 unit irq;
 
 interface
+uses util;
 
 procedure init();
 
@@ -22,7 +23,8 @@ begin
     outb($0021, 32);
     outb($00A1, 40);
     outb($0021, 4);
-    outb($00A1, 2);
+    outb($00A1, 2);    
+
 end;
 
 end.
