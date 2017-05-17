@@ -32,7 +32,7 @@ begin
     if(procedure_ptr <> nil) then begin
         procedure_ptr(inb($60));
     end;
-    console.writechar(char(inb($60)));
+    console.writestringln('helo');
     outb($0020, $20);
 end;
 

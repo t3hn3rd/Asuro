@@ -24,7 +24,8 @@ begin
     outb($00A1, 40);
     outb($0021, 4);
     outb($00A1, 2);    
-
+    outb($0021, 1);
+    outb($00A1, 1);
 end;
 
 end.
