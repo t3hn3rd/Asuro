@@ -1,3 +1,12 @@
+{ ************************************************
+  * Asuro
+  * Unit: Drivers/isr33
+  * Description: Keyboard interrupt
+  ************************************************
+  * Author: Aaron Hance
+  * Contributors: 
+  ************************************************ }
+
 unit isr33;
 
 interface
@@ -23,7 +32,7 @@ begin
     if(procedure_ptr <> nil) then begin
         procedure_ptr(inb($60));
     end;
-    //console.writechar(char(inb($60)));
+    console.writechar(char(inb($60)));
     outb($0020, $20);
 end;
 
