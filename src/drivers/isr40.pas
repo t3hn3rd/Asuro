@@ -14,13 +14,11 @@ interface
 uses
     util,
     console,
+    isr_types,
     IDT;
 
-type 
-    pp_void = procedure();
-
-var
-    procedure_ptr : pp_void = nil;
+//var
+    //procedure_ptr : pp_void = nil;
 
 procedure register();
 
@@ -29,9 +27,9 @@ implementation
 procedure Main; interrupt; //IRQ0, called 1024 times a second.
 begin
     console.writestringln('helo3');
-    if(procedure_ptr <> nil) then begin
-        procedure_ptr();
-    end;
+    //if(procedure_ptr <> nil) then begin
+    //    procedure_ptr();
+    //end;
     outb($A0, $20);
     outb($20, $20);
 end;
