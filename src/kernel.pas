@@ -62,13 +62,7 @@ begin
      console.writeint(((mbinfo^.mem_upper + 1000) div 1024) +1);
      console.writestringln('MB');
      console.setdefaultattribute(console.combinecolors(lYellow, Black));
-     //asm INT 3 end;
      util.halt_and_dont_catch_fire;
-     {while true do begin
-          c:= keyboard.get_scancode;
-          console.writehexln(c);  
-     end;
-     util.halt_and_catch_fire;}
 end;
  
 end.
