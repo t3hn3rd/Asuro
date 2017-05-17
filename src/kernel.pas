@@ -8,6 +8,7 @@ uses
      gdt,
      idt,
      isr,
+     irq,
      console,
      bios_data_area,
      keyboard;
@@ -30,6 +31,7 @@ begin
      gdt.init();
      idt.init();
      isr.init();
+     irq.init();
      console.init();
      console.writestringln('Booting Asuro...');
      if (mbm <> MULTIBOOT_BOOTLOADER_MAGIC) then begin

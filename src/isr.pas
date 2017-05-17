@@ -15,8 +15,7 @@ uses
     ISR0,  ISR1,  ISR2,  ISR3,  ISR4,  ISR5,  ISR6,  ISR7,  ISR8, ISR9, 
     ISR10, ISR11, ISR12, ISR13, ISR14, ISR15, ISR16, ISR17, ISR18, 
     ISR32, ISR33,
-    ISR49,
-    irq;    
+    ISR49;   
 
 procedure init();
 
@@ -24,7 +23,6 @@ implementation
 
 procedure init();
 begin
-    irq.init();
     ISR0.register();  // Divide-By-Zero
     ISR1.register();  // Debug
     ISR2.register();  // Non-Maskable Inturrupt
