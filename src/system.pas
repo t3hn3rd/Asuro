@@ -2,6 +2,12 @@ unit system;
 
 interface
 
+const
+     ISR_RING_0 = $8E;
+     ISR_RING_1 = $AE;
+     ISR_RING_2 = $CE;
+     ISR_RING_3 = $EE;
+
 type
     //internal types
     cardinal = 0..$FFFFFFFF;

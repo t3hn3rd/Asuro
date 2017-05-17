@@ -25,7 +25,7 @@ end;
 
 procedure init();
 begin
-    idt.set_gate(0, uint32(@isr0), $08, $8E);
+    idt.set_gate(0, uint32(@isr0), $08, ISR_RING_0);
 end;
 
 end.
