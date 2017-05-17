@@ -16,15 +16,13 @@ procedure init();
 implementation
 
 procedure init();
-
-outb($0020, $11);
-outb($00A0, $11);
-outb($0021, 32);
-outb($00A1, 40);
-outb($0021, 4);
-outb($00A1, 2);
 begin
-
+    outb($0020, $11);
+    outb($00A0, $11);
+    outb($0021, 32);
+    outb($00A1, 40);
+    outb($0021, 4);
+    outb($00A1, 2);
 end;
 
 end.
