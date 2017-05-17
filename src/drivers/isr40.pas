@@ -1,13 +1,13 @@
 { ************************************************
   * Asuro
-  * Unit: Drivers/isr32
+  * Unit: Drivers/isr40
   * Description: 1024/s Timer interrupt
   ************************************************
   * Author: Aaron Hance
   * Contributors: 
   ************************************************ }
 
-unit isr49;
+unit isr40;
 
 interface
 
@@ -28,11 +28,12 @@ implementation
 
 procedure Main; interrupt; //IRQ0, called every 55ms
 begin
-    CLI;
+    //CLI;
+    console.writestringln('helo3');
     if(procedure_ptr <> nil) then begin
         procedure_ptr();
     end;
-    outb($0020, $20);
+    outb($20, $20);
 end;
 
 procedure register();

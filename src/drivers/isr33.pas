@@ -28,12 +28,12 @@ implementation
 
 procedure Main; interrupt; //IRQ1, Keyboard Interrupt
 begin
-    CLI;
+    //CLI;
+    console.writestringln('helo2');
     if(procedure_ptr <> nil) then begin
         procedure_ptr(inb($60));
     end;
-    console.writestringln('helo');
-    outb($0020, $20);
+    outb($20, $20);
 end;
 
 procedure register();
