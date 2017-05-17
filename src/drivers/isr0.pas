@@ -33,7 +33,7 @@ var
 begin
     CLI;
     for i:=0 to MAX_HOOKS-1 do begin
-        if uint32(Hooks[i]) <> 0 then Hooks[i](nil);
+        if uint32(Hooks[i]) <> 0 then Hooks[i](void(0));
     end;
     console.writestringln('Divide by Zero Exception.');
     util.halt_and_catch_fire;
