@@ -28,13 +28,13 @@ implementation
 
 procedure Main; interrupt; //IRQ1, Keyboard Interrupt
 begin
-    CLI;
-    console.writestringln('helo2');
+    console.writestring('Keyboard: ');
+    console.writehexln(inb($60));
     if(procedure_ptr <> nil) then begin
         procedure_ptr(inb($60));
     end;
+    outb($A0, $20);
     outb($20, $20);
-    STI;
 end;
 
 procedure register();

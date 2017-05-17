@@ -26,15 +26,14 @@ procedure register();
 
 implementation
 
-procedure Main; interrupt; //IRQ0, called every 55ms
+procedure Main; interrupt; //IRQ0, called 1024 times a second.
 begin
-    CLI;
     console.writestringln('helo3');
     if(procedure_ptr <> nil) then begin
         procedure_ptr();
     end;
+    outb($A0, $20);
     outb($20, $20);
-    STI;
 end;
 
 procedure register();

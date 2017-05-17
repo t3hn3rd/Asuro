@@ -28,13 +28,10 @@ implementation
 
 procedure Main; interrupt; //IRQ0, called every 55ms
 begin
-    CLI;
-    console.writestringln('helo1');
     if(procedure_ptr <> nil) then begin
         procedure_ptr();
     end;
     outb($20, $20);
-    STI;
 end;
 
 procedure register();
