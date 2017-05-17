@@ -33,8 +33,6 @@ begin
 
     for i:=0 to MAX_HOOKS-1 do begin
         if uint32(Hooks[i]) <> 0 then begin 
-            Hooks[i](nil);
-        end else begin 
             Hooks[i](void(inb($60)));
         end;
     end;
