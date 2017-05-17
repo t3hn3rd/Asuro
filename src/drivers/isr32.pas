@@ -8,7 +8,7 @@ uses
     IDT;
 
 type 
-    pp_void : procedure();
+    pp_void = procedure();
 
 var
     procedure_ptr : pp_void = nil;

@@ -8,7 +8,7 @@ uses
     IDT;
 
 type
-    pp_byte : procedure(byte);
+    pp_byte = procedure(key_code : byte);
 
 var
     procedure_ptr : pp_byte = nil;
@@ -23,6 +23,7 @@ begin
     if(procedure_ptr <> nil) then begin
         procedure_ptr(inb($60));
     end;
+    console.writechar(inb($60));
     outb($0020, $20);
 end;
 
