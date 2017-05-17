@@ -11,7 +11,7 @@ type
     pp_void : procedure();
 
 var
-    proc_ptr : pp_void;
+    procedure_ptr : pp_void = nil;
 
 procedure register();
 
@@ -21,7 +21,7 @@ procedure Main; interrupt; //IRQ0, called every 55ms
 begin
     CLI;
     if(proc_ptr <> nil) then begin
-        proc_ptr();
+        procedure_ptr();
     end;
     outb($0020, $20);
 end;
