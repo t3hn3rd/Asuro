@@ -21,6 +21,7 @@ procedure outb(port : uint16; val : uint8);
 procedure outw(port : uint16; val : uint16);
 procedure outl(port : uint16; val : uint32);
 procedure halt_and_catch_fire();
+procedure halt_and_dont_catch_fire();
 function inb(port : uint16) : uint8;
 function inw(port : uint16) : uint16;
 function inl(port : uint16) : uint32;
@@ -93,6 +94,12 @@ begin
           cli
           hlt
      end;
+end;
+
+procedure halt_and_dont_catch_fire(); [public, alias: 'util_halt_and_dont_catch_fire'];
+begin
+    while true do begin
+    end;
 end;
 
 function inl(port : uint16) : uint32; [public, alias: 'util_inl'];
