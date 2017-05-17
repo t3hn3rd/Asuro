@@ -5,6 +5,12 @@ interface
 uses
     util;
 
+const
+     ISR_RING_0 = $8E;
+     ISR_RING_1 = $AE;
+     ISR_RING_2 = $CE;
+     ISR_RING_3 = $EE;
+
 type
     TIDT_Entry = bitpacked record
         base_low  : uint16;

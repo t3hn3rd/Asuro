@@ -4,6 +4,7 @@ unit util;
 
 interface
 
+procedure CLI();
 function hi(b : uint8) : uint8;
 function lo(b : uint8) : uint8;
 function switchendian(b : uint8) : uint8;
@@ -26,6 +27,11 @@ end;
 function lo(b : uint8) : uint8; [public, alias: 'util_lo'];
 begin
      lo:= b AND $0F;
+end;
+
+procedure CLI(); assembler; nostackframe;
+asm
+    CLI
 end;
 
 function switchendian(b : uint8) : uint8; [public, alias: 'util_switchendian'];
