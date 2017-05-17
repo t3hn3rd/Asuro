@@ -35,6 +35,7 @@ begin
         if uint32(Hooks[i]) <> 0 then begin 
             Hooks[i](nil);
         end;
+    end;
     outb($20, $20);
 end;
 
