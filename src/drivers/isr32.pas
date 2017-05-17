@@ -31,6 +31,7 @@ var
     i : integer;
 
 begin
+    CLI;
     for i:=0 to MAX_HOOKS-1 do begin
         if uint32(Hooks[i]) <> 0 then begin 
             Hooks[i](nil);
