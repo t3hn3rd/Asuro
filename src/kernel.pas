@@ -44,7 +44,7 @@ begin
      isr.init();
      irq.init();
 
-     asm STI end;
+     STI;
 
      asm
         MOV dds, CS
