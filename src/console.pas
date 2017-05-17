@@ -371,6 +371,7 @@ begin
      end;
      Console_Cursor.X:= 0;
      console._update_cursor;
+     psleep(500);
 end;
 
 procedure _newline(); [public, alias: '_console_newline'];

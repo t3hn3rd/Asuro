@@ -12,7 +12,7 @@ unit idt;
 interface
 
 uses
-    util;
+    util, console;
 
 const
      ISR_RING_0 = $8E;
@@ -52,6 +52,9 @@ begin
     IDT_Entries[Number].selector:= Selector;
     IDT_Entries[Number].flags:= Flags;
     IDT_Entries[Number].always_0:= $00;
+    console.writestring('IDT: GATE ');
+    console.writeint(Number);
+    console.writestringln(' SET.');
 end;
 
 procedure load(idt_pointer : uint32); assembler; nostackframe;
@@ -62,10 +65,14 @@ end;
 
 procedure init();
 begin
+    console.writestringln('IDT: INIT START.');
     IDT_Pointer.limit:= (sizeof(TIDT_Entry) * 256) - 1;
     IDT_Pointer.base:= uint32(@IDT_Entries);
+    console.writestringln('IDT: CLEAR.');
     util.memset(uint32(@IDT_Entries), 0, sizeof(TIDT_Entry) * 256);
+    console.writestringln('IDT: LOAD.');
     load(uint32(@IDT_Pointer));
+    console.writestringln('IDT: INIT END.');
 end;
 
 end.

@@ -11,6 +11,9 @@ unit gdt;
 
 interface
 
+uses
+    console;
+
 type
     TGDT_Entry = bitpacked record
         limit_low   : uint16;
@@ -58,10 +61,14 @@ begin
     gdt_entries[Gate_Number].limit_low   := (Limit AND $FFFF);
     gdt_entries[Gate_Number].granularity := ((Limit SHR 16) AND $0F) OR (Granularity AND $F0);
     gdt_entries[Gate_Number].access      := Access;    
+    console.writestring('GDT: GATE ');
+    console.writeint(Gate_Number);
+    console.writestringln(' SET.');
 end;
 
 procedure init();
 begin
+    console.writestringln('GDT: INIT START.');
     gdt_pointer.limit := (sizeof(TGDT_Entry) * 5) - 1;
     gdt_pointer.base  := uint32(@gdt_entries);
     set_gate($00, $00, $00,       $00, $00);
@@ -69,7 +76,9 @@ begin
     set_gate($02, $00, $FFFFFFFF, $92, $CF);
     set_gate($03, $00, $FFFFFFFF, $FA, $CF);
     set_gate($04, $00, $FFFFFFFF, $F2, $CF);
-    flush_gdt(uint32(@gdt_pointer))
+    console.writestringln('GDT: FLUSH.');
+    flush_gdt(uint32(@gdt_pointer));
+    console.writestringln('GDT: INIT END.');
 end;
 
 end.

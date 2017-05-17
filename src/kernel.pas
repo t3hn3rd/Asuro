@@ -28,26 +28,34 @@ var
 begin
      mbi:= mbinfo;
      mbm:= mbmagic;
-     gdt.init();
-     idt.init();
-     isr.init();
-     irq.init();
      console.init();
+
      console.writestringln('Booting Asuro...');
+
      if (mbm <> MULTIBOOT_BOOTLOADER_MAGIC) then begin
         console.setdefaultattribute(console.combinecolors(Red, Black));
         console.writestringln('Multiboot Compliant Boot-Loader Needed!');
         console.writestringln('HALTING');
         util.halt_and_catch_fire;
      end;
-     console.clear();
-     console.writestring('If this reads "0x8" then we have a GDT: ');
+
+     gdt.init();
+     idt.init();
+     isr.init();
+     irq.init();
+
      asm
         MOV dds, CS
      end;
-     console.setdefaultattribute(console.combinecolors(Red, Black));
-     if dds = $08 then console.setdefaultattribute(console.combinecolors(Green, Black));
-     console.writehexln(dds);
+
+     if dds = $08 then begin
+        console.setdefaultattribute(console.combinecolors(Green, Black));
+        console.writestringln('GDT: LOAD SUCCESS.');
+     end else begin
+        console.setdefaultattribute(console.combinecolors(Red, Black));
+        console.writestringln('GDT: LOAD FAIL.');
+     end;
+     console.writestringln('');
      console.setdefaultattribute(console.combinecolors(Green, Black));
      console.writestringln('Asuro Booted Correctly!');
      console.writestringln('');

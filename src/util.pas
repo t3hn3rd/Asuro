@@ -26,6 +26,7 @@ function inb(port : uint16) : uint8;
 function inw(port : uint16) : uint16;
 function inl(port : uint16) : uint32;
 procedure memset(location : uint32; value : uint8; size : uint32);
+procedure psleep(t : uint16);
 
 implementation
 
@@ -47,6 +48,18 @@ end;
 function switchendian(b : uint8) : uint8; [public, alias: 'util_switchendian'];
 begin
      switchendian:= (lo(b) SHL 4) OR hi(b);
+end;
+
+procedure psleep(t : uint16);
+var
+    i : uint32;
+    t1, t2 : uint32;
+
+begin
+    for i:=0 to t*t*t do begin
+        t1:=i;
+        t2:=t1+4444+i;
+    end;
 end;
 
 procedure outl(port : uint16; val : uint32); [public, alias: 'util_outl'];
