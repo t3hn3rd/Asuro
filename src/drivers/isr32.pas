@@ -4,7 +4,7 @@
   * Description: 1024hz Timer interrupt
   ************************************************
   * Author: Aaron Hance
-  * Contributors: 
+  * Contributors: K Morris
   ************************************************ }
 
 unit isr32;
