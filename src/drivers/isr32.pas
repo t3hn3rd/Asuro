@@ -7,6 +7,12 @@ uses
     console,
     IDT;
 
+type 
+    pp_void : procedure();
+
+var
+    proc_ptr : pp_void;
+
 procedure register();
 
 implementation
@@ -14,6 +20,9 @@ implementation
 procedure Main; interrupt; //IRQ0, called every 55ms
 begin
     CLI;
+    if(proc_ptr <> nil) then begin
+        proc_ptr();
+    end;
     outb($0020, $20);
 end;
 
