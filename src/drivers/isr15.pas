@@ -1,13 +1,13 @@
 { ************************************************
   * Asuro
-  * Unit: Drivers/ISR1
-  * Description: Debug Exception
+  * Unit: Drivers/ISR15
+  * Description: Unknown Interrupt Exception
   ************************************************
   * Author: K Morris
   * Contributors: 
   ************************************************ }
 
-unit isr1;
+unit isr15;
 
 interface
 
@@ -28,7 +28,7 @@ end;
 
 procedure register();
 begin
-    IDT.set_gate(1, uint32(@Main), $08, ISR_RING_0);
+    IDT.set_gate(15, uint32(@Main), $08, ISR_RING_0);
 end;
 
 end.

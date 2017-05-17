@@ -1,3 +1,12 @@
+{ ************************************************
+  * Asuro
+  * Unit: GDT
+  * Description: GDT Structure and Implementation
+  ************************************************
+  * Author: K Morris
+  * Contributors: A Hance
+  ************************************************ }
+
 unit gdt;
 
 interface

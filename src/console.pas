@@ -1,3 +1,12 @@
+{ ************************************************
+  * Asuro
+  * Unit: console
+  * Description: Basic Console Output
+  ************************************************
+  * Author: K Morris
+  * Contributors: 
+  ************************************************ }
+
 unit console;
 
 interface

@@ -1,13 +1,13 @@
 { ************************************************
   * Asuro
-  * Unit: Drivers/ISR1
-  * Description: Debug Exception
+  * Unit: Drivers/ISR8
+  * Description: Double Fault Exception
   ************************************************
   * Author: K Morris
   * Contributors: 
   ************************************************ }
 
-unit isr1;
+unit isr8;
 
 interface
 
@@ -28,7 +28,7 @@ end;
 
 procedure register();
 begin
-    IDT.set_gate(1, uint32(@Main), $08, ISR_RING_0);
+    IDT.set_gate(8, uint32(@Main), $08, ISR_RING_0);
 end;
 
 end.

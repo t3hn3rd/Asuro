@@ -1,3 +1,14 @@
+{ ************************************************
+  *                  DEPRECATED
+  ************************************************
+  * Asuro
+  * Unit: keyboard
+  * Description: Basic Keyboard Polling
+  ************************************************
+  * Author: K Morris
+  * Contributors: 
+  ************************************************ }
+
 unit keyboard;
 
 {$ASMMODE intel}

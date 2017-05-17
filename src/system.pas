@@ -1,3 +1,12 @@
+{ ************************************************
+  * Asuro
+  * Unit: system
+  * Description: Standard System Types
+  ************************************************
+  * Author: K Morris
+  * Contributors: 
+  ************************************************ }
+
 unit system;
 
 interface

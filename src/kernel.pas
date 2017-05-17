@@ -47,6 +47,7 @@ begin
      console.setdefaultattribute(console.combinecolors(Red, Black));
      if dds = $08 then console.setdefaultattribute(console.combinecolors(Green, Black));
      console.writehexln(dds);
+     mbm := mbm div z;
      console.setdefaultattribute(console.combinecolors(Green, Black));
      console.writestringln('Asuro Booted Correctly!');
      console.writestringln('');
@@ -61,7 +62,6 @@ begin
      console.writeint(((mbinfo^.mem_upper + 1000) div 1024) +1);
      console.writestringln('MB');
      console.setdefaultattribute(console.combinecolors(lYellow, Black));
-     mbm := mbm div z;
      util.halt_and_catch_fire;
      {while true do begin
           c:= keyboard.get_scancode;

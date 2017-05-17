@@ -1,3 +1,13 @@
+{ ************************************************
+  * Asuro
+  * Unit: bios_data_area
+  * Description: Data Structures controlled by
+  *              the BIOS.
+  ************************************************
+  * Author: K Morris
+  * Contributors: 
+  ************************************************ }
+
 unit bios_data_area;
 
 interface

@@ -1,3 +1,12 @@
+{ ************************************************
+  * Asuro
+  * Unit: util
+  * Description: Utilities for data manipulation
+  ************************************************
+  * Author: K Morris
+  * Contributors: 
+  ************************************************ }
+
 unit util;
 
 {$ASMMODE intel}

@@ -1,3 +1,12 @@
+{ ************************************************
+  * Asuro
+  * Unit: IDT
+  * Description: IDT Structure and Implementation
+  ************************************************
+  * Author: K Morris
+  * Contributors: 
+  ************************************************ }
+
 unit idt;
 
 interface

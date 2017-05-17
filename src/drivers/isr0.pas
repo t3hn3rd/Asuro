@@ -1,3 +1,12 @@
+{ ************************************************
+  * Asuro
+  * Unit: Drivers/ISR0
+  * Description: Divide-By-Zero Exception
+  ************************************************
+  * Author: K Morris
+  * Contributors: 
+  ************************************************ }
+
 unit isr0;
 
 interface
@@ -5,15 +14,15 @@ interface
 uses
     util,
     console,
+    isr_types,
     IDT;
 
 procedure register();
 
 implementation
 
-procedure Main; interrupt;
+procedure Main(); interrupt;
 begin
-    CLI;
     console.writestringln('Divide by Zero Exception.');
     util.halt_and_catch_fire;
 end;
