@@ -20,12 +20,12 @@ procedure init();
 begin
     outb($0020, $11);
     outb($00A0, $11);
-    outb($0021, 32);
-    outb($00A1, 40);
-    outb($0021, 4);
-    outb($00A1, 2);    
-    outb($0021, 1);
-    outb($00A1, 1);
+    outb($0021, $20);
+    outb($00A1, $28);
+    outb($0021, $04);
+    outb($00A1, $02);    
+    outb($0021, $01);
+    outb($00A1, $01);
 end;
 
 end.
