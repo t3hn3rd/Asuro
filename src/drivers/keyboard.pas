@@ -30,22 +30,19 @@ var
     key_buffer : array[1..128] of TkeyInfo;
     
 
-procedure init(keyboard_layout : pchar);
+procedure init(keyboard_layout : array of TKeyInfo);
 procedure callback(scan_code : void);
 procedure buffer_push_sc(scan_code : uInt8);
-
-procedure lang_UK();
 procedure lang_USA();
 
 implementation
 
-procedure init(keyboard_layout : pchar);  
+procedure init(keyboard_layout : array of TKeyInfo);  
 begin
     memset(uint32(@key_matrix[0]), 0, sizeof(TKeyInfo)*256);
     memset(uint32(@key_buffer), 0, sizeof(TKeyInfo)*128);
 
-    if(keyboard_layout = pchar('USA')) then lang_USA();
-    if(keyboard_layout = pchar('UK')) then lang_UK();
+    if keyboard_layout[1].key_code = 0 then lang_USA();
 
     isr33.hook(uint32(@callback));
 
@@ -56,6 +53,7 @@ begin
     if key_matrix[uint8(scan_code)].key_code <> 0 then begin
         buffer_push_sc(uint8(scan_code));
         console.writechar(char(key_buffer[0].key_code));
+        console.writehexln(uint8(scan_code));
     end;
 end;
 
@@ -70,11 +68,6 @@ begin
     key_buffer[0] := key_matrix[scan_code];
 
 end;
-
-procedure lang_UK();
-begin
-end;
-
 
 procedure lang_USA();
 begin
