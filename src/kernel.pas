@@ -27,6 +27,7 @@ var
    z    : uint32;
    dds  : uint32;
    pint : puint32;
+   pint2 : puint32;
    
 begin
      mbi:= mbinfo;
@@ -48,11 +49,13 @@ begin
      irq.init();
 
      memorymanager.init();
+     pint2:= kalloc(18);
      pint:= kalloc(sizeof(uint32));
      if pint = nil then console.writestringln('!');
      pint^:= 1234;
+     kfree(pint2);
      console.writeintln(pint^);
-     pint:= kalloc(18);
+     kfree(pint);
      util.halt_and_catch_fire;
 
      STI;
