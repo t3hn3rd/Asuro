@@ -31,10 +31,12 @@ var
     i : uint32;
 
 begin
+    console.writestringln('MEM-MANAGER: INIT BEGIN.');
     For i:=0 to MAX_ENTRIES-1 do begin
         Memory_Manager[i].Present:= False;
     end;
     Memory_Start:= uint32(@util.endptr);
+    console.writestringln('MEM-MANAGER: INIT END.');
 end;
 
 function kalloc(size : uint32) : void;
@@ -64,11 +66,11 @@ begin
                 Memory_Manager[i+j].Length:= 0;
                 if j = 0 then Memory_Manager[i+j].Length:= blocks;
             end;
-            console.writestring('Allocated ');
-            console.writeint(blocks);
-            console.writestring(' Block(s). [Block: ');
-            console.writeint(i);
-            console.writestringln(']');
+            //console.writestring('Allocated ');
+            //console.writeint(blocks);
+            //console.writestring(' Block(s). [Block: ');
+            //console.writeint(i);
+            //console.writestringln(']');
             break;
         end;
     end;
@@ -93,11 +95,11 @@ begin
             for i:=0 to bLength-1 do begin
                 Memory_Manager[Block+i].Present:= False;
             end;
-            console.writestring('Freed ');
-            console.writeint(bLength);
-            console.writestring(' Block(s). [Block: ');
-            console.writeint(Block);
-            console.writestringln(']');
+            //console.writestring('Freed ');
+            //console.writeint(bLength);
+            //console.writestring(' Block(s). [Block: ');
+            //console.writeint(Block);
+            //console.writestringln(']');
         end else begin
             asm 
                INT 13 

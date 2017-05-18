@@ -53,22 +53,11 @@ begin
      memorymanager.init();
      scheduler.init();
 
-     pint2:= kalloc(18);
-     pint:= kalloc(sizeof(uint32));
-     if pint = nil then console.writestringln('!');
-     pint^:= 1234;
-     kfree(pint2);
-     console.writeintln(pint^);
-     kfree(pint);
-     pint2:= kalloc(128);
-
      STI;
      isr32.hook(uint32(@bios_data_area.tick_update));
 
      //drivers
      keyboard.init(keyboard_layout);
-     scheduler.add_task(5);
-     scheduler.add_task(15);
 
      asm
         MOV dds, CS

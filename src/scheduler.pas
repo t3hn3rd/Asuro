@@ -31,11 +31,7 @@ var
 
 procedure context_switch();
 begin
-    // This will switch contexts eventually,
-    // For now just print upon context switch.
     Current_Task:= PScheduler_Entry(Current_Task^.Next);
-    console.writestring('Task: ');
-    console.writeintln(Current_Task^.ThreadID);
 end;
 
 procedure add_task(priority : uint8);
@@ -62,11 +58,13 @@ end;
 procedure delta(data : void);
 begin
     Tick:= Tick + 1;
+    If Tick = 0 then context_switch();
     If (Current_Task^.Delta + (Current_Task^.Priority * Quantum)) <= Tick then context_switch();
 end;
 
 procedure init;
 begin
+    console.writestringln('SCHEDULER: INIT BEGIN.');
     Root_Task:= PScheduler_Entry(kalloc(sizeof(TScheduler_Entry)));
     Root_Task^.ThreadID:= 0;
     Root_Task^.Priority:= 1;
@@ -75,6 +73,7 @@ begin
     Current_Task:= Root_Task;
     Tick:= 0;
     isr32.hook(uint32(@delta));
+    console.writestringln('SCHEDULER: INIT END.');
 end;
 
 end.
