@@ -26,8 +26,8 @@ type
     PKeyInfo = ^TKeyInfo;
 
 var
-    key_matrix : array [0..256] of TKeyInfo; 
-    key_buffer : TkeyInfo;
+    key_matrix : array [1..256] of TKeyInfo; 
+    key_buffer : array[1..128] of TkeyInfo;
     
 
 procedure init();
@@ -120,8 +120,14 @@ end;
 procedure callback(scan_code : void);
 
 begin
-    key_buffer := key_matrix[integer(scan_code)];
+    if key_matrix[uint8(scan_code)] then begin
+        key_buffer := key_matrix[uint8(scan_code)];
+    end;
     console.writechar(char(key_buffer.key_code));
+end;
+
+procedure buffer_push();
+begin
 end;
 
 end.
