@@ -48,6 +48,9 @@ begin
      STI;
      isr32.hook(uint32(@bios_data_area.tick_update));
 
+     //drivers
+     keyboard.init();
+
      asm
         MOV dds, CS
      end;
