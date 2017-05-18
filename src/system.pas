@@ -11,6 +11,9 @@ unit system;
 
 interface
 
+const
+     KERNEL_VIRTUAL_BASE = $C0000000;
+
 type
     //internal types
     cardinal = 0..$FFFFFFFF;

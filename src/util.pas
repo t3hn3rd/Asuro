@@ -32,6 +32,8 @@ function inl(port : uint16) : uint32;
 procedure memset(location : uint32; value : uint8; size : uint32);
 procedure psleep(t : uint16);
 
+procedure endptr(); external '__end' name '__end';
+
 implementation
 
 uses

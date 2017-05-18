@@ -79,8 +79,7 @@ _loader:
 
 kstart:
 	   mov dword [BootPageDirectory], 0
-        invlpg [0]	   
-		
+        invlpg [0]	   		
         mov esp, KERNEL_STACK+KERNEL_STACKSIZE  ;Create kernel stack
         push eax                                ;Multiboot magic number
 	   add ebx, KERNEL_VIRTUAL_BASE

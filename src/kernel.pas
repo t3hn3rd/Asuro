@@ -78,6 +78,7 @@ begin
      console.writeint(((mbinfo^.mem_upper + 1000) div 1024) + 1);
      console.writestringln('MB');
      console.setdefaultattribute(console.combinecolors(lYellow, Black));
+     console.writewordln(uint32(@util.endptr) - KERNEL_VIRTUAL_BASE);
      util.halt_and_dont_catch_fire;
 end;
  
