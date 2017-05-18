@@ -45,8 +45,8 @@ var
     miss   : boolean;
 
 begin
-    blocks:= size div 8;
-    rem:= size - (blocks * 8);
+    blocks:= size div ALLOC_SPACE;
+    rem:= size - (blocks * ALLOC_SPACE);
     if rem > 0 then blocks:= blocks + 1;
     kalloc:= nil;
     for i:=0 to MAX_ENTRIES-1 do begin
@@ -58,7 +58,7 @@ begin
             end;
         end;
         if not miss then begin
-            kalloc:= void(Memory_Start+(i * 8));
+            kalloc:= void(Memory_Start+(i * ALLOC_SPACE));
             for j:=0 to blocks-1 do begin
                 Memory_Manager[i+j].Present:= true;
                 Memory_Manager[i+j].Length:= 0;
@@ -86,7 +86,7 @@ begin
              INT 13 
          end;
     end;
-    Block:= (uint32(Area) - Memory_Start) div 8;
+    Block:= (uint32(Area) - Memory_Start) div ALLOC_SPACE;
     if Memory_Manager[Block].Present then begin
         If Memory_Manager[Block].Length > 0 then begin
             bLength:= Memory_Manager[Block].Length;

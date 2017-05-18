@@ -56,6 +56,7 @@ begin
      kfree(pint2);
      console.writeintln(pint^);
      kfree(pint);
+     pint2:= kalloc(128);
      util.halt_and_catch_fire;
 
      STI;
