@@ -15,8 +15,6 @@ uses
      util, 
      bios_data_area;
 
-var DEBUG : Boolean;
-
 type
     TColor = ( Black   = $0,
                Blue    = $1,
@@ -103,7 +101,6 @@ var
 
 procedure init(); [public, alias: 'console_init'];
 Begin
-     Debug:= False;
      Console_Properties.Default_Attribute:= console.combinecolors(White, Black);
      console.clear();
 end;
