@@ -26,6 +26,7 @@ var
    mbm  : uint32;
    z    : uint32;
    dds  : uint32;
+   pint : puint32;
    
 begin
      mbi:= mbinfo;
@@ -45,6 +46,14 @@ begin
      idt.init();
      isr.init();
      irq.init();
+
+     memorymanager.init();
+     pint:= kalloc(sizeof(uint32));
+     if pint = nil then console.writestringln('!');
+     pint^:= 1234;
+     console.writeintln(pint^);
+     pint:= kalloc(18);
+     util.halt_and_catch_fire;
 
      STI;
      isr32.hook(uint32(@bios_data_area.tick_update));
