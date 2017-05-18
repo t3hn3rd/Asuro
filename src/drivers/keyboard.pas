@@ -39,7 +39,7 @@ procedure lang_USA();
 
 implementation
 
-procedure init(pchar keyboard_layout);  
+procedure init(pchar : keyboard_layout);  
 begin
     memset(uint32(@key_matrix[0]), 0, sizeof(TKeyInfo)*256);
     memset(uint32(@key_buffer), 0, sizeof(TKeyInfo)*128);
