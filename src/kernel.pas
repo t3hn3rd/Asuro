@@ -14,7 +14,8 @@ uses
      bios_data_area,
      keyboard,
      memorymanager,
-     scheduler;
+     scheduler,
+     paging;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
