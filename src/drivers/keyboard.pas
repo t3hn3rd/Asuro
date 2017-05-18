@@ -32,6 +32,7 @@ var
 
 procedure init();
 procedure callback(scan_code : void);
+procedure buffer_push_sc(scan_code : uInt8);
 
 implementation
 
@@ -118,16 +119,23 @@ begin
 end;
 
 procedure callback(scan_code : void);
-
 begin
-    if key_matrix[uint8(scan_code)] then begin
-        key_buffer := key_matrix[uint8(scan_code)];
+    if key_matrix[uint8(scan_code)].key_code <> 0 then begin
+        buffer_push_sc(uint8(scan_code));
     end;
-    console.writechar(char(key_buffer.key_code));
+    console.writechar(char(key_buffer[0].key_code));
 end;
 
-procedure buffer_push();
+procedure buffer_push_sc(scan_code : uInt8);
+var
+    i : uInt32; 
 begin
+    for i:=127 downto 2 do begin
+        key_buffer[i] = key_buffer[i - 1];
+    end;
+
+    key_buffer[0] = key_matrix[scan_code];
+
 end;
 
 end.
