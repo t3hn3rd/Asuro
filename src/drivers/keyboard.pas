@@ -18,7 +18,7 @@ uses
 
 
 type
-    TKeyInfo = bitpacked record 
+    TKeyInfo = packed record 
         key_code : byte;
         pressed : boolean;
     end;
@@ -37,9 +37,9 @@ implementation
 
 procedure init();  
 begin
-    console.writestring('b4');
     memset(uint32(@key_matrix[0]), 0, sizeof(TKeyInfo)*256);
-    console.writestring('aft');
+    memset(uint32(@key_buffer), 0, sizeof(TKeyInfo));
+
     key_matrix[1].key_code := $1B;
     key_matrix[2].key_code := $31;
     key_matrix[3].key_code := $32;
@@ -120,7 +120,8 @@ end;
 procedure callback(scan_code : void);
 
 begin
-    key_buffer := key_matrix[scan_code^];
+    key_buffer := key_matrix[integer(scan_code)];
+    console.writechar(char(key_buffer.key_code));
 end;
 
 end.
