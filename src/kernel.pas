@@ -13,7 +13,8 @@ uses
      console,
      bios_data_area,
      keyboard,
-     memorymanager;
+     memorymanager,
+     scheduler;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
@@ -49,8 +50,9 @@ begin
      idt.init();
      isr.init();
      irq.init();
-
      memorymanager.init();
+     scheduler.init();
+
      pint2:= kalloc(18);
      pint:= kalloc(sizeof(uint32));
      if pint = nil then console.writestringln('!');
@@ -59,13 +61,14 @@ begin
      console.writeintln(pint^);
      kfree(pint);
      pint2:= kalloc(128);
-     util.halt_and_catch_fire;
 
      STI;
      isr32.hook(uint32(@bios_data_area.tick_update));
 
      //drivers
      keyboard.init(keyboard_layout);
+     scheduler.add_task(5);
+     scheduler.add_task(15);
 
      asm
         MOV dds, CS
