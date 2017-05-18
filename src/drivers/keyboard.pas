@@ -44,10 +44,8 @@ begin
     memset(uint32(@key_matrix[0]), 0, sizeof(TKeyInfo)*256);
     memset(uint32(@key_buffer), 0, sizeof(TKeyInfo)*128);
 
-    case keyboard_layout of
-        'USA' : lang_USA();
-        'UK' : lang_UK();
-    end;
+    if(keyboard_layout = 'USA') then lang_USA();
+    if(keyboard_layout = 'UK') then lang_UK();
 
     isr33.hook(uint32(@callback));
 
