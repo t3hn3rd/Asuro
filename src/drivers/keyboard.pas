@@ -34,13 +34,52 @@ procedure init();
 procedure callback(scan_code : void);
 procedure buffer_push_sc(scan_code : uInt8);
 
+procedure lang_UK();
+procedure lang_USA();
+
 implementation
 
-procedure init();  
+procedure init(pchar keyboard_layout);  
 begin
     memset(uint32(@key_matrix[0]), 0, sizeof(TKeyInfo)*256);
-    memset(uint32(@key_buffer), 0, sizeof(TKeyInfo));
+    memset(uint32(@key_buffer), 0, sizeof(TKeyInfo)*128);
 
+    case keyboard_layout of
+        'USA' : lang_USA();
+        'UK' : lang_UK();
+    end;
+
+    isr33.hook(uint32(@callback));
+
+end;
+
+procedure callback(scan_code : void);
+begin
+    if key_matrix[uint8(scan_code)].key_code <> 0 then begin
+        buffer_push_sc(uint8(scan_code));
+        console.writechar(char(key_buffer[0].key_code));
+    end;
+end;
+
+procedure buffer_push_sc(scan_code : uInt8);
+var
+    i : uInt8; 
+begin
+    for i:=127 downto 1 do begin
+        key_buffer[i] := key_buffer[i - 1];
+    end;
+
+    key_buffer[0] := key_matrix[scan_code];
+
+end;
+
+procedure lang_UK();
+begin
+end;
+
+
+procedure lang_USA();
+begin
     key_matrix[1].key_code := $1B;
     key_matrix[2].key_code := $31;
     key_matrix[3].key_code := $32;
@@ -112,30 +151,6 @@ begin
 
     key_matrix[87].key_code := $85;
     key_matrix[88].key_code := $86;
-
-
-    isr33.hook(uint32(@callback));
-
-end;
-
-procedure callback(scan_code : void);
-begin
-    if key_matrix[uint8(scan_code)].key_code <> 0 then begin
-        buffer_push_sc(uint8(scan_code));
-    end;
-    console.writechar(char(key_buffer[0].key_code));
-end;
-
-procedure buffer_push_sc(scan_code : uInt8);
-var
-    i : uInt32; 
-begin
-    for i:=127 downto 2 do begin
-        key_buffer[i] = key_buffer[i - 1];
-    end;
-
-    key_buffer[0] = key_matrix[scan_code];
-
 end;
 
 end.

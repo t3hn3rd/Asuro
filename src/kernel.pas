@@ -49,7 +49,7 @@ begin
      isr32.hook(uint32(@bios_data_area.tick_update));
 
      //drivers
-     keyboard.init();
+     keyboard.init('USA');
 
      asm
         MOV dds, CS
