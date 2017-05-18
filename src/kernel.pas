@@ -28,6 +28,8 @@ var
    dds  : uint32;
    pint : puint32;
    pint2 : puint32;
+
+   keyboard_layout : array [0..1] of TKeyInfo;
    
 begin
      mbi:= mbinfo;
@@ -63,7 +65,7 @@ begin
      isr32.hook(uint32(@bios_data_area.tick_update));
 
      //drivers
-     keyboard.init('USA');
+     keyboard.init(keyboard_layout);
 
      asm
         MOV dds, CS
