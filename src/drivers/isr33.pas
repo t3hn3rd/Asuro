@@ -33,7 +33,7 @@ var
 
 begin
     b:= inb($60); 
-    console.writehexln(b);
+    //console.writehexln(b);
     for i:=0 to MAX_HOOKS-1 do begin
         if uint32(Hooks[i]) <> 0 then begin 
             Hooks[i](void(b));
