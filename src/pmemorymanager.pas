@@ -1,14 +1,15 @@
-unit memorymanager;
+unit pmemorymanager;
 
 interface
 
 uses
     util,
-    console;
+    console,
+    vmemorymanager;
 
 const
     ALLOC_SPACE = 8; //64-Bit Allocations 
-    MAX_ENTRIES = $FFFF;
+    MAX_ENTRIES = $FFFFF;
 
 procedure init;
 function kalloc(size : uint32) : void;
@@ -41,7 +42,7 @@ end;
 
 function kalloc(size : uint32) : void;
 var
-    blocks : uint8;
+    blocks : uint32;
     rem    : uint32;
     i,j    : uint32;
     miss   : boolean;
@@ -66,11 +67,11 @@ begin
                 Memory_Manager[i+j].Length:= 0;
                 if j = 0 then Memory_Manager[i+j].Length:= blocks;
             end;
-            //console.writestring('Allocated ');
-            //console.writeint(blocks);
-            //console.writestring(' Block(s). [Block: ');
-            //console.writeint(i);
-            //console.writestringln(']');
+            console.writestring('Allocated ');
+            console.writeint(blocks);
+            console.writestring(' Block(s). [Block: ');
+            console.writeint(i);
+            console.writestringln(']');
             break;
         end;
     end;

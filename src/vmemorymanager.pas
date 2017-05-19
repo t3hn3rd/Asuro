@@ -1,10 +1,9 @@
-unit paging;
+unit vmemorymanager;
 
 interface
 
 type
-    PPageTableEntry = ^TPageTableEntry;
-
+    {PPageTableEntry = ^TPageTableEntry;
     TPageTableEntry = bitpacked record
         Present, 
         Writable, 
@@ -17,7 +16,7 @@ type
         GlobalPage: Boolean;
         Available: UBit3;
         FrameAddress: UBit20;
-    end;
+    end;}
 
     PPageDirEntry = ^TPageDirEntry;
     TPageDirEntry = bitpacked record

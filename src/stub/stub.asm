@@ -97,5 +97,6 @@ section .bss
 ; Kernel stack location
 ;
 align 32
+global KERNEL_STACK
 KERNEL_STACK:
         resb KERNEL_STACKSIZE

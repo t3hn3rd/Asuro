@@ -5,12 +5,16 @@ interface
 uses
     console,
     isr32,
-    memorymanager;
+    pmemorymanager;
 
 const
     Quantum = 64;
 
 type
+    TTask_State_Segment = packed record
+        
+    end;
+
     TScheduler_Entry = packed record
         ThreadID : uint32;
         Priority : uint8;

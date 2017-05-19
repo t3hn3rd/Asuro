@@ -34,6 +34,7 @@ procedure psleep(t : uint16);
 
 var
     endptr : uint32; external name '__end';
+    stack  : uint32; external name 'KERNEL_STACK';
 
 implementation
 
@@ -135,7 +136,7 @@ begin
      asm
           PUSH EAX
           PUSH EDX
-          MOV DX, port
+          MOV DX, port$FFFF
           IN EAX, DX
           MOV inl, EAX
           POP EDX
