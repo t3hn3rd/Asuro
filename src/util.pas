@@ -32,7 +32,8 @@ function inl(port : uint16) : uint32;
 procedure memset(location : uint32; value : uint8; size : uint32);
 procedure psleep(t : uint16);
 
-procedure endptr(); external '__end' name '__end';
+var
+    endptr : uint32; external name '__end';
 
 implementation
 
@@ -174,7 +175,7 @@ var
     i   : uint32;
 
 begin
-    for i:=0 to size do begin
+    for i:=0 to size-1 do begin
         loc:= puint8(location + i);
         loc^:= value;
     end;

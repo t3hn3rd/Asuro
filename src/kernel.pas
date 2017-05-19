@@ -54,6 +54,9 @@ begin
      memorymanager.init();
      scheduler.init();
 
+     pint:= puint32(0);
+     pint^:= 10;
+
      STI;
      isr32.hook(uint32(@bios_data_area.tick_update));
 
@@ -67,6 +70,12 @@ begin
 
      //drivers
      keyboard.init(keyboard_layout);
+     if PageDirectory[KERNEL_PAGE_NUMBER].Present then begin
+        console.writestringln('!');
+     end else begin
+        console.writestringln('?');  
+     end;
+     while true do begin end;
 
      asm
         MOV dds, CS
