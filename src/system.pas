@@ -13,6 +13,7 @@ interface
 
 const
      KERNEL_VIRTUAL_BASE = $C0000000;
+     KERNEL_PAGE_NUMBER = KERNEL_VIRTUAL_BASE SHR 22;
 
 type
     //internal types
@@ -52,6 +53,10 @@ type
     PDouble = ^Double;
 
     Void = ^uInt32;
+
+    //Alternate Types
+    UBit3 = 0..(1 shl 3) - 1;
+    UBit20 = 0..(1 shl 20) - 1;
 
 implementation
 

@@ -57,6 +57,14 @@ begin
      STI;
      isr32.hook(uint32(@bios_data_area.tick_update));
 
+     {z:= 1;
+     while true do begin
+        console.writeintln(z);
+        pint:= kalloc(65000);
+        if pint = nil then while true do begin end else pint^:= 1234;
+        z:=z+1;
+     end;}
+
      //drivers
      keyboard.init(keyboard_layout);
 

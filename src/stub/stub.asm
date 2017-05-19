@@ -41,6 +41,8 @@ KERNEL_PAGE_NUMBER			  equ	(KERNEL_VIRTUAL_BASE >> 22)
  
 section .data
 align 0x1000
+_PageDirectory equ BootPageDirectory
+global _PageDirectory
 BootPageDirectory:
 	dd 0x00000083
 	times (KERNEL_PAGE_NUMBER - 1) dd 0
