@@ -56,6 +56,7 @@ type
 
     //Alternate Types
     UBit3 = 0..(1 shl 3) - 1;
+    UBit4 = 0..(1 shl 4) - 1;
     UBit20 = 0..(1 shl 20) - 1;
 
 implementation
