@@ -44,12 +44,12 @@
             lba5         : uint8;
             feature_high : uint8;
  
-            lba1         : uint8;
-            lba1         : uint8;
-            lba1         : uint8;
-            lba1         : uint8;
+            count_low    : uint8;
+            count_high   : uint8;
+            icc          : uint8;
+            control      : uint8;
  
-            lba1         : uint8;
+            rsvl         : uint32;
 
         end; 
 
