@@ -35,7 +35,7 @@ MULTIBOOT_HEADER_CHECKSUM       equ     -(MULTIBOOT_HEADER_MAGIC + MULTIBOOT_HEA
 ;
 ; Kernel stack size
 ;
-KERNEL_STACKSIZE                equ     0x4000
+KERNEL_STACKSIZE              equ     0x4000
 KERNEL_VIRTUAL_BASE 		  equ	0xC0000000
 KERNEL_PAGE_NUMBER			  equ	(KERNEL_VIRTUAL_BASE >> 22)
  
@@ -62,6 +62,7 @@ dd MULTIBOOT_HEADER_CHECKSUM
 ; Entrypoint
 ;
 loader equ _loader
+;loader equ (_loader - 0xC0000000)
 global loader
 
 _loader:
