@@ -52,12 +52,13 @@ begin
      isr.init();
      irq.init();
      pmemorymanager.init();
+     vmemorymanager.init();
      scheduler.init();
 
      STI;
      isr32.hook(uint32(@bios_data_area.tick_update));
 
-     z:= 1;
+     {z:= 1;
      while true do begin
         console.writeword(z);
         console.writestring(': ');
@@ -65,11 +66,11 @@ begin
         console.writewordln(uint32(pint));
         if pint = nil then while true do begin end else pint^:= 1234;
         z:=z+1;
-     end;
+     end;}
 
      //drivers
      keyboard.init(keyboard_layout);
-     if PageDirectory[KERNEL_PAGE_NUMBER].Present then begin
+     if PageDirectory^[KERNEL_PAGE_NUMBER].Present then begin
         console.writestringln('!');
      end else begin
         console.writestringln('?');  

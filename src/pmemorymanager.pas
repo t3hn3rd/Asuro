@@ -4,109 +4,67 @@ interface
 
 uses
     util,
-    console,
-    vmemorymanager;
-
-const
-    ALLOC_SPACE = 8; //64-Bit Allocations 
-    MAX_ENTRIES = $FFFFF;
-
-procedure init;
-function kalloc(size : uint32) : void;
-procedure kfree(area : void);
+    console;
 
 type
-    TBlock_Entry = packed record
-        Present : Boolean;
-        Length  : uint8;
+    TPhysicalMemoryEntry = packed record
+        Present  : Boolean;
+        MappedTo : uint32; 
     end;
+    TPhysicalMemory = array[0..1023] of TPhysicalMemoryEntry;
+
+procedure init;
+function newblock(caller : uint32) : uint16;
+procedure freeblock(block : uint16; caller : uint32);
 
 implementation
 
 var
-    Memory_Start   : uint32;
-    Memory_Manager : packed array[1..MAX_ENTRIES] of TBlock_Entry;
+    PhysicalMemory: TPhysicalMemory;
 
 procedure init;
-var
-    i : uint32;
-
 begin
-    console.writestringln('MEM-MANAGER: INIT BEGIN.');
-    For i:=0 to MAX_ENTRIES-1 do begin
-        Memory_Manager[i].Present:= False;
+    with PhysicalMemory[0] do begin
+        Present:= True;
+        MappedTo:= 0;
     end;
-    Memory_Start:= uint32(@util.endptr);
-    console.writestringln('MEM-MANAGER: INIT END.');
-end;
-
-function kalloc(size : uint32) : void;
-var
-    blocks : uint32;
-    rem    : uint32;
-    i,j    : uint32;
-    miss   : boolean;
-
-begin
-    blocks:= size div ALLOC_SPACE;
-    rem:= size - (blocks * ALLOC_SPACE);
-    if rem > 0 then blocks:= blocks + 1;
-    kalloc:= nil;
-    for i:=0 to MAX_ENTRIES-1 do begin
-        miss:= false;
-        for j:=0 to blocks-1 do begin
-            if Memory_Manager[i+j].Present then begin
-                miss:= true;
-                break;
-            end;
-        end;
-        if not miss then begin
-            kalloc:= void(Memory_Start+(i * ALLOC_SPACE));
-            for j:=0 to blocks-1 do begin
-                Memory_Manager[i+j].Present:= true;
-                Memory_Manager[i+j].Length:= 0;
-                if j = 0 then Memory_Manager[i+j].Length:= blocks;
-            end;
-            console.writestring('Allocated ');
-            console.writeint(blocks);
-            console.writestring(' Block(s). [Block: ');
-            console.writeint(i);
-            console.writestringln(']');
-            break;
-        end;
+    with PhysicalMemory[1] do begin
+        Present:= True;
+        MappedTo:= 0;
     end;
 end;
 
-procedure kfree(area : void);
+function newblock(caller : uint32) : uint16;
 var
-    Block   : uint32;
-    bLength : uint8;
-    i       : uint32;
+    i : uint16;
 
 begin
-    if uint32(area) < Memory_Start then begin
-         asm 
-             INT 13 
-         end;
-    end;
-    Block:= (uint32(Area) - Memory_Start) div ALLOC_SPACE;
-    if Memory_Manager[Block].Present then begin
-        If Memory_Manager[Block].Length > 0 then begin
-            bLength:= Memory_Manager[Block].Length;
-            for i:=0 to bLength-1 do begin
-                Memory_Manager[Block+i].Present:= False;
-            end;
-            //console.writestring('Freed ');
-            //console.writeint(bLength);
-            //console.writestring(' Block(s). [Block: ');
-            //console.writeint(Block);
-            //console.writestringln(']');
-        end else begin
-            asm 
-               INT 13 
-            end;
+    newblock:= 0;
+    for i:=2 to 1023 do begin
+        if not PhysicalMemory[i].Present then begin
+            PhysicalMemory[i].Present:= True;
+            PhysicalMemory[i].MappedTo:= caller;
+            newblock:= i;
+            exit;
         end;
+    end; 
+end;
+
+procedure freeblock(block : uint16; caller : uint32);
+begin
+    if block > 1023 then begin
+        GPF;
+        exit;
     end;
+    if block < 2 then begin
+        GPF;
+        exit;
+    end;
+    if PhysicalMemory[block].caller <> caller then begin
+        GPF;
+        exit;
+    end;
+    PhysicalMemory[block].Present:= false;
 end;
 
 end.

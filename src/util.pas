@@ -18,6 +18,7 @@ uses
 
 procedure CLI();
 procedure STI();
+procedure GPF();
 function hi(b : uint8) : uint8;
 function lo(b : uint8) : uint8;
 function switchendian(b : uint8) : uint8;
@@ -59,6 +60,11 @@ end;
 procedure STI(); assembler; nostackframe;
 asm
     STI
+end;
+
+procedure GPF(); assembler;
+asm
+    INT 13
 end;
 
 function switchendian(b : uint8) : uint8; [public, alias: 'util_switchendian'];
