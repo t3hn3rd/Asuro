@@ -78,11 +78,11 @@ begin
         PageDirectory^[page_number].Present:= true;
         PageDirectory^[page_number].Address:= block;
         PageDirectory^[page_number].PageSize:= true;
-        rldpd:= uint32(PageDirectory) - KERNEL_VIRTUAL_BASE;
-        asm
-            mov eax, rldpd
-            mov CR3, eax
-        end;
+        // rldpd:= uint32(PageDirectory) - KERNEL_VIRTUAL_BASE;
+        // asm
+        //     mov eax, rldpd
+        //     mov CR3, eax
+        // end;
         new_page:= true;
         console.writestringln('New Page Added:');
 
