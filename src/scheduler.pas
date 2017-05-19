@@ -5,7 +5,7 @@ interface
 uses
     console,
     isr32,
-    pmemorymanager;
+    lmemorymanager;
 
 const
     Quantum = 64;

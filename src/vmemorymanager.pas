@@ -33,6 +33,7 @@ procedure init;
 function new_page(page_number : uint16) : boolean;
 function new_page_at_address(address : uint32) : boolean;
 procedure free_page(page_number : uint16);
+procedure free_page_at_address(address : uint32);
 
 implementation
 
@@ -63,20 +64,42 @@ function new_page(page_number : uint16) : boolean;
 var
     block : uint16;
     page  : uint16;
+    rldpd : uint32;
 
 begin
     new_page:= false;
-    if PageDirectory^[block].Present then exit;
-    if PageDirectory^[block].Reserved then exit;
-    block:= pmemorymanager.newblock(uint32(PageDirectory));
+    if PageDirectory^[page_number].Present then exit;
+    if PageDirectory^[page_number].Reserved then exit;
+    block:= pmemorymanager.new_block(uint32(PageDirectory));
     if block < 2 then begin
         GPF;
         exit;
     end else begin
-        PageDirectory^[block].Present:= true;
-        PageDirectory^[block].Address:= block;
-        PageDirectory^[block].PageSize:= true;
+        PageDirectory^[page_number].Present:= true;
+        PageDirectory^[page_number].Address:= block;
+        PageDirectory^[page_number].PageSize:= true;
+        rldpd:= uint32(PageDirectory) - KERNEL_VIRTUAL_BASE;
+        asm
+            mov eax, rldpd
+            mov CR3, eax
+        end;
         new_page:= true;
+        console.writestringln('New Page Added:');
+
+        console.writestring('- P:');
+        console.writeword(page_number);
+        console.writestring('-->B:');
+        console.writewordln(block);
+        
+        console.writestring('- P:[');
+        console.writeword(page_number SHL 22);
+        console.writestring(' - ');
+        console.writeword((page_number+1 SHL 22) - 1);
+        console.writestring(']-->B:[');
+        console.writeword(block SHL 22);
+        console.writestring(' - ');
+        console.writeword((block+1 SHL 22) - 1);
+        console.writestringln(']');
     end;
 end;
 
@@ -90,17 +113,22 @@ begin
 end;
 
 procedure free_page(page_number : uint16);
+var
+    block : uint16;
+
 begin
     if PageDirectory^[page_number].Present then begin
+        block:= PageDirectory^[page_number].Address;
         asm
             invlpg [page_number]
-        end;    
+        end;
+        pmemorymanager.free_block(block, uint32(PageDirectory));
     end else begin
         GPF;
     end;
 end;
 
-function free_page_at_address(address : uint32);
+procedure free_page_at_address(address : uint32);
 var
     page_number : uint16;
 

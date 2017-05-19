@@ -14,8 +14,8 @@ uses
      bios_data_area,
      keyboard,
      vmemorymanager,
-     pmemorymanager,
-     scheduler;
+     pmemorymanager;
+     //scheduler;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
@@ -53,7 +53,13 @@ begin
      irq.init();
      pmemorymanager.init();
      vmemorymanager.init();
-     scheduler.init();
+
+     vmemorymanager.new_page(0);
+     pint:= puint32(0);
+     console.writestringln('Writing 1234 to Logical Address $00000000');
+     pint^:= 1234;
+     if pint^ = 1234 then console.writestringln('Read 1234 back from Logical Address $00000000!!!');
+     //scheduler.init();
 
      STI;
      isr32.hook(uint32(@bios_data_area.tick_update));
