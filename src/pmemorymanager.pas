@@ -29,24 +29,28 @@ var
 
 procedure set_memory_area_present(base : uint64; length : uint64; present : boolean);
 var
-   BlockHigh, BlockLow : uint16;
+   FirstBlock : uint32;
+   LastBlock  : uint32;
+   i          : uint32;
 
 begin
-    BlockLow:= base SHR 22;
-    BlockHigh:= base+length SHR 22;
-    if not present then begin
-        PhysicalMemory[BlockLow].Scanned:= True;
-        PhysicalMemory[BlockHigh].Scanned:= True;
-        PhysicalMemory[BlockLow].Present:= False;
-        PhysicalMemory[BlockHigh].Present:= False;
-    end else begin
-        If not PhysicalMemory[BlockLow].Scanned then begin
-            PhysicalMemory[BlockLow].Scanned:= True;
-            PhysicalMemory[BlockLow].Present:= True;
-        end;
-        If not PhysicalMemory[BlockHigh].Scanned then begin
-            PhysicalMemory[BlockHigh].Scanned:= True;
-            PhysicalMemory[BlockHigh].Present:= True;
+    FirstBlock:= base SHR 22;
+    LastBlock:= (base+length) SHR 22;
+    console.writewordln(FirstBlock);
+    console.writewordln(LastBlock);
+    if (FirstBlock > 1023) then exit;
+    while LastBlock > 1023 do begin
+        LastBlock:= LastBlock-1;
+    end;
+    for i:=FirstBlock to LastBlock do begin
+        if not present then begin
+            PhysicalMemory[i].Scanned:= True;
+            PhysicalMemory[i].Present:= present;
+        end else begin
+            If not PhysicalMemory[i].Scanned then begin
+                PhysicalMemory[i].Scanned:= True;
+                PhysicalMemory[i].Present:= present;
+            end;
         end;
     end;
 end;
@@ -63,15 +67,20 @@ begin
     length:= multibootinfo^.mmap_length;
     mmap:= Pmemory_map_t(address);
     for i:=0 to 1023 do begin
-        PhysicalMemory[i].Present:= True;
+        PhysicalMemory[i].Present:= False;
         PhysicalMemory[i].Allocated:= False;
         PhysicalMemory[i].Scanned:= False;
         PhysicalMemory[i].MappedTo:= 0;
     end;
 	while uint32(mmap) < (address + length) do begin
-        console.writewordln(mmap^.mtype);
+        console.writehexln(mmap^.base_addr);
+        console.writehexln(mmap^.length);
+        console.writehexln(mmap^.mtype);
+        console.writestringln('');
         if mmap^.mtype <> $01 then begin
             set_memory_area_present(mmap^.base_addr, mmap^.length, False);
+        end else begin
+            set_memory_area_present(mmap^.base_addr, mmap^.length, True);
         end;
         mmap:= Pmemory_map_t(uint32(mmap)+mmap^.size+sizeof(mmap^.size));
     end;
@@ -100,7 +109,7 @@ begin
     walk_memory_map;
     force_alloc_block(0, 0);
     force_alloc_block(1, 0);
-    force_alloc_block(2, 0); //First 12MiB reserved for Kernel/BIOS.
+    alloc_block(2, 0); //First 12MiB reserved for Kernel/BIOS.
     console.writestring('PMM: ');
     console.writeword(nPresent);
     console.writestringln('/1024 Block Available for Allocation.');
@@ -116,7 +125,7 @@ begin
         end else begin
             PhysicalMemory[block].Allocated:= True;
             PhysicalMemory[block].MappedTo:= caller;
-            console.writestring('4MiB Block Allocated @ ');
+            console.writestring('PMM: 4MiB Block Allocated @ ');
             console.writeword(block);
             console.writestring(' [');
             console.writehex(block SHL 22);

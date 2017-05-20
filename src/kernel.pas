@@ -50,6 +50,9 @@ begin
      isr.init();
      irq.init();
      pmemorymanager.init();
+
+     //while true do begin end;
+
      vmemorymanager.init();
 
      vmemorymanager.new_page(0);
