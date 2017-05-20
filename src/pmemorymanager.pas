@@ -109,7 +109,7 @@ begin
     walk_memory_map;
     force_alloc_block(0, 0);
     force_alloc_block(1, 0);
-    alloc_block(2, 0); //First 12MiB reserved for Kernel/BIOS.
+    force_alloc_block(2, 0); //First 12MiB reserved for Kernel/BIOS.
     console.writestring('PMM: ');
     console.writeword(nPresent);
     console.writestringln('/1024 Block Available for Allocation.');
