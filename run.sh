@@ -12,7 +12,7 @@ then
 	sleep 1
 	gdb -ex "target remote localhost:1234"
 else
-	qemu-system-i386 -cdrom Asuro.iso
+	qemu-system-i386 -monitor stdio -cdrom Asuro.iso
 fi
 
 if [ $? -ne 0 ]
