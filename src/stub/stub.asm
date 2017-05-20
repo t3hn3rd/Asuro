@@ -81,11 +81,11 @@ _loader:
 	jmp ecx
 
 kstart:
-	   mov dword [BootPageDirectory], 0
-        invlpg [0]	   		
+	    mov dword [BootPageDirectory], 0
+    	invlpg [0]	   		
         mov esp, KERNEL_STACK+KERNEL_STACKSIZE  ;Create kernel stack
         push eax                                ;Multiboot magic number
-	   add ebx, KERNEL_VIRTUAL_BASE
+	    add ebx, KERNEL_VIRTUAL_BASE
         push ebx                                ;Multiboot info
         call kmain                              ;Call kernel entrypoint
         cli                                     ;Clear interrupts

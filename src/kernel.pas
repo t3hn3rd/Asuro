@@ -24,23 +24,21 @@ implementation
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall; [public, alias: 'kmain'];   
 var
    c    : uint8;
-   mbi  : Pmultiboot_info_t;
-   mbm  : uint32;
    z    : uint32;
    dds  : uint32;
    pint : puint32;
    pint2 : puint32;
-
    keyboard_layout : array [0..1] of TKeyInfo;
    
 begin
-     mbi:= mbinfo;
-     mbm:= mbmagic;
+     multibootinfo:= mbinfo;
+     multibootmagic:= mbmagic;
+
      console.init();
 
      console.writestringln('Booting Asuro...');
 
-     if (mbm <> MULTIBOOT_BOOTLOADER_MAGIC) then begin
+     if (multibootmagic <> MULTIBOOT_BOOTLOADER_MAGIC) then begin
         console.setdefaultattribute(console.combinecolors(Red, Black));
         console.writestringln('Multiboot Compliant Boot-Loader Needed!');
         console.writestringln('HALTING');

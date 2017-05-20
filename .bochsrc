@@ -53,7 +53,7 @@
 #display_library: amigaos
 #display_library: beos
 #display_library: carbon
-#display_library: macintosh
+display_library: sdl
 #display_library: nogui
 #display_library: rfb, options="timeout=60" # time to wait for client
 #display_library: sdl, options="fullscreen" # startup in fullscreen mode
@@ -775,5 +775,5 @@ i440fxsupport: enabled=1
 # romimage: file=:bios:BIOS-bochs-latest, address=0xf0000
 # floppya: 1_44=[fd:], status=inserted
 #=======================================================================
-display_library: sdl
-magic_break: enabled=1
+#display_library: sdl
+#magic_break: enabled=1

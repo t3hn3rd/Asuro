@@ -81,14 +81,14 @@ begin
         mov eax, rldpd
         mov CR3, eax
     end;
-    console.writestringln('New Page Added:');
+    console.writestringln('VMM: New Page Added:');
 
-    console.writestring('- P:');
+    console.writestring('VMM: - P:');
     console.writehex(page_number);
     console.writestring('-->B:');
     console.writehexln(block);
         
-    console.writestring('- P:[');
+    console.writestring('VMM: - P:[');
     console.writehex(page_number SHL 22);
     console.writestring(' - ');
     console.writehex(((page_number+1) SHL 22));

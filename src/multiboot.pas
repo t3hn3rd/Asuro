@@ -54,6 +54,10 @@ type
 		      mtype: uint32;
         end;
  
+var
+   multibootinfo  : Pmultiboot_info_t = nil;
+   multibootmagic : uint32;
+
 implementation
  
 end.
