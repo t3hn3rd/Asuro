@@ -73,7 +73,6 @@ begin
     map_page:= false;
     PageDirectory^[page_number].Present:= true;
     addr:= block;
-    writehexln(block);
     PageDirectory^[page_number].Address:= addr SHL 10;
     PageDirectory^[page_number].PageSize:= true;
     PageDirectory^[page_number].Writable:= true;

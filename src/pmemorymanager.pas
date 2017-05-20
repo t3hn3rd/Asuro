@@ -36,8 +36,6 @@ var
 begin
     FirstBlock:= base SHR 22;
     LastBlock:= (base+length) SHR 22;
-    console.writewordln(FirstBlock);
-    console.writewordln(LastBlock);
     if (FirstBlock > 1023) then exit;
     while LastBlock > 1023 do begin
         LastBlock:= LastBlock-1;
