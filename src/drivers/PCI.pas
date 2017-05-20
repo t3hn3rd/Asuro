@@ -101,6 +101,19 @@ type
         header_type : ubit7;
     end;
 
+    TPCI_Memory_BAR bitpacked record
+        address : ubit28; //16-Byte aligned
+        prefetchable : boolean;
+        bar_type : ubit2;
+        always_0 : boolean = 0; 
+    end;
+
+    TPCI_IO_BAR bitpacked record
+        address : ubit30; //4-byte aligned
+        reserved : boolean;
+        always_0 : boolean = 0;
+    end;
+
     TPCI_Device bitpacked record
         device_id      : uint16;
         vendor_id      : uint16;
@@ -111,15 +124,15 @@ type
         prog_if        : uint8;
         revision_id    : uint8;
         BIST           : TPCI_BIST;
-        header_type    : uint8;
+        header_type    : TPCI_Header_Type;
         latency_timer  : uint8;
         cache_size     : uint8;
-        address0       : uint32;
-        address1       : uint32;
-        address2       : uint32;
-        address3       : uint32;
-        address4       : uint32;
-        address5       : uint32;
+        address0       : TPCI_Memory_BAR;
+        address1       : TPCI_Memory_BAR;
+        address2       : TPCI_Memory_BAR;
+        address3       : TPCI_Memory_BAR;
+        address4       : TPCI_Memory_BAR;
+        address5       : TPCI_Memory_BAR;
         CIS_pointer    : uint32;
         subsystem_id   : uint16;
         subsystem_vid  : uint16;
@@ -139,6 +152,18 @@ type
     end;
 
     TCommand_Register bitpacked record
+        reserved            : ubit5;
+        interupt_disable    : boolean;
+        fast_b2b_enable     : boolean;
+        seer_enable         : boolean;
+        reserved0           : boolean;
+        parity_err_response : boolean;
+        VGA_palette_snoop   : boolean;
+        mem_wai_enable      : boolean;
+        special_cycles      : boolean;
+        bus_master          : boolean;
+        memory_space        : boolean;
+        io_space            : boolean;
     end;
 
     TStatus_Register bitpacked record
