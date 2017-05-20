@@ -77,10 +77,10 @@ begin
         console.writehexln(mmap^.length);
         console.writehexln(mmap^.mtype);
         console.writestringln('');
-        if mmap^.mtype <> $01 then begin
-            set_memory_area_present(mmap^.base_addr, mmap^.length, False);
-        end else begin
+        if mmap^.mtype = $01 then begin
             set_memory_area_present(mmap^.base_addr, mmap^.length, True);
+        end else begin
+            set_memory_area_present(mmap^.base_addr, mmap^.length, False);
         end;
         mmap:= Pmemory_map_t(uint32(mmap)+mmap^.size+sizeof(mmap^.size));
     end;
