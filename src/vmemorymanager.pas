@@ -78,6 +78,7 @@ begin
         PageDirectory^[page_number].Present:= true;
         PageDirectory^[page_number].Address:= block;
         PageDirectory^[page_number].PageSize:= true;
+        PageDirectory^[page_number].Writable:= true;
         // rldpd:= uint32(PageDirectory) - KERNEL_VIRTUAL_BASE;
         // asm
         //     mov eax, rldpd
