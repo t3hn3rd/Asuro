@@ -31,7 +31,8 @@ type
     PHeapPage = ^THeapPage;
 
 var
-    Root_Page : PHeapPage;
+    Root_Page   : PHeapPage;
+    Search_Page : PHeapPage;
 
 procedure init;
 function kalloc(size : uint32) : void;
@@ -75,6 +76,7 @@ var
 
 begin
     Root_Page:= PHeapPage(new_lmm_page);
+    Search_Page:= Root_Page;
     Root_Page^.Next_Page:= 0;
     Root_Page^.Prev_Page:= 0;
     For i:=0 to MAX_ENTRIES-1 do begin
@@ -94,7 +96,7 @@ var
 begin
     Heap_Entries:= size div 8;
     If sint32(size-(Heap_Entries*8)) > 0 then Heap_Entries:= Heap_Entries + 1;
-    hp:= Root_Page;
+    hp:= Search_Page;
     kalloc:= nil;
     while kalloc = nil do begin
         for i:=0 to MAX_ENTRIES-1 do begin
@@ -124,6 +126,7 @@ begin
                 new_heap_page(hp);
             end;
             hp:= PHeapPage(hp^.Next_Page);
+            Search_Page:= hp;
         end;
     end;
 end;
@@ -149,6 +152,7 @@ begin
         hp^.Entries[entry].Present:= False;
         hp^.Entries[entry].Root:= False;
         hp^.Entries[entry].Last:= False;
+        Search_Page:= hp;
     end else begin
         GPF;
     end;
