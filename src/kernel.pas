@@ -57,6 +57,7 @@ begin
      vmemorymanager.new_page(0);
      pint:= puint32(0);
      console.writestringln('Writing 1234 to Logical Address $00000000');
+     pint^:= 1234;
      if pint^ = 1234 then console.writestringln('Read 1234 back from Logical Address $00000000!!!');
      //scheduler.init();
 
