@@ -7,98 +7,150 @@ uses
     vmemorymanager,
     console;
 
-type
-    TBlock_Entry = packed record
-        Present : Boolean;
-        Length  : uint8;
-    end;
-
 const
     ALLOC_SPACE = 8; //64-Bit Allocations 
-    MAX_ENTRIES = 0x60000;
+    MAX_ENTRIES = $60000;
+    DATA_OFFSET = $100000;
+
+type
+    THeapEntry = bitpacked record
+        Present : Boolean;
+        Root    : Boolean;
+        Last    : Boolean;
+        Resv1   : Boolean;
+        Resv2   : Boolean;
+        Resv3   : Boolean;
+        Resv4   : Boolean;
+        Resv5   : Boolean;
+    end;
+    THeapPage = packed record
+        Next_Page : uint32;
+        Prev_Page : uint32;
+        Entries   : Array[0..MAX_ENTRIES-1] of THeapEntry;
+    end;
+    PHeapPage = ^THeapPage;
 
 var
-    Memory_Start   : uint32;
-    Memory_Manager : packed array[1..MAX_ENTRIES] of TBlock_Entry;
+    Root_Page : PHeapPage;
 
 procedure init;
+function kalloc(size : uint32) : void;
+procedure kfree(area : void);
 
 implementation
+
+function new_lmm_page() : uint32;
+var
+    i : integer;
+
+begin
+    i:= KERNEL_PAGE_NUMBER + 4;
+    while not vmemorymanager.new_page(i) do begin
+        i:= i + 1;
+    end;
+    new_lmm_page:= i SHL 22;
+end;
+
+function new_heap_page(CurrentPage : PHeapPage) : PHeapPage;
+var
+    i : integer;
+
+begin
+    new_heap_page:= PHeapPage(new_lmm_page);
+    if CurrentPage <> nil then CurrentPage^.Next_Page:= uint32(new_heap_page);
+    new_heap_page^.Next_Page:= 0;
+    new_heap_page^.Prev_Page:= uint32(CurrentPage);
+    For i:=0 to MAX_ENTRIES-1 do begin
+        with new_heap_page^.Entries[i] do begin
+            Present:= False;
+            Root:= False;
+            Last:= False;
+        end;
+    end;    
+end;
 
 procedure init;
 var
     i : uint32;
 
 begin
-    console.writestringln('LMM: INIT BEGIN.');
+    Root_Page:= PHeapPage(new_lmm_page);
+    Root_Page^.Next_Page:= 0;
+    Root_Page^.Prev_Page:= 0;
     For i:=0 to MAX_ENTRIES-1 do begin
-        Memory_Manager[i].Present:= False;
-    end;
-    Memory_Start:= uint32(@util.endptr);
-    console.writestringln('LMM: INIT END.');
+        Root_Page^.Entries[i].Present:= False;
+        Root_Page^.Entries[i].Root:= False;
+        Root_Page^.Entries[i].Last:= False;
+    end; 
 end;
 
 function kalloc(size : uint32) : void;
 var
-    blocks : uint32;
-    rem    : uint32;
-    i,j    : uint32;
-    miss   : boolean;
+   Heap_Entries : uint32;
+   i, j         : uint32;
+   hp           : PHeapPage;
+   miss         : boolean;
 
 begin
-    blocks:= size div ALLOC_SPACE;
-    rem:= size - (blocks * ALLOC_SPACE);
-    if rem > 0 then blocks:= blocks + 1;
+    Heap_Entries:= size div 8;
+    If sint32(size-(Heap_Entries*8)) > 0 then Heap_Entries:= Heap_Entries + 1;
+    hp:= Root_Page;
     kalloc:= nil;
-    for i:=0 to MAX_ENTRIES-1 do begin
-        miss:= false;
-        for j:=0 to blocks-1 do begin
-            if Memory_Manager[i+j].Present then begin
-                miss:= true;
+    while kalloc = nil do begin
+        for i:=0 to MAX_ENTRIES-1 do begin
+            miss:= false;
+            for j:=0 to Heap_Entries-1 do begin
+                if hp^.Entries[i+j].Present then begin
+                    miss:= true;
+                    break;
+                end;
+            end;
+            if not miss then begin
+                kalloc:= void( uint32( hp ) + DATA_OFFSET + (i * 8) );
+                for j:=0 to Heap_Entries-1 do begin
+                    hp^.Entries[i+j].Present:= True;
+                    if j = (Heap_Entries-1) then begin
+                        hp^.Entries[i+j].Last:= True;
+                    end;
+                    if j = 0 then begin
+                        hp^.Entries[i+j].Root:= True;
+                    end;
+                end;
                 break;
             end;
         end;
-        if not miss then begin
-            kalloc:= void(Memory_Start+(i * ALLOC_SPACE));
-            for j:=0 to blocks-1 do begin
-                Memory_Manager[i+j].Present:= true;
-                Memory_Manager[i+j].Length:= 0;
-                if j = 0 then Memory_Manager[i+j].Length:= blocks;
+        if kalloc = nil then begin
+            if PHeapPage(hp^.Next_Page) = nil then begin
+                new_heap_page(hp);
             end;
-            console.writestring('Allocated ');
-            console.writeint(blocks);
-            console.writestring(' Block(s). [Block: ');
-            console.writeint(i);
-            console.writestringln(']');
-            break;
+            hp:= PHeapPage(hp^.Next_Page);
         end;
     end;
 end;
 
 procedure kfree(area : void);
 var
-    Block   : uint32;
-    bLength : uint8;
-    i       : uint32;
+    hp : PHeapPage;
+    entry : uint32;
 
 begin
-    if uint32(area) < Memory_Start then begin
-         asm 
-             INT 13 
-         end;
-    end;
-    Block:= (uint32(Area) - Memory_Start) div ALLOC_SPACE;
-    if Memory_Manager[Block].Present then begin
-        If Memory_Manager[Block].Length > 0 then begin
-            bLength:= Memory_Manager[Block].Length;
-            for i:=0 to bLength-1 do begin
-                Memory_Manager[Block+i].Present:= False;
-            end;
-        end else begin
-            asm 
-               INT 13 
-            end;
+    hp:= PHeapPage((uint32(area) SHR 22) SHL 22);
+    entry:= (uint32(area) - DATA_OFFSET - uint32(hp)) div 8;
+    if hp^.Entries[entry].Present then begin
+        while not hp^.Entries[entry].Root do begin
+            entry:= entry - 1;
         end;
+        While not hp^.Entries[entry].Last do begin
+            hp^.Entries[entry].Present:= False;
+            hp^.Entries[entry].Root:= False;
+            hp^.Entries[entry].Last:= False;
+            entry:= entry + 1;
+        end;
+        hp^.Entries[entry].Present:= False;
+        hp^.Entries[entry].Root:= False;
+        hp^.Entries[entry].Last:= False;
+    end else begin
+        GPF;
     end;
 end;
 

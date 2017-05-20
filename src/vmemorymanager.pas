@@ -60,6 +60,7 @@ begin
     PageDirectory:= load_current_page_directory;
     map_page(KERNEL_PAGE_NUMBER + 1, 1);
     map_page(KERNEL_PAGE_NUMBER + 2, 2);
+    map_page(KERNEL_PAGE_NUMBER + 3, 3);
     console.writestringln('VMM: INIT END.');
 end;
 
