@@ -62,6 +62,8 @@ type
     UBit6 = 0..(1 shl 6) - 1;
     UBit7 = 0..(1 shl 7) - 1;
     UBit20 = 0..(1 shl 20) - 1;
+    UBit28 = 0..(1 shl 28) - 1;
+    UBit30 = 0..(1 shl 30) - 1;
 
 implementation
 
