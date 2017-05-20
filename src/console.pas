@@ -181,7 +181,7 @@ var
    
 begin
      for c:=0 to 7 do begin
-          Hex[c]:= 255;
+          Hex[c]:= 0;
      end;
      c:=0;
      Res:= i;

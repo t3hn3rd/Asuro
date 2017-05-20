@@ -85,7 +85,7 @@ begin
         exit;
     end else begin
         PageDirectory^[page_number].Present:= true;
-        PageDirectory^[page_number].Address:= block SHL 4;
+        PageDirectory^[page_number].Address:= block-1;
         PageDirectory^[page_number].PageSize:= true;
         PageDirectory^[page_number].Writable:= true;
         rldpd:= uint32(PageDirectory) - KERNEL_VIRTUAL_BASE;
@@ -97,18 +97,18 @@ begin
         console.writestringln('New Page Added:');
 
         console.writestring('- P:');
-        console.writeword(page_number);
+        console.writehex(page_number);
         console.writestring('-->B:');
-        console.writewordln(block);
+        console.writehexln(block);
         
         console.writestring('- P:[');
         console.writeword(page_number SHL 22);
         console.writestring(' - ');
-        console.writeword(((page_number+1) SHL 22)-1);
+        console.writehex(((page_number+1) SHL 22)-1);
         console.writestring(']-->B:[');
-        console.writeword(block SHL 22);
+        console.writehex(block SHL 22);
         console.writestring(' - ');
-        console.writeword(((block+1) SHL 22)-1);
+        console.writehex(((block+1) SHL 22)-1);
         console.writestringln(']');
     end;
 end;

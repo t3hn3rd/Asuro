@@ -54,9 +54,9 @@ begin
             console.writestring('4MiB Block Added @ ');
             console.writeword(i);
             console.writestring(' [');
-            console.writeword(i SHL 22);
+            console.writehex(i SHL 22);
             console.writestring(' - ');
-            console.writeword(((i+1) SHL 22)-1);
+            console.writehex(((i+1) SHL 22)-1);
             console.writestringln(']');
             exit;
         end;
