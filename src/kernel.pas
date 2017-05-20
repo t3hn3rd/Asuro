@@ -59,17 +59,6 @@ begin
      STI;
      isr32.hook(uint32(@bios_data_area.tick_update));
 
-     z:= 1;
-     while true do begin
-        console.writehex(z);
-        console.writestring(': ');
-        pint:= kalloc(1024*4);
-        console.writehexln(uint32(pint));
-        if pint = nil then while true do begin end else pint^:= 1234;
-        //kfree(pint);
-        z:=z+1;
-     end;
-
      //drivers
      keyboard.init(keyboard_layout);
 
@@ -100,6 +89,18 @@ begin
      console.writeint(((mbinfo^.mem_upper + 1000) div 1024) + 1);
      console.writestringln('MB');
      console.setdefaultattribute(console.combinecolors(lYellow, Black));
+
+     {z:= 1;
+     while true do begin
+        console.writehex(z);
+        console.writestring(': ');
+        pint:= kalloc(1024*4);
+        console.writehexln(uint32(pint));
+        if pint = nil then while true do begin end else pint^:= 1234;
+        //kfree(pint);
+        z:=z+1;
+     end;}
+
      util.halt_and_dont_catch_fire;
 end;
  
