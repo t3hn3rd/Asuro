@@ -57,15 +57,15 @@ var
 begin
     console.writestringln('VMM: INIT BEGIN.');
     PageDirectory:= load_current_page_directory;
-    PageDirectory^[KERNEL_VIRTUAL_BASE + 1].Present:= True;
-    PageDirectory^[KERNEL_VIRTUAL_BASE + 1].PageSize:= True;
-    PageDirectory^[KERNEL_VIRTUAL_BASE + 1].Writable:= True;
-    PageDirectory^[KERNEL_VIRTUAL_BASE + 1].Address:= (1 SHL 22);
+    PageDirectory^[KERNEL_PAGE_NUMBER + 1].Present:= True;
+    PageDirectory^[KERNEL_PAGE_NUMBER + 1].PageSize:= True;
+    PageDirectory^[KERNEL_PAGE_NUMBER + 1].Writable:= True;
+    PageDirectory^[KERNEL_PAGE_NUMBER + 1].Address:= (1 SHL 22);
 
-    PageDirectory^[KERNEL_VIRTUAL_BASE + 2].Present:= True;
-    PageDirectory^[KERNEL_VIRTUAL_BASE + 2].PageSize:= True;
-    PageDirectory^[KERNEL_VIRTUAL_BASE + 2].Writable:= True;
-    PageDirectory^[KERNEL_VIRTUAL_BASE + 2].Address:= (2 SHL 22);
+    PageDirectory^[KERNEL_PAGE_NUMBER + 2].Present:= True;
+    PageDirectory^[KERNEL_PAGE_NUMBER + 2].PageSize:= True;
+    PageDirectory^[KERNEL_PAGE_NUMBER + 2].Writable:= True;
+    PageDirectory^[KERNEL_PAGE_NUMBER + 2].Address:= (2 SHL 22);
     console.writestringln('VMM: INIT END.');
 end;
 
