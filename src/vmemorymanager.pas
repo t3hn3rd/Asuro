@@ -95,11 +95,11 @@ begin
         console.writestring('- P:[');
         console.writeword(page_number SHL 22);
         console.writestring(' - ');
-        console.writeword((page_number+1 SHL 22) - 1);
+        console.writeword(((page_number+1) SHL 22)-1);
         console.writestring(']-->B:[');
         console.writeword(block SHL 22);
         console.writestring(' - ');
-        console.writeword((block+1 SHL 22) - 1);
+        console.writeword(((block+1) SHL 22)-1);
         console.writestringln(']');
     end;
 end;

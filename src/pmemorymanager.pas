@@ -52,7 +52,7 @@ begin
             console.writestring(' [');
             console.writeword(i SHL 22);
             console.writestring(' - ');
-            console.writeword((i+1 SHL 22)-1);
+            console.writeword(((i+1) SHL 22)-1);
             console.writestringln(']');
             exit;
         end;
