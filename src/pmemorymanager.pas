@@ -33,6 +33,10 @@ begin
         Present:= True;
         MappedTo:= 0;
     end;
+    with PhysicalMemory[2] do begin
+        Present:= True;
+        MappedTo:= 0;
+    end;
     console.writestringln('PMM: INIT END.');
 end;
 

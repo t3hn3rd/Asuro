@@ -57,6 +57,15 @@ var
 begin
     console.writestringln('VMM: INIT BEGIN.');
     PageDirectory:= load_current_page_directory;
+    PageDirectory^[KERNEL_VIRTUAL_BASE + 1].Present:= True;
+    PageDirectory^[KERNEL_VIRTUAL_BASE + 1].PageSize:= True;
+    PageDirectory^[KERNEL_VIRTUAL_BASE + 1].Writable:= True;
+    PageDirectory^[KERNEL_VIRTUAL_BASE + 1].Address:= (1 SHL 22);
+
+    PageDirectory^[KERNEL_VIRTUAL_BASE + 2].Present:= True;
+    PageDirectory^[KERNEL_VIRTUAL_BASE + 2].PageSize:= True;
+    PageDirectory^[KERNEL_VIRTUAL_BASE + 2].Writable:= True;
+    PageDirectory^[KERNEL_VIRTUAL_BASE + 2].Address:= (2 SHL 22);
     console.writestringln('VMM: INIT END.');
 end;
 
@@ -69,7 +78,7 @@ var
 begin
     new_page:= false;
     if PageDirectory^[page_number].Present then exit;
-    if PageDirectory^[page_number].Reserved then exit;
+    //if PageDirectory^[page_number].Reserved then exit;
     block:= pmemorymanager.new_block(uint32(PageDirectory));
     if block < 2 then begin
         GPF;
