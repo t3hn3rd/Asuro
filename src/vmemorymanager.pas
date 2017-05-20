@@ -73,7 +73,8 @@ begin
     map_page:= false;
     PageDirectory^[page_number].Present:= true;
     addr:= block;
-    PageDirectory^[page_number].Address:= addr;
+    writehexln(block);
+    PageDirectory^[page_number].Address:= addr SHL 9;
     PageDirectory^[page_number].PageSize:= true;
     PageDirectory^[page_number].Writable:= true;
     rldpd:= uint32(PageDirectory) - KERNEL_VIRTUAL_BASE;
