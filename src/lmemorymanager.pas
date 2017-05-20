@@ -30,12 +30,12 @@ var
     i : uint32;
 
 begin
-    console.writestringln('VMM: INIT BEGIN.');
+    console.writestringln('LMM: INIT BEGIN.');
     For i:=0 to MAX_ENTRIES-1 do begin
         Memory_Manager[i].Present:= False;
     end;
     Memory_Start:= uint32(@util.endptr);
-    console.writestringln('VMM: INIT END.');
+    console.writestringln('LMM: INIT END.');
 end;
 
 function kalloc(size : uint32) : void;

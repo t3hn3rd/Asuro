@@ -73,10 +73,6 @@ begin
         PhysicalMemory[i].MappedTo:= 0;
     end;
 	while uint32(mmap) < (address + length) do begin
-        console.writehexln(mmap^.base_addr);
-        console.writehexln(mmap^.length);
-        console.writehexln(mmap^.mtype);
-        console.writestringln('');
         if mmap^.mtype = $01 then begin
             set_memory_area_present(mmap^.base_addr, mmap^.length, True);
         end else begin
