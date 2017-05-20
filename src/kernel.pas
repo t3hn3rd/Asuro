@@ -63,8 +63,6 @@ begin
      if pint^ = 1234 then begin
         console.writestringln('Read 1234 back from Logical Address $00000000!!!');
      end;
-
-     while true do begin end;
      
      //scheduler.init();
 
