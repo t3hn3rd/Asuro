@@ -76,17 +76,14 @@ type
         other_bridge_device          : uint16 = $8000;
     end;
 
-    TPCI_Device_class record
-        class_code  : uint8;
-        sub_classes : array[256] of uint8;
-        prog_if     : array[256] of uint8;
-    end;
-
     TPCI_Config bitpacked record
-        enable_bit      : uint8; //first bit enables, rest reserved
+        enable_bit      : boolean;
+        reserved        : ubit7;
         bus_number      : uint8; 
-        df_number       : uint8; // 5bits device number, 3bits function number
-        register_offset : uint8; //last 2bits should be 00
+        device_number   : ubit5;
+        function_number : ubit3;
+        register_offset : ubit6; 
+        always_0        : ubit2;
     end;
 
     TPCI_BIST bitpacked record
@@ -167,19 +164,88 @@ type
     end;
 
     TStatus_Register bitpacked record
+        detected_parity_error,
+        signaled_sys_error,
+        received_master_abort,
+        received_target_abort,
+        signaled_target_abort   : boolean;
+        DEVSEL_timing           : ubit2;
+        master_data_parity_error,
+        fast_b2b_capable,
+        reserved,
+        c66Mhz_compatible,
+        capabilities_list,
+        interrupt_status        : boolean
+        reserved0               : ubit2;
     end;
     
 var
-    classes: array [255] of TPCI_Device_class;
+    devices : array[0..(256 * 32)] of TPCI_Device;
+    busses : array[0..256] of TPCI_Device_Bridge; 
+
+    device_count, bus_count : uint16 = 0;
 
 procedure init();
+procedure loadConfig(bus : uint8; slot : uint8; func : uint8; offset : uint8);
+function check_device(bus : uint8; device : uint8) : 
+function get_vendor_ID() : uint16;
+function get_function() : boolean;
+function read_device_config();
+function read_bridge_config();
 
 implementation 
 
-    procedure init();
-    begin
+function init();
+var
+    i : uint16;
+begin
+
+    //enumerate all pci devices
+    for i:=0 to 31 do begin
+        check_and_get(0, i);
     end;
 
+end;
+
+procedure loadConfig(bus : uint8; slot : uint8; func : uint8; offset : uint8);
+var
+    packet : TPCI_Config;
+begin
+    packet.bus_number := bus;
+    packet.device_number := slot;
+    packet.function_number := func;
+    packet.register_offset := offset;
+
+    util.outl(0xCF8, packet);
+
+
+end;
+
+function check_device(bus : uint8; device : uint8) : boolean;
+var
+    i : uint8;
+    vendor_id : uint16;
+    isDevice : boolean;
+begin
+
+    loadConfig(bus, slot, 0, 0);
+
+    vendor_id := get_vendor_ID();
+    if vendor_id = $0xFFFF then exit;
+
+    isDevice := get_function();
+    if isDevice then begin 
+        devices[device_count] := TPCI_Device(read_device_config);
+        device_count := device_count + 1;
+    end;
+    else begin
+        busses[bus_count] := TPCI_Device_Bridge(read_bridge_config);
+    end;
+end;
+
+function get_vendor_ID(bus : uint8; device : uint8) : uint16;
+begin
+end;
 
 end.
 
