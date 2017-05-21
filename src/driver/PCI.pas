@@ -360,7 +360,7 @@ begin
     tmp.interrupt_pin  := read8(bus, slot, func, offset, 1); 
     tmp.interrupt_line := read8(bus, slot, func, offset, 0);
 
-        console.writestring('Found PCI Device: ');
+        console.writestring('PCI: Found Device: ');
         console.writehex(slot);
         console.writestring('  ');
         console.writehex(tmp.device_id);        
@@ -371,7 +371,7 @@ begin
         console.writestring('  ');
         console.writehexln(tmp.subclass_class);
 
-        psleep(300); 
+        //psleep(300); 
 
     read_device_config := tmp;
 end;

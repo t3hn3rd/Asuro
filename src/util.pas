@@ -81,6 +81,7 @@ begin
     t2:= BDA^.Ticks;
     while t2-t1 < t do begin
         t2:= BDA^.Ticks;
+        if t2 < t1 then break;
     end;
 end;
 
