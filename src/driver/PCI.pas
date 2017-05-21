@@ -212,12 +212,6 @@ begin
         check_device(0, i);
     end;
 
-    for i:= 0 to device_count -1 do begin
-        console.writestring('PCI Device: ');
-        console.writehexln(devices[i].vendor_id);
-        psleep(350);
-     end;
-
     //TODO while there are unchecked nested busses, check nested busses
 end;
 
@@ -300,8 +294,15 @@ end;
 function read_device_config(bus : uint8; slot : uint8; func : uint8; offset : uint8) : TPCI_Device;
 var
     tmp : TPCI_Device;
+    i : uint16;
 begin
     memset(uint32(@tmp), 0, sizeof(TPCI_Device));
+
+    // for i:=0 to 16 do begin
+    //     console.writehexln(read32(0, slot, 0, offset + i, 0));
+    //     psleep(1000);
+    // end;
+
 
     tmp.device_id      := read16(bus, slot, func, offset, 1);
     tmp.vendor_id      := read16(bus, slot, func, offset, 0);
@@ -359,15 +360,15 @@ begin
     tmp.interrupt_pin  := read8(bus, slot, func, offset, 1); 
     tmp.interrupt_line := read8(bus, slot, func, offset, 0);
 
-        console.writestring('Checking Device: ');
+        console.writestring('Found PCI Device: ');
         console.writehex(slot);
-        console.writestring('   ');
+        console.writestring('  ');
         console.writehex(tmp.device_id);        
-        console.writestring('   ');        
+        console.writestring('  ');        
         console.writehex(tmp.vendor_id);        
-        console.writestring('   ');
+        console.writestring('  ');
         console.writehex(tmp.class_code);        
-        console.writestring('   ');
+        console.writestring('  ');
         console.writehexln(tmp.subclass_class);
 
         psleep(300); 
