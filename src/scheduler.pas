@@ -1,3 +1,12 @@
+{ ************************************************
+  * Asuro
+  * Unit: Scheduler
+  * Description: Schedules Context Switches
+  ************************************************
+  * Author: Aaron Hance
+  * Contributors: 
+  ************************************************ }
+
 unit scheduler;
 
 interface

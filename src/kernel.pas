@@ -1,3 +1,12 @@
+{ ************************************************
+  * Asuro
+  * Unit: Kernel
+  * Description: Main Entry Point for Asuro
+  ************************************************
+  * Author: K Morris
+  * Contributors: A Hance
+  ************************************************ }
+
 unit kernel;
  
 interface

@@ -1,3 +1,12 @@
+{ ************************************************
+  * Asuro
+  * Unit: LMemoryManager
+  * Description: Logical Virtual Memory Management
+  ************************************************
+  * Author: K Morris
+  * Contributors: 
+  ************************************************ }
+
 unit lmemorymanager;
 
 interface
