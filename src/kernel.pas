@@ -25,6 +25,7 @@ uses
      vmemorymanager,
      pmemorymanager,
      lmemorymanager,
+     tss,
      scheduler,
      PCI;
  
@@ -64,8 +65,10 @@ begin
      pmemorymanager.init();
      vmemorymanager.init();
      lmemorymanager.init();
-
+     tss.init();
      scheduler.init();
+
+     while true do begin end;
 
      STI;
      isr32.hook(uint32(@bios_data_area.tick_update));

@@ -35,6 +35,7 @@ var
     gdt_pointer : TGDT_Pointer;
 
 procedure init();
+procedure set_gate(Gate_Number : uint32; Base : uint32; Limit : uint32; Access : uint8; Granularity : uint8);
     
 implementation
 
@@ -71,11 +72,11 @@ begin
     console.writestringln('GDT: INIT START.');
     gdt_pointer.limit := (sizeof(TGDT_Entry) * 5) - 1;
     gdt_pointer.base  := uint32(@gdt_entries);
-    set_gate($00, $00, $00,       $00, $00);
-    set_gate($01, $00, $FFFFFFFF, $9A, $CF);
-    set_gate($02, $00, $FFFFFFFF, $92, $CF);
-    set_gate($03, $00, $FFFFFFFF, $FA, $CF);
-    set_gate($04, $00, $FFFFFFFF, $F2, $CF);
+    set_gate($00, $00, $00,       $00, $00); //OFFSET: 0
+    set_gate($01, $00, $FFFFFFFF, $9A, $CF); //OFFSET: 8
+    set_gate($02, $00, $FFFFFFFF, $92, $CF); //OFFSET: 16
+    set_gate($03, $00, $FFFFFFFF, $FA, $CF); //OFFSET: 24
+    set_gate($04, $00, $FFFFFFFF, $F2, $CF); //OFFSET: 32
     console.writestringln('GDT: FLUSH.');
     flush_gdt(uint32(@gdt_pointer));
     console.writestringln('GDT: INIT END.');

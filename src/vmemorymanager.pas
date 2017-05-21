@@ -36,16 +36,41 @@ type
     PPageDirectory = ^TPageDirectory;
 
 var
+    KERNEL_PAGE_DIRECTORY : PPageDirectory;
     PageDirectory : PPageDirectory;
 
 procedure init;
 function new_page(page_number : uint16) : boolean;
 function map_page(page_number : uint16; block : uint16) : boolean;
+function map_page_ex(page_number : uint16; block : uint16; PD : PPageDirectory) : boolean;
 function new_page_at_address(address : uint32) : boolean;
 procedure free_page(page_number : uint16);
 procedure free_page_at_address(address : uint32);
+function new_page_directory : uint32;
+function new_kernel_mapped_page_directory : uint32;
 
 implementation
+
+uses
+    lmemorymanager;
+
+function new_page_directory : uint32;
+begin
+     new_page_directory:= uint32(kalloc(sizeof(TPageDirectory)));
+end;
+
+function new_kernel_mapped_page_directory : uint32;
+var
+    PD : PPageDirectory;
+    i  : uint32;
+
+begin
+    PD:= PPageDirectory(new_page_directory);
+    for i:=KERNEL_PAGE_NUMBER to 1023 do begin
+        PD^[i]:= KERNEL_PAGE_DIRECTORY^[i];
+    end;
+    new_kernel_mapped_page_directory:= uint32(PD);
+end;
 
 function load_current_page_directory : PPageDirectory;
 var
@@ -67,30 +92,26 @@ var
 begin
     console.writestringln('VMM: INIT BEGIN.');
     PageDirectory:= load_current_page_directory;
+    KERNEL_PAGE_DIRECTORY:= PageDirectory;
     map_page(KERNEL_PAGE_NUMBER + 1, 1);
     map_page(KERNEL_PAGE_NUMBER + 2, 2);
     map_page(KERNEL_PAGE_NUMBER + 3, 3);
     console.writestringln('VMM: INIT END.');
 end;
 
-function map_page(page_number : uint16; block : uint16) : boolean;
+function map_page_ex(page_number : uint16; block : uint16; PD : PPageDirectory) : boolean;
 var
     addr  : ubit20;
     page  : uint16;
-    rldpd : uint32;
 
 begin
-    map_page:= false;
-    PageDirectory^[page_number].Present:= true;
+    map_page_ex:= false;
+    PD^[page_number].Present:= true;
     addr:= block;
-    PageDirectory^[page_number].Address:= addr SHL 10;
-    PageDirectory^[page_number].PageSize:= true;
-    PageDirectory^[page_number].Writable:= true;
-    rldpd:= uint32(PageDirectory) - KERNEL_VIRTUAL_BASE;
-    asm
-        mov eax, rldpd
-        mov CR3, eax
-    end;
+    PD^[page_number].Address:= addr SHL 10;
+    PD^[page_number].PageSize:= true;
+    PD^[page_number].Writable:= true;
+    
     console.writestringln('VMM: New Page Added:');
 
     console.writestring('VMM: - P:');
@@ -107,7 +128,28 @@ begin
     console.writestring(' - ');
     console.writehex(((block+1) SHL 22));
     console.writestringln(']');
-    map_page:= true;
+    map_page_ex:= true;
+end;
+
+function map_page(page_number : uint16; block : uint16) : boolean;
+var
+    addr  : ubit20;
+    page  : uint16;
+    rldpd : uint32;
+
+begin
+    map_page:= false;
+    PageDirectory^[page_number].Present:= true;
+    addr:= block;
+    PageDirectory^[page_number].Address:= addr SHL 10;
+    PageDirectory^[page_number].PageSize:= true;
+    PageDirectory^[page_number].Writable:= true;
+    map_page:= map_page_ex(page_number, block, PageDirectory);
+    rldpd:= uint32(PageDirectory) - KERNEL_VIRTUAL_BASE;
+    asm
+        mov eax, rldpd
+        mov CR3, eax
+    end;
 end;
 
 function new_page(page_number : uint16) : boolean;

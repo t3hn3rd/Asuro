@@ -32,6 +32,9 @@ type
     end;
     PScheduler_Entry = ^TScheduler_Entry;
 
+var
+    Active : Boolean;
+
 procedure init;
 procedure add_task(priority : uint8);
 
@@ -70,9 +73,11 @@ end;
 
 procedure delta(data : void);
 begin
-    Tick:= Tick + 1;
-    If Tick = 0 then context_switch();
-    If (Current_Task^.Delta + (Current_Task^.Priority * Quantum)) <= Tick then context_switch();
+    If Active then begin
+        Tick:= Tick + 1;
+        If Tick = 0 then context_switch();
+        If (Current_Task^.Delta + (Current_Task^.Priority * Quantum)) <= Tick then context_switch();
+    end;
 end;
 
 procedure init;
@@ -85,6 +90,7 @@ begin
     Root_Task^.Next:= void(Root_Task);
     Current_Task:= Root_Task;
     Tick:= 0;
+    Active:= False;
     isr32.hook(uint32(@delta));
     console.writestringln('SCHEDULER: INIT END.');
 end;
