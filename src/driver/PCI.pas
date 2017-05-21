@@ -370,7 +370,7 @@ begin
         console.writestring('   ');
         console.writehexln(tmp.subclass_class);
 
-        psleep(1000); 
+        psleep(300); 
 
     read_device_config := tmp;
 end;
