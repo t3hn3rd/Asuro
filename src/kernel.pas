@@ -25,7 +25,8 @@ uses
      vmemorymanager,
      pmemorymanager,
      lmemorymanager,
-     scheduler;
+     scheduler,
+     PCI;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
@@ -39,6 +40,7 @@ var
    pint : puint32;
    pint2 : puint32;
    keyboard_layout : array [0..1] of TKeyInfo;
+   i : uint32;
    
 begin
      multibootinfo:= mbinfo;
@@ -68,8 +70,13 @@ begin
      STI;
      isr32.hook(uint32(@bios_data_area.tick_update));
 
+     console.writestringln('Initializing Drivers');
      //drivers
+     pci.init();
      keyboard.init(keyboard_layout);
+
+     console.writestringln('Drivers Initialized');
+
 
      asm
         MOV dds, CS
@@ -109,6 +116,11 @@ begin
         //kfree(pint);
         z:=z+1;
      end;}
+
+     console.writestringln('');
+
+
+
 
      util.halt_and_dont_catch_fire;
 end;

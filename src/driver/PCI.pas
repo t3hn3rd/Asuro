@@ -7,13 +7,13 @@
   * Contributors: 
   ************************************************ }
 
-unit PCI
+unit PCI;
 
 interface
 
 uses
-    system,
-    util;
+    util,
+    console;
 
 type 
 
@@ -27,56 +27,56 @@ type
         SIGNAL_PROCESSING_CONTROLLER, RESERVED
     ); // 0XFF = OTHER DEVICE
 
-    TSub_Class_Codes record // first half sub device, second half prog id
-        any_non_vga_compatible       : uint16 = $0000;
-        any_vga_compatible           : uint16 = $0100;
-        scsi_bus_controller          : uint16 = $0000;
-        ide_controller               : uint16 = $01FF;
-        floppy_controller            : uint16 = $0200;
-        ipi_bus_controller           : uint16 = $0300;
-        raid_controller              : uint16 = $0400;
-        ata_single_dma               : uint16 = $0520;
-        ata_chained_dma              : uint16 = $0530;
-        serial_ata_ahci_vsi          : uint16 = $0600;
-        serial_ata_ahci              : uint16 = $0601;
-        serial_attached_scsi         : uint16 = $0700;
-        other_mass_storage           : uint16 = $8000;
-        ethernet_controller          : uint16 = $0000;
-        token_ring_controller        : uint16 = $0100;
-        fddi_controller              : uint16 = $0200;
-        atm_controller               : uint16 = $0300;
-        isdn_controller              : uint16 = $0400;
-        worldfip_controller          : uint16 = $0500;
-        picmg_multi_computing        : uint16 = $0600;
-        other_network_controller     : uint16 = $8000;
-        vga_compatible_controller    : uint16 = $0000;
-        c8512_compatible_controller  : uint16 = $0001;
-        xga_controller               : uint16 = $0100;
-        c3d_controller               : uint16 = $0200;
-        other_display_controller     : uint16 = $8000;
-        video_device                 : uint16 = $0000;
-        audio_device                 : uint16 = $0100;
-        computer_telephony_device    : uint16 = $0200;
-        other_multimedia_device      : uint16 = $8000;
-        ram_controller               : uint16 = $0000;
-        flash_controller             : uint16 = $0100;
-        other_memory_controller      : uint16 = $8000;
-        host_bridge                  : uint16 = $0100;
-        isa_bridge                   : uint16 = $0200;
-        eisa_bridge                  : uint16 = $0300;
-        pci_2_pci_bridge             : uint16 = $0400;
-        subtractive_pci_2_pci_bridge : uint16 = $0401;
-        pcmcia_bridge                : uint16 = $0500;
-        nubus_bridge                 : uint16 = $0600;
-        cardbus_bridge               : uint16 = $0700;
-        raceway_bridge               : uint16 = $0800;
-        semi_pci_2_pci_bridge_p      : uint16 = $0940;
-        semi_pci_2_pci_bridge_s      : uint16 = $0980;
-        infiniband_2_pci_bridge      : uint16 = $0A00;
-        other_bridge_device          : uint16 = $8000;
-    end;
+    // TSub_Class_Codes = record // first half sub device, second half prog id
+    //     any_non_vga_compatible       : uint16 = $0000;
+    //     any_vga_compatible           : uint16 = $0100;
+    //     scsi_bus_controller          : uint16 = $0000;
+    //     ide_controller               : uint16 = $01FF;
+    //     floppy_controller            : uint16 = $0200;
+    //     ipi_bus_controller           : uint16 = $0300;
+    //     raid_controller              : uint16 = $0400;
+    //     ata_single_dma               : uint16 = $0520;
+    //     ata_chained_dma              : uint16 = $0530;
+    //     serial_ata_ahci_vsi          : uint16 = $0600;
+    //     serial_ata_ahci              : uint16 = $0601;
+    //     serial_attached_scsi         : uint16 = $0700;
+    //     other_mass_storage           : uint16 = $8000;
+    //     ethernet_controller          : uint16 = $0000;
+    //     token_ring_controller        : uint16 = $0100;
+    //     fddi_controller              : uint16 = $0200;
+    //     atm_controller               : uint16 = $0300;
+    //     isdn_controller              : uint16 = $0400;
+    //     worldfip_controller          : uint16 = $0500;
+    //     picmg_multi_computing        : uint16 = $0600;
+    //     other_network_controller     : uint16 = $8000;
+    //     vga_compatible_controller    : uint16 = $0000;
+    //     c8512_compatible_controller  : uint16 = $0001;
+    //     xga_controller               : uint16 = $0100;
+    //     c3d_controller               : uint16 = $0200;
+    //     other_display_controller     : uint16 = $8000;
+    //     video_device                 : uint16 = $0000;
+    //     audio_device                 : uint16 = $0100;
+    //     computer_telephony_device    : uint16 = $0200;
+    //     other_multimedia_device      : uint16 = $8000;
+    //     ram_controller               : uint16 = $0000;
+    //     flash_controller             : uint16 = $0100;
+    //     other_memory_controller      : uint16 = $8000;
+    //     host_bridge                  : uint16 = $0100;
+    //     isa_bridge                   : uint16 = $0200;
+    //     eisa_bridge                  : uint16 = $0300;
+    //     pci_2_pci_bridge             : uint16 = $0400;
+    //     subtractive_pci_2_pci_bridge : uint16 = $0401;
+    //     pcmcia_bridge                : uint16 = $0500;
+    //     nubus_bridge                 : uint16 = $0600;
+    //     cardbus_bridge               : uint16 = $0700;
+    //     raceway_bridge               : uint16 = $0800;
+    //     semi_pci_2_pci_bridge_p      : uint16 = $0940;
+    //     semi_pci_2_pci_bridge_s      : uint16 = $0980;
+    //     infiniband_2_pci_bridge      : uint16 = $0A00;
+    //     other_bridge_device          : uint16 = $8000;
+    // end;
 
-    TPCI_Config bitpacked record
+    TPCI_Config = bitpacked record
         enable_bit      : boolean;
         reserved        : ubit7;
         bus_number      : uint8; 
@@ -86,32 +86,33 @@ type
         always_0        : ubit2;
     end;
 
-    TPCI_BIST bitpacked record
+    TPCI_BIST = bitpacked record
         capable         : boolean;
         start           : boolean;
         reserved        : ubit2;
         completion_code : ubit3;
     end;
 
-    TPCI_Header_Type bitpacked record
+    TPCI_Header_Type = bitpacked record
+        always_0    : boolean;
         MF          : boolean;
         header_type : ubit7;
     end;
 
-    TPCI_Memory_BAR bitpacked record
+    TPCI_Memory_BAR = bitpacked record
         address : ubit28; //16-Byte aligned
         prefetchable : boolean;
         bar_type : ubit2;
-        always_0 : boolean = 0; 
+        always_0 : boolean; 
     end;
 
-    TPCI_IO_BAR bitpacked record
+    TPCI_IO_BAR = bitpacked record
         address : ubit30; //4-byte aligned
         reserved : boolean;
-        always_0 : boolean = 0;
+        always_0 : boolean;
     end;
 
-    TPCI_Device bitpacked record
+    TPCI_Device = bitpacked record
         device_id      : uint16;
         vendor_id      : uint16;
         status         : uint16;
@@ -120,16 +121,16 @@ type
         subclass_class : uint8; 
         prog_if        : uint8;
         revision_id    : uint8;
-        BIST           : TPCI_BIST;
-        header_type    : TPCI_Header_Type;
+        BIST           : uint8;
+        header_type    : uint8;
         latency_timer  : uint8;
         cache_size     : uint8;
-        address0       : TPCI_Memory_BAR;
-        address1       : TPCI_Memory_BAR;
-        address2       : TPCI_Memory_BAR;
-        address3       : TPCI_Memory_BAR;
-        address4       : TPCI_Memory_BAR;
-        address5       : TPCI_Memory_BAR;
+        address0       : uint32;
+        address1       : uint32;
+        address2       : uint32;
+        address3       : uint32;
+        address4       : uint32;
+        address5       : uint32;
         CIS_pointer    : uint32;
         subsystem_id   : uint16;
         subsystem_vid  : uint16;
@@ -144,11 +145,11 @@ type
         interrupt_line : uint8;
     end;       
     
-    TPCI_Device_Bridge bitpacked record
-
+    TPCI_Device_Bridge = bitpacked record
+        placeholder : uint8;
     end;
 
-    TCommand_Register bitpacked record
+    TCommand_Register = bitpacked record
         reserved            : ubit5;
         interupt_disable    : boolean;
         fast_b2b_enable     : boolean;
@@ -163,7 +164,7 @@ type
         io_space            : boolean;
     end;
 
-    TStatus_Register bitpacked record
+    TStatus_Register = bitpacked record
         detected_parity_error,
         signaled_sys_error,
         received_master_abort,
@@ -175,77 +176,209 @@ type
         reserved,
         c66Mhz_compatible,
         capabilities_list,
-        interrupt_status        : boolean
+        interrupt_status        : boolean;
         reserved0               : ubit2;
     end;
     
 var
-    devices : array[0..(256 * 32)] of TPCI_Device;
+    devices : array[0..8191] of TPCI_Device;
     busses : array[0..256] of TPCI_Device_Bridge; 
 
-    device_count, bus_count : uint16 = 0;
+    device_count : uint16 = 0;
+    bus_count : uint16 = 0;
 
 procedure init();
 procedure loadConfig(bus : uint8; slot : uint8; func : uint8; offset : uint8);
-function check_device(bus : uint8; device : uint8) : 
-function get_vendor_ID() : uint16;
-function get_function() : boolean;
-function read_device_config();
-function read_bridge_config();
+function check_device(bus : uint8; device : uint8) : boolean;
+
+function get_vendor_ID(bus : uint8; slot : uint8; func : uint8; offset : uint8) : uint16;
+function isDevice(bus : uint8; slot : uint8; func : uint8; offset : uint8) : ubit2;
+
+function read8(bus : uint8; slot : uint8; func : uint8; offset : uint8; part : uint8) : uint8;
+function read16(bus : uint8; slot : uint8; func : uint8; offset : uint8; part : ubit2) : uint16;
+function read32(bus : uint8; slot : uint8; func : uint8; offset : uint8) : uint32;
+
+function read_device_config(bus : uint8; slot : uint8; func : uint8; offset : uint8) : TPCI_Device;
+//function read_bridge_config() : TPCI_Device_Bridge;
 
 implementation 
 
-function init();
+procedure init();
 var
     i : uint16;
 begin
-
-    //enumerate all pci devices
+    //enumerate master pci bus devices
     for i:=0 to 31 do begin
-        check_and_get(0, i);
+        check_device(0, i);
     end;
 
+    for i:= 0 to device_count -1 do begin
+        console.writestring('PCI Device: ');
+        console.writehexln(devices[i].vendor_id);
+        psleep(350);
+     end;
+
+    //TODO while there are unchecked nested busses, check nested busses
 end;
 
 procedure loadConfig(bus : uint8; slot : uint8; func : uint8; offset : uint8);
 var
     packet : TPCI_Config;
+    packetI : uint32;
 begin
-    packet.bus_number := bus;
-    packet.device_number := slot;
-    packet.function_number := func;
-    packet.register_offset := offset;
+    // packet.enable_bit := true;
+    // packet.bus_number := bus;
+    // packet.device_number := slot;
+    // packet.function_number := func;
+    // packet.register_offset := offset;
+    // packet.always_0 := $0;
 
-    util.outl(0xCF8, packet);
+    packetI := ($1 shl 31);
+    packetI := packetI or (bus shl 17);
+    packetI := packetI or (slot shl 11);
+    packetI := packetI or (func shl 8);
+    packetI := packetI or (offset shl 2);
 
-
+    outl($CF8, uint32(packetI)); 
 end;
 
-function check_device(bus : uint8; device : uint8) : boolean;
+function check_device(bus : uint8; device : uint8) : boolean; 
 var
-    i : uint8;
     vendor_id : uint16;
-    isDevice : boolean;
+    isDeviceb : uint8;
 begin
 
-    loadConfig(bus, slot, 0, 0);
+    vendor_id := get_vendor_ID(bus, device, 0, 0);
+    if vendor_id = $FFFF then exit;
 
-    vendor_id := get_vendor_ID();
-    if vendor_id = $0xFFFF then exit;
-
-    isDevice := get_function();
-    if isDevice then begin 
-        devices[device_count] := TPCI_Device(read_device_config);
+    isDeviceb := isDevice(bus, device, 0, 8);
+    if isDeviceb = 1 then begin 
+        devices[device_count] := read_device_config(bus, device, 0, 0);
         device_count := device_count + 1;
-    end;
-    else begin
-        busses[bus_count] := TPCI_Device_Bridge(read_bridge_config);
+        check_device := true;
+    end else begin
+        console.writestringln('NESTED BUS FOUND');
+        //busses[bus_count] := read_bridge_config();
+        bus_count := bus_count + 1;
+        check_device := false;
     end;
 end;
 
-function get_vendor_ID(bus : uint8; device : uint8) : uint16;
+function get_vendor_ID(bus : uint8; slot : uint8; func : uint8; offset : uint8) : uint16;
 begin
+    get_vendor_ID := read16(bus, slot, func, offset, 0);
 end;
+
+function isDevice(bus : uint8; slot : uint8; func : uint8; offset : uint8) : ubit2;
+begin
+    if(read8(bus, slot, func, offset, 2) = $06) then begin
+        isDevice := 0;
+        exit;
+    end;
+
+    isDevice := 1;
+end;
+
+function read8(bus : uint8; slot : uint8; func : uint8; offset : uint8; part : uint8) : uint8;
+begin
+    loadConfig(bus, slot, func, offset);
+    read8 := (inb($CFC) shl (part * 8)) and $FF;
+end;
+
+function read16(bus : uint8; slot : uint8; func : uint8; offset : uint8; part : ubit2) : uint16;
+begin
+    loadConfig(bus, slot, func, offset);
+    read16 := (inw($CFC) shl (part * 16)) and $FFFF;
+end;
+
+function read32(bus : uint8; slot : uint8; func : uint8; offset : uint8) : uint32;
+begin
+    loadConfig(bus, slot, func, offset);
+    read32 := inl($CFC);
+end;
+
+function read_device_config(bus : uint8; slot : uint8; func : uint8; offset : uint8) : TPCI_Device;
+var
+    tmp : TPCI_Device;
+begin
+    memset(uint32(@tmp), 0, sizeof(TPCI_Device));
+
+    tmp.device_id      := read16(bus, slot, func, offset, 1);
+    tmp.vendor_id      := read16(bus, slot, func, offset, 0);
+
+    offset := offset + $04;
+    tmp.status         := read16(bus, slot, func, offset, 1);
+    tmp.command        := read16(bus, slot, func, offset, 0);
+
+    offset := offset + $04;
+    tmp.class_code     := read8(bus, slot, func, offset, 3);
+    tmp.subclass_class := read8(bus, slot, func, offset, 2);
+    tmp.prog_if        := read8(bus, slot, func, offset, 1);
+    tmp.revision_id    := read8(bus, slot, func, offset, 0);
+
+    offset := offset + $04;
+    tmp.BIST           := read8(bus, slot, func, offset, 3);
+    tmp.header_type    := read8(bus, slot, func, offset, 2);
+    tmp.latency_timer  := read8(bus, slot, func, offset, 1);
+    tmp.cache_size     := read8(bus, slot, func, offset, 0);
+    
+    offset := offset + $04;
+    tmp.address0       := read32(bus, slot, func, offset);
+    offset := offset + $04;
+    tmp.address1       := read32(bus, slot, func, offset);  
+    offset := offset + $04;
+    tmp.address2       := read32(bus, slot, func, offset);  
+    offset := offset + $04;
+    tmp.address3       := read32(bus, slot, func, offset);  
+    offset := offset + $04;
+    tmp.address4       := read32(bus, slot, func, offset);  
+    offset := offset + $04;
+    tmp.address5       := read32(bus, slot, func, offset);  
+
+    offset := offset + $04;
+    tmp.CIS_pointer    := read32(bus, slot, func, offset);  
+
+    offset := offset + $04;
+    tmp.subsystem_id   := read16(bus, slot, func, offset, 1);
+    tmp.subsystem_vid  := read16(bus, slot, func, offset, 0); 
+
+    offset := offset + $04;
+    tmp.exp_rom_addr   := read32(bus, slot, func, offset);  
+
+    offset := offset + $04;
+    tmp.reserved0      := read16(bus, slot, func, offset, 1);
+    tmp.reserved1      := read8(bus, slot, func, offset, 1);
+    tmp.capabilities   := read8(bus, slot, func, offset, 0);
+
+    offset := offset + $04;
+    tmp.reserved2      := read32(bus, slot, func, offset);  
+
+    offset := offset + $04;
+    tmp.max_latency    := read8(bus, slot, func, offset, 3);
+    tmp.min_grant      := read8(bus, slot, func, offset, 2); 
+    tmp.interrupt_pin  := read8(bus, slot, func, offset, 1); 
+    tmp.interrupt_line := read8(bus, slot, func, offset, 0);
+
+        console.writestring('Checking Device: ');
+        console.writehex(slot);
+        console.writestring('   ');
+        console.writehex(tmp.device_id);        
+        console.writestring('   ');        
+        console.writehex(tmp.vendor_id);        
+        console.writestring('   ');
+        console.writehex(tmp.class_code);        
+        console.writestring('   ');
+        console.writehexln(tmp.subclass_class);
+
+        psleep(1000); 
+
+    read_device_config := tmp;
+end;
+
+// function read_bridge_config() : TPCI_Device_Bridge;
+// begin
+//     read_bridge_config.placeholder = $FF;
+// end;
 
 end.
 
