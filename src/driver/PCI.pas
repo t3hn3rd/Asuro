@@ -241,10 +241,13 @@ implementation
 procedure init();
 var
     i : uint16;
+    ii : uint16;
 begin
-    //enumerate master pci bus devices
-    for i:=0 to 31 do begin
-        check_device(0, i);
+    //enumerate pci bus 
+    for ii:=0 to 256 do begin
+        for i:=0 to 31 do begin
+            check_device(ii, i);
+        end;
     end;
 
     //TODO while there are unchecked nested busses, check nested busses
