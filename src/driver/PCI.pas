@@ -418,6 +418,16 @@ begin
         console.writestring('  ');
         console.writehexln(tmp.subclass_class);
 
+    if tmp.class_code = 1 then begin
+        console.writestringln('-Device is MASS_STORAGE_CONTROLLER ');
+    end; 
+    if tmp.class_code = 2 then begin
+        console.writestringln('-Device is NETWORK_CONTROLLER ');
+    end; 
+    if tmp.class_code = 3 then begin
+        console.writestringln('-Device is DISPLAY_CONTROLLER ');
+    end; 
+
         //psleep(300); 
 
     read_device_config := tmp;
