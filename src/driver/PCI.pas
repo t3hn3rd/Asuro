@@ -146,7 +146,42 @@ type
     end;       
     
     TPCI_Device_Bridge = bitpacked record
-        placeholder : uint8;
+        device_id          : uint16;
+        vendor_id          : uint16;
+        status             : uint16;
+        command            : uint16;
+        class_code         : uint8; 
+        subclass_class     : uint8; 
+        prog_if            : uint8;
+        revision_id        : uint8;
+        BIST               : uint8;
+        header_type        : uint8;
+        latency_timer      : uint8;
+        cache_size         : uint8;
+        address0           : uint32;
+        address1           : uint32;
+        latency_timer2     : uint8;
+        subordinate_bus    : uint8;
+        secondery_bus      : uint8;
+        primary_bus        : uint8;
+        secondery_status   : uint16;
+        io_limit           : uint8;
+        io_base            : uint8;
+        memory_limit       : uint16;
+        memory_base        : uint16;
+        pref_memory_limit  : uint16;
+        pref_memory_base   : uint16;
+        pref_base_upper    : uint32;
+        pref_limit_upper   : uint32;
+        io_limit_upper     : uint16;
+        io_base_upper      : uint16;
+        reserved           : uint16;
+        reserved0          : uint8;
+        capability_pointer : uint8;
+        epx_rom_addr       : uint32;
+        bridge_control     : uint16;
+        interrupt_pin      : uint8;
+        interrupt_line     : uint8;
     end;
 
     TCommand_Register = bitpacked record
@@ -220,13 +255,6 @@ var
     packet : TPCI_Config;
     packetI : uint32;
 begin
-    // packet.enable_bit := true;
-    // packet.bus_number := bus;
-    // packet.device_number := slot;
-    // packet.function_number := func;
-    // packet.register_offset := offset;
-    // packet.always_0 := $0;
-
     packetI := ($1 shl 31);
     packetI := packetI or (bus shl 16);
     packetI := packetI or (slot shl 11);
@@ -251,7 +279,7 @@ begin
         device_count := device_count + 1;
         check_device := true;
     end else begin
-        console.writestringln('NESTED BUS FOUND');
+        console.writestringln('PCI: Nested bus found');
         //busses[bus_count] := read_bridge_config();
         bus_count := bus_count + 1;
         check_device := false;
@@ -264,8 +292,16 @@ begin
 end;
 
 function isDevice(bus : uint8; slot : uint8; func : uint8; offset : uint8) : ubit2;
+var 
+    tmp : uint8;
 begin
-    if(read8(bus, slot, func, offset, 2) = $06) then begin
+    loadConfig(bus, slot, func, 0);
+    read8(bus, slot, func, 0, 2);
+    loadConfig(bus, slot, func, 1);
+    read8(bus, slot, func, 1, 2);
+    loadConfig(bus, slot, func, 2);
+    tmp := read8(bus, slot, func, 2, 3);
+    if(tmp = $06) then begin
         isDevice := 0;
         exit;
     end;
@@ -275,7 +311,6 @@ end;
 
 function read32(bus : uint8; slot : uint8; func : uint8; offset : uint8) : uint32;
 begin
-    loadConfig(bus, slot, func, offset);
     read32 := inl($CFC);
 end;
 
@@ -296,7 +331,7 @@ var
 
 begin
     input:= read32(bus, slot, func, offset);
-    input:= (input SHR (part * 8));
+    input:= input SHR (part * 8);
     input:= input and $000000FF;
     read8:= input;
 end;
@@ -311,63 +346,59 @@ var
 begin
     memset(uint32(@tmp), 0, sizeof(TPCI_Device));
 
-    // for i:=0 to 16 do begin
-    //     console.writehexln(read32(0, slot, 0, offset + i, 0));
-    //     psleep(1000);
-    // end;
-
     off:= offset;
+    loadConfig(bus, slot, func, 0);
     tmp.device_id      := read16(bus, slot, func, off, 1);
     tmp.vendor_id      := read16(bus, slot, func, off, 0);
 
-    off:= off+4;
+    loadConfig(bus, slot, func, 1);
     tmp.status         := read16(bus, slot, func, off, 1);
     tmp.command        := read16(bus, slot, func, off, 0);
 
-    off:= off+4;
+    loadConfig(bus, slot, func, 2);
     tmp.class_code     := read8(bus, slot, func, off, 3);
     tmp.subclass_class := read8(bus, slot, func, off, 2);
     tmp.prog_if        := read8(bus, slot, func, off, 1);
     tmp.revision_id    := read8(bus, slot, func, off, 0);
 
-    off:= off+4;
+    loadConfig(bus, slot, func, 3);
     tmp.BIST           := read8(bus, slot, func, off, 3);
     tmp.header_type    := read8(bus, slot, func, off, 2);
     tmp.latency_timer  := read8(bus, slot, func, off, 1);
     tmp.cache_size     := read8(bus, slot, func, off, 0);
     
-    off:= off+4;
+    loadConfig(bus, slot, func, 4);
     tmp.address0       := read32(bus, slot, func, off);
-    off:= off+4;
+    loadConfig(bus, slot, func, 5);
     tmp.address1       := read32(bus, slot, func, off);  
-    off:= off+4;
+    loadConfig(bus, slot, func, 6);
     tmp.address2       := read32(bus, slot, func, off);  
-    off:= off+4;
+    loadConfig(bus, slot, func, 7);
     tmp.address3       := read32(bus, slot, func, off);  
-    off:= off+4;
+    loadConfig(bus, slot, func, 8);
     tmp.address4       := read32(bus, slot, func, off);  
-    off:= off+4;
+    loadConfig(bus, slot, func, 9);
     tmp.address5       := read32(bus, slot, func, off);  
 
-    off:= off+4;
+    loadConfig(bus, slot, func, 10);
     tmp.CIS_pointer    := read32(bus, slot, func, off);  
 
-    off:= off+4;
+    loadConfig(bus, slot, func, 11);
     tmp.subsystem_id   := read16(bus, slot, func, off, 2);
     tmp.subsystem_vid  := read16(bus, slot, func, off, 0); 
 
-    off:= off+4;
+    loadConfig(bus, slot, func, 12);
     tmp.exp_rom_addr   := read32(bus, slot, func, off);  
 
-    off:= off+4;
+    loadConfig(bus, slot, func, 13);
     tmp.reserved0      := read16(bus, slot, func, off, 3);
     tmp.reserved1      := read8(bus, slot, func, off, 1);
     tmp.capabilities   := read8(bus, slot, func, off, 0);
 
-    off:= off+4;
+    loadConfig(bus, slot, func, 14);
     tmp.reserved2      := read32(bus, slot, func, off);  
 
-    off:= off+4;
+    loadConfig(bus, slot, func, 15);
     tmp.max_latency    := read8(bus, slot, func, off, 3);
     tmp.min_grant      := read8(bus, slot, func, off, 2); 
     tmp.interrupt_pin  := read8(bus, slot, func, off, 1); 
