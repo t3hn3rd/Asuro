@@ -66,8 +66,8 @@ begin
      pmemorymanager.init();
      vmemorymanager.init();
      lmemorymanager.init();
-     scheduler.init();
      tss.init();
+     scheduler.init();
     
      STI;
      isr32.hook(uint32(@bios_data_area.tick_update));

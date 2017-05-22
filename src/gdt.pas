@@ -70,6 +70,7 @@ end;
 
 procedure reload;
 begin
+    console.writestringln('GDT: RELOAD.');
     reload_gdt(uint32(@gdt_pointer));
 end;
 
@@ -80,8 +81,6 @@ var
 begin
     lLimit:= (Gate_Number + 1) * 8;
     lLimit:= lLimit - 1;
-    writestring('lLimit: ');
-    writewordln(lLimit);
     if lLimit > gdt_pointer.limit then begin
         gdt_pointer.limit:= lLimit;
     end;

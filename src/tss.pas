@@ -188,7 +188,7 @@ var
     cCR3 : uint32;
 
 begin
-    console.writehexln(uint32(ptrTaskStateSegment));
+    console.writestringln('TSS: INIT BEGIN.')
     ptrTaskStateSegment^.ss0:= $08;
     ptrTaskStateSegment^.iomap:= sizeof(TTaskStateSegment)-1;
     asm
@@ -199,19 +199,13 @@ begin
     console.writewordln(sizeof(TTaskStateSegment));
     ptrTaskStateSegment^.esp0:= cESP;
     ptrTaskStateSegment^.CR3:= cCR3;
-    console.writestring('OLD LIMIT: ');
-    console.writewordln(gdt.gdt_pointer.limit);
     gdt.set_gate($05, uint32(ptrTaskStateSegment)-KERNEL_VIRTUAL_BASE, sizeof(TTaskStateSegment)-1, $89, $40); //OFFSET: 40
-    console.writestring('NEW LIMIT: ');
-    console.writewordln(gdt.gdt_pointer.limit);
     gdt.reload;
-    //while true do begin end;
-    console.writestringln('A');
     asm
         mov AX, 40
         ltr AX
     end;
-    console.writestringln('B');
+    console.writestringln('TSS: INIT END.')
 end;
 
 end.
