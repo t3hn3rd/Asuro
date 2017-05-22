@@ -295,6 +295,8 @@ function read_device_config(bus : uint8; slot : uint8; func : uint8; offset : ui
 var
     tmp : TPCI_Device;
     i : uint16;
+    off : uint32;
+
 begin
     memset(uint32(@tmp), 0, sizeof(TPCI_Device));
 
@@ -303,62 +305,62 @@ begin
     //     psleep(1000);
     // end;
 
+    off:= offset;
+    tmp.device_id      := read16(bus, slot, func, off, 2);
+    tmp.vendor_id      := read16(bus, slot, func, off, 0);
 
-    tmp.device_id      := read16(bus, slot, func, offset, 2);
-    tmp.vendor_id      := read16(bus, slot, func, offset, 0);
+    off:= off+4;
+    tmp.status         := read16(bus, slot, func, off, 2);
+    tmp.command        := read16(bus, slot, func, off, 0);
 
-    offset := $04;
-    tmp.status         := read16(bus, slot, func, offset, 2);
-    tmp.command        := read16(bus, slot, func, offset, 0);
+    off:= off+4;
+    tmp.class_code     := read8(bus, slot, func, off, 3);
+    tmp.subclass_class := read8(bus, slot, func, off, 2);
+    tmp.prog_if        := read8(bus, slot, func, off, 1);
+    tmp.revision_id    := read8(bus, slot, func, off, 0);
 
-    offset := $08;
-    tmp.class_code     := read8(bus, slot, func, offset, 3);
-    tmp.subclass_class := read8(bus, slot, func, offset, 2);
-    tmp.prog_if        := read8(bus, slot, func, offset, 1);
-    tmp.revision_id    := read8(bus, slot, func, offset, 0);
-
-    offset := $0C;
-    tmp.BIST           := read8(bus, slot, func, offset, 3);
-    tmp.header_type    := read8(bus, slot, func, offset, 2);
-    tmp.latency_timer  := read8(bus, slot, func, offset, 1);
-    tmp.cache_size     := read8(bus, slot, func, offset, 0);
+    off:= off+4;
+    tmp.BIST           := read8(bus, slot, func, off, 3);
+    tmp.header_type    := read8(bus, slot, func, off, 2);
+    tmp.latency_timer  := read8(bus, slot, func, off, 1);
+    tmp.cache_size     := read8(bus, slot, func, off, 0);
     
-    offset := offset + $04;
-    tmp.address0       := read32(bus, slot, func, offset);
-    offset := offset + $04;
-    tmp.address1       := read32(bus, slot, func, offset);  
-    offset := offset + $04;
-    tmp.address2       := read32(bus, slot, func, offset);  
-    offset := offset + $04;
-    tmp.address3       := read32(bus, slot, func, offset);  
-    offset := offset + $04;
-    tmp.address4       := read32(bus, slot, func, offset);  
-    offset := offset + $04;
-    tmp.address5       := read32(bus, slot, func, offset);  
+    off:= off+4;
+    tmp.address0       := read32(bus, slot, func, off);
+    off:= off+4;
+    tmp.address1       := read32(bus, slot, func, off);  
+    off:= off+4;
+    tmp.address2       := read32(bus, slot, func, off);  
+    off:= off+4;
+    tmp.address3       := read32(bus, slot, func, off);  
+    off:= off+4;
+    tmp.address4       := read32(bus, slot, func, off);  
+    off:= off+4;
+    tmp.address5       := read32(bus, slot, func, off);  
 
-    offset := offset + $04;
-    tmp.CIS_pointer    := read32(bus, slot, func, offset);  
+    off:= off+4;
+    tmp.CIS_pointer    := read32(bus, slot, func, off);  
 
-    offset := offset + $04;
-    tmp.subsystem_id   := read16(bus, slot, func, offset, 2);
-    tmp.subsystem_vid  := read16(bus, slot, func, offset, 0); 
+    off:= off+4;
+    tmp.subsystem_id   := read16(bus, slot, func, off, 2);
+    tmp.subsystem_vid  := read16(bus, slot, func, off, 0); 
 
-    offset := offset + $04;
-    tmp.exp_rom_addr   := read32(bus, slot, func, offset);  
+    off:= off+4;
+    tmp.exp_rom_addr   := read32(bus, slot, func, off);  
 
-    offset := offset + $04;
-    tmp.reserved0      := read16(bus, slot, func, offset, 3);
-    tmp.reserved1      := read8(bus, slot, func, offset, 1);
-    tmp.capabilities   := read8(bus, slot, func, offset, 0);
+    off:= off+4;
+    tmp.reserved0      := read16(bus, slot, func, off, 3);
+    tmp.reserved1      := read8(bus, slot, func, off, 1);
+    tmp.capabilities   := read8(bus, slot, func, off, 0);
 
-    offset := offset + $04;
-    tmp.reserved2      := read32(bus, slot, func, offset);  
+    off:= off+4;
+    tmp.reserved2      := read32(bus, slot, func, off);  
 
-    offset := offset + $04;
-    tmp.max_latency    := read8(bus, slot, func, offset, 3);
-    tmp.min_grant      := read8(bus, slot, func, offset, 2); 
-    tmp.interrupt_pin  := read8(bus, slot, func, offset, 1); 
-    tmp.interrupt_line := read8(bus, slot, func, offset, 0);
+    off:= off+4;
+    tmp.max_latency    := read8(bus, slot, func, off, 3);
+    tmp.min_grant      := read8(bus, slot, func, off, 2); 
+    tmp.interrupt_pin  := read8(bus, slot, func, off, 1); 
+    tmp.interrupt_line := read8(bus, slot, func, off, 0);
 
         console.writestring('PCI: Found Device: ');
         console.writehex(slot);
