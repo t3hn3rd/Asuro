@@ -78,7 +78,7 @@ begin
      tss.init();
      scheduler.init();
 
-     asm INT 13 end;
+     //asm INT 13 end;
 
      STI;
      isr32.hook(uint32(@bios_data_area.tick_update));

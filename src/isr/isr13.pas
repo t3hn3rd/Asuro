@@ -49,8 +49,7 @@ begin
     console.writehexln(Regs^.CS);
     console.writestring('Error Code: ');
     console.writehexln(Regs^.ErrorCode);
-    Regs^.EIP:= Regs^.EIP - 2;
-    //util.halt_and_catch_fire;
+    util.halt_and_catch_fire;
 end;
 
 procedure register();
