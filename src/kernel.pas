@@ -52,10 +52,6 @@ begin
 
      console.writestringln('Booting Asuro...');
 
-     for i:=0 to 100000000 do begin
-
-     end;
-
      if (multibootmagic <> MULTIBOOT_BOOTLOADER_MAGIC) then begin
         console.setdefaultattribute(console.combinecolors(Red, Black));
         console.writestringln('Multiboot Compliant Boot-Loader Needed!');
@@ -76,18 +72,16 @@ begin
      STI;
      isr32.hook(uint32(@bios_data_area.tick_update));
 
-     console.writestringln('Initializing Drivers');
      //drivers
+     console.writestringln('Initializing Drivers');
      pci.init();
      keyboard.init(keyboard_layout);
-
      console.writestringln('Drivers Initialized');
 
 
      asm
         MOV dds, CS
      end;
-
      if dds = $08 then begin
         console.setdefaultattribute(console.combinecolors(Green, Black));
         console.writestringln('GDT: LOAD SUCCESS.');
@@ -111,23 +105,6 @@ begin
      console.writeint(((mbinfo^.mem_upper + 1000) div 1024) + 1);
      console.writestringln('MB');
      console.setdefaultattribute(console.combinecolors(lYellow, Black));
-
-     {z:= 1;
-     while true do begin
-        console.writehex(z);
-        console.writestring(': ');
-        pint:= kalloc(1024*4);
-        console.writehexln(uint32(pint));
-        if pint = nil then while true do begin end else pint^:= 1234;
-        //kfree(pint);
-        z:=z+1;
-     end;}
-
-     console.writestringln('');
-
-
-
-
      util.halt_and_dont_catch_fire;
 end;
  
