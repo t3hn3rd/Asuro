@@ -112,7 +112,7 @@ type
         always_0 : boolean;
     end;
 
-    TPCI_Device = bitpacked record
+    TPCI_Device = packed record
         device_id      : uint16;
         vendor_id      : uint16;
         status         : uint16;
@@ -195,7 +195,7 @@ function get_vendor_ID(bus : uint8; slot : uint8; func : uint8; offset : uint8) 
 function isDevice(bus : uint8; slot : uint8; func : uint8; offset : uint8) : ubit2;
 
 function read8(bus : uint8; slot : uint8; func : uint8; offset : uint8; part : uint8) : uint8;
-function read16(bus : uint8; slot : uint8; func : uint8; offset : uint8; part : ubit2) : uint16;
+function read16(bus : uint8; slot : uint8; func : uint8; offset : uint8; part : uint8) : uint16;
 function read32(bus : uint8; slot : uint8; func : uint8; offset : uint8) : uint32;
 
 function read_device_config(bus : uint8; slot : uint8; func : uint8; offset : uint8) : TPCI_Device;
@@ -228,7 +228,7 @@ begin
     // packet.always_0 := $0;
 
     packetI := ($1 shl 31);
-    packetI := packetI or (bus shl 17);
+    packetI := packetI or (bus shl 16);
     packetI := packetI or (slot shl 11);
     packetI := packetI or (func shl 8);
     packetI := packetI or (offset shl 2);
@@ -275,14 +275,14 @@ end;
 
 function read8(bus : uint8; slot : uint8; func : uint8; offset : uint8; part : uint8) : uint8;
 begin
-    loadConfig(bus, slot, func, offset);
-    read8 := (inb($CFC) shl (part * 8)) and $FF;
+    loadConfig(bus, slot, func, offset + part);
+    read8 := inb($CFC);
 end;
 
-function read16(bus : uint8; slot : uint8; func : uint8; offset : uint8; part : ubit2) : uint16;
+function read16(bus : uint8; slot : uint8; func : uint8; offset : uint8; part : uint8) : uint16;
 begin
-    loadConfig(bus, slot, func, offset);
-    read16 := (inw($CFC) shl (part * 16)) and $FFFF;
+    loadConfig(bus, slot, func, offset + part);
+    read16 := inw($CFC);
 end;
 
 function read32(bus : uint8; slot : uint8; func : uint8; offset : uint8) : uint32;
@@ -304,20 +304,20 @@ begin
     // end;
 
 
-    tmp.device_id      := read16(bus, slot, func, offset, 1);
+    tmp.device_id      := read16(bus, slot, func, offset, 2);
     tmp.vendor_id      := read16(bus, slot, func, offset, 0);
 
-    offset := offset + $04;
-    tmp.status         := read16(bus, slot, func, offset, 1);
+    offset := $04;
+    tmp.status         := read16(bus, slot, func, offset, 2);
     tmp.command        := read16(bus, slot, func, offset, 0);
 
-    offset := offset + $04;
+    offset := $08;
     tmp.class_code     := read8(bus, slot, func, offset, 3);
     tmp.subclass_class := read8(bus, slot, func, offset, 2);
     tmp.prog_if        := read8(bus, slot, func, offset, 1);
     tmp.revision_id    := read8(bus, slot, func, offset, 0);
 
-    offset := offset + $04;
+    offset := $0C;
     tmp.BIST           := read8(bus, slot, func, offset, 3);
     tmp.header_type    := read8(bus, slot, func, offset, 2);
     tmp.latency_timer  := read8(bus, slot, func, offset, 1);
@@ -340,14 +340,14 @@ begin
     tmp.CIS_pointer    := read32(bus, slot, func, offset);  
 
     offset := offset + $04;
-    tmp.subsystem_id   := read16(bus, slot, func, offset, 1);
+    tmp.subsystem_id   := read16(bus, slot, func, offset, 2);
     tmp.subsystem_vid  := read16(bus, slot, func, offset, 0); 
 
     offset := offset + $04;
     tmp.exp_rom_addr   := read32(bus, slot, func, offset);  
 
     offset := offset + $04;
-    tmp.reserved0      := read16(bus, slot, func, offset, 1);
+    tmp.reserved0      := read16(bus, slot, func, offset, 3);
     tmp.reserved1      := read8(bus, slot, func, offset, 1);
     tmp.capabilities   := read8(bus, slot, func, offset, 0);
 
