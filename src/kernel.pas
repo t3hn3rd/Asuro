@@ -60,6 +60,15 @@ begin
      end;
 
      gdt.init();
+     asm
+        MOV dds, CS
+     end;
+     if dds = $08 then begin
+        console.writestringlnex('GDT: LOAD SUCCESS.', console.combinecolors(Green, Black));
+     end else begin
+        console.writestringlnex('GDT: LOAD FAIL.', console.combinecolors(Red, Black));
+        halt_and_catch_fire;
+     end;
      idt.init();
      isr.init();
      irq.init();
@@ -73,22 +82,10 @@ begin
      isr32.hook(uint32(@bios_data_area.tick_update));
 
      //drivers
-     console.writestringln('Initializing Drivers');
+     console.writestringln('DRIVERS: INIT BEGIN.');
      pci.init();
      keyboard.init(keyboard_layout);
-     console.writestringln('Drivers Initialized');
-
-
-     asm
-        MOV dds, CS
-     end;
-     if dds = $08 then begin
-        console.setdefaultattribute(console.combinecolors(Green, Black));
-        console.writestringln('GDT: LOAD SUCCESS.');
-     end else begin
-        console.setdefaultattribute(console.combinecolors(Red, Black));
-        console.writestringln('GDT: LOAD FAIL.');
-     end;
+     console.writestringln('DRIVERS: INIT END.');
 
      console.writestringln('');
      console.setdefaultattribute(console.combinecolors(Green, Black));
