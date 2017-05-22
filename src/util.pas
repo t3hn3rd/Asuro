@@ -143,7 +143,7 @@ begin
      asm
           PUSH EAX
           PUSH EDX
-          MOV DX, port$FFFF
+          MOV DX, port
           IN EAX, DX
           MOV inl, EAX
           POP EDX
