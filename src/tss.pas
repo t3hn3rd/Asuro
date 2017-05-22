@@ -17,9 +17,9 @@ uses
     console;
 
 type
-    {
+    {TTaskStateSegment = packed record
         Res1       : uint16;
-        IOPBOffset : uint16;
+        IOMap      : uint16;
         LDTR       : uint16;
         Res2       : uint16;
         GS         : uint16;
@@ -54,8 +54,9 @@ type
         ESP0       : uint32;
         LINK       : uint16;
         Res12      : uint16;
-    }
-
+    end;
+    PTaskStateSegment = ^TTaskStateSegment;}
+    
     {
         Res12      : uint16;
         LINK       : uint16;
@@ -143,6 +144,36 @@ type
     end;
     PTaskStateSegment = ^TTaskStateSegment;
 
+    {TTaskStateSegment = packed record
+        link   : uint32;
+        esp0   : uint32;
+        ss0    : uint32;
+        esp1   : uint32;
+        ss1    : uint32;
+        esp2   : uint32;
+        ss2    : uint32;
+        cr3    : uint32;
+        eip    : uint32;
+        eflags : uint32;
+        eax    : uint32;
+        ecx    : uint32;
+        edx    : uint32;
+        ebx    : uint32;
+        esp    : uint32;
+        ebp    : uint32;
+        esi    : uint32;
+        edi    : uint32;
+        es     : uint32;
+        cs     : uint32;
+        ss     : uint32;
+        ds     : uint32;
+        fs     : uint32;
+        gs     : uint32;
+        ldt    : uint32;
+        iomap  : uint32;
+    end;
+    PTaskStateSegment = ^TTaskStateSegment;}
+
 var
     TaskStateSegment : TTaskStateSegment;
     ptrTaskStateSegment : PTaskStateSegment = @TaskStateSegment;
@@ -154,15 +185,27 @@ implementation
 procedure init;
 var
     cESP : uint32;
+    cCR3 : uint32;
 
 begin
-    ptrTaskStateSegment^.ss0:= $10;
-    ptrTaskStateSegment^.iomap:= sizeof(TTaskStateSegment);
-    gdt.set_gate($05, uint32(ptrTaskStateSegment) - KERNEL_VIRTUAL_BASE, sizeof(TTaskStateSegment), $89, $40); //OFFSET: 40
+    console.writehexln(uint32(ptrTaskStateSegment));
+    ptrTaskStateSegment^.ss0:= $08;
+    ptrTaskStateSegment^.iomap:= sizeof(TTaskStateSegment)-1;
     asm
         MOV cESP, ESP 
+        MOV EAX, CR3
+        MOV cCR3, EAX
     end;
+    console.writewordln(sizeof(TTaskStateSegment));
     ptrTaskStateSegment^.esp0:= cESP;
+    //ptrTaskStateSegment^.CR3:= cCR3;
+    console.writestring('OLD LIMIT: ');
+    console.writewordln(gdt.gdt_pointer.limit);
+    //gdt.set_gate($05, uint32(ptrTaskStateSegment)-KERNEL_VIRTUAL_BASE, sizeof(TTaskStateSegment)-1, $89, $40); //OFFSET: 40
+    console.writestring('NEW LIMIT: ');
+    console.writewordln(gdt.gdt_pointer.limit);
+    gdt.reload;
+    while true do begin end;
     console.writestringln('A');
     asm
         mov AX, 40

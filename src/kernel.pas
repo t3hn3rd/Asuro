@@ -42,6 +42,7 @@ var
    pint2 : puint32;
    keyboard_layout : array [0..1] of TKeyInfo;
    i : uint32;
+   cEIP : uint32;
    
 begin
      multibootinfo:= mbinfo;
@@ -50,6 +51,10 @@ begin
      console.init();
 
      console.writestringln('Booting Asuro...');
+
+     for i:=0 to 100000000 do begin
+
+     end;
 
      if (multibootmagic <> MULTIBOOT_BOOTLOADER_MAGIC) then begin
         console.setdefaultattribute(console.combinecolors(Red, Black));
@@ -62,11 +67,12 @@ begin
      idt.init();
      isr.init();
      irq.init();
+     tss.init();
      pmemorymanager.init();
      vmemorymanager.init();
      lmemorymanager.init();
-     tss.init();
      scheduler.init();
+     
 
      while true do begin end;
 

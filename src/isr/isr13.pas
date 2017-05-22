@@ -28,14 +28,21 @@ var
 
 procedure Main(); interrupt;
 var
-    i : integer;
-    
+    i  : integer;
+    ec : uint32;
+
 begin
+    asm
+        MOV EAX, [ESP-4]
+        MOV ec, EAX
+    end;
     CLI;
     for i:=0 to MAX_HOOKS-1 do begin
         if uint32(Hooks[i]) <> 0 then Hooks[i](void(13));
     end;
-    console.writestringln('General Protection Fault.');
+    console.writestring('General Protection Fault. [');
+    console.writehex(ec);
+    console.writestringln(']');
     util.halt_and_catch_fire;
 end;
 
