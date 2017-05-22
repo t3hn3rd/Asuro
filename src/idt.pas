@@ -21,7 +21,7 @@ const
      ISR_RING_3 = $EE;
 
 type
-    TIDT_Entry = bitpacked record
+    TIDT_Entry = packed record
         base_low  : uint16;
         selector  : uint16;
         always_0  : uint8;
@@ -30,7 +30,7 @@ type
     end;
     PIDT_Entry = ^TIDT_Entry;
 
-    TIDT_Pointer = bitpacked record
+    TIDT_Pointer = packed record
         limit : uint16;
         base  : uint32;
     end;
