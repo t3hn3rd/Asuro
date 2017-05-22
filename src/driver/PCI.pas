@@ -284,13 +284,10 @@ var
     input : uint32;
 
 begin
-    part:= 1 - part;
     input:= read32(bus, slot, func, offset);
     input:= input SHR (part * 16);
     input:= input and $0000FFFF;
     read16:= input;
-    //loadConfig(bus, slot, func, offset);
-    //read16 := (inw($CFC) shr (part * 16)) and $FFFF;
 end;
 
 function read8(bus : uint8; slot : uint8; func : uint8; offset : uint8; part : uint8) : uint8;
@@ -298,9 +295,6 @@ var
     input : uint32;
 
 begin
-    part:= 3 - part;
-    //loadConfig(bus, slot, func, offset);
-    //read8 := (inb($CFC) shr (part * 8)) and $FF;
     input:= read32(bus, slot, func, offset);
     input:= (input SHR (part * 8));
     input:= input and $000000FF;
