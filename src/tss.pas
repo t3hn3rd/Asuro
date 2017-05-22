@@ -196,7 +196,6 @@ begin
         MOV EAX, CR3
         MOV cCR3, EAX
     end;
-    console.writewordln(sizeof(TTaskStateSegment));
     ptrTaskStateSegment^.esp0:= cESP;
     ptrTaskStateSegment^.CR3:= cCR3;
     gdt.set_gate($05, uint32(ptrTaskStateSegment)-KERNEL_VIRTUAL_BASE, sizeof(TTaskStateSegment)-1, $89, $40); //OFFSET: 40
