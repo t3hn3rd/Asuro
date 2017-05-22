@@ -15,10 +15,12 @@ const
     MAX_HOOKS = 16;
 
 type
-    ISR_REGS = record
-        ip, cs, flags, sp, ss : uint16;
+    PRegisters = ^TRegisters;
+    TRegisters = record
+        edi,esi,ebp,esp,ebx,edx,ecx,eax: uint32;
+        ErrorCode : uint32;
+        eip,cs,eflags,UserESP,ss: uint32;
     end;
-	PISR_REGS = ^ISR_REGS;
 
     pp_hook_method = procedure(data : void);
     pp_void = pp_hook_method;

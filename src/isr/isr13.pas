@@ -28,22 +28,29 @@ var
 
 procedure Main(); interrupt;
 var
-    i  : integer;
-    ec : uint32;
+    i    : uint32;
+    Regs : PRegisters;
 
 begin
-    asm
-        MOV EAX, [ESP-4]
-        MOV ec, EAX
-    end;
     CLI;
+    asm
+        MOV EAX, EBP
+        MOV Regs, EAX
+    end;
     for i:=0 to MAX_HOOKS-1 do begin
         if uint32(Hooks[i]) <> 0 then Hooks[i](void(13));
     end;
-    console.writestring('General Protection Fault. [');
-    console.writehex(ec);
-    console.writestringln(']');
-    util.halt_and_catch_fire;
+    console.writestringln('General Protection Fault.');
+    console.writestring('Flags: ');
+    console.writehexln(Regs^.EFlags);
+    console.writestring('EIP: ');
+    console.writehexln(Regs^.EIP);
+    console.writestring('CS: ');
+    console.writehexln(Regs^.CS);
+    console.writestring('Error Code: ');
+    console.writehexln(Regs^.ErrorCode);
+    Regs^.EIP:= Regs^.EIP - 2;
+    //util.halt_and_catch_fire;
 end;
 
 procedure register();

@@ -20,10 +20,9 @@ const
     Quantum = 64;
 
 type
-    TTask_State_Segment = packed record
-        
+    TTaskState = packed record
+        //EAX, EDX, 
     end;
-
     TScheduler_Entry = packed record
         ThreadID : uint32;
         Priority : uint8;

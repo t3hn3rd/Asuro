@@ -17,85 +17,6 @@ uses
     console;
 
 type
-    {TTaskStateSegment = packed record
-        Res1       : uint16;
-        IOMap      : uint16;
-        LDTR       : uint16;
-        Res2       : uint16;
-        GS         : uint16;
-        Res3       : uint16;
-        FS         : uint16;
-        Res4       : uint16;
-        DS         : uint16;
-        Res5       : uint16;
-        SS         : uint16;
-        Res6       : uint16;
-        CS         : uint16;
-        Res7       : uint16;
-        ES         : uint16;
-        Res8       : uint16;
-        EDI        : uint32;
-        ESI        : uint32;
-        EBP        : uint32;
-        ESP        : uint32;
-        EBX        : uint32;
-        EDX        : uint32;
-        ECX        : uint32;
-        EAX        : uint32;
-        EFLAGS     : uint32;
-        EIP        : uint32;
-        CR3        : uint32;
-        SS2        : uint16;
-        Res9       : uint16;
-        SS1        : uint16;
-        Res10      : uint16;
-        SS0        : uint16;
-        Res11      : uint16;
-        ESP0       : uint32;
-        LINK       : uint16;
-        Res12      : uint16;
-    end;
-    PTaskStateSegment = ^TTaskStateSegment;}
-    
-    {
-        Res12      : uint16;
-        LINK       : uint16;
-        ESP0       : uint32;
-        Res11      : uint16;
-        SS0        : uint16;
-        Res10      : uint16;
-        SS1        : uint16;
-        Res9       : uint16;
-        SS2        : uint16;
-        CR3        : uint32;
-        EIP        : uint32;
-        EFLAGS     : uint32;
-        EAX        : uint32;
-        ECX        : uint32;
-        EDX        : uint32;
-        EBX        : uint32;
-        ESP        : uint32;
-        EBP        : uint32;
-        ESI        : uint32;
-        EDI        : uint32;
-        Res8       : uint16;
-        ES         : uint16;
-        Res7       : uint16;
-        CS         : uint16;
-        Res6       : uint16;
-        SS         : uint16;
-        Res5       : uint16;
-        DS         : uint16;
-        Res4       : uint16;
-        FS         : uint16;
-        Res3       : uint16;
-        GS         : uint16;
-        Res2       : uint16;
-        LDTR       : uint16;
-        IOPBOffset : uint16;
-        Res1       : uint16;
-    }
-
     TTaskStateSegment = packed record
         link : uint16;
         link_h : uint16;
@@ -144,36 +65,6 @@ type
     end;
     PTaskStateSegment = ^TTaskStateSegment;
 
-    {TTaskStateSegment = packed record
-        link   : uint32;
-        esp0   : uint32;
-        ss0    : uint32;
-        esp1   : uint32;
-        ss1    : uint32;
-        esp2   : uint32;
-        ss2    : uint32;
-        cr3    : uint32;
-        eip    : uint32;
-        eflags : uint32;
-        eax    : uint32;
-        ecx    : uint32;
-        edx    : uint32;
-        ebx    : uint32;
-        esp    : uint32;
-        ebp    : uint32;
-        esi    : uint32;
-        edi    : uint32;
-        es     : uint32;
-        cs     : uint32;
-        ss     : uint32;
-        ds     : uint32;
-        fs     : uint32;
-        gs     : uint32;
-        ldt    : uint32;
-        iomap  : uint32;
-    end;
-    PTaskStateSegment = ^TTaskStateSegment;}
-
 var
     TaskStateSegment : TTaskStateSegment;
     ptrTaskStateSegment : PTaskStateSegment = @TaskStateSegment;
@@ -198,7 +89,7 @@ begin
     end;
     ptrTaskStateSegment^.esp0:= cESP;
     ptrTaskStateSegment^.CR3:= cCR3;
-    gdt.set_gate($05, uint32(ptrTaskStateSegment)-KERNEL_VIRTUAL_BASE, sizeof(TTaskStateSegment)-1, $89, $40); //OFFSET: 40
+    gdt.set_gate($05, uint32(ptrTaskStateSegment) - KERNEL_VIRTUAL_BASE, sizeof(TTaskStateSegment) - 1, $89, $40); //OFFSET: 40
     gdt.reload;
     asm
         mov AX, 40
