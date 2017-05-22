@@ -276,13 +276,13 @@ end;
 function read8(bus : uint8; slot : uint8; func : uint8; offset : uint8; part : uint8) : uint8;
 begin
     loadConfig(bus, slot, func, offset);
-    read8 := (inb($CFC) shr (part * 8)) and $FF;
+    read8 := (inl($CFC) shr (part * 8)) and $FF;
 end;
 
 function read16(bus : uint8; slot : uint8; func : uint8; offset : uint8; part : uint8) : uint16;
 begin
     loadConfig(bus, slot, func, offset);
-    read16 := (inw($CFC) shr (part * 16)) and $FFFF;
+    read16 := (inl($CFC) shr (part * 16)) and $FFFF;
 end;
 
 function read32(bus : uint8; slot : uint8; func : uint8; offset : uint8) : uint32;
