@@ -67,11 +67,11 @@ begin
      idt.init();
      isr.init();
      irq.init();
-     tss.init();
      pmemorymanager.init();
      vmemorymanager.init();
      lmemorymanager.init();
      scheduler.init();
+     tss.init();
      
 
      while true do begin end;

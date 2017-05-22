@@ -198,10 +198,10 @@ begin
     end;
     console.writewordln(sizeof(TTaskStateSegment));
     ptrTaskStateSegment^.esp0:= cESP;
-    //ptrTaskStateSegment^.CR3:= cCR3;
+    ptrTaskStateSegment^.CR3:= cCR3;
     console.writestring('OLD LIMIT: ');
     console.writewordln(gdt.gdt_pointer.limit);
-    //gdt.set_gate($05, uint32(ptrTaskStateSegment)-KERNEL_VIRTUAL_BASE, sizeof(TTaskStateSegment)-1, $89, $40); //OFFSET: 40
+    gdt.set_gate($05, uint32(ptrTaskStateSegment)-KERNEL_VIRTUAL_BASE, sizeof(TTaskStateSegment)-1, $89, $40); //OFFSET: 40
     console.writestring('NEW LIMIT: ');
     console.writewordln(gdt.gdt_pointer.limit);
     gdt.reload;
