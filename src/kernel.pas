@@ -72,10 +72,7 @@ begin
      lmemorymanager.init();
      scheduler.init();
      tss.init();
-     
-
-     while true do begin end;
-
+    
      STI;
      isr32.hook(uint32(@bios_data_area.tick_update));
 

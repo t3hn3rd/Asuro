@@ -31,7 +31,7 @@ type
     end;
 
 var
-    gdt_entries : array[0..6] of TGDT_Entry;
+    gdt_entries : array[0..1023] of TGDT_Entry;
     gdt_pointer : TGDT_Pointer;
 
 procedure init();

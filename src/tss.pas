@@ -205,7 +205,7 @@ begin
     console.writestring('NEW LIMIT: ');
     console.writewordln(gdt.gdt_pointer.limit);
     gdt.reload;
-    while true do begin end;
+    //while true do begin end;
     console.writestringln('A');
     asm
         mov AX, 40
