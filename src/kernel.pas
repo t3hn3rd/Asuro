@@ -69,6 +69,7 @@ begin
         console.writestringlnex('GDT: LOAD FAIL.', console.combinecolors(Red, Black));
         halt_and_catch_fire;
      end;
+
      idt.init();
      isr.init();
      irq.init();
@@ -79,7 +80,6 @@ begin
      scheduler.init();
 
      //asm INT 13 end;
-
      STI;
      isr32.hook(uint32(@bios_data_area.tick_update));
 

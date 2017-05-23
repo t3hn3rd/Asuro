@@ -42,17 +42,24 @@ procedure register();
 var
     status : uint8;
     bm     : PBitMask;
+    ak     : uint8;
 
 begin
     memset(uint32(@Hooks[0]), 0, sizeof(pp_hook_method)*MAX_HOOKS);
     IDT.set_gate(45, uint32(@Main), $08, ISR_RING_0);
     outb($64, $20);
     status:= inb($64);
+    ak:= inb($64);
+    console.writebin8ln(status);
     bm:= PBitMask(@status);
     bm^.b1:= true;
     bm^.b5:= false;
+    console.writebin8ln(status);
+    //while true do begin end;
     outb($64, $60);
+    ak:= inb($64);
     outb($60, status);
+    ak:= inb($60);
 end;
 
 procedure hook(hook_method : uint32);

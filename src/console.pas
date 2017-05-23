@@ -38,28 +38,44 @@ procedure clear();
 procedure setdefaultattribute(attribute : char);
 
 procedure writechar(character : char);
-procedure writestring(str: PChar);
-procedure writeint(i: Integer);
-procedure writeword(i: DWORD);
-procedure writehex(i: DWORD);
-
 procedure writecharln(character : char);
-procedure writestringln(str: PChar);
-procedure writeintln(i: Integer);
-procedure writewordln(i: DWORD);
-procedure writehexln(i: DWORD);
-
 procedure writecharex(character : char; attributes : char);
-procedure writestringex(str: PChar; attributes : char);
-procedure writeintex(i: Integer; attributes : char);
-procedure writewordex(i: DWORD; attributes : char);
-procedure writehexex(i : DWORD; attributes : char);
-
 procedure writecharlnex(character : char; attributes : char);
+
+procedure writestring(str: PChar);
+procedure writestringln(str: PChar);
+procedure writestringex(str: PChar; attributes : char);
 procedure writestringlnex(str: PChar; attributes : char);
+
+procedure writeint(i: Integer);
+procedure writeintln(i: Integer);
+procedure writeintex(i: Integer; attributes : char);
 procedure writeintlnex(i: Integer; attributes : char);
+
+procedure writeword(i: DWORD);
+procedure writewordln(i: DWORD);
+procedure writewordex(i: DWORD; attributes : char);
 procedure writewordlnex(i: DWORD; attributes : char);
+
+procedure writehex(i: DWORD);
+procedure writehexln(i: DWORD);
+procedure writehexex(i : DWORD; attributes : char);
 procedure writehexlnex(i: DWORD; attributes : char);
+
+procedure writebin8(b : uint8);
+procedure writebin8ln(b : uint8);
+procedure writebin8ex(b : uint8; attributes : char);
+procedure writebin8lnex(b : uint8; attributes : char);
+
+procedure writebin16(b : uint16);
+procedure writebin16ln(b : uint16);
+procedure writebin16ex(b : uint16; attributes : char);
+procedure writebin16lnex(b : uint16; attributes : char);
+
+procedure writebin32(b : uint32);
+procedure writebin32ln(b : uint32);
+procedure writebin32ex(b : uint32; attributes : char);
+procedure writebin32lnex(b : uint32; attributes : char);
 
 function combinecolors(Foreground, Background : TColor) : char;
 
@@ -118,6 +134,94 @@ begin
      end;
      Console_Cursor.X:= 0;
      Console_Cursor.Y:= 0;
+end;
+
+procedure writebin8ex(b : uint8; attributes : char);
+var
+   Mask : PMask;
+   i    : uint8;
+
+begin
+     Mask:= PMask(@b);
+     for i:=0 to 7 do begin
+        If Mask^[7-i] then writecharex('1', attributes) else writecharex('0', attributes);
+     end;
+end;
+
+procedure writebin16ex(b : uint16; attributes : char);
+var
+   Mask : PMask;
+   i,j  : uint8;
+
+begin
+     for j:=1 downto 0 do begin
+        Mask:= PMask(uint32(@b) + (1 * j));
+        for i:=0 to 7 do begin
+                If Mask^[7-i] then writecharex('1', attributes) else writecharex('0', attributes);
+        end;
+     end;
+end;
+
+procedure writebin32ex(b : uint32; attributes : char);
+var
+   Mask : PMask;
+   i,j  : uint8;
+
+begin
+     for j:=3 downto 0 do begin
+        Mask:= PMask(uint32(@b) + (1 * j));
+        for i:=0 to 7 do begin
+                If Mask^[7-i] then writecharex('1', attributes) else writecharex('0', attributes);
+        end;
+     end;
+end;
+
+procedure writebin8(b : uint8);
+begin
+     writebin8ex(b, Console_Properties.Default_Attribute);
+end;
+
+procedure writebin16(b : uint16);
+begin
+     writebin16ex(b, Console_Properties.Default_Attribute);
+end;
+
+procedure writebin32(b : uint32);
+begin
+     writebin32ex(b, Console_Properties.Default_Attribute);
+end;
+
+procedure writebin8lnex(b : uint8; attributes : char);
+begin
+     writebin8ex(b, attributes);
+     console._safeincrement_y();
+end;
+
+procedure writebin16lnex(b : uint16; attributes : char);
+begin
+     writebin16ex(b, attributes);
+     console._safeincrement_y();
+end;
+
+procedure writebin32lnex(b : uint32; attributes : char);
+begin
+     writebin32ex(b, attributes);
+     console._safeincrement_y();
+end;
+
+procedure writebin8ln(b : uint8);
+begin
+     writebin8lnex(b, Console_Properties.Default_Attribute);
+end;
+
+procedure writebin16ln(b : uint16);
+begin
+     writebin16lnex(b, Console_Properties.Default_Attribute);
+end;
+
+procedure writebin32ln(b : uint32);
+begin
+     writebin32lnex(b, Console_Properties.Default_Attribute);
 end;
 
 procedure setdefaultattribute(attribute: char); [public, alias: 'console_setdefaultattribute'];
