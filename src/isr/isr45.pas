@@ -55,10 +55,10 @@ begin
     bm^.b1:= true;
     bm^.b5:= false;
     console.writebin8ln(status);
-    //while true do begin end;
+    while true do begin end;
     outb($64, $60);
-    ak:= inb($64);
-    outb($60, status);
+    ak:= inb($60);
+    outb($64, status);
     ak:= inb($60);
 end;
 
