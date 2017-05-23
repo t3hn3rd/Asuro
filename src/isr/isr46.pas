@@ -33,7 +33,7 @@ var
 begin
     CLI;
     for i:=0 to MAX_HOOKS-1 do begin
-        if uint32(Hooks[i]) <> 0 then Hooks[i](void($00000000)));
+        if uint32(Hooks[i]) <> 0 then Hooks[i](void($00000000));
     end;
     console.writestringln('Disk Operation Complete');
 end;
