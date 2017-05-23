@@ -65,6 +65,11 @@ type
     UBit28 = 0..(1 shl 28) - 1;
     UBit30 = 0..(1 shl 30) - 1;
 
+    TBitMask = bitpacked record
+      b7,b6,b5,b4,b3,b2,b1,b0 : Boolean;
+    end;
+    PBitMask = ^TBitMask;
+
 implementation
 
 end.

@@ -29,9 +29,14 @@ var
 procedure Main; interrupt; //IRQ0, 1024.19hz aprox
 var
     i : integer;
+    regs : PRegisters;
 
 begin
     CLI;
+    asm
+        MOV EAX, EBP
+        MOV Regs, EAX
+    end;
     for i:=0 to MAX_HOOKS-1 do begin
         if uint32(Hooks[i]) <> 0 then begin 
             Hooks[i](nil);
