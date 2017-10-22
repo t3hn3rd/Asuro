@@ -28,10 +28,8 @@ begin
     outb($A1, $02);
     outb($21, $01);
     outb($A1, $01);
-
     outb($21, $00);
     outb($A1, $00);
-
     console.writestringln('IRQ: INIT END.');
 end;
 
