@@ -22,6 +22,7 @@ uses
      console,
      bios_data_area,
      keyboard,
+     mouse,
      vmemorymanager,
      pmemorymanager,
      lmemorymanager,
@@ -87,6 +88,7 @@ begin
      console.writestringln('DRIVERS: INIT BEGIN.');
      pci.init();
      keyboard.init(keyboard_layout);
+     mouse.init();
      console.writestringln('DRIVERS: INIT END.');
 
      console.writestringln('');
