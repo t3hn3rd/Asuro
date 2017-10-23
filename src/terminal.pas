@@ -4,27 +4,46 @@ interface
 
 uses
     console,
-    keyboard;
+    keyboard,
+    util;
 
 var
-    buffer : array[0..1024] of byte;
+    buffer : array[0..1023] of byte;
     bIndex : uint32 = 0;
 
 procedure run;
 
 implementation
 
+function isCommand(command : pchar) : boolean;
+var
+    i : uint32;
+
+begin
+    isCommand:= true;
+    for i:=0 to bIndex do begin
+        if char(buffer[i]) = ' ' then exit;
+        if char(buffer[i]) <> char(command[i]) then begin
+            isCommand:= false;
+            exit;
+        end;
+    end;
+end;
+
 procedure process_command;
 begin
     console.writecharln(' ');
+    //Process Here
+    if isCommand('version') then console.writestringln('Asuro v1.0');
     console.writestring('Asuro#> ');
     bIndex:= 0;
+    memset(uint32(@buffer[0]), 0, 1024);
 end;
 
 procedure key_event(info : TKeyInfo);
 begin
     if (info.key_code >= 32) and (info.key_code <= 126) then begin
-        if bIndex <= 1024 then begin
+        if bIndex < 1024 then begin
             buffer[bIndex]:= info.key_code;
             inc(bIndex);
             console.writechar(char(info.key_code));
@@ -44,6 +63,7 @@ end;
 
 procedure run;
 begin
+    memset(uint32(@buffer[0]), 0, 1024);
     keyboard.hook(@key_event);
     console.clear();
     console.writestring('Asuro#> ');
