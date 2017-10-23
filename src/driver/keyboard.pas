@@ -312,7 +312,7 @@ begin
     key_matrix_shift[49].key_code := $4E;
     key_matrix_shift[50].key_code := $4D;
     key_matrix_shift[51].key_code := $3C;
-    key_matrix_shift[51].key_code := $3E;
+    key_matrix_shift[52].key_code := $3E;
     key_matrix_shift[53].key_code := $3F;
 
 end;
