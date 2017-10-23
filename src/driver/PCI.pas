@@ -224,7 +224,7 @@ var
 
 procedure init();
 procedure loadConfig(bus : uint8; slot : uint8; func : uint8; offset : uint8);
-function check_device(bus : uint8; device : uint8) : boolean;
+function check_device(bus : uint8; device : uint8; func : uint8) : boolean;
 
 function get_vendor_ID(bus : uint8; slot : uint8; func : uint8; offset : uint8) : uint16;
 function isDevice(bus : uint8; slot : uint8; func : uint8; offset : uint8) : ubit2;
@@ -242,11 +242,12 @@ procedure init();
 var
     i : uint16;
     ii : uint16;
+    iii : uint8;
 begin
     //enumerate pci bus 
     for ii:=0 to 256 do begin
         for i:=0 to 31 do begin
-            check_device(ii, i);
+            check_device(ii, i, 0);
         end;
     end;
 
@@ -259,29 +260,39 @@ var
 begin
     packetI := ($1 shl 31);
     packetI := packetI or (bus shl 16);
-    packetI := packetI or (slot shl 11);
-    packetI := packetI or (func shl 8);
-    packetI := packetI or (offset shl 2);
+    packetI := packetI or ((slot) shl 11);
+    packetI := packetI or ((func) shl 8);
+    packetI := packetI or ((offset) shl 2);
 
     outl($CF8, uint32(packetI)); 
 end;
 
-function check_device(bus : uint8; device : uint8) : boolean; 
+function check_device(bus : uint8; device : uint8; func : uint8) : boolean; 
 var
     vendor_id : uint16;
     isDeviceb : uint8;
+    i : uint8;
 begin
 
     vendor_id := get_vendor_ID(bus, device, 0, 0);
     if vendor_id = $FFFF then exit;
 
     isDeviceb := isDevice(bus, device, 0, 8);
-    if isDeviceb = 1 then begin 
+    if isDeviceb >= 0 then begin 
         devices[device_count] := read_device_config(bus, device, 0, 0);
         device_count := device_count + 1;
+         if devices[device_count - 1].header_type and $80 <> 0 then begin
+             for i:=0 to 8 do begin 
+            // console.writechar(char(21));
+                 vendor_id := get_vendor_ID(bus, device, i, 0);
+                 //if vendor_id = $FFFF then exit(false);
+                 devices[device_count] := read_device_config(bus, device, i, 0);
+                 device_count := device_count + 1;
+             end;
+         end;
         check_device := true;
     end else begin
-        console.writestringln('PCI: Nested bus found');
+        //console.writestringln('PCI: Nested bus found');
         //busses[bus_count] := read_bridge_config();
         bus_count := bus_count + 1;
         check_device := false;
@@ -406,26 +417,30 @@ begin
     tmp.interrupt_pin  := read8(bus, slot, func, off, 1); 
     tmp.interrupt_line := read8(bus, slot, func, off, 0);
 
-        console.writestring('PCI: Found Device: ');
-        console.writehex(slot);
-        console.writestring('  ');
-        console.writehex(tmp.device_id);        
-        console.writestring('  ');        
-        console.writehex(tmp.vendor_id);        
-        console.writestring('  ');
-        console.writehex(tmp.class_code);        
-        console.writestring('  ');
-        console.writehexln(tmp.subclass_class);
+    if(tmp.vendor_id <> $FFFF) then begin
 
-    if tmp.class_code = 1 then begin
-        console.writestringln('-Device is MASS_STORAGE_CONTROLLER ');
-    end; 
-    if tmp.class_code = 2 then begin
-        console.writestringln('-Device is NETWORK_CONTROLLER ');
-    end; 
-    if tmp.class_code = 3 then begin
-        console.writestringln('-Device is DISPLAY_CONTROLLER ');
-    end; 
+            console.writestring('PCI: Found Device: ');
+            console.writehex(slot);
+            console.writestring('  ');
+            console.writehex(tmp.device_id);        
+            console.writestring('  ');        
+            console.writehex(tmp.vendor_id);        
+            console.writestring('  ');
+            console.writehex(tmp.class_code);        
+            console.writestring('  ');
+            console.writehexln(tmp.subclass_class);
+        
+
+        if tmp.class_code = 1 then begin
+            console.writestringln('-Device is MASS_STORAGE_CONTROLLER ');
+        end; 
+        if tmp.class_code = 2 then begin
+            console.writestringln('-Device is NETWORK_CONTROLLER ');
+        end; 
+        if tmp.class_code = 3 then begin
+            console.writestringln('-Device is DISPLAY_CONTROLLER ');
+        end; 
+    end;
 
         //psleep(300); 
 
