@@ -3,8 +3,8 @@ unit strings;
 interface
 
 uses
-    system,
-    util;
+    util,
+    lmemorymanager;
 
 function stringToUpper(str : pchar) : pchar;
 function stringToLower(str : pchar) : pchar;
@@ -54,7 +54,7 @@ var
 begin
     size:= stringSize(str);
     result:= stringNew(size);
-    memcpy(str, result, size);    
+    memcpy(uint32(str), uint32(result), size);    
 end;
 
 function stringNew(size : uint32) : pchar;

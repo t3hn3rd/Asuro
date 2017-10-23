@@ -29,7 +29,8 @@ uses
      tss,
      scheduler,
      PCI,
-     Terminal;
+     Terminal,
+     strings;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
