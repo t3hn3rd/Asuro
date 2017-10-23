@@ -1,3 +1,12 @@
+{ ************************************************
+  * Asuro
+  * Unit: Drivers/mouse
+  * Description: Mouse Driver
+  ************************************************
+  * Author: K Morris
+  * Contributors: 
+  ************************************************ }
+
 unit mouse;
 
 interface

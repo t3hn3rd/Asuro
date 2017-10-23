@@ -3,7 +3,7 @@
   * Unit: Scheduler
   * Description: Schedules Context Switches
   ************************************************
-  * Author: Aaron Hance
+  * Author: K Morris
   * Contributors: 
   ************************************************ }
 

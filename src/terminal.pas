@@ -1,3 +1,12 @@
+{ ************************************************
+  * Asuro
+  * Unit: Terminal
+  * Description: Interactive shell for the user
+  ************************************************
+  * Author: K Morris
+  * Contributors: 
+  ************************************************ }
+
 unit terminal;
 
 interface
