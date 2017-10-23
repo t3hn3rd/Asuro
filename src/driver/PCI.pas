@@ -244,8 +244,8 @@ var
     ii : uint16;
 begin
     //enumerate pci bus 
-    for ii:=0 to 256 do begin
-        for i:=0 to 31 do begin
+    for ii:=0 to 32 do begin
+        for i:=0 to 256 do begin
             check_device(ii, i);
         end;
     end;
@@ -277,7 +277,7 @@ begin
     if vendor_id = $FFFF then exit;
 
     isDeviceb := isDevice(bus, device, 0, 8);
-    if isDeviceb = 1 then begin 
+    if isDeviceb >= 0 then begin 
         devices[device_count] := read_device_config(bus, device, 0, 0);
         device_count := device_count + 1;
         check_device := true;
