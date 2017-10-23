@@ -77,6 +77,8 @@ procedure writebin32ln(b : uint32);
 procedure writebin32ex(b : uint32; attributes : char);
 procedure writebin32lnex(b : uint32; attributes : char);
 
+procedure backspace;
+
 function combinecolors(Foreground, Background : TColor) : char;
 
 procedure _increment_x();
@@ -438,6 +440,14 @@ begin
      outb($3D4, $0E);
      b:= pos shr 8;
      outb($3D5, b);
+end;
+
+procedure backspace;
+begin
+     Dec(Console_Cursor.X);
+     writechar(' ');
+     Dec(Console_Cursor.X);
+     _update_cursor();
 end;
 
 procedure _increment_x(); [public, alias: '_console_increment_x'];

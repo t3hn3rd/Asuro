@@ -28,22 +28,28 @@ uses
      lmemorymanager,
      tss,
      scheduler,
-     PCI;
+     PCI,
+     Terminal;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
 implementation
 
+procedure temphook(ignored : TKeyInfo);
+begin
+   Terminal.run;
+end;
+
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall; [public, alias: 'kmain'];   
 var
-   c    : uint8;
-   z    : uint32;
-   dds  : uint32;
-   pint : puint32;
-   pint2 : puint32;
+   c               : uint8;
+   z               : uint32;
+   dds             : uint32;
+   pint            : puint32;
+   pint2           : puint32;
    keyboard_layout : array [0..1] of TKeyInfo;
-   i : uint32;
-   cEIP : uint32;
+   i               : uint32;
+   cEIP            : uint32;
    
 begin
      multibootinfo:= mbinfo;
@@ -105,7 +111,10 @@ begin
      console.writestring('Total Memory = ');
      console.writeint(((mbinfo^.mem_upper + 1000) div 1024) + 1);
      console.writestringln('MB');
-     console.setdefaultattribute(console.combinecolors(lYellow, Black));
+     console.setdefaultattribute(console.combinecolors(White, Black));
+     console.writestringln('');
+     console.writestringln('Press any key to boot in to Asuro Terminal...');
+     keyboard.hook(@temphook);
      util.halt_and_dont_catch_fire;
 end;
  
