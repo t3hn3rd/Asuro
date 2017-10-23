@@ -14,7 +14,8 @@ interface
 uses
     console,
     isr32,
-    lmemorymanager;
+    lmemorymanager,
+    terminal;
 
 const
     Quantum = 64;
@@ -79,6 +80,29 @@ begin
     end;
 end;
 
+procedure terminal_command_tasks(buffer : TCommandBuffer);
+var
+    list : PScheduler_Entry;
+
+begin
+    console.writestringln('ThreadID - Priority - Delta');
+    list:= Root_Task;
+    console.writeint(list^.ThreadID);
+    console.writestring('        - ');
+    console.writeint(list^.Priority);
+    console.writestring('        - ');
+    console.writeintln(list^.Delta);
+    list:= PScheduler_Entry(list^.Next);
+    while list <> Root_Task do begin
+        console.writeint(list^.ThreadID);
+        console.writestring('        - ');
+        console.writeint(list^.Priority);
+        console.writestring('        - ');
+        console.writeintln(list^.Delta);
+        list:= PScheduler_Entry(list^.Next);
+    end;
+end;
+
 procedure init;
 begin
     console.writestringln('SCHEDULER: INIT BEGIN.');
@@ -91,6 +115,7 @@ begin
     Tick:= 0;
     Active:= False;
     isr32.hook(uint32(@delta));
+    terminal.registerCommand('TASKS', @terminal_command_tasks, 'List Active Processes.');
     console.writestringln('SCHEDULER: INIT END.');
 end;
 

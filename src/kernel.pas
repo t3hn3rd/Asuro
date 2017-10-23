@@ -40,6 +40,19 @@ begin
    Terminal.run;
 end;
 
+procedure terminal_command_meminfo(buffer : TCommandBuffer);
+begin
+    console.writestring('Lower Memory = ');
+    console.writeint(multibootinfo^.mem_lower);
+    console.writestringln('KB');
+    console.writestring('Higher Memory = ');
+    console.writeint(multibootinfo^.mem_upper);
+    console.writestringln('KB');
+    console.writestring('Total Memory = ');
+    console.writeint(((multibootinfo^.mem_upper + 1000) div 1024) + 1);
+    console.writestringln('MB');
+end;
+
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall; [public, alias: 'kmain'];   
 var
    c               : uint8;
@@ -54,6 +67,9 @@ var
 begin
      multibootinfo:= mbinfo;
      multibootmagic:= mbmagic;
+
+     terminal.init();
+     terminal.registerCommand('MEMINFO', @terminal_command_meminfo, 'Print Simple Memory Information.');
 
      console.init();
 
@@ -103,13 +119,13 @@ begin
      console.writestringln('');
      console.setdefaultattribute(console.combinecolors(White, Black));
      console.writestring('Lower Memory = ');
-     console.writeint(mbinfo^.mem_lower);
+     console.writeint(multibootinfo^.mem_lower);
      console.writestringln('KB');
      console.writestring('Higher Memory = ');
-     console.writeint(mbinfo^.mem_upper);
+     console.writeint(multibootinfo^.mem_upper);
      console.writestringln('KB');
      console.writestring('Total Memory = ');
-     console.writeint(((mbinfo^.mem_upper + 1000) div 1024) + 1);
+     console.writeint(((multibootinfo^.mem_upper + 1000) div 1024) + 1);
      console.writestringln('MB');
      console.setdefaultattribute(console.combinecolors(White, Black));
      console.writestringln('');

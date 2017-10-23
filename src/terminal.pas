@@ -11,9 +11,10 @@ type
     TCommandBuffer = array[0..1023] of byte;
     TCommandMethod = procedure(buf : TCommandBuffer);
     TCommand = record
-        registered : boolean;
-        command    : pchar;
-        method     : TCommandMethod;
+        registered  : boolean;
+        command     : pchar;
+        method      : TCommandMethod;
+        description : pchar;
     end;
 
 var
@@ -22,16 +23,37 @@ var
     Commands : array[0..65534] of TCommand;
 
 procedure run;
-procedure registerCommand(command : pchar; method : TCommandMethod);
+procedure init;
+procedure registerCommand(command : pchar; method : TCommandMethod; description : pchar);
 
 implementation
 
-procedure version(buffer : TCommandBuffer);
+procedure clear(buffer : TCommandBuffer);
 begin
-    writestringln('Asuro v1.0');
+    console.clear();
 end;
 
-procedure registerCommand(command : pchar; method : TCommandMethod);
+procedure version(buffer : TCommandBuffer);
+begin
+    console.writestringln('Asuro v1.0');
+end;
+
+procedure help(buffer : TCommandBuffer);
+var
+    i : uint32;
+begin
+    console.writestringln('Registered Commands: ');
+    for i:=0 to 65534 do begin
+        if Commands[i].Registered then begin
+            console.writestring('  ');
+            console.writestring(Commands[i].command);
+            console.writestring(' - ');
+            console.writestringln(Commands[i].description);
+        end;
+    end;
+end;
+
+procedure registerCommand(command : pchar; method : TCommandMethod; description : pchar);
 var
     index : uint32;
 
@@ -41,6 +63,7 @@ begin
     Commands[index].registered:= true;
     Commands[index].Command:= command;
     Commands[index].method:= method;
+    Commands[index].description:= description;
 end;
 
 procedure upper;
@@ -63,7 +86,10 @@ var
 begin
     isCommand:= true;
     for i:=0 to bIndex do begin
-        if char(buffer[i]) = ' ' then exit;
+        if char(buffer[i]) = ' ' then begin
+            if i = 0 then isCommand:= false;
+            exit;
+        end;
         if char(buffer[i]) <> char(command[i]) then begin
             isCommand:= false;
             exit;
@@ -117,11 +143,17 @@ begin
     end;
 end;
 
-procedure run;
+procedure init;
 begin
     memset(uint32(@Commands[0]), 0, 65535*sizeof(TCommand));
     memset(uint32(@buffer[0]), 0, 1024);
-    registerCommand('VERSION', @version);
+    registerCommand('VERSION', @version, 'Display the running version of Asuro.');
+    registerCommand('CLEAR', @clear, 'Clear the Screen.');
+    registerCommand('HELP', @help, 'Lists all registered commands and their description.')
+end;
+
+procedure run;
+begin
     keyboard.hook(@key_event);
     console.clear();
     console.writestring('Asuro#> ');
