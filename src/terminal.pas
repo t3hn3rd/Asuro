@@ -31,10 +31,24 @@ begin
 end;
 
 procedure process_command;
+var
+    fallthrough : boolean;
+
 begin
     console.writecharln(' ');
     //Process Here
-    if isCommand('version') then console.writestringln('Asuro v1.0');
+    fallthrough:= true;
+    if isCommand('version') then begin
+        console.writestringln('Asuro v1.0');
+        fallthrough:= false;
+    end;
+    if isCommand('clear') then begin
+        console.clear();
+        fallthrough:= false;
+    end;
+    if fallthrough then begin
+        console.writestringln('Unknown Command.');
+    end;
     console.writestring('Asuro#> ');
     bIndex:= 0;
     memset(uint32(@buffer[0]), 0, 1024);
