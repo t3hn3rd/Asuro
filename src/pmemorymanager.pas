@@ -97,13 +97,13 @@ procedure force_alloc_block(block : uint16; caller : uint32);
 begin
     PhysicalMemory[block].Allocated:= True;
     PhysicalMemory[block].MappedTo:= caller;
-    console.writestring('PMM: 4MiB Block Force Allocated @ ');
-    console.writeword(block);
-    console.writestring(' [');
-    console.writehex(block SHL 22);
-    console.writestring(' - ');
-    console.writehex(((block+1) SHL 22));
-    console.writestringln(']');
+    // console.writestring('PMM: 4MiB Block Force Allocated @ ');
+    // console.writeword(block);
+    // console.writestring(' [');
+    // console.writehex(block SHL 22);
+    // console.writestring(' - ');
+    // console.writehex(((block+1) SHL 22));
+    // console.writestringln(']');
 end;
 
 procedure init;
@@ -128,13 +128,13 @@ begin
         end else begin
             PhysicalMemory[block].Allocated:= True;
             PhysicalMemory[block].MappedTo:= caller;
-            console.writestring('PMM: 4MiB Block Allocated @ ');
-            console.writeword(block);
-            console.writestring(' [');
-            console.writehex(block SHL 22);
-            console.writestring(' - ');
-            console.writehex(((block+1) SHL 22));
-            console.writestringln(']');
+            // console.writestring('PMM: 4MiB Block Allocated @ ');
+            // console.writeword(block);
+            // console.writestring(' [');
+            // console.writehex(block SHL 22);
+            // console.writestring(' - ');
+            // console.writehex(((block+1) SHL 22));
+            // console.writestringln(']');
             alloc_block:= true;
         end;
     end else begin
