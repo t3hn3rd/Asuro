@@ -31,6 +31,7 @@ function inb(port : uint16) : uint8;
 function inw(port : uint16) : uint16;
 function inl(port : uint16) : uint32;
 procedure memset(location : uint32; value : uint8; size : uint32);
+procedure memcpy(source : uint32; dest : uint32; size : uint32);
 procedure psleep(t : uint16);
 
 var
@@ -186,6 +187,19 @@ begin
     for i:=0 to size-1 do begin
         loc:= puint8(location + i);
         loc^:= value;
+    end;
+end;
+
+procedure memcpy(source : uint32; dest : uint32; size : uint32);
+var
+    src, dst : puint8;
+    i : uint32;
+
+begin
+    for i:=0 to size-1 do begin
+        src:= puint8(source + i);
+        dst:= puint8(dest + i);
+        dst^:= src^;
     end;
 end;
 

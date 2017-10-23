@@ -14,9 +14,15 @@ interface
 uses
     console,
     keyboard,
-    util;
+    util,
+    lmemorymanager;
 
 type
+    PParamList = ^TParamList;
+    TParamList = record
+        Param : pchar;
+        Next  : PParamList;  
+    end;
     TCommandBuffer = array[0..1023] of byte;
     TCommandMethod = procedure(buf : TCommandBuffer);
     TCommand = record
@@ -34,8 +40,73 @@ var
 procedure run;
 procedure init;
 procedure registerCommand(command : pchar; method : TCommandMethod; description : pchar);
+function getParams(buf : TCommandBuffer) : PParamList;
 
 implementation
+
+function getParams(buf : TCommandBuffer) : PParamList;
+var
+    start, finish : uint32;
+    size : uint32;
+    ptr : uint32;
+    root : PParamList;
+    current : PParamList;
+
+begin
+    root:= PParamList(kalloc(sizeof(TParamList)));
+    current:= root;
+    current^.next:= nil;
+    current^.Param:= nil;
+    start:= 0;
+    finish:= 0;
+    while (char(buf[finish]) <> ' ') and (buf[finish] <> 0) do begin
+        inc(finish);
+    end;
+    while buf[start] <> 0 do begin
+        start:=finish+1;
+        inc(finish);
+        while (char(buf[finish]) <> ' ') and (buf[finish] <> 0) do begin
+            inc(finish);
+        end;  
+        size:= finish - start;
+        if size > 0 then begin
+            ptr:= uint32(@buf[start]);
+            current^.Param:= pchar(kalloc(size+2));
+            memset(uint32(current^.Param), 0, size+2);
+            memcpy(uint32(ptr), uint32(current^.Param), size);
+            current^.next:= PParamList(kalloc(sizeof(TParamList)));
+            current:= current^.next;
+            current^.next:= nil;
+            current^.Param:= nil;
+        end;      
+    end;
+    getParams:= root;
+end;
+
+procedure testParams(buffer : TCommandBuffer);
+var
+    params : PParamList;
+
+begin
+    params:= getParams(buffer);
+    while params^.Param <> nil do begin
+        writestringln(params^.Param);
+        params:= params^.next;
+    end;
+end;
+
+procedure echo(buffer : TCommandBuffer);
+var
+    idx : uint32;
+
+begin
+    idx:= 5;
+    while buffer[idx] <> 0 do begin
+        console.writechar(char(buffer[idx]));
+        inc(idx);
+    end;
+    console.writestringln('');
+end;
 
 procedure clear(buffer : TCommandBuffer);
 begin
@@ -158,7 +229,9 @@ begin
     memset(uint32(@buffer[0]), 0, 1024);
     registerCommand('VERSION', @version, 'Display the running version of Asuro.');
     registerCommand('CLEAR', @clear, 'Clear the Screen.');
-    registerCommand('HELP', @help, 'Lists all registered commands and their description.')
+    registerCommand('HELP', @help, 'Lists all registered commands and their description.');
+    registerCommand('ECHO', @echo, 'Echo''s text to the terminal.');
+    registerCommand('TESTPARAMS', @testParams, 'Tests param parsing.');
 end;
 
 procedure run;
