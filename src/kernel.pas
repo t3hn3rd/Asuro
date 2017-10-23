@@ -110,6 +110,7 @@ begin
      console.writestringln('DRIVERS: INIT BEGIN.');
      pci.init();
      keyboard.init(keyboard_layout);
+     keyboard.hook(@temphook);
      mouse.init();
      console.writestringln('DRIVERS: INIT END.');
 
@@ -130,7 +131,6 @@ begin
      console.setdefaultattribute(console.combinecolors(White, Black));
      console.writestringln('');
      console.writestringln('Press any key to boot in to Asuro Terminal...');
-     keyboard.hook(@temphook);
      util.halt_and_dont_catch_fire;
 end;
  
