@@ -357,7 +357,7 @@ var
     off : uint32;
 
 begin
-    memset(uint32(@tmp), 0, sizeof(TPCI_Device));
+    //memset(uint32(@tmp), 0, sizeof(TPCI_Device));
 
     off:= offset;
     loadConfig(bus, slot, func, 0);
