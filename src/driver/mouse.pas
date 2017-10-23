@@ -13,8 +13,8 @@ implementation
 
 procedure callback(packet : void);
 begin
-    console.writestring('Mouse Packet: ');
-    console.writehexln(DWORD(packet));
+    //console.writestring('Mouse Packet: ');
+    //console.writehexln(DWORD(packet));
 end;
 
 procedure init();
