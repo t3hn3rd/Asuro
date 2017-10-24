@@ -119,7 +119,7 @@ end;
 
 function stringContains(str : pchar; sub : pchar) : boolean;
 begin
-    result:= false;    
+    stringContains:= false;    
 end;
 
 end.

@@ -80,7 +80,7 @@ begin
     end;
 end;
 
-procedure terminal_command_tasks(buffer : TCommandBuffer);
+procedure terminal_command_tasks(params : PParamList);
 var
     list : PScheduler_Entry;
 

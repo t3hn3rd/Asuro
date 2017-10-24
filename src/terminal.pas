@@ -24,7 +24,7 @@ type
         Next  : PParamList;  
     end;
     TCommandBuffer = array[0..1023] of byte;
-    TCommandMethod = procedure(buf : TCommandBuffer);
+    TCommandMethod = procedure(params : PParamList);
     TCommand = record
         registered  : boolean;
         command     : pchar;
@@ -59,15 +59,10 @@ begin
     current^.Param:= nil;
     start:= 0;
     finish:= 0;
-    while (char(buf[finish]) <> ' ') and (buf[finish] <> 0) do begin
-        inc(finish);
-    end;
     while buf[start] <> 0 do begin
-        start:=finish+1;
-        inc(finish);
         while (char(buf[finish]) <> ' ') and (buf[finish] <> 0) do begin
             inc(finish);
-        end;  
+        end;
         size:= finish - start;
         if size > 0 then begin
             ptr:= uint32(@buf[start]);
@@ -78,47 +73,46 @@ begin
             current:= current^.next;
             current^.next:= nil;
             current^.Param:= nil;
-        end;      
+        end; 
+        start:=finish+1;
+        inc(finish);     
     end;
     getParams:= root;
 end;
 
-procedure testParams(buffer : TCommandBuffer);
-var
-    params : PParamList;
-
+procedure testParams(params : PParamList);
 begin
-    params:= getParams(buffer);
     while params^.Param <> nil do begin
         writestringln(params^.Param);
         params:= params^.next;
     end;
 end;
 
-procedure echo(buffer : TCommandBuffer);
+procedure echo(params : PParamList);
 var
-    idx : uint32;
+    current : PParamList;
 
 begin
-    idx:= 5;
-    while buffer[idx] <> 0 do begin
-        console.writechar(char(buffer[idx]));
-        inc(idx);
+    current:= params^.next;
+    while current^.param <> nil do begin
+        console.writestring(current^.param);
+        console.writestring(' ');
+        current:= current^.next;
     end;
     console.writestringln('');
 end;
 
-procedure clear(buffer : TCommandBuffer);
+procedure clear(params : PParamList);
 begin
     console.clear();
 end;
 
-procedure version(buffer : TCommandBuffer);
+procedure version(params : PParamList);
 begin
     console.writestringln('Asuro v1.0');
 end;
 
-procedure help(buffer : TCommandBuffer);
+procedure help(params : PParamList);
 var
     i : uint32;
 begin
@@ -180,7 +174,9 @@ end;
 procedure process_command;
 var
     fallthrough : boolean;
+    params : PParamList;
     i : uint32;
+    next : PParamList;
 
 begin
     console.writecharln(' ');
@@ -189,7 +185,16 @@ begin
     for i:=0 to 65534 do begin
         if Commands[i].registered then begin
             if isCommand(Commands[i].command) then begin
-                Commands[i].method(buffer);
+                params:= getParams(buffer);
+                Commands[i].method(params);
+                params:= params;
+                next:= params^.next;
+                while params^.next <> nil do begin
+                    if params^.param <> nil then kfree(void(params^.param));
+                    kfree(void(params));
+                    params:= next;
+                    next:= params^.next;
+                end;
                 fallthrough:= false;
             end;
         end;   

@@ -41,7 +41,7 @@ begin
    Terminal.run;
 end;
 
-procedure terminal_command_meminfo(buffer : TCommandBuffer);
+procedure terminal_command_meminfo(params : PParamList);
 begin
     console.writestring('Lower Memory = ');
     console.writeint(multibootinfo^.mem_lower);
