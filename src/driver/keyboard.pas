@@ -43,7 +43,7 @@ implementation
 
 procedure callback(scan_code : void);
 begin
-    console.writehex(uint8(scan_code));
+    //console.writehex(uint8(scan_code));
     if is_shift then begin
         if key_matrix_shift[uint8(scan_code)].key_code <> 0 then begin
             if captin_hook <> nil then captin_hook(key_matrix_shift[uint8(scan_code)]);
