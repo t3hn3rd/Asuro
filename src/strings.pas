@@ -18,13 +18,29 @@ function stringContains(str : pchar; sub : pchar) : boolean;
 implementation
 
 function stringToUpper(str : pchar) : pchar;
+var
+    result : pchar;
+    i : uint32;
+
 begin
-    
+    result:= stringCopy(str);
+    for i:=0 to stringSize(result) do begin
+        if (byte(result[i]) >= 97) and (byte(result[i]) <= 122) then result[i]:= char(byte(result[i]) - 32);
+    end;
+    stringToUpper:= result;
 end;
 
 function stringToLower(str : pchar) : pchar;
+var
+    result : pchar;
+    i : uint32;
+
 begin
-    
+    result:= stringCopy(str);
+    for i:=0 to stringSize(result) do begin
+        if (byte(result[i]) >= 65) and (byte(result[i]) <= 90) then result[i]:= char(byte(result[i]) + 32);
+    end;
+    stringToLower:= result;
 end;
 
 function stringEquals(str1, str2 : pchar) : boolean;
@@ -54,7 +70,8 @@ var
 begin
     size:= stringSize(str);
     result:= stringNew(size);
-    memcpy(uint32(str), uint32(result), size);    
+    memcpy(uint32(str), uint32(result), size);
+    stringCopy:= result;    
 end;
 
 function stringNew(size : uint32) : pchar;
@@ -80,8 +97,15 @@ begin
 end;
 
 function stringConcat(str1, str2 : pchar) : pchar;
+var
+    size : uint32;
+    result : pchar;
+
 begin
-    
+    result:= stringNew(stringSize(str1)+stringSize(str2));
+    memcpy(uint32(str1), uint32(result), stringSize(str1));
+    memcpy(uint32(str2), uint32(result+stringSize(str1)), stringSize(str2));
+    stringConcat:= result;
 end;
 
 function stringContains(str : pchar; sub : pchar) : boolean;
