@@ -1,3 +1,12 @@
+{ ************************************************
+  * Asuro
+  * Unit: Strings
+  * Description: Collection of function for string manipulation.
+  ************************************************
+  * Author: K Morris
+  * Contributors: 
+  ************************************************ }
+
 unit strings;
 
 interface
@@ -110,7 +119,7 @@ end;
 
 function stringContains(str : pchar; sub : pchar) : boolean;
 begin
-    
+    result:= false;    
 end;
 
 end.
