@@ -1,0 +1,51 @@
+{ ************************************************
+  * Asuro
+  * Unit: Drivers/drivertypes
+  * Description: types shared between drivers
+  ************************************************
+  * Author: Aaron Hance
+  * Contributors: 
+  ************************************************ }
+unit drivertypes;
+
+interface
+
+type
+
+    TPCI_Device = packed record
+        device_id      : uint16;
+        vendor_id      : uint16;
+        status         : uint16;
+        command        : uint16;
+        class_code     : uint8; 
+        subclass_class : uint8; 
+        prog_if        : uint8;
+        revision_id    : uint8;
+        BIST           : uint8;
+        header_type    : uint8;
+        latency_timer  : uint8;
+        cache_size     : uint8;
+        address0       : uint32;
+        address1       : uint32;
+        address2       : uint32;
+        address3       : uint32;
+        address4       : uint32;
+        address5       : uint32;
+        CIS_pointer    : uint32;
+        subsystem_id   : uint16;
+        subsystem_vid  : uint16;
+        exp_rom_addr   : uint32;
+        reserved0      : uint16;
+        reserved1      : uint8;
+        capabilities   : uint8;
+        reserved2      : uint32;
+        max_latency    : uint8;
+        min_grant      : uint8;
+        interrupt_pin  : uint8;
+        interrupt_line : uint8;
+    end;  
+
+implementation
+
+
+end.
