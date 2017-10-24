@@ -76,7 +76,8 @@ interface
 uses
     util,
     PCI,
-    console;
+    console,
+    terminal;
 
 type 
 

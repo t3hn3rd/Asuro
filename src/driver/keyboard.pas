@@ -43,8 +43,7 @@ implementation
 
 procedure callback(scan_code : void);
 begin
-    //console.writehex(uint8(scan_code));
-    //console.writechar(char($21));
+    console.writehex(uint8(scan_code));
     if is_shift then begin
         if key_matrix_shift[uint8(scan_code)].key_code <> 0 then begin
             if captin_hook <> nil then captin_hook(key_matrix_shift[uint8(scan_code)]);
@@ -215,23 +214,23 @@ begin
     key_matrix[70].is_down_code := true;
     key_matrix[71].key_code := $44;
     key_matrix[71].is_down_code := true;
-    key_matrix[72].key_code := $44;
+    key_matrix[72].key_code := $10;
     key_matrix[72].is_down_code := true;
     key_matrix[73].key_code := $44;
     key_matrix[73].is_down_code := true;
     key_matrix[74].key_code := $44;
     key_matrix[74].is_down_code := true;
-    key_matrix[75].key_code := $44;
+    key_matrix[75].key_code := $13;
     key_matrix[75].is_down_code := true;
     key_matrix[76].key_code := $44;
     key_matrix[76].is_down_code := true;
-    key_matrix[77].key_code := $44;
+    key_matrix[77].key_code := $14;
     key_matrix[77].is_down_code := true;
     key_matrix[78].key_code := $85;
     key_matrix[78].is_down_code := true;
     key_matrix[79].key_code := $86;
     key_matrix[79].is_down_code := true;
-    key_matrix[80].key_code := $86;
+    key_matrix[80].key_code := $12;
     key_matrix[80].is_down_code := true;
     key_matrix[81].key_code := $86;
     key_matrix[81].is_down_code := true;
