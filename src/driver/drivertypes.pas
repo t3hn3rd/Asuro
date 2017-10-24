@@ -12,7 +12,7 @@ interface
 
 type
 
-    TPCI_Device = packed record
+    TPCI_Device = bitpacked record
         device_id      : uint16;
         vendor_id      : uint16;
         status         : uint16;
