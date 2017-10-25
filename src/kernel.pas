@@ -111,7 +111,6 @@ begin
      //drivers
      console.writestringln('DRIVERS: INIT BEGIN.');
      pci.init();
-     ata.init();
      keyboard.init(keyboard_layout);
      keyboard.hook(@temphook);
      mouse.init();

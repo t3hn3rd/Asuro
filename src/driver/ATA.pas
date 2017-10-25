@@ -50,11 +50,15 @@ var
 procedure init(_controller : TPCI_device);
 procedure read(address : uint32);
 procedure write(address : uint32);
+procedure callback(data : void);
 
 implementation
 
 procedure init(_controller : TPCI_device);
 begin
+
+    isr76.hook(uint32(@callback));
+
     controller := _controller;
     devices[0].primary := true;
     devices[0].Command_Register := controller.address4;
@@ -62,6 +66,11 @@ begin
     devices[0].PRDT_Address_Reg := controller.address4 + 4;
 
 end;
+
+procedure callback(data : void);
+begin
+end;
+
 
 
 end.
