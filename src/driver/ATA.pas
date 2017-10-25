@@ -51,8 +51,8 @@ procedure init();
 begin
     
     //controller := device;
-    controller.address0 := $1f0;
-    controller.address1 := $170;
+    controller.address0 := $3F6;
+    controller.address1 := $376;
     // 0x1f0, 0x170, 0x3F6, 0x376
     console.writehexln(controller.address0);
     dataPort[0] := controller.address0;
@@ -81,22 +81,35 @@ begin
 
     outb(controlPort[0], 2);
 
-    busNo := 0;
+    busNo := 1;
     if bus = $A0 then busNo := 0;
 
+
     outb(devicePort[busNo], drive);
-    psleep(1);
+    outb(controlPort[busNo], 0);
+    //psleep(1);
+
+    outb(devicePort[busNo], drive);
+    status := inb(commandPort[busNo]);
+
+    if status = $FF then begin
+        console.writestringln('No drives on bus');
+        exit;
+    end;
+
+    outb(devicePort[busNo], drive);
+    //psleep(1);
     outb(sectorCountPort[busNo], 0);
-    psleep(1);
+    //psleep(1);
     outb(lbaLowPort[busNo], 0);
-    psleep(1);
+    //psleep(1);
     outb(lbaMidPort[busNo], 0);
-    psleep(1);
+    //psleep(1);
     outb(lbaHiPort[busNo], 0);
-    psleep(1);
+    //psleep(1);
 
     outb(commandPort[busNo], $EC);
-    psleep(1);
+    //psleep(1);
 
     status := inb(commandPort[busNo]);
 
@@ -105,30 +118,12 @@ begin
         exit;
     end;
 
-    while true do begin
+    while (status and $80 = $80) and (status and $08 <> $08) do begin
         status := inb(commandPort[busNo]);
-
-        if status = 1 then begin 
-            console.writestringln('Drive error');
-            exit;
-        end;
-
-        if (status and $80) = 0 then break;
-
-        status := inb(errorPort[0]);
-        psleep(1);
-        if status = 1 then console.writestringln('ERROR ERROR ERROR');
-
-        status := inb(lbaMidPort[busNo]);
-        psleep(1);
-
-        if status <> 0 then begin
-            console.writestringln('Device found, but is not ATA');
-            exit;
-        end;
+        console.writehexln(status);
     end;
-
-    console.writestring('Drive found!');
+    console.writehexln(status);
+    console.writestringln('Drive found!');
 
 end;
 
