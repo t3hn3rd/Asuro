@@ -14,7 +14,8 @@ uses
     util,
     drivertypes,
     console,
-    terminal;
+    terminal,
+    isr76;
 
 type 
 
@@ -29,16 +30,16 @@ type
 
     Physical_Region_Descriptor = bitpacked record 
         empty0       : 0..1;
-        MRPB_Address : 1..32;
-        Byte_Count   : 32..47;
+        MRPB_Address : 1..32; // memory address
+        Byte_Count   : 32..47; // size in bytes (0 is 64K)
         empty1       : 47..63;
-        EOT          : 63..64;
+        EOT          : 63..64; // end of table
         empty2       : 64..65;
     end;
 
     ATA_Command_Buffer bitpacked record
-        start_stop_bit : 0..1;
-        read_write_bit : 3..4;
+        start_stop_bit : 0..1; // 0 stopped
+        read_write_bit : 3..4; // 0 read
     end;
 
 var 
@@ -47,6 +48,8 @@ var
     controller : TPCI_device;
 
 procedure init(_controller : TPCI_device);
+procedure read(address : uint32);
+procedure write(address : uint32);
 
 implementation
 
