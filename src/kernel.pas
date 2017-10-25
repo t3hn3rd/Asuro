@@ -30,7 +30,8 @@ uses
      scheduler,
      PCI,
      Terminal,
-     strings;
+     strings,
+     ata;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
