@@ -23,6 +23,11 @@ type
         Param : pchar;
         Next  : PParamList;  
     end;
+    PHistory = ^THistory;
+    THistory = record
+        Command : pchar;
+        Next : PHistory;
+    end;
     TCommandBuffer = array[0..1023] of byte;
     TCommandMethod = procedure(params : PParamList);
     TCommand = record
@@ -34,6 +39,7 @@ type
 
 var
     buffer   : TCommandBuffer;
+    History  : PHistory;
     bIndex   : uint32 = 0;
     Commands : array[0..65534] of TCommand;
 
