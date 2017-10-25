@@ -31,7 +31,7 @@ uses
      PCI,
      Terminal,
      strings,
-     ata;
+     ATA;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
