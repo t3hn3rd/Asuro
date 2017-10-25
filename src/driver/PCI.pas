@@ -251,7 +251,7 @@ begin
         device_count := device_count + 1;
          if devices[device_count - 1].header_type and $80 <> 0 then begin
              for i:=0 to 8 do begin 
-            // console.writechar(char(21));
+             //console.writechar(char(21));
                  vendor_id := get_vendor_ID(bus, device, i, 0);
                  //if vendor_id = $FFFF then exit(false);
                  devices[device_count] := read_device_config(bus, device, i, 0);
@@ -401,7 +401,7 @@ begin
 
         if tmp.class_code = 1 then begin
             console.writestringln('-Device is MASS_STORAGE_CONTROLLER ');
-            //if tmp.subclass_class = 1 then ATA.init(tmp);
+            if tmp.subclass_class = 1 then ATA.init(tmp);
         end; 
         if tmp.class_code = 2 then begin
             console.writestringln('-Device is NETWORK_CONTROLLER ');
