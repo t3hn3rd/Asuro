@@ -402,7 +402,7 @@ begin
 
         if tmp.class_code = 1 then begin
             console.writestringln('-Device is MASS_STORAGE_CONTROLLER ');
-            if tmp.subclass_class = 1 then ATA.init(tmp);
+            //if tmp.subclass_class = 1 then ATA.init(tmp);
         end; 
         if tmp.class_code = 2 then begin
             console.writestringln('-Device is NETWORK_CONTROLLER ');
