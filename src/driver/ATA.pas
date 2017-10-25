@@ -74,7 +74,7 @@ implementation
 
 procedure init(_controller : TPCI_device);
 begin
-
+    console.writestringln('ATA Driver INIT');
     isr76.hook(uint32(@callback));
 
     controller := _controller;
@@ -155,11 +155,13 @@ begin
 end;
 
 procedure write(address : uint32); begin
- end;
+end;
 
 procedure callback(data : void); //need r/w, is last
 var
     cb : ATA_Command_Buffer;
+    ptr : intptr;
+    tmp : uint32;
 begin
     if(PRD_Table[devices[0].currentIndex - 1].EOT = 1) then begin
         //other stuff
@@ -173,12 +175,13 @@ begin
             outb(ports.lba_mid, (((devices[0].device_lba + (64000 * devices[0].currentIndex))) and $0000FF00) SHR 8);
             outb(ports.lba_hi, (((devices[0].device_lba + (64000 * devices[0].currentIndex))) and $0000FF00) SHR 16);
             outb(ports.command, $C8);
-        end else begin
-            outb(ports.sector_count, PRD_Table[devices[0].currentIndex].data_bytes / 512); // wont work if 64k
-            outb(ports.lba_low, ((devices[0].device_lba + (64000 * devices[0].currentIndex))) and $000000FF);
-            outb(ports.lba_mid, (((devices[0].device_lba + (64000 * devices[0].currentIndex))) and $0000FF00) SHR 8);
-            outb(ports.lba_hi, (((devices[0].device_lba + (64000 * devices[0].currentIndex))) and $0000FF00) SHR 16);
-            outb(ports.command, $C8);
+        // end else begin
+        //     tmp := uint8(PRD_Table[devices[0].currentIndex].Byte_Count and $FF) / 512;
+        //     outb(ports.sector_count, uint8(tmp); // wont work if 64k
+        //     outb(ports.lba_low, ((devices[0].device_lba + (64000 * devices[0].currentIndex))) and $000000FF);
+        //     outb(ports.lba_mid, (((devices[0].device_lba + (64000 * devices[0].currentIndex))) and $0000FF00) SHR 8);
+        //     outb(ports.lba_hi, (((devices[0].device_lba + (64000 * devices[0].currentIndex))) and $0000FF00) SHR 16);
+        //     outb(ports.command, $C8);
         end;
 
             cb.start_stop_bit := 1;

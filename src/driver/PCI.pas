@@ -14,7 +14,8 @@ interface
 uses
     util,
     console,
-    drivertypes;
+    drivertypes,
+    ATA;
 
 type 
 
