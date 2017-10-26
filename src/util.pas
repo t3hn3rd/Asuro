@@ -19,19 +19,25 @@ uses
 procedure CLI();
 procedure STI();
 procedure GPF();
+
 function hi(b : uint8) : uint8;
 function lo(b : uint8) : uint8;
 function switchendian(b : uint8) : uint8;
+function getWord(i : uint32; hi : boolean) : uint16;
+function getByte(i : uint32; index : uint8) : uint8;
+
 procedure outb(port : uint16; val : uint8);
 procedure outw(port : uint16; val : uint16);
 procedure outl(port : uint16; val : uint32);
-procedure halt_and_catch_fire();
-procedure halt_and_dont_catch_fire();
 function inb(port : uint16) : uint8;
 function inw(port : uint16) : uint16;
 function inl(port : uint16) : uint32;
+
 procedure memset(location : uint32; value : uint8; size : uint32);
 procedure memcpy(source : uint32; dest : uint32; size : uint32);
+
+procedure halt_and_catch_fire();
+procedure halt_and_dont_catch_fire();
 procedure psleep(t : uint16);
 
 var
@@ -201,6 +207,24 @@ begin
         dst:= puint8(dest + i);
         dst^:= src^;
     end;
+end;
+
+function getWord(i : uint32; hi : boolean) : uint16;
+begin
+    if hi then begin
+        getWord:= (i AND $FFFF0000) SHR 16;
+    end else begin
+        getWord:= (i AND $0000FFFF);
+    end;    
+end;
+
+function getByte(i : uint32; index : uint8) : uint8;
+var
+    mask : uint32;
+
+begin
+    mask:= ($FF SHL (8*index));
+    getByte:= (i AND mask) SHR (8*index);
 end;
 
 end.
