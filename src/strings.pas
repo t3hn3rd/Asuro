@@ -23,6 +23,8 @@ function stringNew(size : uint32) : pchar;
 function stringSize(str : pchar) : uint32;
 function stringConcat(str1, str2 : pchar) : pchar;
 function stringContains(str : pchar; sub : pchar) : boolean;
+function stringToInt(str : pchar) : uint32;
+function intToString(i : uint32) : pchar;
 
 implementation
 
@@ -120,6 +122,32 @@ end;
 function stringContains(str : pchar; sub : pchar) : boolean;
 begin
     stringContains:= false;    
+end;
+
+function stringToInt(str : pchar) : uint32;
+var
+    i : uint32;
+    x : uint32;
+    v : uint32;
+    r : uint32;
+
+begin
+    stringToInt:= 0;
+    x:= 1;
+    r:= 0;
+    for i:=stringSize(str)-1 downto 0 do begin
+        v:= byte(str[i]) - 48;
+        if (v >= 0) and (v <= 9) then begin
+            r:= r + (v * x);
+        end;
+        x:= x * 10;
+    end;
+    stringToInt:= r;
+end;
+
+function intToString(i : uint32) : pchar;
+begin
+    intToString:= ' ';
 end;
 
 end.

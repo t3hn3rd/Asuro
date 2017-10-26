@@ -15,7 +15,8 @@ uses
     console,
     keyboard,
     util,
-    lmemorymanager;
+    lmemorymanager,
+    strings;
 
 type
     PParamList = ^TParamList;
@@ -49,6 +50,21 @@ procedure registerCommand(command : pchar; method : TCommandMethod; description 
 function getParams(buf : TCommandBuffer) : PParamList;
 
 implementation
+
+function paramCount(params : PParamList) : uint32;
+var
+    current : PParamList;
+    i : uint32;
+
+begin
+    current:= params;
+    i:= 0;
+    while current^.param <> nil do begin
+        inc(i);
+        current:= current^.next;
+    end;
+    paramCount:= i-1;
+end;
 
 function getParams(buf : TCommandBuffer) : PParamList;
 var
@@ -84,6 +100,36 @@ begin
         inc(finish);     
     end;
     getParams:= root;
+end;
+
+function getParam(index : uint32; params : PParamList) : pchar;
+var
+    result : pchar;
+    search : PParamList;
+
+begin
+    result:= nil;
+    search:= params;
+    for i:=0 to index do begin
+        search:= search^.next;
+    end;
+    result:= search^.param;
+end;
+
+procedure freeParams(params : PParamList);
+var
+    p : PParamList;
+    next : PParamList;
+
+begin
+    p:= params;
+    next:= p^.next;
+    while p^.next <> nil do begin
+        if p^.param <> nil then kfree(void(p^.param));
+        kfree(void(p));
+        p:= next;
+        next:= p^.next;
+    end;
 end;
 
 procedure testParams(params : PParamList);
@@ -133,6 +179,15 @@ begin
     end;
 end;
 
+procedure test(params : PParamList);
+begin
+    if paramCount(params) > 0 then begin
+        console.writeintln(stringToInt(params^.next^.param));
+    end else begin
+        console.writestringln('Invalid number of params');
+    end;    
+end;
+
 procedure registerCommand(command : pchar; method : TCommandMethod; description : pchar);
 var
     index : uint32;
@@ -146,68 +201,47 @@ begin
     Commands[index].description:= description;
 end;
 
-procedure upper;
-var
-    i : uint32;
-
-begin
-    for i:=0 to bIndex do begin
-        if char(buffer[i]) = ' ' then exit;
-        if (buffer[i] >= 97) and (buffer[i] <= 122) then begin
-            buffer[i]:= buffer[i] - 32;
-        end;
-    end;
-end;
-
-function isCommand(command : pchar) : boolean;
-var
-    i : uint32;
-
-begin
-    isCommand:= true;
-    for i:=0 to bIndex do begin
-        if char(buffer[i]) = ' ' then begin
-            if i = 0 then isCommand:= false;
-            exit;
-        end;
-        if char(buffer[i]) <> char(command[i]) then begin
-            isCommand:= false;
-            exit;
-        end;
-    end;
-end;
-
 procedure process_command;
 var
     fallthrough : boolean;
     params : PParamList;
     i : uint32;
     next : PParamList;
+    uppera, upperb : pchar;
 
 begin
+    { Start a new line. }
     console.writecharln(' ');
+
+    { Enable fallthrough/Unrecognized command }
     fallthrough:= true;
-    upper;
-    for i:=0 to 65534 do begin
-        if Commands[i].registered then begin
-            if isCommand(Commands[i].command) then begin
-                params:= getParams(buffer);
-                Commands[i].method(params);
-                params:= params;
-                next:= params^.next;
-                while params^.next <> nil do begin
-                    if params^.param <> nil then kfree(void(params^.param));
-                    kfree(void(params));
-                    params:= next;
-                    next:= params^.next;
+    
+    { Get all params and check params[0] (the command) to see if it's registered }
+    params:= getParams(buffer);
+    if params^.param <> nil then begin
+        uppera:= stringToUpper(params^.param);
+        for i:=0 to 65534 do begin
+            if Commands[i].registered then begin
+                upperb:= stringToUpper(Commands[i].command);
+                if stringEquals(uppera, upperb) then begin
+                    Commands[i].method(params);
+                    fallthrough:= false;
                 end;
-                fallthrough:= false;
-            end;
-        end;   
+                kfree(void(upperb));
+            end;   
+        end;
+        kfree(void(uppera));
     end;
+
+    { Free the params }
+    freeParams(params);
+
+    { Display message if command is unknown AKA fallthrough is active }
     if fallthrough then begin
         console.writestringln('Unknown Command.');
     end;
+
+    { Reset the terminal ready for the next command }
     console.writestring('Asuro#> ');
     bIndex:= 0;
     memset(uint32(@buffer[0]), 0, 1024);
@@ -243,6 +277,7 @@ begin
     registerCommand('HELP', @help, 'Lists all registered commands and their description.');
     registerCommand('ECHO', @echo, 'Echo''s text to the terminal.');
     registerCommand('TESTPARAMS', @testParams, 'Tests param parsing.');
+    registerCommand('TEST', @test, 'Command for testing.')
 end;
 
 procedure run;
