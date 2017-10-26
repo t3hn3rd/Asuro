@@ -2,6 +2,7 @@
   * Asuro
   * Unit: Drivers/ATA
   * Description: ATA DMA Driver
+  * currently a hack needs to be re-written if works
   ************************************************
   * Author: Aaron Hance
   * Contributors: 
@@ -161,7 +162,7 @@ procedure callback(data : void); //need r/w, is last
 var
     cb : ATA_Command_Buffer;
     ptr : intptr;
-    tmp : uint32;
+    tmp : uint16;
 begin
     if(PRD_Table[devices[0].currentIndex - 1].EOT = 1) then begin
         //other stuff
@@ -169,19 +170,19 @@ begin
     end;
 
     if(devices[0].reading = true) then begin
-        if(PRD_Table[devices[0].currentIndex].EOT = 0) then begin
+        if(PRD_Table[devices[0].currentIndex].EOT = 0) then begin 
             outb(ports.sector_count, 125);
-            outb(ports.lba_low, ((devices[0].device_lba + (64000 * devices[0].currentIndex))) and $000000FF);
+            outb(ports.lba_low, (devices[0].device_lba + (64000 * devices[0].currentIndex)) and $000000FF);
+            outb(ports.lba_mid, (((devices[0].device_lba + (64000 * devices[0].currentIndex))) and $0000FF00) SHR 8);
+            outb(ports.lba_hi, (((devices[0].device_lba + (64000 * devices[0].currentIndex))) and $0000FF00) SHR 16); 
+            outb(ports.command, $C8);
+        end else begin
+           tmp := uint16((PRD_Table[devices[0].currentIndex].Byte_Count and $FFFF) DIV 512); 
+            outb(ports.sector_count, uint16(tmp)); // wont work if 64k
+            outb(ports.lba_low, (devices[0].device_lba + (64000 * devices[0].currentIndex)) and $000000FF);
             outb(ports.lba_mid, (((devices[0].device_lba + (64000 * devices[0].currentIndex))) and $0000FF00) SHR 8);
             outb(ports.lba_hi, (((devices[0].device_lba + (64000 * devices[0].currentIndex))) and $0000FF00) SHR 16);
             outb(ports.command, $C8);
-        // end else begin
-        //     tmp := uint8(PRD_Table[devices[0].currentIndex].Byte_Count and $FF) / 512;
-        //     outb(ports.sector_count, uint8(tmp); // wont work if 64k
-        //     outb(ports.lba_low, ((devices[0].device_lba + (64000 * devices[0].currentIndex))) and $000000FF);
-        //     outb(ports.lba_mid, (((devices[0].device_lba + (64000 * devices[0].currentIndex))) and $0000FF00) SHR 8);
-        //     outb(ports.lba_hi, (((devices[0].device_lba + (64000 * devices[0].currentIndex))) and $0000FF00) SHR 16);
-        //     outb(ports.command, $C8);
         end;
 
             cb.start_stop_bit := 1;
