@@ -65,6 +65,8 @@ var
    keyboard_layout : array [0..1] of TKeyInfo;
    i               : uint32;
    cEIP            : uint32;
+
+   temp            : uint32;
    
 begin
      multibootinfo:= mbinfo;
@@ -115,6 +117,12 @@ begin
      keyboard.hook(@temphook);
      mouse.init();
      console.writestringln('DRIVERS: INIT END.');
+
+     //temp := 8294;
+     //ata.write(uint32(@temp), 0, 4);
+     //temp := 1234;
+     //ata.read(uint32(@temp), 0, 4);
+     //console.writeintln(temp);
 
      console.writestringln('');
      console.setdefaultattribute(console.combinecolors(Green, Black));
