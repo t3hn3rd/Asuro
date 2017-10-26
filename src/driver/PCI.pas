@@ -213,14 +213,14 @@ var
     ii : uint16;
     iii : uint8;
 begin
-    console.writestringln('PCI: INIT BEGIN.')
+    console.writestringln('PCI: INIT BEGIN.');
     //enumerate pci bus 
     for ii:=0 to 256 do begin
         for i:=0 to 31 do begin
             check_device(ii, i, 0);
         end;
     end;
-    console.writestringln('PCI: INIT END.')
+    console.writestringln('PCI: INIT END.');
 end;
 
 procedure loadConfig(bus : uint8; slot : uint8; func : uint8; offset : uint8);
