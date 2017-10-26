@@ -60,8 +60,10 @@ end;
 
 procedure init(keyboard_layout : array of TKeyInfo);  
 begin
+    console.writestringln('PS/2 KEYBOARD: INIT BEGIN.');
     if keyboard_layout[1].key_code = 0 then lang_USA();
     isr33.hook(uint32(@callback));
+    console.writestringln('PS/2 KEYBOARD: INIT END.');
 end;
 //2A AA
 

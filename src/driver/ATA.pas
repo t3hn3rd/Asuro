@@ -75,7 +75,7 @@ implementation
 
 procedure init(_controller : TPCI_device);
 begin
-    console.writestringln('ATA Driver INIT');
+    console.writestringln('ATA: INIT BEGIN.');
     isr76.hook(uint32(@callback));
 
     controller := _controller;
@@ -90,7 +90,7 @@ begin
     ports.lba_hi  := $1F5;
     ports.drive   := $1F6;
     ports.sector_count := $F2;
-
+    console.writestringln('ATA: INIT END.');
 end;
 
 procedure read(address : uint32; data_lba : uint32; data_bytes : uint32);

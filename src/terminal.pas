@@ -271,6 +271,7 @@ end;
 
 procedure init;
 begin
+    console.writestringln('TERMINAL: INIT BEGIN.');
     memset(uint32(@Commands[0]), 0, 65535*sizeof(TCommand));
     memset(uint32(@buffer[0]), 0, 1024);
     registerCommand('VERSION', @version, 'Display the running version of Asuro.');
@@ -278,7 +279,8 @@ begin
     registerCommand('HELP', @help, 'Lists all registered commands and their description.');
     registerCommand('ECHO', @echo, 'Echo''s text to the terminal.');
     registerCommand('TESTPARAMS', @testParams, 'Tests param parsing.');
-    registerCommand('TEST', @test, 'Command for testing.')
+    registerCommand('TEST', @test, 'Command for testing.');
+    console.writestringln('TERMINAL: INIT END.');
 end;
 
 procedure run;

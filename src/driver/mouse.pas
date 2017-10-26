@@ -105,7 +105,9 @@ end;
 
 procedure init();
 begin
+    console.writestringln('PS/2 MOUSE: INIT BEGIN.');
     isr44.hook(uint32(@callback));
+    console.writestringln('PS/2 MOUSE: INIT END.');
 end;
 
 end.

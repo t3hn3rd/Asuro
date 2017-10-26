@@ -84,6 +84,7 @@ var
     i : uint32;
 
 begin
+    console.writestringln('LMM: INIT BEGIN.');
     Root_Page:= PHeapPage(new_lmm_page);
     Search_Page:= Root_Page;
     Root_Page^.Next_Page:= 0;
@@ -93,6 +94,7 @@ begin
         Root_Page^.Entries[i].Root:= False;
         Root_Page^.Entries[i].Last:= False;
     end; 
+    console.writestringln('LMM: INIT END.');
 end;
 
 function kalloc(size : uint32) : void;
