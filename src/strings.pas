@@ -25,6 +25,7 @@ function stringConcat(str1, str2 : pchar) : pchar;
 function stringContains(str : pchar; sub : pchar) : boolean;
 function stringToInt(str : pchar) : uint32;
 function intToString(i : uint32) : pchar;
+function boolToString(b : boolean; ext : boolean) : pchar;
 
 implementation
 
@@ -148,6 +149,28 @@ end;
 function intToString(i : uint32) : pchar;
 begin
     intToString:= ' ';
+end;
+
+function boolToString(b : boolean; ext : boolean) : pchar;
+var
+    t : pchar;
+    f : pchar;
+
+begin
+    if ext then begin
+        t:= stringCopy('true');
+        f:= stringCopy('false');
+    end else begin
+        t:= stringCopy('1');
+        f:= stringCopy('0');
+    end;
+    if b then begin
+        kfree(void(f));
+        boolToString:= t;
+    end else begin
+        kfree(void(t));
+        boolToString:= f;
+    end;
 end;
 
 end.

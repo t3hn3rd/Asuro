@@ -34,6 +34,7 @@ var
 begin
     //writechar('!'); // Bug traces all the way back to here - when the keyboard randomly doesn't work, this inturrupt isn't even called...
                       // This needs further investigation... Is there something that can go wrong when setting up the PIC?
+    CLI;
     b:= inb($60); 
     //console.writehexln(b);
     for i:=0 to MAX_HOOKS-1 do begin

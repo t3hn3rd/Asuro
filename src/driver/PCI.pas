@@ -410,6 +410,11 @@ begin
         if tmp.class_code = 3 then begin
             console.writestringln('-Device is DISPLAY_CONTROLLER ');
         end; 
+        if tmp.class_code = $0C then begin
+            if tmp.subclass_class = $03 then begin
+                console.writestringln('-Device is USB Controller');
+            end;
+        end;
     end;
 
         //psleep(300); 

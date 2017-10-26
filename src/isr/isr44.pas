@@ -25,7 +25,7 @@ implementation
 
 var
     Hooks : Array[1..MAX_HOOKS] of pp_hook_method;
-    Cycle : uint8 = 0;
+    Cycle : uint32 = 0;
     Mouse_Byte : Array[0..2] of uint8;
     Packet : uint32;
 
@@ -65,12 +65,27 @@ end;
 procedure Main(); interrupt;
 var
     i : integer;
+    b : byte;
     
 begin
-    Mouse_Byte[Cycle]:= mouse_read;
-    inc(Cycle);
+    b:= mouse_read;
+    if Cycle = 0 then begin
+        if (b AND $08) = $08 then begin
+            Mouse_Byte[Cycle]:= b;
+            inc(Cycle);
+        end;
+    end else begin
+        Mouse_Byte[Cycle]:= b;
+        inc(Cycle);
+    end;
     if Cycle > 2 then begin
         Cycle:= 0;
+        // console.writestring('Packet[0]: ');
+        // console.writeintln(Mouse_Byte[0]);
+        // console.writestring('Packet[1]: ');
+        // console.writeintln(Mouse_Byte[1]);
+        // console.writestring('Packet[2]: ');
+        // console.writeintln(Mouse_Byte[2]);
         Packet:= (Mouse_Byte[0] SHL 24) OR (Mouse_Byte[1] SHL 16) OR (Mouse_Byte[2] SHL 8) OR ($FF);
         for i:=0 to MAX_HOOKS-1 do begin
             if uint32(Hooks[i]) <> 0 then Hooks[i](void(Packet));

@@ -106,6 +106,7 @@ function getParam(index : uint32; params : PParamList) : pchar;
 var
     result : pchar;
     search : PParamList;
+    i      : uint32;
 
 begin
     result:= nil;
@@ -182,7 +183,7 @@ end;
 procedure test(params : PParamList);
 begin
     if paramCount(params) > 0 then begin
-        console.writeintln(stringToInt(params^.next^.param));
+        console.writeintln(stringToInt(getParam(0, params)));
     end else begin
         console.writestringln('Invalid number of params');
     end;    
