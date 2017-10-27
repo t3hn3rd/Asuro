@@ -318,7 +318,7 @@ begin
     count := 0;
     for i:=0 to device_count do begin
         if (devices[i].class_code = class_code) and (devices[i].subclass_class = subclass_code) and (devices[i].prog_if = prog_if) then begin
-            devices_out[i] := devices[i]; //prog_if
+            devices_out[count] := devices[i]; //prog_if
             count := count + 1;
         end;
     end;
