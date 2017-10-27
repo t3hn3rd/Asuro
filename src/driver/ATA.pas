@@ -16,7 +16,8 @@ uses
     drivertypes,
     console,
     terminal,
-    isr76;
+    isr76,
+    vmemorymanager;
 
 type 
 
@@ -73,12 +74,15 @@ procedure callback(data : void);
 
 implementation
 
-procedure init(_controller : TPCI_device);
+procedure init(_controller : TPCI_device); //alloc, pmem; map_page vmem;
 begin
     console.writestringln('ATA: INIT BEGIN.');
     isr76.hook(uint32(@callback));
 
     controller := _controller;
+
+    new_page_at_address(controller.address4);
+
     devices[0].primary := true;
     devices[0].Command_Register := controller.address4;
     devices[0].Status_Register := controller.address4 + 2;

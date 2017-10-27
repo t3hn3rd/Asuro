@@ -62,7 +62,7 @@ var
     busses : array[0..256] of TPCI_Device_Bridge;
 
     device_count : uint16;
-    bus_count : uint8;
+    bus_count : uint8 = 1;
 
 procedure init();
 procedure scanBus(bus : uint8);
@@ -72,11 +72,26 @@ function getDeviceInfo(class_code : uint8; subclass_code : uint8) : TPCI_Device;
 implementation 
 
 procedure init();
+var
+    current_bus : uint8;
 begin
     console.writestringln('PCI: INIT BEGIN.');
+    console.writestringln('PCI: Scanning Bus: 0');
     scanBus(0);
+    scanbus(1);
+    scanbus(2);
 
     //while unscanned busses scan busses
+    current_bus := 1;
+    while true do begin
+        if current_bus < bus_count then begin
+            console.writestringln('PCI: Scanning Bus: ');
+            console.writeint(bus_count);
+            scanBus(current_bus);
+            current_bus := current_bus + 1;
+        end else break;
+    end;
+
     console.writestringln('PCI: INIT END.');
 end;
 
@@ -92,6 +107,7 @@ begin
             if devices[device_count - 1].header_type and $40 = 40 then begin
                 for ii := 1 to 8 do begin
                     loadDeviceConfig(bus, i, ii);
+                    psleep(1000);
                 end;
             end;
         end;
@@ -183,6 +199,9 @@ begin
     busT.interrupt_pin := getbyte(data, 2);
     busT.interrupt_line := getbyte(data, 3);
 
+    busses[bus_count] := busT;
+    bus_count := bus_count + 1;
+
 end;
 
 function loadDeviceConfig(bus : uint8; slot : uint8; func : uint8) : boolean;
@@ -207,22 +226,23 @@ begin
 
     requestConfig(bus, slot, func, 2);
     data := inl($CFC);
-    device.class_code := getbyte(data, 0);
-    device.subclass_class := getbyte(data, 1);
-    device.prog_if := getbyte(data, 2);
-    device.revision_id := getbyte(data, 3);
+    device.class_code := getbyte(data, 3);
+    device.subclass_class := getbyte(data, 2);
+    device.prog_if := getbyte(data, 1);
+    device.revision_id := getbyte(data, 0);
 
     requestConfig(bus, slot, func, 3);
     data := inl($CFC);
-    device.BIST := getbyte(data, 0);
-    device.header_type := getbyte(data, 1);
-    device.latency_timer := getbyte(data, 2);
-    device.cache_size := getbyte(data, 3);
+    device.BIST := getbyte(data, 3);
+    device.header_type := getbyte(data, 2);
+    device.latency_timer := getbyte(data, 1);
+    device.cache_size := getbyte(data, 0);
 
     if device.header_type and $7 = 0 then begin 
         loadDeviceConfig := true;
     end else begin
         loadBusConfig(bus, slot, func, device);
+        exit(false);
     end;
      //TODO implement other types?
 
@@ -268,7 +288,7 @@ begin
 
 
     console.writestring('PCI: Found Device: ');
-    console.writehex(slot);
+    console.writehex(device.header_type);
     console.writestring('  ');
     console.writehex(device.device_id);        
     console.writestring('  ');        
