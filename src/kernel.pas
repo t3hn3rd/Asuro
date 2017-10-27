@@ -31,7 +31,8 @@ uses
      PCI,
      Terminal,
      strings,
-     ATA;
+     ATA,
+     USB;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
@@ -116,6 +117,7 @@ begin
      keyboard.init(keyboard_layout);
      keyboard.hook(@temphook);
      mouse.init();
+     USB.init();
      console.writestringln('DRIVERS: INIT END.');
 
      console.writestringln('');
