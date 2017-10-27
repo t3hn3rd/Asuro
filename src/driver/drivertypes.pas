@@ -12,6 +12,7 @@ interface
 
 type
 
+
     TPCI_Device = bitpacked record
         device_id      : uint16;
         vendor_id      : uint16;
@@ -44,6 +45,9 @@ type
         interrupt_pin  : uint8;
         interrupt_line : uint8;
     end;  
+
+    TDeviceArray = array[0..31] of TPCI_Device;
+
 
 implementation
 

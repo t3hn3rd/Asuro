@@ -7,14 +7,12 @@
   * Contributors: 
   ************************************************ }
 
-unit AHCI
+unit AHCI;
 
 interface
 
 uses 
-    system,
     util,
-    isr46,
     PCI,
     drivertypes;
 
@@ -23,10 +21,14 @@ type
 //Struct hell
 
     TFIS_Type = (
-        REG_H2D, REG_D2H,
-        DMA_ACT, DMA_SETUP,
-        DATA, BIST,
-        PIO_SETUP, DEV_BITS
+        REG_H2D = $27,
+        REG_D2H = $34,
+        DMA_ACT = $39,
+        DMA_SETUP = $41,
+        DATA = $46,
+        BIST = $58,
+        PIO_SETUP = $5F,
+        DEV_BITS = $A0
     );
 
     TFIS_REG_H2D = bitpacked record
@@ -81,23 +83,23 @@ type
         data      : ^uint32;
     end;
 
-    TFIS_PIO_Setup bitpakced record
-    end;
+    // TFIS_PIO_Setup = bitpacked record
+    // end;
 
-    TFIS_DMA_Setup bitpacked record
-    end;
+    // TFIS_DMA_Setup = bitpacked record
+    // end;
 
-    THBA_Memory bitpacked record
-    end;
+    // THBA_Memory = bitpacked record
+    // end;
 
-    THBA_Port bitpacked record
-    end;
+    // THBA_Port = bitpacked record
+    // end;
 
-    THBA_FIS bitpacked record
-    end;
+    // THBA_FIS = bitpacked record
+    // end;
 
 var
-    PCI_Devices : array [0..31] of TPCI_Device;
+    PCI_Devices : TDeviceArray;
 
 procedure init();
 
@@ -107,7 +109,7 @@ procedure init();
 var
     count : uint16;
 begin
-    PCI_Devices := PCI.getDeviceInfo(1, 6, @count);
+    //PCI_Devices := PCI.getDeviceInfo(1, 6, @count);
 end;
 
 end.
