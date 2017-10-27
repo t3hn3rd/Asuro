@@ -5,7 +5,9 @@ interface
 uses
     Console,
     PCI,
-    drivertypes;
+    drivertypes,
+    pmemorymanager,
+    vmemorymanager;
 
 procedure init;
 
@@ -16,6 +18,7 @@ var
     devices : TDeviceArray;
     count   : uint32;
     i       : uint32;
+    block   : uint32;
 
 begin
     console.writestringln('USB: INIT BEGIN.');
@@ -51,6 +54,9 @@ begin
             console.writehex(devices[i].vendor_id);
             console.writestring(' ');
             console.writehexln(devices[i].prog_if);
+            block:= devices[i].address0 SHR 22;
+            force_alloc_block(block, 0);
+            map_page(block, block);
         end;
     end;
 

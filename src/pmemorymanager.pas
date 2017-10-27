@@ -27,6 +27,7 @@ type
 
 procedure init;
 function alloc_block(block : uint16; caller : uint32) : boolean;
+procedure force_alloc_block(block : uint16; caller : uint32);
 function new_block(caller : uint32) : uint16;
 procedure free_block(block : uint16; caller : uint32);
 
