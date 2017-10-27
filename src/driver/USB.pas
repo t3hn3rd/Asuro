@@ -7,7 +7,8 @@ uses
     PCI,
     drivertypes,
     pmemorymanager,
-    vmemorymanager;
+    vmemorymanager,
+    util;
 
 type
     POHCI_MMR = ^TOHCI_MMR;
@@ -84,9 +85,9 @@ begin
             force_alloc_block(block, 0);
             map_page(block, block);
             MMR:= POHCI_MMR(devices[i].address0);
-            MMR^.HcRevision:= 17;
+            MMR^.HcRevision:= 200;
             console.writestring('HcRevision? ');
-            console.writeintln(MMR^.HcRevision);
+            console.writehexln(getByte(MMR^.HcRevision, 0));
         end;
     end;
 
