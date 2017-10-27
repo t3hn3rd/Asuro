@@ -99,16 +99,17 @@ end;
 
 procedure scanBus(bus : uint8);
 var
-    i : uint16;
-    ii : uint16;
+    slot : uint16;
+    func : uint16;
     result : boolean;
+
 begin
-    for i := 0 to 31 do begin
-        result := loadDeviceConfig(bus, i, 0);
+    for slot := 0 to 31 do begin
+        result := loadDeviceConfig(bus, slot, 0);
         if result = true then begin
             if devices[device_count - 1].header_type and $40 = 40 then begin
-                for ii := 1 to 8 do begin
-                    loadDeviceConfig(bus, i, ii);
+                for func := 1 to 8 do begin
+                    loadDeviceConfig(bus, slot, func);
                     psleep(1000);
                 end;
             end;
@@ -119,6 +120,7 @@ end;
 procedure requestConfig(bus : uint8; slot : uint8; func : uint8; row : uint8);
 var
     packet : uint32;
+    
 begin
     packet := ($1 shl 31);
     packet := packet or (bus shl 16);
@@ -133,6 +135,7 @@ procedure loadBusConfig(bus : uint8; slot : uint8; func : uint8; device : TPCI_D
 var
     busT : TPCI_Device_Bridge;
     data : uint32;
+
 begin
 
     busT.device_id := device.device_id;
@@ -210,6 +213,7 @@ function loadDeviceConfig(bus : uint8; slot : uint8; func : uint8) : boolean;
 var
     device : TPCI_Device;
     data : uint32;
+
 begin
 
     loadDeviceConfig := false;
@@ -311,6 +315,7 @@ function getDeviceInfo(class_code : uint8; subclass_code : uint8; count : intptr
 var
     i : uint16;
     devices_out : array[0..31] of TPCI_Device;
+    
 begin
     count^ := 0;
     for i:=0 to device_count do begin
