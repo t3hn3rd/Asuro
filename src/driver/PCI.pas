@@ -71,7 +71,7 @@ var
 procedure init();
 procedure scanBus(bus : uint8);
 function loadDeviceConfig(bus : uint8; slot : uint8; func : uint8) : boolean;
-function getDeviceInfo(class_code : uint8; subclass_code : uint8; count : intptr) : deviceArray;  //(Will in future)returns TPCI_DEVICE.vendor_id := 0xFFFF if no device found.
+function getDeviceInfo(class_code : uint8; subclass_code : uint8; var count : uint32) : deviceArray;  //(Will in future)returns TPCI_DEVICE.vendor_id := 0xFFFF if no device found.
 
 implementation 
 
@@ -311,17 +311,17 @@ begin
     
 end;
 
-function getDeviceInfo(class_code : uint8; subclass_code : uint8; count : intptr) : deviceArray; 
+function getDeviceInfo(class_code : uint8; subclass_code : uint8; var count : uint32) : deviceArray; 
 var
     i : uint16;
     devices_out : array[0..31] of TPCI_Device;
-    
+
 begin
-    count^ := 0;
+    count := 0;
     for i:=0 to device_count do begin
         if (devices[i].class_code = class_code) and (devices[i].subclass_class = subclass_code) then begin
             devices_out[i] := devices[i]; //prog_if
-            count^ := count^ + 1;
+            count := count + 1;
         end;
     end;
 
