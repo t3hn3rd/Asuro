@@ -18,6 +18,9 @@ uses
     ATA;
 
 type 
+
+    deviceArray = array[0..31] of TPCI_Device;
+
     TPCI_Device_Bridge = bitpacked record
         device_id          : uint16;
         vendor_id          : uint16;
@@ -63,12 +66,13 @@ var
 
     device_count : uint16;
     bus_count : uint8 = 1;
+    get_device_count : uint8;
 
 procedure init();
 procedure scanBus(bus : uint8);
 function loadDeviceConfig(bus : uint8; slot : uint8; func : uint8) : boolean;
-function getDeviceInfo(class_code : uint8; subclass_code : uint8) : TPCI_Device; //returns TPCI_DEVICE.vendor_id := 0xFFFF if no device found.
-//TODO KEIRON HOW SHOULD I RETUNR MULTIPLE DEVICE IN A NICE WAY
+function getDeviceInfo(class_code : uint8; subclass_code : uint8; count : intptr) : deviceArray;  //(Will in future)returns TPCI_DEVICE.vendor_id := 0xFFFF if no device found.
+
 implementation 
 
 procedure init();
@@ -78,8 +82,6 @@ begin
     console.writestringln('PCI: INIT BEGIN.');
     console.writestringln('PCI: Scanning Bus: 0');
     scanBus(0);
-    scanbus(1);
-    scanbus(2);
 
     //while unscanned busses scan busses
     current_bus := 1;
@@ -292,18 +294,34 @@ begin
     console.writestring('  ');
     console.writehex(device.device_id);        
     console.writestring('  ');        
-    console.writehex(device.vendor_id);        
-    console.writestring('  ');
     console.writehex(device.class_code);        
     console.writestring('  ');
-    console.writehexln(device.subclass_class);
+    console.writehex(device.subclass_class);        
+    console.writestring('  ');
+    console.writehexln(device.prog_if);
 
     devices[device_count] := device;
     device_count := device_count + 1;
+
+    //if device.class_code = 1 then ata.init(device);
     
 end;
 
-function getDeviceInfo(class_code : uint8; subclass_code : uint8) : TPCI_Device; 
-begin end;
+function getDeviceInfo(class_code : uint8; subclass_code : uint8; count : intptr) : deviceArray; 
+var
+    i : uint16;
+    devices_out : array[0..31] of TPCI_Device;
+begin
+    count^ := 0;
+    for i:=0 to device_count do begin
+        if (devices[i].class_code = class_code) and (devices[i].subclass_class = subclass_code) then begin
+            devices_out[i] := devices[i]; //prog_if
+            count^ := count^ + 1;
+        end;
+    end;
+
+    getDeviceInfo := devices_out;
+    
+end;
 
 end.

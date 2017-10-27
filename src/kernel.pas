@@ -118,12 +118,6 @@ begin
      mouse.init();
      console.writestringln('DRIVERS: INIT END.');
 
-     //temp := 8294;
-     //ata.write(uint32(@temp), 10, 4);
-     //temp := 1234;
-     //ata.read(uint32(@temp), 10, 4);
-     //console.writeintln(temp);
-
      console.writestringln('');
      console.setdefaultattribute(console.combinecolors(Green, Black));
      console.writestringln('Asuro Booted Correctly!');
