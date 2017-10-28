@@ -316,10 +316,19 @@ var
 
 begin
     count := 0;
-    for i:=0 to device_count do begin
-        if (devices[i].class_code = class_code) and (devices[i].subclass_class = subclass_code) and (devices[i].prog_if = prog_if) then begin
-            devices_out[count] := devices[i]; //prog_if
-            count := count + 1;
+    if prog_if <> $FF then begin
+        for i:=0 to device_count do begin
+            if (devices[i].class_code = class_code) and (devices[i].subclass_class = subclass_code) and (devices[i].prog_if = prog_if) then begin
+                devices_out[count] := devices[i];
+                count := count + 1;
+            end;
+        end;
+    end else begin
+        for i:=0 to device_count do begin
+            if (devices[i].class_code = class_code) and (devices[i].subclass_class = subclass_code) then begin
+                devices_out[count] := devices[i];
+                count := count + 1;
+            end;
         end;
     end;
 
