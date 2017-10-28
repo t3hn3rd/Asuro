@@ -61,7 +61,11 @@ type
     UBit5 = 0..(1 shl 5) - 1;
     UBit6 = 0..(1 shl 6) - 1;
     UBit7 = 0..(1 shl 7) - 1;
+    UBit9 = 0..(1 shl 9) - 1;
+    UBit17 = 0..(1 shl 17) - 1;
     UBit20 = 0..(1 shl 20) - 1;
+    UBit22 = 0..(1 shl 22) - 1;
+    UBit25 = 0..(1 shl 25) - 1;
     UBit28 = 0..(1 shl 28) - 1;
     UBit30 = 0..(1 shl 30) - 1;
 
