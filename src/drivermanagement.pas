@@ -13,6 +13,9 @@ interface
 uses
     console, util, strings, lmemorymanager;
 
+const
+    idANY = $FFFFFFFF;
+
 type
     PDevEx = ^TDevEx;
     TDevEx = record
@@ -20,7 +23,7 @@ type
         ex  : PDevEx;
     end;
 
-    TBusIdentifier = (biUnknown, biPCI, biUSB, bii2c, biPCIe);
+    TBusIdentifier = (biUnknown, biPCI, biUSB, bii2c, biPCIe, biANY);
 
     PDeviceIdentifier = ^TDeviceIdentifier;
     TDeviceIdentifier = record
@@ -57,11 +60,11 @@ var
 
 begin
     identifiers_match:= true;
-    identifiers_match:= identifiers_match and (i1^.Bus = i2^.Bus);
-    identifiers_match:= identifiers_match and (i1^.id0 = i2^.id0);
-    identifiers_match:= identifiers_match and (i1^.id1 = i2^.id1);
-    identifiers_match:= identifiers_match and (i1^.id2 = i2^.id2);
-    identifiers_match:= identifiers_match and (i1^.id3 = i2^.id3);
+    identifiers_match:= identifiers_match and ((i1^.Bus = i2^.Bus) OR (i1^.Bus = biANY) OR (i2^.Bus = biANY));
+    identifiers_match:= identifiers_match and ((i1^.id0 = i2^.id0) OR (i1^.id0 = $FFFFFFFF) OR (i2^.id0 = $FFFFFFFF));
+    identifiers_match:= identifiers_match and ((i1^.id1 = i2^.id1) OR (i1^.id1 = $FFFFFFFF) OR (i2^.id1 = $FFFFFFFF));
+    identifiers_match:= identifiers_match and ((i1^.id2 = i2^.id2) OR (i1^.id2 = $FFFFFFFF) OR (i2^.id2 = $FFFFFFFF));
+    identifiers_match:= identifiers_match and ((i1^.id3 = i2^.id3) OR (i1^.id3 = $FFFFFFFF) OR (i2^.id3 = $FFFFFFFF));
     ll1:= i1^.ex;
     ll2:= i2^.ex;
     while true do begin
@@ -70,7 +73,7 @@ begin
         identifiers_match:= identifiers_match and (b1 = b2);
         if not (b1 and b2) then exit;
         if b1 = b2 then begin
-            identifiers_match:= identifiers_match and (ll1^.idN = ll2^.idN);    
+            identifiers_match:= identifiers_match and ((ll1^.idN = ll2^.idN) OR (ll1^.idN = $FFFFFFFF) OR (ll2^.idN = $FFFFFFFF));    
         end else begin
             identifiers_match:= false;
             exit;

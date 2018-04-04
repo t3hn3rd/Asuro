@@ -19,12 +19,12 @@ var
     devID : TDeviceIdentifier;
 
 begin
-    devID.bus:= biPCI;
-    devID.id0:= $00008086;
-    devID.id1:= $00000006;
-    devID.id2:= $00000000;
-    devID.id3:= $00000000;
-    devID.ex:= nil;
+    devID.bus:= biPCI; { PCI BUS }
+    devID.id0:= idANY; { ANY DEVICE MANUFACTURER }
+    devID.id1:= $00000006; { CLASS }
+    devID.id2:= $00000000; { SUBCLASS }
+    devID.id3:= $00000000; { PROGIF }
+    devID.ex:= nil; { NO EXTENDED INFO }
     drivermanagement.register_driver(@devID, @load);
 end;
 
