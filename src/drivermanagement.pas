@@ -11,7 +11,7 @@ unit drivermanagement;
 interface
 
 uses
-    util, strings, lmemorymanager;
+    console, util, strings, lmemorymanager;
 
 type
     PDevEx = ^TDevEx;

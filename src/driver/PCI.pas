@@ -15,7 +15,9 @@ uses
     util,
     console,
     drivertypes,
-    ATA;
+    ATA,
+    lmemorymanager,
+    drivermanagement;
 
 type 
 
@@ -211,6 +213,7 @@ function loadDeviceConfig(bus : uint8; slot : uint8; func : uint8) : boolean;
 var
     device : TPCI_Device;
     data : uint32;
+    DevID : PDeviceIdentifier;
 
 begin
 
@@ -290,6 +293,13 @@ begin
     device.interrupt_pin := getbyte(data, 2);
     device.interrupt_line := getbyte(data, 3);
 
+    DevID:= PDeviceIdentifier(kalloc(sizeof(TDeviceIdentifier)));
+    DevID^.Bus:= biPCI;
+    DevID^.id0:= device.device_id;
+    DevID^.id1:= device.class_code;
+    DevID^.id2:= device.subclass_class;
+    DevID^.id3:= device.prog_if;
+    DevID^.ex:= nil;
 
     console.writestring('PCI: Found Device: ');
     console.writehex(device.header_type);
@@ -301,6 +311,8 @@ begin
     console.writehex(device.subclass_class);        
     console.writestring('  ');
     console.writehexln(device.prog_if);
+
+    drivermanagement.register_device(DevID, @device);
 
     devices[device_count] := device;
     device_count := device_count + 1;

@@ -33,7 +33,8 @@ uses
      Terminal,
      strings,
      ATA,
-     USB;
+     USB,
+     testdriver;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
@@ -107,6 +108,7 @@ begin
      lmemorymanager.init();
      tss.init();
      scheduler.init();
+     testdriver.init();
 
      //asm INT 13 end;
      STI;
