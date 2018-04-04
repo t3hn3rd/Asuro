@@ -313,7 +313,7 @@ begin
     console.writehexln(device.prog_if);
 
     drivermanagement.register_device(DevID, @device);
-    kfree(DevID);
+    kfree(void(DevID));
 
     devices[device_count] := device;
     device_count := device_count + 1;
