@@ -11,7 +11,7 @@ unit drivermanagement;
 interface
 
 uses
-    util, strings;
+    util, strings, lmemorymanager;
 
 type
     PDevEx = ^TDevEx;
@@ -43,21 +43,103 @@ type
     end;
 
 procedure register_driver(DeviceID : PDeviceIdentifier; Load_Callback : TDriverLoadCallback);
-procedure register_device(DeviceID : PDeviceIdentifier);
+procedure register_device(DeviceID : PDeviceIdentifier; ptr : void);
 
 var
     Root : PDriverRegistration = nil;
 
 implementation
 
-procedure register_driver(DeviceID : PDeviceIdentifier; Load_Callback : TDriverLoadCallback);
+function identifiers_match(i1, i2 : PDeviceIdentifier) : boolean;
+var
+    ll1, ll2 : PDevEx;
+    b1, b2 : boolean;
+
 begin
-    
+    identifiers_match:= true;
+    identifiers_match:= identifiers_match and (i1^.Bus = i2^.Bus);
+    identifiers_match:= identifiers_match and (i1^.id0 = i2^.id0);
+    identifiers_match:= identifiers_match and (i1^.id1 = i2^.id1);
+    identifiers_match:= identifiers_match and (i1^.id2 = i2^.id2);
+    identifiers_match:= identifiers_match and (i1^.id3 = i2^.id3);
+    ll1:= i1^.ex;
+    ll2:= i2^.ex;
+    while true do begin
+        b1:= ll1 <> nil;
+        b2:= ll2 <> nil;
+        identifiers_match:= identifiers_match and (b1 = b2);
+        if not (b1 and b2) then exit;
+        if b1 = b2 then begin
+            identifiers_match:= identifiers_match and (ll1^.idN = ll2^.idN);    
+        end else begin
+            identifiers_match:= false;
+            exit;
+        end;
+        ll1:= ll1^.ex;
+        ll2:= ll2^.ex;
+    end;
 end;
 
-procedure register_device(DeviceID : PDeviceIdentifier);
-begin
+procedure register_driver(DeviceID : PDeviceIdentifier; Load_Callback : TDriverLoadCallback);
+var
+    NewReg : PDriverRegistration;
+    root_ex, 
+    param_ex, new_ex: PDevEx; 
+    RegList : PDriverRegistration;
 
+begin
+    if DeviceID = nil then exit;
+    NewReg:= PDriverRegistration(kalloc(sizeof(TDriverRegistration)));
+    NewReg^.Identifier.Bus:= DeviceID^.Bus;
+    NewReg^.Identifier.id0:= DeviceID^.id0;
+    NewReg^.Identifier.id1:= DeviceID^.id1;
+    NewReg^.Identifier.id2:= DeviceID^.id2;
+    NewReg^.Identifier.id3:= DeviceID^.id3;
+    root_ex:= nil;
+    if DeviceID^.ex <> nil then begin
+        root_ex:= PDevEx(kalloc(sizeof(TDevEx)));
+        param_ex:= DeviceID^.ex;
+        new_ex:= root_ex;
+        new_ex^.idN:= param_ex^.idN;
+        new_ex^.ex:= nil;
+        param_ex:= param_ex^.ex;
+        while param_ex <> nil do begin
+            new_ex^.ex:= PDevEx(kalloc(sizeof(TDevEx)));
+            new_ex:= new_ex^.ex;
+            new_ex^.idN:= param_ex^.idN;
+            param_ex:= param_ex^.ex;
+        end;
+    end;
+    NewReg^.Identifier.ex:= root_ex;
+    NewReg^.Loaded:= false;
+    NewReg^.Driver_Load:= Load_Callback;
+    NewReg^.Next:= nil;
+    if Root = nil then begin
+        Root:= NewReg;
+    end else begin
+        RegList:= Root;
+        While RegList^.Next <> nil do begin
+            RegList:= RegList^.Next;
+        end;
+        RegList^.Next:= NewReg;
+    end;
+end;
+
+procedure register_device(DeviceID : PDeviceIdentifier; ptr : void);
+var
+    drv : PDriverRegistration;
+
+begin
+    drv:= Root;
+    while drv <> nil do begin
+        if identifiers_match(@drv^.Identifier, DeviceID) then begin
+            if drv^.Driver_Load(ptr) then begin
+                drv^.Loaded:= true;
+                exit;
+            end;
+        end;
+        drv:= drv^.Next;
+    end;
 end;
 
 end.
