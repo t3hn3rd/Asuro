@@ -26,7 +26,7 @@ uses
      vmemorymanager,
      pmemorymanager,
      lmemorymanager,
-     driver_management,
+     drivermanagement,
      tss,
      scheduler,
      PCI,
