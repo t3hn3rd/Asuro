@@ -14,7 +14,8 @@ interface
 uses 
     util,
     PCI,
-    drivertypes;
+    drivertypes,
+    drivermanagement;
 
 type
 
@@ -159,6 +160,7 @@ type
     end;
 
     THBAptr : ^THBA_MEM;
+    intptr : ^uint32;
 
     TCommand_Header = bitpacked record
         cfl    : ubit5;
@@ -177,7 +179,14 @@ type
         rsv1   : array[0..3] of uint32;
     end;
 
-    TPRD bitpacked record
+    TCommand_Table bitpacked record
+        cfis : array[0..64] of uint8;
+        acmd : array[0..16] of uint8;
+        rsv  : array[0..48] of uint8;
+        prdt : array[0..1] of TPRD_Entry;
+    end;
+
+    TPRD_Entry bitpacked record
         data_base_address   : uint32;
         data_bade_address_U : uint32;
         rsv0                : uint32;
@@ -193,11 +202,14 @@ var
     SATA_SIG_SEMB  := $C33C0101;
     STAT_SIG_PM    := $96690101;
     //other
-    PCI_Devices : TDeviceArray;
+    ahciController : intptr;
     hba : THBAptr;
+
     
 
 procedure init();
+procedure check_ports();
+function register_device(ptr:void): boolean;
 
 implementation 
 
@@ -206,7 +218,27 @@ var
     count : uint16;
 begin
     console.writestringln('AHCI: STARTING INIT');
-    PCI_Devices := PCI.getDeviceInfo(1, 6, 0, count);
+    //PCI_Devices := PCI.getDeviceInfo(1, 6, 0, count);
+    drivermanagement.register_driver($010600, register_device)
 end;
+
+function register_device(ptr : void) : boolean
+begin
+    ahciController := ptr;
+    hba := ahciController.address5;
+    exit(true);
+end;
+
+procedure check_ports();
+var
+    i : uint32;
+begin
+    i:= 1;
+    while true do begin
+       // if i and hba^.port_implemented != 1
+    end
+
+end
+
 
 end.
