@@ -32,7 +32,7 @@ uses
      PCI,
      Terminal,
      strings,
-     ATA,
+     AHCI,
      USB,
      testdriver;
  
@@ -120,6 +120,7 @@ begin
      keyboard.init(keyboard_layout);
      mouse.init();
      USB.init();
+     AHCI.init();
      console.writestringln('DRIVERS: INIT END.');
 
      console.writestringln('');
