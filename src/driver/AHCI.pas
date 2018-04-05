@@ -249,6 +249,7 @@ begin
     ahciController := ptr;
     hba := THBAptr(PPCI_Device(ahciController)^.address5);
     new_page_at_address(uint32(hba));
+    AHCI_BASE := PPCI_Device(ahciController)^.address5;
     check_ports();
     load:= true;
     exit;
