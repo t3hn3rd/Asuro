@@ -35,16 +35,44 @@ type
      end;
      PBDA = ^TBDA;
 
+     TMCFG = bitpacked record
+        Signature        : Array[0..3] of Char;
+        Table_Length     : uint32;
+        Revision         : Byte;
+        Checksum         : Byte;
+        OEM_ID           : Array[0..5] of Byte;
+        OEM_Table_ID     : uint64;
+        OEM_Revision     : uint32;
+        Creator_ID       : uint32;
+        Creator_Revision : uint32;
+        Reserved         : uint64;
+     end;
+     PMCFG = ^TMCFG;
+
 const
      BDA : PBDA = PBDA($C0000400);
 
+var
+     EBDA : void;
+     MCFG : PMCFG;
+
 procedure tick_update(data : void);
+procedure init();
 
 implementation
+
+uses
+    console, vmemorymanager;
 
 procedure tick_update(data : void);
 begin
     BDA^.Ticks:= BDA^.Ticks + 1;
+end;
+
+procedure init();
+begin
+    console.writestringln('BDA: Loaded.');
+    //TO-DO search for important structures like the MCFG or the EBDA.
 end;
 
 end.
