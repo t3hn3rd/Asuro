@@ -39,19 +39,63 @@ type
 
     PDriverRegistration = ^TDriverRegistration;
     TDriverRegistration = record
-        Identifier  : TDeviceIdentifier;
+        Driver_Name : PChar;
+        Identifier  : PDeviceIdentifier;
         Driver_Load : TDriverLoadCallback;
         Loaded      : Boolean;
         Next        : PDriverRegistration;
     end;
 
-procedure register_driver(DeviceID : PDeviceIdentifier; Load_Callback : TDriverLoadCallback);
-procedure register_device(DeviceID : PDeviceIdentifier; ptr : void);
+    PDeviceRegistration = ^TDeviceRegistration;
+    TDeviceRegistration = record
+        Device_Name   : PChar;
+        Identifier    : PDeviceIdentifier;
+        Driver_Loaded : Boolean;
+        Driver        : PDriverRegistration;
+        Next          : PDeviceRegistration;
+    end;
+
+procedure register_driver(Driver_Name : PChar; DeviceID : PDeviceIdentifier; Load_Callback : TDriverLoadCallback);
+procedure register_device(Device_Name : PChar; DeviceID : PDeviceIdentifier; ptr : void);
 
 var
     Root : PDriverRegistration = nil;
+    Dev  : PDeviceRegistration = nil;
 
 implementation
+
+function copy_identifier(DeviceID : PDeviceIdentifier) : PDeviceIdentifier;
+var
+    New_DevID : PDeviceIdentifier;
+    root_ex, 
+    param_ex, 
+    new_ex: PDevEx;
+
+begin
+    New_DevID:= PDeviceIdentifier(kalloc(sizeof(TDeviceIdentifier)));
+    New_DevID^.Bus:= DeviceID^.Bus;
+    New_DevID^.id0:= DeviceID^.id0;
+    New_DevID^.id1:= DeviceID^.id1;
+    New_DevID^.id2:= DeviceID^.id2;
+    New_DevID^.id3:= DeviceID^.id3;
+    root_ex:= nil;
+    if DeviceID^.ex <> nil then begin
+        root_ex:= PDevEx(kalloc(sizeof(TDevEx)));
+        param_ex:= DeviceID^.ex;
+        new_ex:= root_ex;
+        new_ex^.idN:= param_ex^.idN;
+        new_ex^.ex:= nil;
+        param_ex:= param_ex^.ex;
+        while param_ex <> nil do begin
+            new_ex^.ex:= PDevEx(kalloc(sizeof(TDevEx)));
+            new_ex:= new_ex^.ex;
+            new_ex^.idN:= param_ex^.idN;
+            param_ex:= param_ex^.ex;
+        end;
+    end;
+    New_DevID^.ex:= root_ex;
+    copy_identifier:= New_DevID;
+end;
 
 function identifiers_match(i1, i2 : PDeviceIdentifier) : boolean;
 var
@@ -83,37 +127,16 @@ begin
     end;
 end;
 
-procedure register_driver(DeviceID : PDeviceIdentifier; Load_Callback : TDriverLoadCallback);
+procedure register_driver(Driver_Name : PChar; DeviceID : PDeviceIdentifier; Load_Callback : TDriverLoadCallback);
 var
-    NewReg : PDriverRegistration;
-    root_ex, 
-    param_ex, new_ex: PDevEx; 
+    NewReg : PDriverRegistration; 
     RegList : PDriverRegistration;
 
 begin
     if DeviceID = nil then exit;
     NewReg:= PDriverRegistration(kalloc(sizeof(TDriverRegistration)));
-    NewReg^.Identifier.Bus:= DeviceID^.Bus;
-    NewReg^.Identifier.id0:= DeviceID^.id0;
-    NewReg^.Identifier.id1:= DeviceID^.id1;
-    NewReg^.Identifier.id2:= DeviceID^.id2;
-    NewReg^.Identifier.id3:= DeviceID^.id3;
-    root_ex:= nil;
-    if DeviceID^.ex <> nil then begin
-        root_ex:= PDevEx(kalloc(sizeof(TDevEx)));
-        param_ex:= DeviceID^.ex;
-        new_ex:= root_ex;
-        new_ex^.idN:= param_ex^.idN;
-        new_ex^.ex:= nil;
-        param_ex:= param_ex^.ex;
-        while param_ex <> nil do begin
-            new_ex^.ex:= PDevEx(kalloc(sizeof(TDevEx)));
-            new_ex:= new_ex^.ex;
-            new_ex^.idN:= param_ex^.idN;
-            param_ex:= param_ex^.ex;
-        end;
-    end;
-    NewReg^.Identifier.ex:= root_ex;
+    NewReg^.Driver_Name:= stringCopy(Driver_Name);
+    NewReg^.Identifier:= copy_identifier(DeviceID);
     NewReg^.Loaded:= false;
     NewReg^.Driver_Load:= Load_Callback;
     NewReg^.Next:= nil;
@@ -128,20 +151,39 @@ begin
     end;
 end;
 
-procedure register_device(DeviceID : PDeviceIdentifier; ptr : void);
+procedure register_device(Device_Name : PChar; DeviceID : PDeviceIdentifier; ptr : void);
 var
     drv : PDriverRegistration;
+    new_dev : PDeviceRegistration;
+    dev_list : PDeviceRegistration;
 
 begin
     drv:= Root;
+    new_dev:= PDeviceRegistration(kalloc(sizeof(TDeviceRegistration)));
+    new_dev^.Device_Name:= stringCopy(Device_Name);
+    new_dev^.Identifier:= copy_identifier(DeviceID);
+    new_dev^.Driver_Loaded:= false;
+    new_dev^.Driver:= nil;
+    new_dev^.next:= nil;
     while drv <> nil do begin
-        if identifiers_match(@drv^.Identifier, DeviceID) then begin
+        if identifiers_match(drv^.Identifier, DeviceID) then begin
             if drv^.Driver_Load(ptr) then begin
                 drv^.Loaded:= true;
+                new_dev^.Driver_Loaded:= true;
+                new_dev^.Driver:= drv;
                 exit;
             end;
         end;
         drv:= drv^.Next;
+    end;
+    if Dev = nil then begin
+        Dev:= new_dev;
+    end else begin
+        dev_list:= Dev;
+        While dev_list^.Next <> nil do begin
+            dev_list:= dev_list^.Next;
+        end;
+        dev_list^.Next:= new_dev;
     end;
 end;
 

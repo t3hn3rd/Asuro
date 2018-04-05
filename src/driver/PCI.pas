@@ -312,7 +312,8 @@ begin
     console.writestring('  ');
     console.writehexln(device.prog_if);
 
-    drivermanagement.register_device(DevID, @device);
+    drivermanagement.register_device('PCI Device', DevID, @device);
+    
     kfree(void(DevID));
 
     devices[device_count] := device;
