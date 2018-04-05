@@ -20,7 +20,7 @@ var
 
 begin
     devID.bus:= biPCI; { PCI BUS }
-    devID.id0:= idANY; { ANY DEVICE MANUFACTURER }
+    devID.id0:= idANY; { ANY DEVICE ID }
     devID.id1:= $00000006; { CLASS }
     devID.id2:= $00000000; { SUBCLASS }
     devID.id3:= $00000000; { PROGIF }
