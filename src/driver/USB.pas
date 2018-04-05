@@ -110,6 +110,7 @@ begin
     UHCI_ID.id1:= $0000000C;
     UHCI_ID.id2:= $00000003;
     UHCI_ID.id3:= $00000000;
+    UHCI_ID.id4:= $FFFFFFFF;
     UHCI_ID.ex:= nil;
 
     OHCI_ID.Bus:= biPCI;
@@ -117,6 +118,7 @@ begin
     OHCI_ID.id1:= $0000000C;
     OHCI_ID.id2:= $00000003;
     OHCI_ID.id3:= $00000010;
+    OHCI_ID.id4:= $FFFFFFFF;
     OHCI_ID.ex:= nil;
 
     drivermanagement.register_driver('USB-UHCI Driver', @UHCI_ID, @loadUHCI);

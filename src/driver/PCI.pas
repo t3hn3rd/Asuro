@@ -313,6 +313,7 @@ begin
     DevID^.id1:= device.class_code;
     DevID^.id2:= device.subclass_class;
     DevID^.id3:= device.prog_if;
+    DevID^.id4:= device.vendor_id;
     DevID^.ex:= nil;
 
     console.writestring('PCI: Found Device: ');

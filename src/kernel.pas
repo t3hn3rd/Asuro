@@ -34,7 +34,8 @@ uses
      strings,
      AHCI,
      USB,
-     testdriver;
+     testdriver,
+     E1000;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
@@ -128,7 +129,7 @@ begin
      pci.init();
      console.writestringln('DRIVERS: INIT END.');
 
-     console.writestring('AHCI TEST');
+     {console.writestring('AHCI TEST');
      console.writestringln('A');
      atmp:= puint32(kalloc(sizeof(1024*128)));
      console.writestringln('B');
@@ -141,7 +142,7 @@ begin
      AHCI.read(0, $5, $1, 32, atmp);
      console.writestringln('F');
      console.writeint(atmp^);
-     console.writestringln('G');
+     console.writestringln('G');}
 
      console.writestringln('');
      console.setdefaultattribute(console.combinecolors(Green, Black));

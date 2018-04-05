@@ -24,6 +24,7 @@ begin
     devID.id1:= $00000006; { CLASS }
     devID.id2:= $00000000; { SUBCLASS }
     devID.id3:= $00000000; { PROGIF }
+    devID.id4:= idANY;
     devID.ex:= nil; { NO EXTENDED INFO }
     drivermanagement.register_driver('DUMMY DRIVER', @devID, @load);
 end;

@@ -26,12 +26,13 @@ type
     TBusIdentifier = (biUnknown, biPCI, biUSB, bii2c, biPCIe, biANY);
 
     PDeviceIdentifier = ^TDeviceIdentifier;
-    TDeviceIdentifier = record
+    TDeviceIdentifier = record 
         Bus : TBusIdentifier;
         id0 : uInt32;
         id1 : uInt32;
         id2 : uInt32;
         id3 : uint32; 
+        id4 : uint32;
         ex  : PDevEx;  
     end;
 
@@ -93,8 +94,8 @@ begin
         if Drv^.Loaded then begin
             console.writeint(i);
             console.writestring(') ');
-            console.writestring(Drv^.Driver_Name);
-            console.writestring(' [');
+            console.writestringln(Drv^.Driver_Name);
+            console.writestring('[');
             writeBusType(Drv^.Identifier^.Bus);
             console.writestring(' - ID:');
             console.writeHex(Drv^.Identifier^.id0);
@@ -104,6 +105,8 @@ begin
             console.writeHex(Drv^.Identifier^.id2);
             console.writestring('-');
             console.writeHex(Drv^.Identifier^.id3);
+            console.writestring('-');
+            console.writeHex(Drv^.Identifier^.id4);
             ex:= Drv^.Identifier^.ex;
             while ex <> nil do begin
                 console.writestring('-');
@@ -130,8 +133,8 @@ begin
         console.writeint(i);
         if Drv^.Loaded then console.writestring('L');
         console.writestring(') ');
-        console.writestring(Drv^.Driver_Name);
-        console.writestring(' [');
+        console.writestringln(Drv^.Driver_Name);
+        console.writestring('[');
         writeBusType(Drv^.Identifier^.Bus);
         console.writestring(' - ID:');
         console.writeHex(Drv^.Identifier^.id0);
@@ -141,6 +144,8 @@ begin
         console.writeHex(Drv^.Identifier^.id2);
         console.writestring('-');
         console.writeHex(Drv^.Identifier^.id3);
+        console.writestring('-');
+        console.writeHex(Drv^.Identifier^.id4);
         ex:= Drv^.Identifier^.ex;
         while ex <> nil do begin
             console.writestring('-');
@@ -165,8 +170,8 @@ begin
     while Dv <> nil do begin
         console.writeint(i);
         console.writestring(') ');
-        console.writestring(Dv^.Device_Name);
-        console.writestring(' [');
+        console.writestringln(Dv^.Device_Name);
+        console.writestring('[');
         writeBusType(Dv^.Identifier^.Bus);
         console.writestring(' - ID:');
         console.writeHex(Dv^.Identifier^.id0);
@@ -176,6 +181,8 @@ begin
         console.writeHex(Dv^.Identifier^.id2);
         console.writestring('-');
         console.writeHex(Dv^.Identifier^.id3);
+        console.writestring('-');
+        console.writeHex(Dv^.Identifier^.id4);
         ex:= Dv^.Identifier^.ex;
         while ex <> nil do begin
             console.writestring('-');
@@ -212,6 +219,7 @@ begin
     New_DevID^.id1:= DeviceID^.id1;
     New_DevID^.id2:= DeviceID^.id2;
     New_DevID^.id3:= DeviceID^.id3;
+    New_DevID^.id4:= DeviceID^.id4;
     root_ex:= nil;
     if DeviceID^.ex <> nil then begin
         root_ex:= PDevEx(kalloc(sizeof(TDevEx)));
@@ -243,6 +251,7 @@ begin
     identifiers_match:= identifiers_match and ((i1^.id1 = i2^.id1) OR (i1^.id1 = $FFFFFFFF) OR (i2^.id1 = $FFFFFFFF));
     identifiers_match:= identifiers_match and ((i1^.id2 = i2^.id2) OR (i1^.id2 = $FFFFFFFF) OR (i2^.id2 = $FFFFFFFF));
     identifiers_match:= identifiers_match and ((i1^.id3 = i2^.id3) OR (i1^.id3 = $FFFFFFFF) OR (i2^.id3 = $FFFFFFFF));
+    identifiers_match:= identifiers_match and ((i1^.id4 = i2^.id4) OR (i1^.id4 = $FFFFFFFF) OR (i2^.id4 = $FFFFFFFF));
     ll1:= i1^.ex;
     ll2:= i2^.ex;
     while true do begin

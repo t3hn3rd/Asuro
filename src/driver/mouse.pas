@@ -122,6 +122,7 @@ begin
     devid.id1:= 0;
     devid.id2:= 0;
     devid.id3:= 0;
+    devid.id4:= 0;
     devid.ex:= nil;
     drivermanagement.register_driver_ex('PS/2 Mouse', @devid, @load, true);
     console.writestringln('PS/2 MOUSE: INIT END.');
