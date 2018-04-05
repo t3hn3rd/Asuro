@@ -15,7 +15,8 @@ uses
     util,
     PCI,
     drivertypes,
-    drivermanagement;
+    drivermanagement,
+    lmemorymanager;
 
 type
 
@@ -87,10 +88,10 @@ type
     TFIS_PIO_Setup = bitpacked record
         fis_type : uint8;
         pmport   : UBit4;
-        rsv0     : ubit1;
-        d        : ubit1;
-        i        : ubit1;
-        rsv1     : ubit1;
+        rsv0     : boolean;
+        d        : boolean;
+        i        : boolean;
+        rsv1     : boolean;
         status   : uint8;
         error    : uint8;
         lba0     : uint8;
@@ -139,8 +140,8 @@ type
         ci : uint32;
         sntf : uint32;
         fbs : uint32;
-        rsv1[11] : uint32;
-        vendor[4] : uint32;
+        rsv1 : array[0..11] of uint32;
+        vendor : array[0..4] of uint32;
     end; 
 
     THBA_MEM = bitpacked record 
@@ -155,8 +156,8 @@ type
         em_Control          : uint32; //20
         hcap2               : uint32; //24
         bohc                : uint32; //28
-        rsv0                : array[0..210] of ubit1;
-        ports               : array[0..31] of HBA_PORT;
+        rsv0                : array[0..210] of boolean;
+        ports               : array[0..31] of THBA_Port;
     end;
 
     THBAptr : ^THBA_MEM;
@@ -164,13 +165,13 @@ type
 
     TCommand_Header = bitpacked record
         cfl    : ubit5;
-        a      : ubit1;
-        w      : ubit1;
-        p      : ubit1;
-        r      : ubit1;
-        b      : ubit1;
-        c      : ubit1;
-        rsv0   : ubit1;
+        a      : boolean;
+        w      : boolean;
+        p      : boolean;
+        r      : boolean;
+        b      : boolean;
+        c      : boolean;
+        rsv0   : boolean;
         pmp    : ubit4;
         PRDTL  : uint16;
         PRDTBC : uint32;
@@ -179,31 +180,34 @@ type
         rsv1   : array[0..3] of uint32;
     end;
 
-    TCommand_Table bitpacked record
+    TCommand_Table = bitpacked record
         cfis : array[0..64] of uint8;
         acmd : array[0..16] of uint8;
         rsv  : array[0..48] of uint8;
         prdt : array[0..1] of TPRD_Entry;
     end;
 
-    TPRD_Entry bitpacked record
+    TPRD_Entry = bitpacked record
         data_base_address   : uint32;
         data_bade_address_U : uint32;
         rsv0                : uint32;
         data_byte_count     : ubit22;
         rsv1                : ubit9;
-        interrupt_oc        : ubit1;
+        interrupt_oc        : boolean;
     end;
 
 var
     //constants
-    SATA_SIG_ATA   := $101;
-    SATA_SIG_ATAPI := $EB140101;
-    SATA_SIG_SEMB  := $C33C0101;
-    STAT_SIG_PM    := $96690101;
-    //other
-    ahciController : intptr;
-    hba : THBAptr;
+    //SATA_SIG_ATA   := $101;
+    //SATA_SIG_ATAPI := $EB140101;
+    //STA_SIG_SEMB  := $C33C0101;
+    //STAT_SIG_PM    := $96690101;
+    //other 
+    ahciController     : intptr;
+    hba                : THBAptr;
+
+    sataStorageDevices     : array[0..31] of intptr;
+    sataStorageDeviceCount : uint8;
 
     
 
@@ -226,16 +230,32 @@ function register_device(ptr : void) : boolean
 begin
     ahciController := ptr;
     hba := ahciController.address5;
+    check_ports();
     exit(true);
 end;
 
 procedure check_ports();
 var
+    d : uint32;
     i : uint32;
+    ii : uint32;
 begin
-    i:= 1;
-    while true do begin
-       // if i and hba^.port_implemented != 1
+    d:= 1;
+    activePorts : array[0..32] of uint32;
+    for i:= 0 to 31 do begin
+        if d and hba^.port_implemented != 0 then // port connected
+        begin
+            if hba^.ports[i].ssts == 259 then // port in use and active
+            begin
+                if hba^.ports[i].sig == 1 then //device is sata
+                begin
+                    sataStorageDevices[sataStorageDeviceCount - 1] := @hba^.ports[i];
+                    sataStorageDeviceCount += 1;
+                end
+                //TODO implement other types
+            end
+        end
+        d := d shl 1;
     end
 
 end
