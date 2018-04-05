@@ -110,7 +110,6 @@ begin
      lmemorymanager.init();
      tss.init();
      scheduler.init();
-     testdriver.init();
 
      //asm INT 13 end;
      STI;
@@ -118,11 +117,12 @@ begin
 
      //drivers
      console.writestringln('DRIVERS: INIT BEGIN.');
-     pci.init();
      keyboard.init(keyboard_layout);
      mouse.init();
-     USB.init();
      AHCI.init();
+     testdriver.init();
+     USB.init();
+     pci.init();
      console.writestringln('DRIVERS: INIT END.');
 
      console.writestringln('');
