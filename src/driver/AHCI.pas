@@ -34,6 +34,7 @@ type
         DEV_BITS = $A0
     );
 
+    PFIS_REG_H2D = ^TFIS_REG_H2D;
     TFIS_REG_H2D = bitpacked record
         fis_type     : uint8; 
         port_mult    : UBit4;
@@ -123,6 +124,7 @@ type
     // THBA_FIS = bitpacked record
     // end;
 
+    PHBA_PORT = ^THBA_PORT;
     THBA_PORT = bitpacked record
         clb : uint32;
         clbu : uint32;
@@ -163,6 +165,7 @@ type
 
     THBAptr = ^THBA_MEM;
 
+    PCMDHeader = ^ TCommand_Header;
     TCommand_Header = bitpacked record
         cfl    : ubit5;
         a      : boolean;
@@ -189,6 +192,7 @@ type
         interrupt_oc        : boolean;
     end;
 
+    PCommand_Table = ^TCommand_Table;
     TCommand_Table = bitpacked record
         cfis : array[0..64] of uint8;
         acmd : array[0..16] of uint8;
@@ -202,6 +206,8 @@ var
     //SATA_SIG_ATAPI := $EB140101;
     //STA_SIG_SEMB  := $C33C0101;
     //STAT_SIG_PM    := $96690101;
+    AHCI_BASE: uint32 = $400000;
+
     //other 
     ahciController     : PuInt32;
     hba                : THBAptr;
@@ -215,7 +221,11 @@ procedure init();
 procedure check_ports();
 procedure enable_cmd(port : uint8);
 procedure disable_cmd(port : uint8);
+procedure port_rebase(port : uint8);
 function load(ptr:void): boolean;
+function read(port : uint8; startl : uint32; starth : uint32; count : uint32; buf : PuInt16) : uint32;
+function write(port : uint8; startl : uint32; starth : uint32; count : uint32; buf : PuInt16) : uint32;
+function find_cmd_slot(port : uint8) : uint32;
 
 implementation 
 
@@ -237,6 +247,7 @@ function load(ptr : void) : boolean;
 begin
     ahciController := ptr;
     hba := THBAptr(PPCI_Device(ahciController)^.address5);
+
     check_ports();
     load:= true;
     exit;
@@ -246,7 +257,6 @@ procedure check_ports();
 var
     d : uint32;
     i : uint32;
-    ii : uint32;
     activePorts : array[0..32] of uint32;
 
 begin
@@ -257,6 +267,7 @@ begin
                 if hba^.ports[i].sig = 1 then begin //device is sata
                     sataStorageDevices[sataStorageDeviceCount - 1] := @hba^.ports[i];
                     sataStorageDeviceCount += 1;
+                    port_rebase(i);
                 end;
                 //TODO implement other types
             end;
@@ -267,11 +278,137 @@ end;
 
 procedure enable_cmd(port : uint8);
 begin
-    //while hba^.ports[port].
+    while (hba^.ports[port].cmd and $8000) <> 0 do begin end;
+    hba^.ports[port].cmd := hba^.ports[port].cmd or $0010;
+    hba^.ports[port].cmd := hba^.ports[port].cmd or $0001;
 end;
 
 procedure disable_cmd(port : uint8);
-begin end;
+begin 
+    hba^.ports[port].cmd := hba^.ports[port].cmd and $0001;
+    while (hba^.ports[port].cmd and $4000) <> 0 do begin end;
+    hba^.ports[port].cmd := hba^.ports[port].cmd and $0010;
+end;
 
+procedure port_rebase(port : uint8);
+var
+    cmdHeader : PCMDHeader;
+    i : uint16;
+begin
+    disable_cmd(port);
+    hba^.ports[port].clb := AHCI_BASE + (port shl 10);
+    hba^.ports[port].clbu := 0;
+    memset(hba^.ports[port].clb, 0, 1024);
+
+    hba^.ports[port].fb := AHCI_BASE + (32 shl 10) + (port shl 8);
+    hba^.ports[port].fbu := 0;
+    memset(hba^.ports[port].fb, 0, 256);
+
+    cmdheader := PCMDHeader(hba^.ports[port].clb);
+    for i:= 0 to 31 do begin
+        cmdHeader[i].PRDTL := 8; // no of prdt entries per cmd table
+        cmdheader[i].ctba := AHCI_BASE + (40 shl 10) + (port shl 13) + (i shl 8);
+        cmdheader[i].CTBAU := 0;
+        memset(cmdheader[i].ctba, 0, 256);
+    end;
+    enable_cmd(port);
+end;
+
+function read(port : uint8; startl : uint32; starth : uint32; count : uint32; buf : PuInt16) : uint32;
+var
+    pport : PHBA_PORT;
+    slot : uint32;
+    cmdHeader : PCMDHeader;
+    cmdTable : PCommand_Table;
+    cmdFis : PFIS_REG_H2D;
+    i : uint32;
+    spin : uint32 = 0;
+begin
+    pport := @hba^.ports[port];
+    pport^.istat := $ffff;
+    slot := find_cmd_slot(port);
+    if slot = -1 then exit(0);
+
+    cmdHeader := @pport^.clb;
+    cmdHeader += slot;
+    cmdHeader^.w := false;
+    cmdHeader^.PRDTL := uint16(((count - 1) shr 4) + 1);
+
+    cmdTable := @cmdheader^.ctba;
+    memset(uint32(cmdTable), 0, sizeof(TCommand_Table) + (cmdheader^.PRDTL-1) * sizeof(TPRD_Entry));
+
+    for i:= 0 to cmdHeader^.PRDTL -1 do begin
+        cmdTable^.prdt[i].data_base_address := uint32(buf);
+        cmdTable^.prdt[i].data_byte_count := 8*1024-1;
+        cmdTable^.prdt[i].interrupt_oc := true;
+        buf += 4*1024;
+        count -= 16;
+    end;
+
+    cmdTable^.prdt[i].data_base_address := uint32(buf);
+    cmdTable^.prdt[i].data_byte_count := (count shl 9)-1;
+    cmdTable^.prdt[i].interrupt_oc := true;
+
+    //setup command
+    cmdfis            := @cmdTable^.cfis;
+    cmdfis^.coc       := true;
+    cmdfis^.command   := $25;
+    cmdfis^.lba0      := uint8(startl);
+    cmdfis^.lba1      := uint8(startl shr 8);
+    cmdfis^.lba2      := uint8(startl shr 16);
+    cmdfis^.device    := 1 shl 6;
+    cmdfis^.lba3      := uint8(startl shr 24);
+    cmdfis^.lba4      := uint8(starth);
+    cmdfis^.lba3      := uint8(starth shr 8);
+    cmdfis^.count_low := count and $FF;
+    cmdfis^.count_high:= (count shr 8) and $FF;
+
+    while (port^.tfd and $88) and spin < 1000000 do begin
+        spin += 1;
+    end;
+
+    if spin = 1000000 then begin
+        console.writestringln('AHCI controller: port is hung!');
+        exit(false);
+    end;
+
+    port^.ci := 1 shl slot;
+
+    while true do begin
+        if(port^.ci and (1 shl slot)) = 0 then break;
+        if(port^.istat and (1 shl 30)) then begin
+            console.writestringln('AHCI controller: Disk read error!');
+            exit(false);
+        end;
+    end;
+
+    if(port^.istat and (1 shl 30)) then begin
+        console.writestringln('AHCI controller: Disk read error!');
+        exit(false);
+    end;
+
+    exit(true);
+end;
+
+function write(port : uint8; startl : uint32; starth : uint32; count : uint32; buf : PuInt16) : uint32;
+begin
+end;
+
+function find_cmd_slot(port : uint8) : uint32;
+var
+    slots : uint32;
+    i     : uint32;
+begin
+    slots := hba^.ports[port].sact or hba^.ports[port].ci;
+    for i:=0 to 31 do begin
+        if (slots and 1) = 0 then begin
+            exit(i);
+        end;
+        slots := slots shr 1;
+    end;
+    console.writestringln('AHCI Controller: Unable to find free command slots!');
+    exit(-1);
+end;
 
 end.
+
