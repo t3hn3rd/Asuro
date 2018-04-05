@@ -345,7 +345,7 @@ begin
     memset(uint32(cmdTable), 0, sizeof(TCommand_Table) + (cmdheader^.PRDTL-1) * sizeof(TPRD_Entry));
 
     console.writestringln('4');
-    for i:= 0 to cmdHeader^.PRDTL -1 do begin
+    for i:= 0 to cmdHeader^.PRDTL do begin
         cmdTable^.prdt[i].data_base_address := uint32(buf);
         cmdTable^.prdt[i].data_byte_count := 8*1024-1;
         cmdTable^.prdt[i].interrupt_oc := true;
@@ -441,12 +441,25 @@ begin
     memset(uint32(cmdTable), 0, sizeof(TCommand_Table) + (cmdheader^.PRDTL-1) * sizeof(TPRD_Entry));
 
     console.writestringln('4');
-    for i:= 0 to cmdHeader^.PRDTL -1 do begin
+    console.writestring('PRDTL: ');
+    console.writeintln(cmdHeader^.PRDTL);
+    //psleep(1000);
+    for i:= 0 to cmdHeader^.PRDTL do begin
+        console.writestringln('4.1');
         cmdTable^.prdt[i].data_base_address := uint32(buf);
+        console.writestringln('4.2');
         cmdTable^.prdt[i].data_byte_count := 8*1024-1;
+        console.writestringln('4.3');
         cmdTable^.prdt[i].interrupt_oc := true;
+        console.writestringln('4.4');
         buf += 4*1024;
+        console.writestringln('4.5');
         count -= 16;
+        console.writestring('PRDTL: ');
+        console.writeintln(cmdHeader^.PRDTL);
+        console.writestring('i: ');
+        console.writeintln(i);
+        //psleep(1000);
     end;
 
     console.writestringln('5');
