@@ -32,7 +32,6 @@ var
     key_matrix_shift : array [1..256] of TKeyInfo;
     captin_hook      : pp_hook_method = nil;
     is_shift         : boolean = false;      
-    
 
 procedure init(keyboard_layout : array of TKeyInfo);
 procedure hook(proc : pp_hook_method);
@@ -40,6 +39,8 @@ procedure lang_USA();
 
 implementation
 
+uses
+    drivermanagement;
 
 procedure callback(scan_code : void);
 begin
@@ -58,11 +59,27 @@ begin
     if uint8(scan_code) = 170 then is_shift := false;
 end;
 
+function load(ptr : void) : boolean;
+begin
+    isr33.hook(uint32(@callback));
+    console.writestringln('PS/2 KEYBOARD: LOADED.');
+    load:= true;
+end;
+
 procedure init(keyboard_layout : array of TKeyInfo);  
+var
+    devid : TDeviceIdentifier;
+
 begin
     console.writestringln('PS/2 KEYBOARD: INIT BEGIN.');
     if keyboard_layout[1].key_code = 0 then lang_USA();
-    isr33.hook(uint32(@callback));
+    devid.bus:= biUnknown;
+    devid.id0:= 0;
+    devid.id1:= 0;
+    devid.id2:= 0;
+    devid.id3:= 0;
+    devid.ex:= nil;
+    drivermanagement.register_driver_ex('PS/2 Keyboard', @devid, @load, true);
     console.writestringln('PS/2 KEYBOARD: INIT END.');
 end;
 //2A AA

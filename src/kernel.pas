@@ -78,6 +78,8 @@ begin
      terminal.init();
      terminal.registerCommand('MEMINFO', @terminal_command_meminfo, 'Print Simple Memory Information.');
 
+     drivermanagement.init();
+
      console.init();
 
      console.writestringln('Booting Asuro...');

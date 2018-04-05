@@ -11,7 +11,7 @@ unit drivermanagement;
 interface
 
 uses
-    console, util, strings, lmemorymanager;
+    console, util, strings, lmemorymanager, terminal;
 
 const
     idANY = $FFFFFFFF;
@@ -55,7 +55,9 @@ type
         Next          : PDeviceRegistration;
     end;
 
+procedure init;
 procedure register_driver(Driver_Name : PChar; DeviceID : PDeviceIdentifier; Load_Callback : TDriverLoadCallback);
+procedure register_driver_ex(Driver_Name : PChar; DeviceID : PDeviceIdentifier; Load_Callback : TDriverLoadCallback; force_load : boolean);
 procedure register_device(Device_Name : PChar; DeviceID : PDeviceIdentifier; ptr : void);
 
 var
@@ -63,6 +65,138 @@ var
     Dev  : PDeviceRegistration = nil;
 
 implementation
+
+procedure writeBusType(Bus : TBusIdentifier);
+begin
+    case Bus of
+        biUnknown : console.writestring('Unknown');
+        biANY     : console.writestring('ANY');
+        bii2c     : console.writestring('i2c');
+        biPCI     : console.writestring('PCI');
+        biPCIe    : console.writestring('PCIe');
+        biUSB     : console.writestring('USB');
+    end;
+end;
+
+{ Terminal Commands }
+
+procedure terminal_command_drivers(Params : PParamList);
+var
+    Drv : PDriverRegistration;
+    ex  : PDevEx;
+    i   : uint32;
+
+begin
+    Drv:= Root;
+    i:= 1;
+    while Drv <> nil do begin
+        if Drv^.Loaded then begin
+            console.writeint(i);
+            console.writestring(') ');
+            console.writestring(Drv^.Driver_Name);
+            console.writestring(' [');
+            writeBusType(Drv^.Identifier^.Bus);
+            console.writestring(' - ID:');
+            console.writeHex(Drv^.Identifier^.id0);
+            console.writestring('-');
+            console.writeHex(Drv^.Identifier^.id1);
+            console.writestring('-');
+            console.writeHex(Drv^.Identifier^.id2);
+            console.writestring('-');
+            console.writeHex(Drv^.Identifier^.id3);
+            ex:= Drv^.Identifier^.ex;
+            while ex <> nil do begin
+                console.writestring('-');
+                console.writeHex(ex^.idN);
+                ex:= ex^.ex;   
+            end;
+            console.writestringln(']');
+            i:= i + 1;
+        end;
+        Drv:= Drv^.Next;
+    end;
+end;
+
+procedure terminal_command_driversex(Params : PParamList);
+var
+    Drv : PDriverRegistration;
+    ex  : PDevEx;
+    i   : uint32;
+
+begin
+    Drv:= Root;
+    i:= 1;
+    while Drv <> nil do begin
+        console.writeint(i);
+        if Drv^.Loaded then console.writestring('L');
+        console.writestring(') ');
+        console.writestring(Drv^.Driver_Name);
+        console.writestring(' [');
+        writeBusType(Drv^.Identifier^.Bus);
+        console.writestring(' - ID:');
+        console.writeHex(Drv^.Identifier^.id0);
+        console.writestring('-');
+        console.writeHex(Drv^.Identifier^.id1);
+        console.writestring('-');
+        console.writeHex(Drv^.Identifier^.id2);
+        console.writestring('-');
+        console.writeHex(Drv^.Identifier^.id3);
+        ex:= Drv^.Identifier^.ex;
+        while ex <> nil do begin
+            console.writestring('-');
+            console.writeHex(ex^.idN);
+            ex:= ex^.ex;   
+        end;
+        console.writestringln(']');
+        i:= i + 1;
+        Drv:= Drv^.Next;
+    end;
+end;
+
+procedure terminal_command_devices(Params : PParamList);
+var
+    Dv : PDeviceRegistration;
+    ex : PDevEx;
+    i  : uint32;
+
+begin
+    Dv:= Dev;
+    i:= 1;
+    while Dv <> nil do begin
+        console.writeint(i);
+        console.writestring(') ');
+        console.writestring(Dv^.Device_Name);
+        console.writestring(' [');
+        writeBusType(Dv^.Identifier^.Bus);
+        console.writestring(' - ID:');
+        console.writeHex(Dv^.Identifier^.id0);
+        console.writestring('-');
+        console.writeHex(Dv^.Identifier^.id1);
+        console.writestring('-');
+        console.writeHex(Dv^.Identifier^.id2);
+        console.writestring('-');
+        console.writeHex(Dv^.Identifier^.id3);
+        ex:= Dv^.Identifier^.ex;
+        while ex <> nil do begin
+            console.writestring('-');
+            console.writeHex(ex^.idN);
+            ex:= ex^.ex;   
+        end;
+        console.writestringln(']');
+        if Dv^.Driver_Loaded then begin
+            console.writestring('   -- Driver Loaded: ');
+            if Dv^.Driver <> nil then begin
+                console.writestringln(Dv^.Driver^.Driver_Name);
+            end else begin
+                console.writestringln('Unknown')
+            end;
+        end;
+        i:= i + 1;
+        Dv:= Dv^.Next; 
+    end;
+end;
+
+{ Main Functions }
 
 function copy_identifier(DeviceID : PDeviceIdentifier) : PDeviceIdentifier;
 var
@@ -127,7 +261,19 @@ begin
     end;
 end;
 
+procedure init;
+begin
+    terminal.registerCommand('DRIVERSEX', @terminal_command_driversex, 'List all available drivers.');
+    terminal.registerCommand('DRIVERS', @terminal_command_drivers, 'List loaded drivers.');
+    terminal.registerCommand('DEVICES', @terminal_command_devices, 'List devices.');
+end;
+
 procedure register_driver(Driver_Name : PChar; DeviceID : PDeviceIdentifier; Load_Callback : TDriverLoadCallback);
+begin
+    register_driver_ex(Driver_Name, DeviceID, Load_Callback, false);
+end;
+
+procedure register_driver_ex(Driver_Name : PChar; DeviceID : PDeviceIdentifier; Load_Callback : TDriverLoadCallback; force_load : boolean);
 var
     NewReg : PDriverRegistration; 
     RegList : PDriverRegistration;
@@ -149,6 +295,10 @@ begin
         end;
         RegList^.Next:= NewReg;
     end;
+    if force_load then begin
+        NewReg^.Loaded:= True;
+        NewReg^.Driver_Load(nil);
+    end;
 end;
 
 procedure register_device(Device_Name : PChar; DeviceID : PDeviceIdentifier; ptr : void);
@@ -165,6 +315,15 @@ begin
     new_dev^.Driver_Loaded:= false;
     new_dev^.Driver:= nil;
     new_dev^.next:= nil;
+    if Dev = nil then begin
+        Dev:= new_dev;
+    end else begin    
+        dev_list:= Dev;
+        While dev_list^.Next <> nil do begin
+            dev_list:= dev_list^.Next;
+        end;
+        dev_list^.Next:= new_dev;
+    end;
     while drv <> nil do begin
         if identifiers_match(drv^.Identifier, DeviceID) then begin
             if drv^.Driver_Load(ptr) then begin
@@ -175,15 +334,6 @@ begin
             end;
         end;
         drv:= drv^.Next;
-    end;
-    if Dev = nil then begin
-        Dev:= new_dev;
-    end else begin
-        dev_list:= Dev;
-        While dev_list^.Next <> nil do begin
-            dev_list:= dev_list^.Next;
-        end;
-        dev_list^.Next:= new_dev;
     end;
 end;
 

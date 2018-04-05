@@ -75,14 +75,13 @@ function getDeviceInfo(class_code : uint8; subclass_code : uint8; prog_if : uint
 
 implementation 
 
-procedure init();
+function load(ptr : void) : boolean;
 var
     current_bus : uint8;
+
 begin
-    console.writestringln('PCI: INIT BEGIN.');
     console.writestringln('PCI: Scanning Bus: 0');
     scanBus(0);
-
     //while unscanned busses scan busses
     current_bus := 1;
     while true do begin
@@ -93,7 +92,22 @@ begin
             current_bus := current_bus + 1;
         end else break;
     end;
+    load:= true;
+end;
 
+procedure init();
+var
+    DevID : TDeviceIdentifier;
+
+begin
+    console.writestringln('PCI: INIT BEGIN.');
+    DevID.Bus:= biUnknown;
+    DevID.id0:= 0;
+    DevID.id1:= 0;
+    DevID.id2:= 0;
+    DevID.id3:= 0;
+    DevID.ex:= nil;
+    drivermanagement.register_driver_ex('PCI Driver', @DevID, @load, true);
     console.writestringln('PCI: INIT END.');
 end;
 

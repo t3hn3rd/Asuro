@@ -16,7 +16,8 @@ uses
     util,
     isr44,
     lmemorymanager,
-    strings;
+    strings,
+    drivermanagement;
 
 type
     PMousePacket = ^TMousePacket;
@@ -103,10 +104,26 @@ begin
     //console.writehexln(DWORD(raw));
 end;
 
+function load(ptr : void) : boolean;
+begin
+    isr44.hook(uint32(@callback));
+    console.writestringln('PS/2 MOUSE: LOADED.');  
+    load:= true;
+end;
+
 procedure init();
+var
+    devid : TDeviceIdentifier;
+
 begin
     console.writestringln('PS/2 MOUSE: INIT BEGIN.');
-    isr44.hook(uint32(@callback));
+    devid.bus:= biUnknown;
+    devid.id0:= 0;
+    devid.id1:= 0;
+    devid.id2:= 0;
+    devid.id3:= 0;
+    devid.ex:= nil;
+    drivermanagement.register_driver_ex('PS/2 Mouse', @devid, @load, true);
     console.writestringln('PS/2 MOUSE: INIT END.');
 end;
 
