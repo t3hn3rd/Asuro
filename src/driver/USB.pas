@@ -69,6 +69,7 @@ begin
             MMR:= POHCI_MMR(devices[i].address0);
         end;
     end;
+    loadOHCI:= true;
 end;
 
 function loadUHCI(ptr : void) : boolean;
@@ -94,6 +95,7 @@ begin
             console.writehexln(devices[i].prog_if);
         end;
     end;
+    loadUHCI:= true;
 end;
 
 procedure init;
@@ -119,7 +121,7 @@ begin
 
     drivermanagement.register_driver('USB-UHCI Driver', @UHCI_ID, @loadUHCI);
     drivermanagement.register_driver('USB-OHCI Driver', @OHCI_ID, @loadOHCI);
-    
+
     console.writestringln('USB: INIT END.');
 end;
 
