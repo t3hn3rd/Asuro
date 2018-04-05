@@ -326,15 +326,12 @@ begin
     console.writestring('  ');
     console.writehexln(device.prog_if);
 
-    drivermanagement.register_device('PCI Device', DevID, @device);
-    
-    kfree(void(DevID));
-
     devices[device_count] := device;
     device_count := device_count + 1;
 
-    //if device.class_code = 1 then ata.init(device);
-    
+    drivermanagement.register_device('PCI Device', DevID, @device);
+    kfree(void(DevID));
+    //if device.class_code = 1 then ata.init(device);   
 end;
 
 function getDeviceInfo(class_code : uint8; subclass_code : uint8; prog_if : uint8; var count : uint32) : TDeviceArray; 
@@ -343,27 +340,25 @@ var
     devices_out : array[0..31] of TPCI_Device;
 
 begin
-    console.writestring('DEV COUNT: ');
-    console.writeintln(device_count);
     count := 0;
-    if prog_if <> $FF then begin
-        for i:=0 to device_count+1 do begin
-            if (devices[i].class_code = class_code) and (devices[i].subclass_class = subclass_code) and (devices[i].prog_if = prog_if) then begin
-                devices_out[count] := devices[i];
-                count := count + 1;
-            end;
-        end;
-    end else begin
-        for i:=0 to device_count+1 do begin
-            if (devices[i].class_code = class_code) and (devices[i].subclass_class = subclass_code) then begin
-                devices_out[count] := devices[i];
-                count := count + 1;
-            end;
+    for i:=0 to device_count do begin      
+        {writehex(devices[i].class_code);
+        writestring(' ?= ');
+        writehex(class_code);
+        writestring(' && ');
+        writehex(devices[i].subclass_class);
+        writestring(' ?= ');
+        writehex(subclass_code);
+        writestring(' && ');
+        writehex(devices[i].prog_if);
+        writestring(' ?= ');
+        writehex(prog_if);}
+        if (devices[i].class_code = class_code) and (devices[i].subclass_class = subclass_code) and ((devices[i].prog_if = prog_if) or (prog_if = $FF)) then begin
+            devices_out[count] := devices[i];
+            count := count + 1;
         end;
     end;
-
     getDeviceInfo := devices_out;
-    
 end;
 
 end.

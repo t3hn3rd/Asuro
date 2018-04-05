@@ -117,12 +117,13 @@ begin
 
      //drivers
      console.writestringln('DRIVERS: INIT BEGIN.');
-     keyboard.init(keyboard_layout);
-     mouse.init();
-     AHCI.init();
-     testdriver.init();
+     //keyboard.init(keyboard_layout);
+     //mouse.init();
+     //AHCI.init();
+     //testdriver.init();
      USB.init();
      pci.init();
+     halt_and_catch_fire;
      console.writestringln('DRIVERS: INIT END.');
 
      console.writestringln('');
