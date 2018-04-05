@@ -213,24 +213,24 @@ var
 
 procedure init();
 procedure check_ports();
+procedure enable_cmd(port : uint8);
+procedure disable_cmd(port : uint8);
 function load(ptr:void): boolean;
 
 implementation 
 
 procedure init();
 var
-    count : uint16;
     devID : TDeviceIdentifier;
 begin
     console.writestringln('AHCI: STARTING INIT');
-    //PCI_Devices := PCI.getDeviceInfo(1, 6, 0, count);
     devID.bus:= biPCI;
     devID.id0:= idANY;
     devID.id1:= $00000001;
     devID.id2:= $00000006;
-    devID.id3:= 0;
+    devID.id3:= $00000001;
     devID.ex:= nil;
-    drivermanagement.register_driver(@devID, @load)
+    drivermanagement.register_driver('AHCI Controller', @devID, @load)
 end;
 
 function load(ptr : void) : boolean;
@@ -264,6 +264,14 @@ begin
         d := d shl 1;
     end;
 end;
+
+procedure enable_cmd(port : uint8);
+begin
+    //while hba^.ports[port].
+end;
+
+procedure disable_cmd(port : uint8);
+begin end;
 
 
 end.
