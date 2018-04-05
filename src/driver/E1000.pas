@@ -196,16 +196,16 @@ var
 
 begin
     dev.Bus:= biPCI;
-    dev.id0:= E1000_DEV;
+    dev.id0:= INTEL_VEND;
     dev.id1:= idANY;
     dev.id2:= idANY;
     dev.id3:= idANY;
-    dev.id4:= INTEL_VEND;
+    dev.id4:= E1000_DEV;
     dev.ex:= nil;
     drivermanagement.register_driver('E1000 Ethernet Driver', @dev, @load);
-    dev.id0:= I217_DEV;
+    dev.id4:= I217_DEV;
     drivermanagement.register_driver('I217 Ethernet Driver', @dev, @load);
-    dev.id0:= LM82577_DEV;
+    dev.id4:= LM82577_DEV;
     drivermanagement.register_driver('82577LM Ethernet Driver', @dev, @load);
 end;
 
