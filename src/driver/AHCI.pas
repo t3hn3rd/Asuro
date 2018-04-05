@@ -16,7 +16,8 @@ uses
     PCI,
     drivertypes,
     drivermanagement,
-    lmemorymanager;
+    lmemorymanager,
+    console;
 
 type
 
@@ -160,8 +161,7 @@ type
         ports               : array[0..31] of THBA_Port;
     end;
 
-    THBAptr : ^THBA_MEM;
-    intptr : ^uint32;
+    THBAptr = ^THBA_MEM;
 
     TCommand_Header = bitpacked record
         cfl    : ubit5;
@@ -180,13 +180,6 @@ type
         rsv1   : array[0..3] of uint32;
     end;
 
-    TCommand_Table = bitpacked record
-        cfis : array[0..64] of uint8;
-        acmd : array[0..16] of uint8;
-        rsv  : array[0..48] of uint8;
-        prdt : array[0..1] of TPRD_Entry;
-    end;
-
     TPRD_Entry = bitpacked record
         data_base_address   : uint32;
         data_bade_address_U : uint32;
@@ -196,6 +189,13 @@ type
         interrupt_oc        : boolean;
     end;
 
+    TCommand_Table = bitpacked record
+        cfis : array[0..64] of uint8;
+        acmd : array[0..16] of uint8;
+        rsv  : array[0..48] of uint8;
+        prdt : array[0..1] of TPRD_Entry;
+    end;
+
 var
     //constants
     //SATA_SIG_ATA   := $101;
@@ -203,17 +203,17 @@ var
     //STA_SIG_SEMB  := $C33C0101;
     //STAT_SIG_PM    := $96690101;
     //other 
-    ahciController     : intptr;
+    ahciController     : PuInt32;
     hba                : THBAptr;
 
-    sataStorageDevices     : array[0..31] of intptr;
+    sataStorageDevices     : array[0..31] of PuInt32;
     sataStorageDeviceCount : uint8;
 
     
 
 procedure init();
 procedure check_ports();
-function register_device(ptr:void): boolean;
+function load(ptr:void): boolean;
 
 implementation 
 
@@ -223,15 +223,16 @@ var
 begin
     console.writestringln('AHCI: STARTING INIT');
     //PCI_Devices := PCI.getDeviceInfo(1, 6, 0, count);
-    drivermanagement.register_driver($010600, register_device)
+    drivermanagement.register_driver($010600, @load)
 end;
 
-function register_device(ptr : void) : boolean
+function load(ptr : void) : boolean;
 begin
     ahciController := ptr;
-    hba := ahciController.address5;
+    hba := THBAptr(PPCI_Device(ahciController)^.address5);
     check_ports();
-    exit(true);
+    load:= true;
+    exit;
 end;
 
 procedure check_ports();
@@ -239,26 +240,23 @@ var
     d : uint32;
     i : uint32;
     ii : uint32;
+    activePorts : array[0..32] of uint32;
+
 begin
     d:= 1;
-    activePorts : array[0..32] of uint32;
     for i:= 0 to 31 do begin
-        if d and hba^.port_implemented != 0 then // port connected
-        begin
-            if hba^.ports[i].ssts == 259 then // port in use and active
-            begin
-                if hba^.ports[i].sig == 1 then //device is sata
-                begin
+        if (d > 0) and (hba^.port_implemented <> 0) then begin // port connected
+            if hba^.ports[i].ssts = 259 then begin // port in use and active
+                if hba^.ports[i].sig = 1 then begin //device is sata
                     sataStorageDevices[sataStorageDeviceCount - 1] := @hba^.ports[i];
                     sataStorageDeviceCount += 1;
-                end
+                end;
                 //TODO implement other types
-            end
-        end
+            end;
+        end;
         d := d shl 1;
-    end
-
-end
+    end;
+end;
 
 
 end.

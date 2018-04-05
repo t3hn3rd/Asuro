@@ -12,7 +12,7 @@ interface
 
 type
 
-
+    PPCI_Device = ^TPCI_Device;
     TPCI_Device = bitpacked record
         device_id      : uint16;
         vendor_id      : uint16;
