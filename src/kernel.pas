@@ -125,6 +125,7 @@ begin
      mouse.init();
      AHCI.init();
      testdriver.init();
+     E1000.init();
      USB.init();
      pci.init();
      console.writestringln('DRIVERS: INIT END.');
