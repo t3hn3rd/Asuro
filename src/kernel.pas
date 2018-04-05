@@ -70,6 +70,7 @@ var
    cEIP            : uint32;
 
    temp            : uint32;
+   atmp            : puint16;
    
 begin
      multibootinfo:= mbinfo;
@@ -128,10 +129,10 @@ begin
      console.writestringln('DRIVERS: INIT END.');
 
      console.writestring('AHCI TEST');
-     temp := 424242;
-     AHCI.write(0, $5, $1, 1, @temp);
-     temp := 365;
-     AHCI.read(9, $5, $1, 1, @temp);
+     atmp^ := 4242;
+     AHCI.write(0, $5, $1, 1, atmp);
+     atmp^ := 365;
+     AHCI.read(9, $5, $1, 1, atmp);
      console.writeint(temp);
 
      console.writestringln('');

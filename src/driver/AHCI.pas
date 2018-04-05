@@ -224,7 +224,7 @@ procedure disable_cmd(port : uint8);
 procedure port_rebase(port : uint8);
 function load(ptr:void): boolean;
 function read(port : uint8; startl : uint32; starth : uint32; count : uint32; buf : PuInt16) : boolean;
-function write(port : uint8; startl : uint32; starth : uint32; count : uint32; buf : PuInt16) : uint32;
+function write(port : uint8; startl : uint32; starth : uint32; count : uint32; buf : PuInt16) : boolean;
 function find_cmd_slot(port : uint8) : uint32;
 
 implementation 
@@ -394,8 +394,83 @@ begin
     exit;
 end;
 
-function write(port : uint8; startl : uint32; starth : uint32; count : uint32; buf : PuInt16) : uint32;
+function write(port : uint8; startl : uint32; starth : uint32; count : uint32; buf : PuInt16) : boolean;
+var
+    pport : PHBA_PORT;
+    slot : uint32;
+    cmdHeader : PCMDHeader;
+    cmdTable : PCommand_Table;
+    cmdFis : PFIS_REG_H2D;
+    i : uint32;
+    spin : uint32 = 0;
 begin
+    pport := @hba^.ports[port];
+    pport^.istat := $ffff;
+    slot := find_cmd_slot(port);
+    if slot = -1 then exit(false);
+
+    cmdHeader := @pport^.clb;
+    cmdHeader += slot;
+    cmdHeader^.w := false;
+    cmdHeader^.PRDTL := uint16(((count - 1) shr 4) + 1);
+
+    cmdTable := @cmdheader^.ctba;
+    memset(uint32(cmdTable), 0, sizeof(TCommand_Table) + (cmdheader^.PRDTL-1) * sizeof(TPRD_Entry));
+
+    for i:= 0 to cmdHeader^.PRDTL -1 do begin
+        cmdTable^.prdt[i].data_base_address := uint32(buf);
+        cmdTable^.prdt[i].data_byte_count := 8*1024-1;
+        cmdTable^.prdt[i].interrupt_oc := true;
+        buf += 4*1024;
+        count -= 16;
+    end;
+
+    cmdTable^.prdt[i].data_base_address := uint32(buf);
+    cmdTable^.prdt[i].data_byte_count := (count shl 9)-1;
+    cmdTable^.prdt[i].interrupt_oc := true;
+
+    cmdfis            := @cmdTable^.cfis;
+    cmdfis^.coc       := true;
+    cmdfis^.command   := $35;
+    cmdfis^.lba0      := uint8(startl);
+    cmdfis^.lba1      := uint8(startl shr 8);
+    cmdfis^.lba2      := uint8(startl shr 16);
+    cmdfis^.device    := 1 shl 6;
+    cmdfis^.lba3      := uint8(startl shr 24);
+    cmdfis^.lba4      := uint8(starth);
+    cmdfis^.lba3      := uint8(starth shr 8);
+    cmdfis^.count_low := count and $FF;
+    cmdfis^.count_high:= (count shr 8) and $FF;
+
+    while (pport^.tfd and $88) and spin < 1000000 do begin
+        spin += 1;
+    end;
+
+    if spin = 1000000 then begin
+        console.writestringln('AHCI controller: port is hung!');
+        write:= false;
+        exit;
+    end;
+
+    pport^.ci := 1 shl slot;
+
+    while true do begin
+        if(pport^.ci and (1 shl slot)) = (1 shl slot) then break;
+        if(pport^.istat and (1 shl 30)) = (1 shl 30) then begin
+            console.writestringln('AHCI controller: Disk write error!');
+            write:= false;
+            exit;
+        end;
+    end;
+
+    if(pport^.istat and (1 shl 30)) = (1 shl 30) then begin
+        console.writestringln('AHCI controller: Disk write error!');
+        write:= false;
+        exit;
+    end;
+
+    write:= true;
+    exit;
 end;
 
 function find_cmd_slot(port : uint8) : uint32;
