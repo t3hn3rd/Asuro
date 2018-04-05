@@ -363,13 +363,13 @@ begin
     cmdfis^.count_low := count and $FF;
     cmdfis^.count_high:= (count shr 8) and $FF;
 
-    while (port^.tfd and $88) and spin < 1000000 do begin
+    {while (port^.tfd and $88) and (spin < 1000000) do begin
         spin += 1;
     end;
 
     if spin = 1000000 then begin
         console.writestringln('AHCI controller: port is hung!');
-        exit(false);
+        exit;
     end;
 
     port^.ci := 1 shl slot;
@@ -378,16 +378,16 @@ begin
         if(port^.ci and (1 shl slot)) = 0 then break;
         if(port^.istat and (1 shl 30)) then begin
             console.writestringln('AHCI controller: Disk read error!');
-            exit(false);
+            exit;
         end;
     end;
 
     if(port^.istat and (1 shl 30)) then begin
         console.writestringln('AHCI controller: Disk read error!');
-        exit(false);
+        exit;
     end;
 
-    exit(true);
+    exit;}
 end;
 
 function write(port : uint8; startl : uint32; starth : uint32; count : uint32; buf : PuInt16) : uint32;
