@@ -17,7 +17,8 @@ uses
     drivertypes,
     drivermanagement,
     lmemorymanager,
-    console;
+    console,
+    vmemorymanager;
 
 type
 
@@ -197,7 +198,7 @@ type
         cfis : array[0..64] of uint8;
         acmd : array[0..16] of uint8;
         rsv  : array[0..48] of uint8;
-        prdt : array[0..1] of TPRD_Entry;
+        prdt : array[0..7] of TPRD_Entry;
     end;
 
 var
@@ -240,14 +241,14 @@ begin
     devID.id2:= $00000006;
     devID.id3:= $00000001;
     devID.ex:= nil;
-    drivermanagement.register_driver('AHCI Controller', @devID, @load)
+    drivermanagement.register_driver('AHCI Controller', @devID, @load);
 end;
 
 function load(ptr : void) : boolean;
 begin
     ahciController := ptr;
     hba := THBAptr(PPCI_Device(ahciController)^.address5);
-
+    new_page_at_address(uint32(hba));
     check_ports();
     load:= true;
     exit;
@@ -324,19 +325,26 @@ var
     i : uint32;
     spin : uint32 = 0;
 begin
+    console.writestringln('1');
     pport := @hba^.ports[port];
+    new_page_at_address(uint32(pport));
     pport^.istat := $ffff;
     slot := find_cmd_slot(port);
     if slot = -1 then exit(false);
 
+    console.writestringln('2');
     cmdHeader := @pport^.clb;
+    new_page_at_address(uint32(cmdHeader));
     cmdHeader += slot;
     cmdHeader^.w := false;
     cmdHeader^.PRDTL := uint16(((count - 1) shr 4) + 1);
 
+    console.writestringln('3');
     cmdTable := @cmdheader^.ctba;
+    new_page_at_address(uint32(cmdTable));
     memset(uint32(cmdTable), 0, sizeof(TCommand_Table) + (cmdheader^.PRDTL-1) * sizeof(TPRD_Entry));
 
+    console.writestringln('4');
     for i:= 0 to cmdHeader^.PRDTL -1 do begin
         cmdTable^.prdt[i].data_base_address := uint32(buf);
         cmdTable^.prdt[i].data_byte_count := 8*1024-1;
@@ -345,12 +353,15 @@ begin
         count -= 16;
     end;
 
+    console.writestringln('5');
     cmdTable^.prdt[i].data_base_address := uint32(buf);
     cmdTable^.prdt[i].data_byte_count := (count shl 9)-1;
     cmdTable^.prdt[i].interrupt_oc := true;
 
+    console.writestringln('6');
     //setup command
     cmdfis            := @cmdTable^.cfis;
+    new_page_at_address(uint32(cmdfis));
     cmdfis^.coc       := true;
     cmdfis^.command   := $25;
     cmdfis^.lba0      := uint8(startl);
@@ -363,18 +374,22 @@ begin
     cmdfis^.count_low := count and $FF;
     cmdfis^.count_high:= (count shr 8) and $FF;
 
+    console.writestringln('7');
     while (pport^.tfd and $88) and spin < 1000000 do begin
         spin += 1;
     end;
 
+    console.writestringln('8');
     if spin = 1000000 then begin
         console.writestringln('AHCI controller: port is hung!');
         read:= false;
         exit;
     end;
 
+    console.writestringln('9');
     pport^.ci := 1 shl slot;
 
+    console.writestringln('10');
     while true do begin
         if(pport^.ci and (1 shl slot)) = (1 shl slot) then break;
         if(pport^.istat and (1 shl 30)) = (1 shl 30) then begin
@@ -384,12 +399,14 @@ begin
         end;
     end;
 
+    console.writestringln('11');
     if(pport^.istat and (1 shl 30)) = (1 shl 30) then begin
         console.writestringln('AHCI controller: Disk read error!');
         read:= false;
         exit;
     end;
 
+    console.writestringln('12');
     read:= true;
     exit;
 end;
@@ -404,19 +421,26 @@ var
     i : uint32;
     spin : uint32 = 0;
 begin
+    console.writestringln('1');
     pport := @hba^.ports[port];
+    new_page_at_address(uint32(pport));
     pport^.istat := $ffff;
     slot := find_cmd_slot(port);
     if slot = -1 then exit(false);
 
+    console.writestringln('2');
     cmdHeader := @pport^.clb;
+    new_page_at_address(uint32(cmdHeader));
     cmdHeader += slot;
     cmdHeader^.w := false;
     cmdHeader^.PRDTL := uint16(((count - 1) shr 4) + 1);
 
+    console.writestringln('3');
     cmdTable := @cmdheader^.ctba;
+    new_page_at_address(uint32(cmdTable));
     memset(uint32(cmdTable), 0, sizeof(TCommand_Table) + (cmdheader^.PRDTL-1) * sizeof(TPRD_Entry));
 
+    console.writestringln('4');
     for i:= 0 to cmdHeader^.PRDTL -1 do begin
         cmdTable^.prdt[i].data_base_address := uint32(buf);
         cmdTable^.prdt[i].data_byte_count := 8*1024-1;
@@ -425,11 +449,14 @@ begin
         count -= 16;
     end;
 
+    console.writestringln('5');
     cmdTable^.prdt[i].data_base_address := uint32(buf);
     cmdTable^.prdt[i].data_byte_count := (count shl 9)-1;
     cmdTable^.prdt[i].interrupt_oc := true;
 
+    console.writestringln('6');
     cmdfis            := @cmdTable^.cfis;
+    new_page_at_address(uint32(cmdfis));
     cmdfis^.coc       := true;
     cmdfis^.command   := $35;
     cmdfis^.lba0      := uint8(startl);
@@ -442,18 +469,22 @@ begin
     cmdfis^.count_low := count and $FF;
     cmdfis^.count_high:= (count shr 8) and $FF;
 
+    console.writestringln('7');
     while (pport^.tfd and $88) and spin < 1000000 do begin
         spin += 1;
     end;
 
+    console.writestringln('8');
     if spin = 1000000 then begin
         console.writestringln('AHCI controller: port is hung!');
         write:= false;
         exit;
     end;
 
+    console.writestringln('9');
     pport^.ci := 1 shl slot;
 
+    console.writestringln('10');
     while true do begin
         if(pport^.ci and (1 shl slot)) = (1 shl slot) then break;
         if(pport^.istat and (1 shl 30)) = (1 shl 30) then begin
@@ -463,12 +494,14 @@ begin
         end;
     end;
 
+    console.writestringln('11');
     if(pport^.istat and (1 shl 30)) = (1 shl 30) then begin
         console.writestringln('AHCI controller: Disk write error!');
         write:= false;
         exit;
     end;
 
+    console.writestringln('12');
     write:= true;
     exit;
 end;

@@ -129,11 +129,19 @@ begin
      console.writestringln('DRIVERS: INIT END.');
 
      console.writestring('AHCI TEST');
+     console.writestringln('A');
+     atmp:= puint16(kalloc(sizeof(uint16)));
+     console.writestringln('B');
      atmp^ := 4242;
+     console.writestringln('C');
      AHCI.write(0, $5, $1, 1, atmp);
+     console.writestringln('D');
      atmp^ := 365;
-     AHCI.read(9, $5, $1, 1, atmp);
-     console.writeint(temp);
+     console.writestringln('E');
+     AHCI.read(0, $5, $1, 1, atmp);
+     console.writestringln('F');
+     console.writeint(atmp^);
+     console.writestringln('G');
 
      console.writestringln('');
      console.setdefaultattribute(console.combinecolors(Green, Black));
