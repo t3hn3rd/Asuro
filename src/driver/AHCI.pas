@@ -224,8 +224,8 @@ procedure enable_cmd(port : uint8);
 procedure disable_cmd(port : uint8);
 procedure port_rebase(port : uint8);
 function load(ptr:void): boolean;
-function read(port : uint8; startl : uint32; starth : uint32; count : uint32; buf : PuInt16) : boolean;
-function write(port : uint8; startl : uint32; starth : uint32; count : uint32; buf : PuInt16) : boolean;
+function read(port : uint8; startl : uint32; starth : uint32; count : uint32; buf : PuInt32) : boolean;
+function write(port : uint8; startl : uint32; starth : uint32; count : uint32; buf : PuInt32) : boolean;
 function find_cmd_slot(port : uint8) : uint32;
 
 implementation 
@@ -315,7 +315,7 @@ begin
     enable_cmd(port);
 end;
 
-function read(port : uint8; startl : uint32; starth : uint32; count : uint32; buf : PuInt16) : boolean;
+function read(port : uint8; startl : uint32; starth : uint32; count : uint32; buf : PuInt32) : boolean;
 var
     pport : PHBA_PORT;
     slot : uint32;
@@ -345,12 +345,14 @@ begin
     memset(uint32(cmdTable), 0, sizeof(TCommand_Table) + (cmdheader^.PRDTL-1) * sizeof(TPRD_Entry));
 
     console.writestringln('4');
-    for i:= 0 to cmdHeader^.PRDTL do begin
-        cmdTable^.prdt[i].data_base_address := uint32(buf);
-        cmdTable^.prdt[i].data_byte_count := 8*1024-1;
-        cmdTable^.prdt[i].interrupt_oc := true;
-        buf += 4*1024;
-        count -= 16;
+    if cmdHeader^.PRDTL > 0 then begin
+        for i:= 0 to cmdHeader^.PRDTL -1 do begin
+            cmdTable^.prdt[i].data_base_address := uint32(buf);
+            cmdTable^.prdt[i].data_byte_count := 8*1024-1;
+            cmdTable^.prdt[i].interrupt_oc := true;
+            buf += 4*1024;
+            count -= 16;
+        end;
     end;
 
     console.writestringln('5');
@@ -411,7 +413,7 @@ begin
     exit;
 end;
 
-function write(port : uint8; startl : uint32; starth : uint32; count : uint32; buf : PuInt16) : boolean;
+function write(port : uint8; startl : uint32; starth : uint32; count : uint32; buf : PuInt32) : boolean;
 var
     pport : PHBA_PORT;
     slot : uint32;
@@ -438,33 +440,27 @@ begin
     console.writestringln('3');
     cmdTable := @cmdheader^.ctba;
     new_page_at_address(uint32(cmdTable));
+    new_page_at_address(uint32(@cmdTable^.prdt));
     memset(uint32(cmdTable), 0, sizeof(TCommand_Table) + (cmdheader^.PRDTL-1) * sizeof(TPRD_Entry));
 
     console.writestringln('4');
     console.writestring('PRDTL: ');
     console.writeintln(cmdHeader^.PRDTL);
-    //psleep(1000);
-    for i:= 0 to cmdHeader^.PRDTL do begin
-        console.writestringln('4.1');
-        cmdTable^.prdt[i].data_base_address := uint32(buf);
-        console.writestringln('4.2');
-        cmdTable^.prdt[i].data_byte_count := 8*1024-1;
-        console.writestringln('4.3');
-        cmdTable^.prdt[i].interrupt_oc := true;
-        console.writestringln('4.4');
-        buf += 4*1024;
-        console.writestringln('4.5');
-        count -= 16;
-        console.writestring('PRDTL: ');
-        console.writeintln(cmdHeader^.PRDTL);
-        console.writestring('i: ');
-        console.writeintln(i);
-        //psleep(1000);
+    if cmdHeader^.PRDTL > 0 then begin
+        for i:= 0 to cmdHeader^.PRDTL -1 do begin
+            cmdTable^.prdt[i].data_base_address := uint32(buf);
+            cmdTable^.prdt[i].data_byte_count := 8*1024-1;
+            cmdTable^.prdt[i].interrupt_oc := true;
+            buf += 4*1024;
+            count -= 16;
+        end;
     end;
 
     console.writestringln('5');
     cmdTable^.prdt[i].data_base_address := uint32(buf);
+        console.writestringln('5.1');
     cmdTable^.prdt[i].data_byte_count := (count shl 9)-1;
+        console.writestringln('5.2');
     cmdTable^.prdt[i].interrupt_oc := true;
 
     console.writestringln('6');

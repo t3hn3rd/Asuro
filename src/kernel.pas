@@ -70,7 +70,7 @@ var
    cEIP            : uint32;
 
    temp            : uint32;
-   atmp            : puint16;
+   atmp            : puint32;
    
 begin
      multibootinfo:= mbinfo;
@@ -130,15 +130,15 @@ begin
 
      console.writestring('AHCI TEST');
      console.writestringln('A');
-     atmp:= puint16(kalloc(sizeof(uint16)));
+     atmp:= puint32(kalloc(sizeof(1024*128)));
      console.writestringln('B');
      atmp^ := 4242;
      console.writestringln('C');
-     AHCI.write(0, $5, $1, 1, atmp);
+     AHCI.write(0, $5, $1, 32, atmp);
      console.writestringln('D');
      atmp^ := 365;
      console.writestringln('E');
-     AHCI.read(0, $5, $1, 1, atmp);
+     AHCI.read(0, $5, $1, 32, atmp);
      console.writestringln('F');
      console.writeint(atmp^);
      console.writestringln('G');
