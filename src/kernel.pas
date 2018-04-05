@@ -127,6 +127,13 @@ begin
      pci.init();
      console.writestringln('DRIVERS: INIT END.');
 
+     console.writestring('AHCI TEST');
+     temp := 424242;
+     AHCI.write(0, $5, $1, 1, @temp);
+     temp := 365;
+     AHCI.read(9, $5, $1, 1, @temp);
+     console.writeint(temp);
+
      console.writestringln('');
      console.setdefaultattribute(console.combinecolors(Green, Black));
      console.writestringln('Asuro Booted Correctly!');
