@@ -327,7 +327,7 @@ begin
     pport := @hba^.ports[port];
     pport^.istat := $ffff;
     slot := find_cmd_slot(port);
-    if slot = -1 then exit(0);
+    if slot = -1 then exit(false);
 
     cmdHeader := @pport^.clb;
     cmdHeader += slot;
@@ -363,7 +363,7 @@ begin
     cmdfis^.count_low := count and $FF;
     cmdfis^.count_high:= (count shr 8) and $FF;
 
-    while (pport^.tfd and $88) = $88 and spin < 1000000 do begin
+    while (pport^.tfd and $88) and spin < 1000000 do begin
         spin += 1;
     end;
 
@@ -376,8 +376,8 @@ begin
     pport^.ci := 1 shl slot;
 
     while true do begin
-        if(pport^.ci and (1 shl slot)) = 0 then break;
-        if(pport^.istat and (1 shl 30)) then begin
+        if(pport^.ci and (1 shl slot)) = (1 shl slot) then break;
+        if(pport^.istat and (1 shl 30)) = (1 shl 30) then begin
             console.writestringln('AHCI controller: Disk read error!');
             read:= false;
             exit;
