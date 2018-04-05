@@ -220,10 +220,17 @@ implementation
 procedure init();
 var
     count : uint16;
+    devID : TDeviceIdentifier;
 begin
     console.writestringln('AHCI: STARTING INIT');
     //PCI_Devices := PCI.getDeviceInfo(1, 6, 0, count);
-    drivermanagement.register_driver($010600, @load)
+    devID.bus:= biPCI;
+    devID.id0:= idANY;
+    devID.id1:= $00000001;
+    devID.id2:= $00000006;
+    devID.id3:= 0;
+    devID.ex:= nil;
+    drivermanagement.register_driver(@devID, @load)
 end;
 
 function load(ptr : void) : boolean;
