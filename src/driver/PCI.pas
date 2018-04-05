@@ -343,6 +343,8 @@ var
     devices_out : array[0..31] of TPCI_Device;
 
 begin
+    console.writestring('DEV COUNT: ');
+    console.writeintln(device_count);
     count := 0;
     if prog_if <> $FF then begin
         for i:=0 to device_count do begin
