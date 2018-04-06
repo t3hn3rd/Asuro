@@ -32,7 +32,6 @@ uses
      PCI,
      Terminal,
      strings,
-     AHCI,
      USB,
      testdriver,
      E1000;
@@ -123,27 +122,11 @@ begin
      console.writestringln('DRIVERS: INIT BEGIN.');
      keyboard.init(keyboard_layout);
      mouse.init();
-     AHCI.init();
      testdriver.init();
      E1000.init();
      USB.init();
      pci.init();
      console.writestringln('DRIVERS: INIT END.');
-
-    { console.writestring('AHCI TEST');
-     console.writestringln('A');
-     atmp:= puint32(kalloc(sizeof(1024*128)));
-     console.writestringln('B');
-     atmp^ := 4242;
-     console.writestringln('C');
-     AHCI.write(0, $5, $1, 32, atmp);
-     console.writestringln('D');
-     atmp^ := 365;
-     console.writestringln('E');
-     AHCI.read(0, $5, $1, 32, atmp);
-     console.writestringln('F');
-     console.writeint(atmp^);
-     console.writestringln('G');}
 
      console.writestringln('');
      console.setdefaultattribute(console.combinecolors(Green, Black));
