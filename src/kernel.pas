@@ -130,7 +130,7 @@ begin
      pci.init();
      console.writestringln('DRIVERS: INIT END.');
 
-     {console.writestring('AHCI TEST');
+    { console.writestring('AHCI TEST');
      console.writestringln('A');
      atmp:= puint32(kalloc(sizeof(1024*128)));
      console.writestringln('B');
