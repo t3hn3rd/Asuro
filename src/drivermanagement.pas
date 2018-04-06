@@ -94,10 +94,11 @@ begin
         if Drv^.Loaded then begin
             console.writeint(i);
             console.writestring(') ');
-            console.writestringln(Drv^.Driver_Name);
-            console.writestring('   [');
+            console.writestring(Drv^.Driver_Name);
+            console.writestring(' - Bus: ');
             writeBusType(Drv^.Identifier^.Bus);
-            console.writestring(' - ID:');
+            console.writestringln(' ');
+            console.writestring('   [');
             console.writeHex(Drv^.Identifier^.id0);
             console.writestring('-');
             console.writeHex(Drv^.Identifier^.id1);
@@ -131,12 +132,13 @@ begin
     i:= 1;
     while Drv <> nil do begin
         console.writeint(i);
-        if Drv^.Loaded then console.writestring('L');
         console.writestring(') ');
-        console.writestringln(Drv^.Driver_Name);
-        console.writestring('   [');
+        console.writestring(Drv^.Driver_Name);
+        console.writestring(' - Bus: ');
         writeBusType(Drv^.Identifier^.Bus);
-        console.writestring(' - ID:');
+        console.writestring(' - Loaded: ');
+        if Drv^.Loaded then console.writestringln('true') else console.writestringln('false');
+        console.writestring('   [');
         console.writeHex(Drv^.Identifier^.id0);
         console.writestring('-');
         console.writeHex(Drv^.Identifier^.id1);
@@ -170,10 +172,11 @@ begin
     while Dv <> nil do begin
         console.writeint(i);
         console.writestring(') ');
-        console.writestringln(Dv^.Device_Name);
-        console.writestring('   [');
+        console.writestring(Dv^.Device_Name);
+        console.writestring(' - Bus: ');
         writeBusType(Dv^.Identifier^.Bus);
-        console.writestring(' - ID:');
+        console.writestringln(' ');
+        console.writestring('   [');
         console.writeHex(Dv^.Identifier^.id0);
         console.writestring('-');
         console.writeHex(Dv^.Identifier^.id1);
