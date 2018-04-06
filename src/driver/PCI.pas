@@ -15,7 +15,6 @@ uses
     util,
     console,
     drivertypes,
-    ATA,
     lmemorymanager,
     drivermanagement;
 
