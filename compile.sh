@@ -26,11 +26,11 @@ if [ "$1" = "-d" ]
 then
 	echo "Compiling Debug FPC Sources..."
 	echo " "
-	fpc -Aelf -gw -n -va -O3 -Op3 -Si -Sc -Sg -Xd -CX -XXs -Rintel -Pi386 -Tlinux -FElib/ -Fusrc/* src/kernel.pas
+	fpc -Aelf -gw -n -va -O3 -Op3 -Si -Sc -Sg -Xd -CX -XXs -Rintel -Pi386 -Tlinux -FElib/ -Fusrc/* -Fusrc/driver/* src/kernel.pas
 else
 	echo "Compiling FPC Sources..."
 	echo " "
-	fpc -Aelf -gw -n -va -O3 -Op3 -Si -Sc -Sg -Xd -CX -XXs -Rintel -Pi386 -Tlinux -FElib/ -Fusrc/* src/kernel.pas
+	fpc -Aelf -gw -n -va -O3 -Op3 -Si -Sc -Sg -Xd -CX -XXs -Rintel -Pi386 -Tlinux -FElib/ -Fusrc/* -Fusrc/driver/* src/kernel.pas
 fi
 
 if [ $? -ne 0 ]
