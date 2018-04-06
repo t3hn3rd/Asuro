@@ -112,10 +112,10 @@ begin
     PD^[page_number].PageSize:= true;
     PD^[page_number].Writable:= true;
     
-    //console.writestringln('VMM: New Page Added:');
+    // console.writestringln('VMM: New Page Added:');
 
-    //console.writestring('VMM: - P:');
-    //console.writehex(page_number);
+    // console.writestring('VMM: - P:');
+    // console.writehex(page_number);
     // console.writestring('-->B:');
     // console.writehexln(block);
         
@@ -128,6 +128,7 @@ begin
     // console.writestring(' - ');
     // console.writehex(((block+1) SHL 22));
     // console.writestringln(']');
+    
     map_page_ex:= true;
 end;
 

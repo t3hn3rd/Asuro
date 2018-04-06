@@ -71,6 +71,7 @@ var
 
    temp            : uint32;
    atmp            : puint32;
+   test          : puint8;
    
 begin
      multibootinfo:= mbinfo;
@@ -146,6 +147,7 @@ begin
      console.writestringln('');
      console.writestringln('Press any key to boot in to Asuro Terminal...');
      keyboard.hook(@temphook);
+
      util.halt_and_dont_catch_fire;
 end;
  

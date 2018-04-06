@@ -14,6 +14,7 @@ interface
 uses
     util,
     vmemorymanager,
+    pmemorymanager,
     console;
 
 const
@@ -45,6 +46,7 @@ var
 
 procedure init;
 function kalloc(size : uint32) : void;
+function kpalloc(address : uint32) : void;
 procedure kfree(area : void);
 
 implementation
@@ -95,6 +97,17 @@ begin
         Root_Page^.Entries[i].Last:= False;
     end; 
     console.writestringln('LMM: INIT END.');
+end;
+
+function kpalloc(address : uint32) : void;
+var
+    block : uint16;
+
+begin
+    block:= address SHR 22;
+    force_alloc_block(block, 0);
+    map_page(block, block);
+    kpalloc:= void(block SHL 22);
 end;
 
 function kalloc(size : uint32) : void;
