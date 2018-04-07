@@ -34,7 +34,8 @@ uses
      strings,
      USB,
      testdriver,
-     E1000;
+     E1000,
+     AHCI_OLD;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
@@ -125,6 +126,8 @@ begin
      mouse.init();
      testdriver.init();
      E1000.init();
+     //AHCI_OLD.init();
+     //Nothing beyond here
      USB.init();
      pci.init();
      console.writestringln('DRIVERS: INIT END.');

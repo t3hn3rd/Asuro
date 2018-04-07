@@ -120,10 +120,10 @@ begin
     for slot := 0 to 31 do begin
         result := loadDeviceConfig(bus, slot, 0);
         if result = true then begin
-            if devices[device_count - 1].header_type and $40 = 40 then begin
+            if devices[device_count - 1].header_type and $80 <> 0 then begin
                 for func := 1 to 8 do begin
                     loadDeviceConfig(bus, slot, func);
-                    psleep(1000);
+                    psleep(10);
                 end;
             end;
         end;

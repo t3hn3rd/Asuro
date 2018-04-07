@@ -7,7 +7,7 @@
   * Contributors: 
   ************************************************ }
 
-unit AHCI;
+unit AHCI_OLD;
 
 interface
 
@@ -18,7 +18,8 @@ uses
     drivermanagement,
     lmemorymanager,
     console,
-    vmemorymanager;
+    vmemorymanager,
+    terminal;
 
 type
 
@@ -195,9 +196,9 @@ type
 
     PCommand_Table = ^TCommand_Table;
     TCommand_Table = bitpacked record
-        cfis : array[0..64] of uint8;
-        acmd : array[0..16] of uint8;
-        rsv  : array[0..48] of uint8;
+        cfis : TFIS_REG_H2D;
+        acmd : array[0..15] of uint8;
+        rsv  : array[0..47] of uint8;
         prdt : array[0..7] of TPRD_Entry;
     end;
 
@@ -227,8 +228,14 @@ function load(ptr:void): boolean;
 function read(port : uint8; startl : uint32; starth : uint32; count : uint32; buf : PuInt32) : boolean;
 function write(port : uint8; startl : uint32; starth : uint32; count : uint32; buf : PuInt32) : boolean;
 function find_cmd_slot(port : uint8) : uint32;
+procedure test(value : uint32);
 
 implementation 
+
+procedure test_command(params : PParamList);
+begin
+    test(65534);
+end;
 
 procedure init();
 var
@@ -240,13 +247,15 @@ begin
     devID.id1:= $00000001;
     devID.id2:= $00000006;
     devID.id3:= $00000001;
+    devID.id4:= idANY;    
     devID.ex:= nil;
     drivermanagement.register_driver('AHCI Controller', @devID, @load);
+    terminal.registerCommand('AHCI', @test_command, 'TEST ACHI');
 end;
 
 function load(ptr : void) : boolean;
 begin
-    ahciController := ptr;
+    ahciController := ptr + KERNEL_VIRTUAL_BASE;
     hba := THBAptr(PPCI_Device(ahciController)^.address5);
     new_page_at_address(uint32(hba));
     new_page_at_address(AHCI_BASE);
@@ -307,7 +316,7 @@ begin
     hba^.ports[port].fbu := 0;
     memset(hba^.ports[port].fb, 0, 256);
 
-    cmdheader := PCMDHeader(hba^.ports[port].clb);
+    cmdheader := PCMDHeader(hba^.ports[port].clb + KERNEL_VIRTUAL_BASE);
     for i:= 0 to 31 do begin
         cmdHeader[i].PRDTL := 8; // no of prdt entries per cmd table
         cmdheader[i].ctba := AHCI_BASE + (40 shl 10) + (port shl 13) + (i shl 8);
@@ -328,21 +337,21 @@ var
     spin : uint32 = 0;
 begin
     console.writestringln('1');
-    pport := @hba^.ports[port];
+    pport := PHBA_PORT(@hba^.ports[port] + KERNEL_VIRTUAL_BASE);
     //new_page_at_address(uint32(pport));
     pport^.istat := $ffff;
     slot := find_cmd_slot(port);
     if slot = -1 then exit(false);
 
     console.writestringln('2');
-    cmdHeader := @pport^.clb;
+    cmdHeader := PCMDHeader(@pport^.clb + KERNEL_VIRTUAL_BASE);
     //new_page_at_address(uint32(cmdHeader));
     cmdHeader += slot;
     cmdHeader^.w := false;
     cmdHeader^.PRDTL := uint16(((count - 1) shr 4) + 1);
 
     console.writestringln('3');
-    cmdTable := @cmdheader^.ctba;
+    cmdTable := PCommand_Table(@cmdheader^.ctba + KERNEL_VIRTUAL_BASE);
     //new_page_at_address(uint32(cmdTable));
     memset(uint32(cmdTable), 0, sizeof(TCommand_Table) + (cmdheader^.PRDTL-1) * sizeof(TPRD_Entry));
 
@@ -364,7 +373,7 @@ begin
 
     console.writestringln('6');
     //setup command
-    cmdfis            := @cmdTable^.cfis;
+    cmdfis            := PFIS_REG_H2D(@cmdTable^.cfis + KERNEL_VIRTUAL_BASE);
     new_page_at_address(uint32(cmdfis));
     cmdfis^.coc       := true;
     cmdfis^.command   := $25;
@@ -391,8 +400,8 @@ begin
     end;
 
     console.writestringln('9');
-    //pport^.ci := 1 shl slot;
-    pport^.ci := 1;
+    pport^.ci := 1 shl slot;
+    //pport^.ci := 1;
 
     console.writestringln('10');
     while true do begin
@@ -426,33 +435,51 @@ var
     i : uint32;
     spin : uint32 = 0;
 begin
+    //console.writeintln(sizeof(TCommand_Table));
+    //console.writeintln(sizeof(TCommand_Table) + (cmdheader^.PRDTL-1) * sizeof(TPRD_Entry));
+    //psleep(1000);
     console.writestringln('1');
-    pport := @hba^.ports[port];
-    new_page_at_address(uint32(pport));
-    pport^.istat := $ffff;
+    //pport := PHBA_PORT(@hba^.ports[port] + KERNEL_VIRTUAL_BASE);
+    //new_page_at_address(uint32(pport));
+    console.writestringln('1.1');
+    console.writehexln(uint32(hba));
+    hba^.ports[port].istat := $ffff;
+    console.writestringln('1.2');
     slot := find_cmd_slot(port);
+    console.writestringln('1.3');
     if slot = -1 then exit(false);
 
     console.writestringln('2');
-    cmdHeader := @pport^.clb;
+    cmdHeader := PCMDHeader(hba^.ports[port].clb + KERNEL_VIRTUAL_BASE);
+
     cmdHeader += slot;
    // new_page_at_address(uint32(cmdHeader));
     cmdHeader^.w := false;
     cmdHeader^.PRDTL := uint16(((count - 1) shr 4) + 1);
-    console.writeintln(cmdHeader^.PRDTL); // different value on differnt emulators????
     console.writestringln('3');
-    cmdTable := @cmdheader^.ctba;
+    cmdTable := PCommand_Table(cmdheader^.ctba);
    // new_page_at_address(uint32(cmdTable));
    // new_page_at_address(uint32(@cmdTable^.prdt));
-    memset(uint32(cmdTable), 0, sizeof(TCommand_Table) + (cmdheader^.PRDTL-1) * sizeof(TPRD_Entry));
+    console.writehexln(uint32(cmdTable));
+    kpalloc(uint32(cmdTable));
+    memset(uint32(cmdTable), 0, sizeof(TCommand_Table));
 
     console.writestringln('4');
     console.writestring('PRDTL: ');
     console.writeintln(cmdHeader^.PRDTL);
     if cmdHeader^.PRDTL > 0 then begin
+        console.writestringln('4.1');
         for i:= 0 to cmdHeader^.PRDTL -1 do begin
+            console.writestring('PRDTL: ');
+            console.writeintln(cmdHeader^.PRDTL - 1);
+            console.writestring('i: ');
+            console.writeintln(i);
+            console.writestringln('4.2');
+            console.writehexln(uint32(cmdTable));
             cmdTable^.prdt[i].data_base_address := uint32(buf);
+            console.writestringln('4.3');
             cmdTable^.prdt[i].data_byte_count := 8*1024-1;
+            console.writestringln('4.4');
             cmdTable^.prdt[i].interrupt_oc := false;
             buf += 4*1024;
             count -= 16;
@@ -467,24 +494,24 @@ begin
     cmdTable^.prdt[cmdHeader^.PRDTL].interrupt_oc := false;
 
     console.writestringln('6');
-    cmdfis            := @cmdTable^.cfis;
-    new_page_at_address(uint32(cmdfis));
-    cmdfis^.coc       := true;
-    cmdfis^.command   := $35;
-    cmdfis^.lba0      := uint8(startl);
-    cmdfis^.lba1      := uint8(startl shr 8);
-    cmdfis^.lba2      := uint8(startl shr 16);
-    cmdfis^.device    := 1 shl 6;
-    cmdfis^.lba3      := uint8(startl shr 24);
-    cmdfis^.lba4      := uint8(starth);
-    cmdfis^.lba3      := uint8(starth shr 8);
-    cmdfis^.count_low := count and $FF;
-    cmdfis^.count_high:= (count shr 8) and $FF;
+    //cmdfis            := PFIS_REG_H2D(@cmdTable^.cfis);
+    //new_page_at_address(uint32(cmdfis));
+    cmdTable^.cfis.coc       := true;
+    cmdTable^.cfis.command   := $35;
+    cmdTable^.cfis.lba0      := uint8(startl);
+    cmdTable^.cfis.lba1      := uint8(startl shr 8);
+    cmdTable^.cfis.lba2      := uint8(startl shr 16);
+    cmdTable^.cfis.device    := 1 shl 6;
+    cmdTable^.cfis.lba3      := uint8(startl shr 24);
+    cmdTable^.cfis.lba4      := uint8(starth);
+    cmdTable^.cfis.lba3      := uint8(starth shr 8);
+    cmdTable^.cfis.count_low := count and $FF;
+    cmdTable^.cfis.count_high:= (count shr 8) and $FF;
 
     console.writestringln('7');
-    // while (pport^.tfd and $88) and spin < 1000000 do begin
-    //     spin += 1;
-    // end;
+     while (hba^.ports[port].tfd and $88) and spin < 1000000 do begin
+         spin += 1;
+     end;
 
     console.writestringln('8');
     if spin = 1000000 then begin
@@ -494,13 +521,13 @@ begin
     end;
 
     console.writestringln('9');
-    //pport^.ci := 1 shl slot;
-    pport^.ci := 1;
+     hba^.ports[port].ci := 1 shl slot;
+    //hba^.ports[port].ci := 1;
 
     console.writestringln('10');
     while true do begin
-        if(pport^.ci and (1 shl slot)) = (1 shl slot) then break;
-        if(pport^.istat and (1 shl 30)) = (1 shl 30) then begin
+        if(hba^.ports[port].ci and (1 shl slot)) = (1 shl slot) then break;
+        if(hba^.ports[port].istat and (1 shl 30)) = (1 shl 30) then begin
             console.writestringln('AHCI controller: Disk write error!');
             write:= false;
             exit;
@@ -508,7 +535,7 @@ begin
     end;
 
     console.writestringln('11');
-    if(pport^.istat and (1 shl 30)) = (1 shl 30) then begin
+    if(hba^.ports[port].istat and (1 shl 30)) = (1 shl 30) then begin
         console.writestringln('AHCI controller: Disk write error!');
         write:= false;
         exit;
@@ -533,6 +560,18 @@ begin
     end;
     console.writestringln('AHCI Controller: Unable to find free command slots!');
     exit(-1);
+end;
+
+procedure test(value : uint32);
+var 
+    thing : PuInt32;
+begin
+    thing:= Puint32(kalloc(1024*16));
+    thing^:= value;
+    write(0, $1, $0, 6, puint32(thing - KERNEL_VIRTUAL_BASE) );
+    thing^:= 365;
+    read(0, $1, $0, 6, puint32(thing - KERNEL_VIRTUAL_BASE) );
+    console.writeintln(thing^);
 end;
 
 end.
