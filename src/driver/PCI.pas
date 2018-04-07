@@ -130,7 +130,6 @@ begin
             if devices[device_count - 1].header_type and $80 <> 0 then begin
                 for func := 1 to 8 do begin
                     loadDeviceConfig(bus, slot, func);
-                    psleep(10);
                 end;
             end;
         end;

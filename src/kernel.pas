@@ -36,7 +36,8 @@ uses
      testdriver,
      E1000,
      AHCI_OLD,
-     IDE;
+     IDE,
+     storagemanagement;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
@@ -94,6 +95,7 @@ begin
      terminal.registerCommand('BSOD', @terminal_command_bsod, 'Force a Panic Screen.');
 
      drivermanagement.init();
+     storagemanagement.init();
 
      console.init();
 

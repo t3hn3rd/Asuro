@@ -19,7 +19,8 @@ uses
     isr76,
     drivermanagement,
     vmemorymanager,
-    lmemorymanager;
+    lmemorymanager,
+    storagemanagement;
 
 type 
     TIdentResponse = array[0..255] of uint16;
@@ -170,24 +171,27 @@ begin
     devID.id4:= idANY;
     devID.ex:= nil;
     drivermanagement.register_driver('IDE ATA Driver', @devID, @load);
-    terminal.registerCommand('IDE', @test_command, 'TEST IDE DRIVER');
+    //terminal.registerCommand('IDE', @test_command, 'TEST IDE DRIVER');
     buffer := Puint32(kalloc(1024*2));
 end;
 
 function load(ptr : void) : boolean;
+var
+    storageDevice : TStorage_Device;
 begin
     //controller := PPCI_Device(ptr);
 
 
     //check if bus is floating and identify device
     if inb($1F7) <> $FF then begin
-                console.writeint(1);
         outb($3F6, inb($3f6) or (1 shl 1)); // disable interrupts
-                    console.writeint(1);
-
         IDEDevices[0].exists:= true;
         IDEDevices[0].isMaster:= true;
         IDEDevices[0].info := identify_device(0, $A0);
+
+        storageDevice.controller := ControllerIDE;
+        storageDevice.maxSectorCount:= (IDEDevices[0].info[60] or (IDEDevices[0].info[61] shl 16) ); //LBA28
+        storagemanagement.register_device(storageDevice);
     end 
     //identify_device(0, $B0);
 
@@ -206,7 +210,6 @@ begin
         outw($1F3, 0);
         outw($1F4, 0);
         outw($1F5, 0); 
-                    console.writeint(1);
 
         outw($1F7, ATA_CMD_IDENTIFY); //send identify command
             console.writeint(1);
@@ -214,7 +217,6 @@ begin
         while true do begin
             if (inw($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
         end;
-                    console.writeint(1);
 
         while true do begin
             if (inw($1f7) and (1 shl 3)) <> 0 then break;
