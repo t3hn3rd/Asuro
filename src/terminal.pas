@@ -48,6 +48,8 @@ procedure run;
 procedure init;
 procedure registerCommand(command : pchar; method : TCommandMethod; description : pchar);
 function getParams(buf : TCommandBuffer) : PParamList;
+function paramCount(params : PParamList) : uint32;
+function getParam(index : uint32; params : PParamList) : pchar;
 
 implementation
 

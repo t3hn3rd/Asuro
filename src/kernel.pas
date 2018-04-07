@@ -60,6 +60,16 @@ begin
     console.writestringln('MB');
 end;
 
+procedure terminal_command_bsod(params : PParamList);
+begin
+    if ParamCount(params) > 1 then begin
+      bsod(getparam(0, params), getparam(1, params));
+    end else begin
+        console.writestringln('Invalid number of params.');
+        console.writestringln('Usage: bsod <error> <info>');
+    end;   
+end;
+
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall; [public, alias: 'kmain'];   
 var
    c               : uint8;
@@ -81,6 +91,7 @@ begin
 
      terminal.init();
      terminal.registerCommand('MEMINFO', @terminal_command_meminfo, 'Print Simple Memory Information.');
+     terminal.registerCommand('BSOD', @terminal_command_bsod, 'Force a Panic Screen.');
 
      drivermanagement.init();
 
@@ -152,7 +163,7 @@ begin
      console.setdefaultattribute(console.combinecolors(White, Black));
      console.writestringln('');
      console.writestringln('Press any key to boot in to Asuro Terminal...');
-     //BSOD('TOPKEK', 'Because why not?');
+
      keyboard.hook(@temphook);
 
      util.halt_and_dont_catch_fire;
