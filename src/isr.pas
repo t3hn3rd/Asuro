@@ -24,7 +24,7 @@ implementation
 
 procedure init();
 begin
-    console.writestringln('ISR: INIT START.');
+    console.outputln('ISR','INIT START.');
     ISR0.register();  // Divide-By-Zero
     ISR1.register();  // Debug
     ISR2.register();  // Non-Maskable Inturrupt
@@ -49,7 +49,7 @@ begin
     ISR33.register(); // Keyboard
     ISR40.register(); // 1024/s Timer
     ISR44.register(); // Mouse
-    console.writestringln('ISR: INIT END.');
+    console.outputln('ISR','INIT END.');
 end;
 
 end.

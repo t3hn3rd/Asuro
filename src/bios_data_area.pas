@@ -71,7 +71,7 @@ end;
 
 procedure init();
 begin
-    console.writestringln('BDA: Loaded.');
+    console.outputln('BDA','Loaded.');
     //TO-DO search for important structures like the MCFG or the EBDA.
 end;
 

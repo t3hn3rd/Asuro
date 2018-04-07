@@ -105,7 +105,7 @@ end;
 
 procedure init;
 begin
-    console.writestringln('SCHEDULER: INIT BEGIN.');
+    console.outputln('SCHEDULER','INIT BEGIN.');
     Root_Task:= PScheduler_Entry(kalloc(sizeof(TScheduler_Entry)));
     Root_Task^.ThreadID:= 0;
     Root_Task^.Priority:= 1;
@@ -116,7 +116,7 @@ begin
     Active:= False;
     isr32.hook(uint32(@delta));
     terminal.registerCommand('TASKS', @terminal_command_tasks, 'List Active Processes.');
-    console.writestringln('SCHEDULER: INIT END.');
+    console.outputln('SCHEDULER','INIT END.');
 end;
 
 end.

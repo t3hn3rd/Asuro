@@ -50,12 +50,12 @@ var
 
 begin
     devices:= PCI.getDeviceInfo($0C, $03, $10, count);
-    console.writestring('USB-OHCI: Found ');
+    console.output('USB-OHCI Driver', 'Found ');
     console.writeint(count);
     console.writestringln(' USB Controller(s).');
     if count > 0 then begin
         for i:=0 to count-1 do begin
-            console.writestring('USB: Controller[');
+            console.output('USB-OHCI Driver', 'Controller[');
             console.writeint(i);
             console.writestring(']: ');
             console.writehex(devices[i].device_id);
@@ -80,12 +80,12 @@ var
 
 begin
     devices:= PCI.getDeviceInfo($0C, $03, $00, count);
-    console.writestring('USB-UHCI: Found ');
+    console.output('USB-UHCI Driver','Found ');
     console.writeint(count);
     console.writestringln(' USB Controller(s).');
     if count > 0 then begin
         for i:=0 to count-1 do begin
-            console.writestring('USB: Controller[');
+            console.output('USB-UHCI Driver','Controller[');
             console.writeint(i);
             console.writestring(']: ');
             console.writehex(devices[i].device_id);
@@ -103,7 +103,7 @@ var
     UHCI_ID, OHCI_ID : TDeviceIdentifier;
 
 begin
-    console.writestringln('USB: INIT BEGIN.');
+    console.outputln('USB Driver', 'INIT BEGIN.');
     
     UHCI_ID.Bus:= biPCI;
     UHCI_ID.id0:= idANY;
@@ -124,7 +124,7 @@ begin
     drivermanagement.register_driver('USB-UHCI Driver', @UHCI_ID, @loadUHCI);
     drivermanagement.register_driver('USB-OHCI Driver', @OHCI_ID, @loadOHCI);
 
-    console.writestringln('USB: INIT END.');
+    console.outputln('USB Driver', 'INIT END.');
 end;
 
 end.

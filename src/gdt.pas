@@ -58,7 +58,7 @@ end;
 
 procedure flush;
 begin
-    console.writestringln('GDT: FLUSH.');
+    console.outputln('GDT','FLUSH.');
     flush_gdt(uint32(@gdt_pointer));
 end;
 
@@ -70,7 +70,7 @@ end;
 
 procedure reload;
 begin
-    console.writestringln('GDT: RELOAD.');
+    console.outputln('GDT','RELOAD.');
     reload_gdt(uint32(@gdt_pointer));
 end;
 
@@ -90,14 +90,14 @@ begin
     gdt_entries[Gate_Number].limit_low   := (Limit AND $FFFF);
     gdt_entries[Gate_Number].granularity := ((Limit SHR 16) AND $0F) OR (Granularity AND $F0);
     gdt_entries[Gate_Number].access      := Access;    
-    console.writestring('GDT: GATE ');
+    console.output('GDT','GATE ');
     console.writeint(Gate_Number);
     console.writestringln(' SET.');
 end;
 
 procedure init();
 begin
-    console.writestringln('GDT: INIT START.');
+    console.outputln('GDT','INIT START.');
     gdt_pointer.limit:= 0;
     gdt_pointer.base  := uint32(@gdt_entries);  
     set_gate($00, $00, $00,       $00, $00); //OFFSET: 0
@@ -106,7 +106,7 @@ begin
     set_gate($03, $00, $FFFFFFFF, $FA, $CF); //OFFSET: 24
     set_gate($04, $00, $FFFFFFFF, $F2, $CF); //OFFSET: 32
     flush;
-    console.writestringln('GDT: INIT END.');
+    console.outputln('GDT','INIT END.');
 end;
 
 end.

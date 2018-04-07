@@ -90,13 +90,13 @@ var
     i : uint32;
 
 begin
-    console.writestringln('VMM: INIT BEGIN.');
+    console.outputln('VMM','INIT BEGIN.');
     PageDirectory:= load_current_page_directory;
     KERNEL_PAGE_DIRECTORY:= PageDirectory;
     map_page(KERNEL_PAGE_NUMBER + 1, 1);
     map_page(KERNEL_PAGE_NUMBER + 2, 2);
     map_page(KERNEL_PAGE_NUMBER + 3, 3);
-    console.writestringln('VMM: INIT END.');
+    console.outputln('VMM','INIT END.');
 end;
 
 function map_page_ex(page_number : uint16; block : uint16; PD : PPageDirectory) : boolean;
@@ -139,7 +139,7 @@ var
     rldpd : uint32;
 
 begin
-    map_page:= false;
+    map_page:= false; 
     PageDirectory^[page_number].Present:= true;
     addr:= block;
     PageDirectory^[page_number].Address:= addr SHL 10;

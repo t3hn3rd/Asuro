@@ -307,7 +307,12 @@ begin
         end;
         RegList^.Next:= NewReg;
     end;
+    console.output('Driver Management', 'New Driver Registered: ');
+    console.writestringln(NewReg^.Driver_Name);
     if force_load then begin
+        console.output('Driver Management', 'Driver (');
+        console.writestring(NewReg^.Driver_Name);
+        console.writestringln(') forced to load.');
         NewReg^.Loaded:= True;
         NewReg^.Driver_Load(nil);
     end;
@@ -336,9 +341,18 @@ begin
         end;
         dev_list^.Next:= new_dev;
     end;
+    console.output('Driver Management', 'New Device Registered: ');
+    console.writestringln(new_dev^.Device_Name);
     while drv <> nil do begin
         if identifiers_match(drv^.Identifier, DeviceID) then begin
+            console.output('Driver Management', 'Device/Driver Match: ');
+            console.writestring(new_dev^.Device_Name);
+            console.writestring('->');
+            console.writestringln(drv^.Driver_Name);
             if drv^.Driver_Load(ptr) then begin
+                console.output('Driver Management', 'Driver (');
+                console.writestring(drv^.Driver_Name);
+                console.writestringln(') successfully loaded.');
                 drv^.Loaded:= true;
                 new_dev^.Driver_Loaded:= true;
                 new_dev^.Driver:= drv;

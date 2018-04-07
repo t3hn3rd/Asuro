@@ -109,15 +109,15 @@ end;
 
 procedure init;
 begin
-    console.writestringln('PMM: INIT BEGIN.');
+    console.outputln('PMM','INIT BEGIN.');
     walk_memory_map;
     force_alloc_block(0, 0);
     force_alloc_block(1, 0);
     force_alloc_block(2, 0); //First 12MiB reserved for Kernel/BIOS.
-    console.writestring('PMM: ');
+    console.output('PMM',' ');
     console.writeword(nPresent);
     console.writestringln('/1024 Block Available for Allocation.');
-    console.writestringln('PMM: INIT END.');
+    console.outputln('PMM','INIT END.');
 end;
 
 function alloc_block(block : uint16; caller : uint32) : boolean;

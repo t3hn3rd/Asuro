@@ -62,7 +62,7 @@ end;
 function load(ptr : void) : boolean;
 begin
     isr33.hook(uint32(@callback));
-    console.writestringln('PS/2 KEYBOARD: LOADED.');
+    console.outputln('PS/2 KEYBOARD', 'LOADED.');
     load:= true;
 end;
 
@@ -71,7 +71,7 @@ var
     devid : TDeviceIdentifier;
 
 begin
-    console.writestringln('PS/2 KEYBOARD: INIT BEGIN.');
+    console.outputln('PS/2 KEYBOARD', 'INIT BEGIN.');
     if keyboard_layout[1].key_code = 0 then lang_USA();
     devid.bus:= biUnknown;
     devid.id0:= 0;
@@ -81,7 +81,7 @@ begin
     devid.id4:= 0;
     devid.ex:= nil;
     drivermanagement.register_driver_ex('PS/2 Keyboard', @devid, @load, true);
-    console.writestringln('PS/2 KEYBOARD: INIT END.');
+    console.outputln('PS/2 KEYBOARD', 'INIT END.');
 end;
 //2A AA
 

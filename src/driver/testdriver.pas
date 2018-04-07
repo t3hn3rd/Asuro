@@ -11,7 +11,7 @@ implementation
 
 function load(ptr : void) : boolean;
 begin
-    console.writestringln('DUMMY DRIVER LOADED.')
+    console.outputln('DUMMY DRIVER', 'LOADED.')
 end;
 
 procedure init;

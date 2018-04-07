@@ -79,14 +79,14 @@ var
     current_bus : uint8;
 
 begin
-    console.writestringln('PCI: Scanning Bus: 0');
+    console.outputln('PCI', 'Scanning Bus: 0');
     scanBus(0);
     //while unscanned busses scan busses
     current_bus := 1;
     while true do begin
         if current_bus < bus_count then begin
-            console.writestringln('PCI: Scanning Bus: ');
-            console.writeint(bus_count);
+            console.output('PCI', 'Scanning Bus: ');
+            console.writeintln(bus_count);
             scanBus(current_bus);
             current_bus := current_bus + 1;
         end else break;
@@ -99,7 +99,7 @@ var
     DevID : TDeviceIdentifier;
 
 begin
-    console.writestringln('PCI: INIT BEGIN.');
+    console.outputln('PCI','INIT BEGIN.');
     DevID.Bus:= biUnknown;
     DevID.id0:= 0;
     DevID.id1:= 0;
@@ -107,7 +107,7 @@ begin
     DevID.id3:= 0;
     DevID.ex:= nil;
     drivermanagement.register_driver_ex('PCI Driver', @DevID, @load, true);
-    console.writestringln('PCI: INIT END.');
+    console.outputln('PCI', 'INIT END.');
 end;
 
 procedure scanBus(bus : uint8);
@@ -315,7 +315,7 @@ begin
     DevID^.id4:= device.vendor_id;
     DevID^.ex:= nil;
 
-    console.writestring('PCI: Found Device: ');
+    console.output('PCI', 'Found Device: ');
     console.writehex(device.header_type);
     console.writestring('  ');
     console.writehex(device.device_id);        

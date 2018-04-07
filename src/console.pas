@@ -42,6 +42,9 @@ procedure writecharln(character : char);
 procedure writecharex(character : char; attributes : char);
 procedure writecharlnex(character : char; attributes : char);
 
+procedure Output(identifier : PChar; str : PChar);
+procedure Outputln(identifier : PChar; str : PChar);
+
 procedure writestring(str: PChar);
 procedure writestringln(str: PChar);
 procedure writestringex(str: PChar; attributes : char);
@@ -57,6 +60,7 @@ procedure writewordln(i: DWORD);
 procedure writewordex(i: DWORD; attributes : char);
 procedure writewordlnex(i: DWORD; attributes : char);
 
+procedure writehexpair(b : uint8);
 procedure writehex(i: DWORD);
 procedure writehexln(i: DWORD);
 procedure writehexex(i : DWORD; attributes : char);
@@ -278,6 +282,36 @@ begin
      console._safeincrement_x();
 end;
 
+procedure writehexpair(b : uint8);
+var
+    bn : Array[0..1] of uint8;
+    i  : uint8;
+
+begin
+    bn[0]:= b SHR 4;
+    bn[1]:= b AND $0F;
+    for i:=0 to 1 do begin
+        case bn[i] of
+            0:writestring('0');
+            1:writestring('1');
+            2:writestring('2');
+            3:writestring('3');
+            4:writestring('4');
+            5:writestring('5');
+            6:writestring('6');
+            7:writestring('7');
+            8:writestring('8');
+            9:writestring('9');
+            10:writestring('A');
+            11:writestring('B');
+            12:writestring('C');
+            13:writestring('D');
+            14:writestring('E');
+            15:writestring('F');
+        end;
+    end;
+end;
+
 procedure writehexex(i : dword; attributes: char); [public, alias: 'console_writehexex'];
 var
    Hex : Array[0..7] of Byte;
@@ -338,6 +372,20 @@ end;
 procedure writehexln(i : dword);
 begin
      writehexlnex(i, Console_Properties.Default_Attribute);
+end;
+
+procedure Output(identifier : PChar; str : PChar);
+begin
+     writestring('[');
+     writestring(identifier);
+     writestring('] ');
+     writestring(str);
+end;
+
+procedure Outputln(identifier : PChar; str : PChar);
+begin
+     Output(identifier, str);
+     writestringln(' ');
 end;
 
 procedure writestringex(str: PChar; attributes: char); [public, alias: 'console_writestringex'];

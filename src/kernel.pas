@@ -89,8 +89,8 @@ begin
 
      if (multibootmagic <> MULTIBOOT_BOOTLOADER_MAGIC) then begin
         console.setdefaultattribute(console.combinecolors(Red, Black));
-        console.writestringln('Multiboot Compliant Boot-Loader Needed!');
-        console.writestringln('HALTING');
+        console.outputln('KERNEL', 'Multiboot Compliant Boot-Loader Needed!');
+        console.outputln('KERNEL', 'HALTING.');
         util.halt_and_catch_fire;
      end;
 
@@ -99,9 +99,10 @@ begin
         MOV dds, CS
      end;
      if dds = $08 then begin
-        console.writestringlnex('GDT: LOAD SUCCESS.', console.combinecolors(Green, Black));
+        console.outputln('KERNEL', 'GDT: LOAD SUCCESS.');
      end else begin
-        console.writestringlnex('GDT: LOAD FAIL.', console.combinecolors(Red, Black));
+        console.outputln('KERNEL', 'GDT: LOAD FAIL.');
+        console.outputln('KERNEL', 'HALTING.');
         halt_and_catch_fire;
      end;
 
@@ -121,7 +122,7 @@ begin
      isr32.hook(uint32(@bios_data_area.tick_update));
 
      //drivers
-     console.writestringln('DRIVERS: INIT BEGIN.');
+     console.outputln('KERNEL', 'DRIVERS: INIT BEGIN.');
      keyboard.init(keyboard_layout);
      mouse.init();
      testdriver.init();
@@ -130,7 +131,7 @@ begin
      //Nothing beyond here
      USB.init();
      pci.init();
-     console.writestringln('DRIVERS: INIT END.');
+     console.outputln('KERNEL', 'DRIVERS: INIT END.');
 
      console.writestringln('');
      console.setdefaultattribute(console.combinecolors(Green, Black));

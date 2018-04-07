@@ -7,7 +7,9 @@ uses
     strings,
     vmemorymanager,
     lmemorymanager,
-    drivermanagement;
+    drivermanagement,
+    drivertypes,
+    util;
 
 const
     INTEL_VEND  = $8086;
@@ -95,6 +97,9 @@ const
     TSTA_LC                 =       (1 SHL 2);    // Late Collision
     LSTA_TU                 =       (1 SHL 3);    // Transmit Underrun
 
+    E1000_NUM_RX_DESC       =       32;
+    E1000_NUM_TX_DESC       =       8;
+
 type
     PE1000_rx_desc = ^TE1000_rx_desc;
     TE1000_rx_desc = bitpacked record
@@ -117,62 +122,203 @@ type
         special : uint16;
     end;
 
+    TCardType = (ctUnknown, ctE1000, ctI217, ct82577LM);
+
 procedure init();
 procedure fire();
-function getMACAddress : uint8;
+function getMACAddress : puint8;
 function sendPacket(p_data : void; p_len : uint16) : sint32;
 
 implementation
 
 var
+    loaded : boolean;
+    card_type : TCardType;
     bar_type : uint8;
     io_base  : uint16;
     mem_base : uint64;
     eeprom_exists : boolean;
     mac : array[0..5] of uint8;
-    rx_descs : array[0..65535] of TE1000_rx_desc;
-    tx_descs : array[0..65535] of TE1000_tx_desc;
+    rx_descs : array[0..E1000_NUM_RX_DESC-1] of PE1000_rx_desc;
+    tx_descs : array[0..E1000_NUM_TX_DESC-1] of PE1000_tx_desc;
     rx_curr  : uint16;
     tx_curr  : uint16;
 
 procedure writeCommand(p_address : uint16; p_value : uint32);
+var
+    mem : puint32;
+
 begin
-    
+    if (bar_type = 0) then begin
+        mem:= puint32(mem_base + p_address);
+        mem^:= p_value;
+    end else begin
+        outl(io_base + 0, p_address);
+        outl(io_base + 4, p_address)
+    end;
 end;
 
 function readCommand(p_address : uint16) : uint32;
+var
+    mem : puint32;
+
 begin
-    
+    if (bar_type = 0) then begin
+        mem:= puint32(mem_base + p_address);
+        readCommand:= mem^;
+    end else begin
+        outl(io_base, p_address);
+        readCommand:= inl(io_base + 4);
+    end;    
 end;
 
 function detectEEPROM() : boolean;
-begin
+var
+    val, i : uint32;
 
+begin
+    val:= 0;
+    writeCommand(REG_EEPROM, $1);
+    for i:=0 to 1000 do begin
+        if eeprom_exists then break;
+        val:= readCommand(REG_EEPROM);
+        if (val and $10) > 0 then eeprom_exists:= true else eeprom_exists:= false;
+    end;
+    detectEEPROM:= eeprom_exists;
 end;
 
 function EEPROMRead( address : uint8 ) : uint32;
-begin
+var
+    data : uint16;
+    tmp  : uint32;
 
+begin
+    tmp:= 0;
+    if (eeprom_exists) then begin
+        writeCommand( REG_EEPROM, 1 OR (uint32(address) SHL 8) );
+        while (tmp AND (1 SHL 4)) = 0 do begin
+            tmp:= readCommand(REG_EEPROM); //Might be wrong?
+        end;
+    end else begin
+        writeCommand( REG_EEPROM, 1 OR (uint32(address) SHL 2) );
+        while (tmp AND (1 SHL 1)) = 0 do begin
+            tmp:= readCommand(REG_EEPROM); //Might be wrong?
+        end;
+    end;
+    data:= uint16( (tmp SHR 16) AND ($FFFF) );
+    EEPROMRead:= data;
 end;
 
 function readMACAddress() : boolean;
-begin
+var
+    temp : uint32;
+    mem_base_mac_8  : puint8;
+    mem_base_mac_32 : puint32;
+    res : boolean;
+    i   : uint32;
 
+begin
+    res:= true;
+    if (eeprom_exists) then begin
+        temp:= EEPROMRead(0);
+        mac[0]:= temp AND $FF;
+        mac[1]:= temp SHR 8;
+        temp:= EEPROMRead(1);
+        mac[2]:= temp AND $FF;
+        mac[3]:= temp SHR 8;
+        temp:= EEPROMRead(2);
+        mac[4]:= temp AND $FF;
+        mac[5]:= temp SHR 8;
+    end else begin
+        mem_base_mac_8:= puint8(mem_base + $5400);
+        mem_base_mac_32:= puint32(mem_base + $5400);
+        if (mem_base_mac_32[0] <> 0) then begin
+            for i:=0 to 6 do begin
+                mac[i]:= mem_base_mac_8[i];
+            end; 
+        end else begin
+            res:= false;
+        end;
+    end;
+    readMACAddress:= res;
 end;
 
 procedure startLink();
-begin
+var
+    val : uint32;
 
+begin
+    val:= readCommand(REG_CTRL);
+    writeCommand(REG_CTRL, val OR ECTRL_SLU);
 end;
 
 procedure rxinit();
-begin
+var
+    ptr    : puint8;
+    outptr : puint8;
+    descs  : PE1000_rx_desc;
+    i      : uint32;
 
+begin
+    ptr:= puint8(kalloc(sizeof(TE1000_rx_desc) * E1000_NUM_RX_DESC + 16));
+    descs:= PE1000_rx_desc(ptr);
+    for i:=0 to E1000_NUM_RX_DESC do begin
+        rx_descs[i]:= PE1000_rx_desc(uint32(descs + i*16));
+        rx_descs[i]^.address:= uint64(kalloc(8192 + 16));
+        rx_descs[i]^.status:= 0;
+    end;
+    
+    outptr:= puint8(uint32(ptr) - KERNEL_VIRTUAL_BASE);
+    
+    writeCommand(REG_TXDESCLO, uint32(uint64(outptr) SHR 32));
+    writeCommand(REG_TXDESCHI, uint32(uint64(outptr) AND $FFFFFFFF));
+
+    writeCommand(REG_RXDESCLO, uint32(outptr));
+    writeCommand(REG_RXDESCHI, 0);
+
+    writeCommand(REG_RXDESCLEN, E1000_NUM_RX_DESC * 16);
+
+    writeCommand(REG_RXDESCHEAD, 0);
+    writeCommand(REG_RXDESCTAIL, E1000_NUM_RX_DESC-1);
+    rx_curr:= 0;
+
+    writeCommand(REG_RCTRL, RCTL_EN OR RCTL_SBP OR RCTL_UPE OR RCTL_MPE OR RCTL_LBM_NONE OR RTCL_RDMTS_HALF OR RCTL_BAM OR RCTL_SECRC OR RCTL_BSIZE_2048);
 end;
 
 procedure txinit();
-begin
+var
+    ptr    : puint8;
+    outptr : puint8;
+    descs  : PE1000_tx_desc;
+    i      : uint32;
 
+begin
+    ptr:= puint8(kalloc(sizeof(TE1000_tx_desc) * E1000_NUM_TX_DESC + 16)); 
+    descs:= PE1000_tx_desc(ptr);
+    for i:=0 to E1000_NUM_TX_DESC do begin
+        tx_descs[i]:= PE1000_tx_desc(uint32(descs + i*16));
+        tx_descs[i]^.address:= 0;
+        tx_descs[i]^.cmd:= 0;
+        tx_descs[i]^.status:= TSTA_DD;
+    end;
+    
+    outptr:= puint8(uint32(ptr) - KERNEL_VIRTUAL_BASE);
+
+    writeCommand(REG_TXDESCHI, uint32(uint64(outptr) SHR 32));
+    writeCommand(REG_TXDESCLO, uint32(uint64(outptr) AND $FFFFFFFF));
+
+    writeCommand(REG_TXDESCLEN, E1000_NUM_TX_DESC * 16);
+
+    writeCommand( REG_TXDESCHEAD, 0 );
+    writeCommand( REG_TXDESCTAIL, 0 );
+    tx_curr:= 0;
+    writeCommand(REG_TCTRL, TCTL_EN OR TCTL_PSP OR (15 SHL TCTL_CT_SHIFT) OR (64 SHL TCTL_COLD_SHIFT) OR TCTL_RTLC);
+
+    //The following is needed for I217 & 82577LM
+    if (card_type = ct82577LM) OR (card_type = ctI217) then begin
+        writeCommand(REG_TCTRL, $3003F0FA);
+        writeCommand(REG_TIPG, $0060200A);
+    end;
 end;
 
 procedure enableInturrupt();
@@ -185,9 +331,88 @@ begin
 
 end;
 
-function load(ptr : void) : boolean;
+procedure writeCardType();
 begin
-    load:= true;
+    console.output('E1000 Driver', 'Card Type: ');
+    case card_type of
+        ctUnknown:writestringln('Unknown');
+        ct82577LM:writestringln('82577LM');
+        ctE1000:writestringln('Generic E1000');
+        ctI217:writestringln('I217');
+    end;
+end;
+
+procedure writeMACAddress();
+var
+    i : integer;
+
+begin
+    console.writehexpair(mac[0]);
+    for i:=1 to 5 do begin
+        console.writestring(':');
+        console.writehexpair(mac[i]);
+    end;
+    console.writestringln(' ');
+end;
+
+function load(ptr : void) : boolean;
+var
+    PCI_Info : PPCI_Device;
+begin
+    console.outputln('E1000 Driver', 'Load Start.');
+
+    writeCardType();
+
+    PCI_Info:= PPCI_Device(ptr);
+    bar_type:= PCI_Info^.address0 AND $00000001;
+    io_base:=  PCI_Info^.address0 AND $FFFFFFF0;
+    mem_base:= PCI_INFO^.address0 AND $FFFFFFFC;
+
+    { !!!!! Dirty way to alloc the pages, needs fixing !!!!! }
+    kpalloc(io_base);
+    kpalloc(mem_base);
+    
+    eeprom_exists:= false;
+    detectEEPROM();
+    if eeprom_exists then console.outputln('E1000 Driver', 'EEPROM Exists: YES.') else console.outputln('E1000 Driver', 'EEPROM Exists: NO.');
+    if not readMACAddress() then begin
+        console.outputln('E1000 Driver', 'MAC Read Failed.');
+        load:= false;
+        exit;
+    end;
+    console.output('E1000 Driver', 'MAC Address: ');
+    writeMACAddress();
+
+    startLink();
+    load:= true;   
+    console.outputln('E1000 Driver', 'Load Finish.');
+end;
+
+function loadE1000(ptr : void) : boolean;
+begin
+    loadE1000:= false;
+    if not Loaded then begin
+        card_type:= ctE1000;
+        loadE1000:= load(ptr);
+    end;
+end;
+
+function load82577LM(ptr : void) : boolean;
+begin
+    load82577LM:= false;
+    if not Loaded then begin
+        card_type:= ct82577LM;
+        load82577LM:= load(ptr);
+    end;
+end;
+
+function loadI217(ptr : void) : boolean;
+begin
+    loadI217:= false;
+    if not Loaded then begin
+        card_type:= ctI217;
+        loadI217:= load(ptr);
+    end;
 end;
 
 procedure init();
@@ -195,6 +420,7 @@ var
     dev : TDeviceIdentifier;
 
 begin
+    card_type:= ctUnknown;
     dev.Bus:= biPCI;
     dev.id0:= INTEL_VEND;
     dev.id1:= idANY;
@@ -202,11 +428,11 @@ begin
     dev.id3:= idANY;
     dev.id4:= E1000_DEV;
     dev.ex:= nil;
-    drivermanagement.register_driver('E1000 Ethernet Driver', @dev, @load);
+    drivermanagement.register_driver('E1000 Ethernet Driver', @dev, @loadE1000);
     dev.id4:= I217_DEV;
-    drivermanagement.register_driver('I217 Ethernet Driver', @dev, @load);
+    drivermanagement.register_driver('I217 Ethernet Driver', @dev, @loadI217);
     dev.id4:= LM82577_DEV;
-    drivermanagement.register_driver('82577LM Ethernet Driver', @dev, @load);
+    drivermanagement.register_driver('82577LM Ethernet Driver', @dev, @load82577LM);
 end;
 
 procedure fire();
@@ -214,9 +440,9 @@ begin
 
 end;
 
-function getMACAddress : uint8;
+function getMACAddress : puint8;
 begin
-
+    getMACAddress:= puint8(@mac[0]);
 end; 
 
 function sendPacket(p_data : void; p_len : uint16) : sint32;

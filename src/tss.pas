@@ -79,7 +79,7 @@ var
     cCR3 : uint32;
 
 begin
-    console.writestringln('TSS: INIT BEGIN.');
+    console.outputln('TSS','INIT BEGIN.');
     ptrTaskStateSegment^.ss0:= $08;
     ptrTaskStateSegment^.iomap:= sizeof(TTaskStateSegment)-1;
     asm
@@ -95,7 +95,7 @@ begin
         mov AX, 40
         ltr AX
     end;
-    console.writestringln('TSS: INIT END.');
+    console.outputln('TSS','INIT END.');
 end;
 
 end.

@@ -107,7 +107,7 @@ end;
 function load(ptr : void) : boolean;
 begin
     isr44.hook(uint32(@callback));
-    console.writestringln('PS/2 MOUSE: LOADED.');  
+    console.outputln('PS/2 MOUSE', 'LOADED.');  
     load:= true;
 end;
 
@@ -116,7 +116,7 @@ var
     devid : TDeviceIdentifier;
 
 begin
-    console.writestringln('PS/2 MOUSE: INIT BEGIN.');
+    console.outputln('PS/2 MOUSE', 'INIT BEGIN.');
     devid.bus:= biUnknown;
     devid.id0:= 0;
     devid.id1:= 0;
@@ -125,7 +125,7 @@ begin
     devid.id4:= 0;
     devid.ex:= nil;
     drivermanagement.register_driver_ex('PS/2 Mouse', @devid, @load, true);
-    console.writestringln('PS/2 MOUSE: INIT END.');
+    console.outputln('PS/2 MOUSE', 'INIT END.');
 end;
 
 end.
