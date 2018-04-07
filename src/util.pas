@@ -230,23 +230,23 @@ end;
 
 procedure BSOD(fault : pchar; info : pchar);
 begin
-    console.setdefaultattribute(console.combinecolors(white, blue));
+    console.setdefaultattribute(console.combinecolors(white, Red));
     console.clear;
     console.writestringln(' ');
     console.writestring('            ');
     console.setdefaultattribute(console.combinecolors(black, white));  
     console.writestring('                                                   ');
-    console.setdefaultattribute(console.combinecolors(white, blue));
+    console.setdefaultattribute(console.combinecolors(white, Red));
     console.writestringln(' ');
     console.writestring('            ');
     console.setdefaultattribute(console.combinecolors(black, white));
     console.writestring('  SOMETHING HAS GONE WRONG AND ASURO HAD TO STOP!  ');
-    console.setdefaultattribute(console.combinecolors(lwhite, blue));
+    console.setdefaultattribute(console.combinecolors(lwhite, Red));
     console.writestringln(' ');
     console.writestring('            ');
     console.setdefaultattribute(console.combinecolors(black, white));
     console.writestring('                                                   ');
-    console.setdefaultattribute(console.combinecolors(white, blue));
+    console.setdefaultattribute(console.combinecolors(white, Red));
     console.writestringln(' ');
     console.writestringln(' ');
     console.writestringln(' ');
