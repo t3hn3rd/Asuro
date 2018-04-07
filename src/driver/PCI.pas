@@ -4,7 +4,7 @@
   * Description: PCI Driver
   ************************************************
   * Author: Aaron Hance
-  * Contributors: 
+  * Contributors: Kieron Morris
   ************************************************ }
 
 unit PCI;
@@ -333,18 +333,18 @@ begin
     requestConfig(bus, slot, func, 13);
     data := inl($CFC);
     device.reserved0 := getword(data, false);
-    device.reserved1 := getbyte(data, 2);
-    device.capabilities := getbyte(data, 3);
+    device.reserved1 := getbyte(data, 1);
+    device.capabilities := getbyte(data, 0);
 
     requestConfig(bus, slot, func, 14);
     device.reserved2 := inl($CFC);
 
     requestConfig(bus, slot, func, 15);
     data := inl($CFC);
-    device.max_latency := getbyte(data, 0);
-    device.min_grant := getbyte(data, 1);
-    device.interrupt_pin := getbyte(data, 2);
-    device.interrupt_line := getbyte(data, 3);
+    device.max_latency := getbyte(data, 3);
+    device.min_grant := getbyte(data, 2);
+    device.interrupt_pin := getbyte(data, 1);
+    device.interrupt_line := getbyte(data, 0);
 
     DevID:= PDeviceIdentifier(kalloc(sizeof(TDeviceIdentifier)));
     DevID^.Bus:= biPCI;

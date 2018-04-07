@@ -178,10 +178,13 @@ function load(ptr : void) : boolean;
 begin
     //controller := PPCI_Device(ptr);
 
-    outb($3F6, inb($3f6) or (1 shl 1));
 
     //check if bus is floating and identify device
     if inb($1F7) <> $FF then begin
+                console.writeint(1);
+        outb($3F6, inb($3f6) or (1 shl 1)); // disable interrupts
+                    console.writeint(1);
+
         IDEDevices[0].exists:= true;
         IDEDevices[0].isMaster:= true;
         IDEDevices[0].info := identify_device(0, $A0);
@@ -194,6 +197,7 @@ function identify_device(bus : uint8; drive : uint8) : TIdentResponse;
 var 
     i : uint8;
     identResponse : TIdentResponse;
+    t : uint32 = 0;
 begin
     if bus = 0 then begin
         outb($1F6, drive); //drive select
@@ -202,20 +206,25 @@ begin
         outw($1F3, 0);
         outw($1F4, 0);
         outw($1F5, 0); 
-        
-        outw($1F7, ATA_CMD_IDENTIFY); //send identify command
+                    console.writeint(1);
 
-        while true do if (inw($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
+        outw($1F7, ATA_CMD_IDENTIFY); //send identify command
+            console.writeint(1);
+
+        while true do begin
+            if (inw($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
+        end;
+                    console.writeint(1);
 
         while true do begin
             if (inw($1f7) and (1 shl 3)) <> 0 then break;
             if (inw($1F7) and 1) <> 0 then exit; //drive error
+            if t > 100000 then exit; //todo return false
+            t +=1;
         end;
 
-        for i:=0 to 255 do begin
+        for i:=0 to 254 do begin
             identResponse[i] := inw($1F0); //read all bits
-            //console.writehexln(identResponse[i]);
-            //psleep(4);
         end;
 
         identify_device:= identResponse;
@@ -229,8 +238,6 @@ var
     ii : uint8;
     iii : uint32;
 begin 
-    console.writestringln('Starting write test');
-    //buffer:= Puint32(kalloc(1024*2));
     if IDEDevices[drive].isMaster then begin
         outb($1F7, $E0 or ((LBA shr 24) and $0F)); //LBA command primary master
     end
@@ -258,7 +265,6 @@ begin
         end;
 
         for ii:=0 to 254 do begin //read data
-            //console.writeintln(ii);
             outw($1F0, Puint32(buffer + (i * 512) + (ii * 16))^);
             while true do if (inw($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
             outb($1F7, $E7);
@@ -272,7 +278,6 @@ var
     ii : uint8;
     iii : uint32;
 begin 
-    console.writestringln('Starting read test');
     if IDEDevices[drive].isMaster then begin
         outb($1F7, $E0 or ((LBA shr 24) and $0F)); //read command primary master
     end
@@ -300,7 +305,6 @@ begin
         end;
 
         for ii:=0 to 254 do begin //read data
-            //console.writeintln(ii);
             Puint32(buffer + (i * 512) + (ii * 16))^ := inw($1F0);
             for iii:=0 to 10000 do if(ii = iii) then begin  end;
         end;
