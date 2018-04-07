@@ -145,10 +145,16 @@ begin
     buffer := puint32(kalloc(1024));
     buffer^:= cpacityMB;
 
-    writePIO28(0, 0, 1, buffer);
+    writePIO28(0, 2, 1, buffer);
     buffer^:= $FFFF;
-    readPIO28(0, 0, 1, buffer);
-    writeintln(uint32(buffer^));
+    readPIO28(0, 2, 1, buffer);
+
+    if uint32(buffer^) = cpacityMB then begin
+        console.writestringln('Tests successful!');
+    end
+    else begin
+        console.writestringln('Tests failed!');
+    end;
 end;
 
 procedure init();  
@@ -170,11 +176,7 @@ end;
 
 function load(ptr : void) : boolean;
 begin
-    controller := PPCI_Device(ptr);
-
-    bar0 := controller^.address0;
-    bar1 := controller^.address1;
-    bar4 := controller^.address4;
+    //controller := PPCI_Device(ptr);
 
     outb($3F6, inb($3f6) or (1 shl 1));
 
@@ -183,7 +185,7 @@ begin
         IDEDevices[0].exists:= true;
         IDEDevices[0].isMaster:= true;
         IDEDevices[0].info := identify_device(0, $A0);
-    end; 
+    end 
     //identify_device(0, $B0);
 
 end;
@@ -225,8 +227,10 @@ procedure writePIO28(drive : uint8; LBA : uint32; sectorCount : uint8; buffer : 
 var
     i : uint8;
     ii : uint8;
+    iii : uint32;
 begin 
-    buffer:= Puint32(kalloc(1024*2));
+    console.writestringln('Starting write test');
+    //buffer:= Puint32(kalloc(1024*2));
     if IDEDevices[drive].isMaster then begin
         outb($1F7, $E0 or ((LBA shr 24) and $0F)); //LBA command primary master
     end
@@ -241,17 +245,23 @@ begin
     outb($1F7, $30); //write command
 
     for i:=0 to sectorCount do begin
-
+        
         //poll status
         while true do if (inw($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
 
         while true do begin
             if (inw($1f7) and (1 shl 3)) <> 0 then break;
-            if (inw($1F7) and 1) <> 0 then exit; //drive error
+            if (inw($1F7) and 1) <> 0 then begin
+                console.writestringln('write error');
+                exit;
+            end; //drive error
         end;
 
-        for ii:=0 to 255 do begin //read data
+        for ii:=0 to 254 do begin //read data
+            //console.writeintln(ii);
             outw($1F0, Puint32(buffer + (i * 512) + (ii * 16))^);
+            while true do if (inw($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
+            outb($1F7, $E7);
         end;
     end;
 end;
@@ -260,7 +270,9 @@ procedure readPIO28(drive : uint8; LBA : uint32; sectorCount : uint8; buffer : p
 var
     i : uint8;
     ii : uint8;
+    iii : uint32;
 begin 
+    console.writestringln('Starting read test');
     if IDEDevices[drive].isMaster then begin
         outb($1F7, $E0 or ((LBA shr 24) and $0F)); //read command primary master
     end
@@ -281,11 +293,16 @@ begin
 
         while true do begin
             if (inw($1f7) and (1 shl 3)) <> 0 then break;
-            if (inw($1F7) and 1) <> 0 then exit; //drive error
+            if (inw($1F7) and 1) <> 0 then begin
+                console.writestringln('IDE read ERROR');
+                exit;
+            end; //drive error
         end;
 
-        for ii:=0 to 255 do begin //read data
+        for ii:=0 to 254 do begin //read data
+            //console.writeintln(ii);
             Puint32(buffer + (i * 512) + (ii * 16))^ := inw($1F0);
+            for iii:=0 to 10000 do if(ii = iii) then begin  end;
         end;
     end;
 end;
