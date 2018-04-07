@@ -38,6 +38,7 @@ procedure memcpy(source : uint32; dest : uint32; size : uint32);
 
 procedure halt_and_catch_fire();
 procedure halt_and_dont_catch_fire();
+procedure BSOD(fault : pchar; info : pchar);
 procedure psleep(t : uint16);
 
 var
@@ -225,6 +226,43 @@ var
 begin
     mask:= ($FF SHL (8*index));
     getByte:= (i AND mask) SHR (8*index);
+end;
+
+procedure BSOD(fault : pchar; info : pchar);
+begin
+    console.setdefaultattribute(console.combinecolors(white, blue));
+    console.clear;
+    console.writestringln(' ');
+    console.writestringln(' ');
+    console.writestring('              ');
+    console.setdefaultattribute(console.combinecolors(black, white));
+    console.writestring(' SOMETHING HAS GONE WRONG AND ASURO HAD TO STOP! ');
+    console.setdefaultattribute(console.combinecolors(lwhite, blue));
+    console.writestringln(' ');
+    console.writestringln(' ');
+    console.writestringln(' ');
+    console.writestringln('    Asuro encountered an error and could not recover.');
+    console.writestringln(' ');
+    console.writestringln(' ');
+    console.writestringln('    The fault could have been caused by one or more of the following: ');
+    console.writestringln('    - A misconfigured device.');
+    console.writestringln('    - A malfunctioning driver.');
+    console.writestringln('    - A malfunctioning device.');
+    console.writestringln('    - A devlopers inability to handle faults correctly.');
+    console.writestringln('    - A Monkey inside the PC Case.');
+    console.writestringln('    - Spilt Coffeee.');
+    console.writestringln(' ');
+    console.writestringln(' ');
+    console.writestringln('    Details of the fault (for those boring enough to read) are as follows: ');
+    console.writestringln(' ');
+    console.writestring('    Fault ID: ');
+    console.writestringln(fault);
+    console.writestring('    Fault Info: ');
+    console.writestringln(info);
+    console.writestringln(' ');
+    console.writestringln(' ');
+    console.writestringln(' ');
+    halt_and_catch_fire();
 end;
 
 end.

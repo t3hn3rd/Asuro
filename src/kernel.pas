@@ -129,7 +129,7 @@ begin
      testdriver.init();
      E1000.init();
      //AHCI_OLD.init();
-     IDE.init();
+     //IDE.init();
      //Nothing beyond here
      USB.init();
      pci.init();
@@ -152,6 +152,7 @@ begin
      console.setdefaultattribute(console.combinecolors(White, Black));
      console.writestringln('');
      console.writestringln('Press any key to boot in to Asuro Terminal...');
+     BSOD('TOPKEK', 'Because why not?');
      keyboard.hook(@temphook);
 
      util.halt_and_dont_catch_fire;
