@@ -35,7 +35,8 @@ uses
      USB,
      testdriver,
      E1000,
-     AHCI_OLD;
+     AHCI_OLD,
+     IDE;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
@@ -128,6 +129,7 @@ begin
      testdriver.init();
      E1000.init();
      //AHCI_OLD.init();
+     IDE.init();
      //Nothing beyond here
      USB.init();
      pci.init();
