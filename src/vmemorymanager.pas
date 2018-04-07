@@ -112,22 +112,22 @@ begin
     PD^[page_number].PageSize:= true;
     PD^[page_number].Writable:= true;
     
-    console.writestringln('VMM: New Page Added:');
+    // console.writestringln('VMM: New Page Added:');
 
-    console.writestring('VMM: - P:');
-    console.writehex(page_number);
-    console.writestring('-->B:');
-    console.writehexln(block);
+    // console.writestring('VMM: - P:');
+    // console.writehex(page_number);
+    // console.writestring('-->B:');
+    // console.writehexln(block);
         
-    console.writestring('VMM: - P:[');
-    console.writehex(page_number SHL 22);
-    console.writestring(' - ');
-    console.writehex(((page_number+1) SHL 22));
-    console.writestring(']-->B:[');
-    console.writehex(block SHL 22);
-    console.writestring(' - ');
-    console.writehex(((block+1) SHL 22));
-    console.writestringln(']');
+    // console.writestring('VMM: - P:[');
+    // console.writehex(page_number SHL 22);
+    // console.writestring(' - ');
+    // console.writehex(((page_number+1) SHL 22));
+    // console.writestring(']-->B:[');
+    // console.writehex(block SHL 22);
+    // console.writestring(' - ');
+    // console.writehex(((block+1) SHL 22));
+    // console.writestringln(']');
     
     map_page_ex:= true;
 end;
