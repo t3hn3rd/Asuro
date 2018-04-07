@@ -363,6 +363,8 @@ var
     status : uint32;
 begin
     status:= readCommand($0C);
+    console.outputln('E1000 Driver', 'Interrupt Fired.');
+    console.output('E1000 Driver', 'Int Status: ');
     console.writehexln(status);
     case status of
         $04:begin
@@ -372,10 +374,9 @@ begin
 
         end;
         $80:begin
-
+            handleReceive();
         end;
     end;
-    console.writestringln('Fired.');
 end;
 
 function load(ptr : void) : boolean;
