@@ -7,7 +7,7 @@
   * Author: Aaron Hance
   * Contributors: 
   ************************************************ }
-unit ATA;
+unit IDE;
 
 interface
 
@@ -17,11 +17,13 @@ uses
     console,
     terminal,
     isr76,
-    drivermanagment,
+    drivermanagement,
     vmemorymanager,
-    util;
+    lmemorymanager;
 
 type 
+    TIdentResponse = array[0..255] of uint16;
+
 
     TIDE_Channel_Registers = record
         base    : uint16;
@@ -35,12 +37,9 @@ type
         isPrimary    : boolean;
         isMaster     : boolean;
         isATAPI      : boolean;
-        signature    : uint16;
-        capabilities : uint16;
-        commandSets  : uint32;
-        size         : uint32;
-        model        : array[0..40] of uint8;
+        info         : TIdentResponse;
     end;
+
 
 const
     ATA_SR_BUSY = $80; //BUSY
@@ -109,24 +108,52 @@ const
     ATA_REG_DEVADDRESS = $0D; 
 
 var
-    controller : TPCI_Device;
+    controller : PPCI_Device;
 
     bar0 : uint32;
     bar1 : uint32;
-    bar2 : uint32;
-    bar3 : uint32;
     bar4 : uint32;
 
     IDEDevices : array[0..3] of TIDE_Device;
 
-procedure init;
+    buffer : Puint32;
+
+procedure init();
 function load(ptr : void) : boolean;
+function identify_device(bus : uint8; drive : uint8) : TIdentResponse;
+procedure readPIO28(drive : uint8; LBA : uint32; sectorCount : uint8; buffer : puint32);
+procedure writePIO28(drive : uint8; LBA : uint32; sectorCount : uint8; buffer : Puint32);
 
 implementation 
 
-procedure init;  
+procedure test_command(params : PParamList);
 var
-    devID : PDeviceIdentifier;
+    secotrs : uint32;
+    cpacityMB : uint32;
+    buffer : puint32;
+begin
+    secotrs := IDEDevices[0].info[60];
+    secotrs := secotrs or (IDEDevices[0].info[61] shl 16);
+
+    cpacityMB :=  (secotrs * 512) DIV 1000 DIV 1000;
+
+    console.writestring('HHD_Primary_MASTER -');
+    console.writestring(' Capacity: ');
+    console.writeint(cpacityMB);
+    console.writestringln('MB');
+
+    buffer := puint32(kalloc(1024));
+    buffer^:= cpacityMB;
+
+    writePIO28(0, 0, 1, buffer);
+    buffer^:= $FFFF;
+    readPIO28(0, 0, 1, buffer);
+    writeintln(uint32(buffer^));
+end;
+
+procedure init();  
+var
+    devID : TDeviceIdentifier;
 begin
     console.writestringln('IDE ATA Driver: Init()');
     devID.bus:= biPCI;
@@ -136,7 +163,9 @@ begin
     devID.id3:= idANY;
     devID.id4:= idANY;
     devID.ex:= nil;
-    drivermanagment.register_driver('IDE ATA Driver', @devID, @load);
+    drivermanagement.register_driver('IDE ATA Driver', @devID, @load);
+    terminal.registerCommand('IDE', @test_command, 'TEST IDE DRIVER');
+    buffer := Puint32(kalloc(1024*2));
 end;
 
 function load(ptr : void) : boolean;
@@ -145,12 +174,120 @@ begin
 
     bar0 := controller^.address0;
     bar1 := controller^.address1;
-    bar2 := controller^.address2;
-    bar3 := controller^.address3;
     bar4 := controller^.address4;
 
-    //setup channels
+    outb($3F6, inb($3f6) or (1 shl 1));
+
+    //check if bus is floating and identify device
+    if inb($1F7) <> $FF then begin
+        IDEDevices[0].exists:= true;
+        IDEDevices[0].isMaster:= true;
+        IDEDevices[0].info := identify_device(0, $A0);
+    end; 
+    //identify_device(0, $B0);
+
 end;
 
+function identify_device(bus : uint8; drive : uint8) : TIdentResponse;
+var 
+    i : uint8;
+    identResponse : TIdentResponse;
+begin
+    if bus = 0 then begin
+        outb($1F6, drive); //drive select
+
+        outw($1F2, 0); //clear sector count and lba
+        outw($1F3, 0);
+        outw($1F4, 0);
+        outw($1F5, 0); 
+        
+        outw($1F7, ATA_CMD_IDENTIFY); //send identify command
+
+        while true do if (inw($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
+
+        while true do begin
+            if (inw($1f7) and (1 shl 3)) <> 0 then break;
+            if (inw($1F7) and 1) <> 0 then exit; //drive error
+        end;
+
+        for i:=0 to 255 do begin
+            identResponse[i] := inw($1F0); //read all bits
+            //console.writehexln(identResponse[i]);
+            //psleep(4);
+        end;
+
+        identify_device:= identResponse;
+        exit;
+    end; 
+end;
+
+procedure writePIO28(drive : uint8; LBA : uint32; sectorCount : uint8; buffer : Puint32);
+var
+    i : uint8;
+    ii : uint8;
+begin 
+    buffer:= Puint32(kalloc(1024*2));
+    if IDEDevices[drive].isMaster then begin
+        outb($1F7, $E0 or ((LBA shr 24) and $0F)); //LBA command primary master
+    end
+    else begin
+        outb($1F7, $E0 or ((LBA shr 24) and $0F)); //LBA command primary slave
+    end;
+
+    outb($1F2, sectorCount);
+    outb($1F3, LBA);
+    outb($1F4, LBA shr 8);
+    outb($1F5, LBA shr 16);
+    outb($1F7, $30); //write command
+
+    for i:=0 to sectorCount do begin
+
+        //poll status
+        while true do if (inw($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
+
+        while true do begin
+            if (inw($1f7) and (1 shl 3)) <> 0 then break;
+            if (inw($1F7) and 1) <> 0 then exit; //drive error
+        end;
+
+        for ii:=0 to 255 do begin //read data
+            outw($1F0, Puint32(buffer + (i * 512) + (ii * 16))^);
+        end;
+    end;
+end;
+
+procedure readPIO28(drive : uint8; LBA : uint32; sectorCount : uint8; buffer : puint32);
+var
+    i : uint8;
+    ii : uint8;
+begin 
+    if IDEDevices[drive].isMaster then begin
+        outb($1F7, $E0 or ((LBA shr 24) and $0F)); //read command primary master
+    end
+    else begin
+        outb($1F7, $E0 or ((LBA shr 24) and $0F)); //read command primary slave
+    end;
+
+    outb($1F2, sectorCount);
+    outb($1F3, LBA);
+    outb($1F4, LBA shr 8);
+    outb($1F5, LBA shr 16);
+    outb($1F7, $20); //read command
+
+    for i:=0 to sectorCount do begin
+
+        //poll status
+        while true do if (inw($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
+
+        while true do begin
+            if (inw($1f7) and (1 shl 3)) <> 0 then break;
+            if (inw($1F7) and 1) <> 0 then exit; //drive error
+        end;
+
+        for ii:=0 to 255 do begin //read data
+            Puint32(buffer + (i * 512) + (ii * 16))^ := inw($1F0);
+        end;
+    end;
+end;
 
 end.

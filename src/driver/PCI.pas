@@ -16,6 +16,7 @@ uses
     console,
     drivertypes,
     lmemorymanager,
+    vmemorymanager,
     drivermanagement;
 
 type 
