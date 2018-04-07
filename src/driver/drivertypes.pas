@@ -14,6 +14,9 @@ type
 
     PPCI_Device = ^TPCI_Device;
     TPCI_Device = bitpacked record
+        bus                : uint8;
+        slot               : uint8;
+        func               : uint8;
         device_id      : uint16;
         vendor_id      : uint16;
         status         : uint16;

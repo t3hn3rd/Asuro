@@ -19,6 +19,10 @@ uses
     vmemorymanager,
     drivermanagement;
 
+const
+    PCI_PORT_CONF_ADDR = $CF8;
+    PCI_PORT_CONF_DATA = $CFC;
+
 type 
 
     TPCI_Device_Bridge = bitpacked record
@@ -72,6 +76,8 @@ procedure init();
 procedure scanBus(bus : uint8);
 function loadDeviceConfig(bus : uint8; slot : uint8; func : uint8) : boolean;
 function getDeviceInfo(class_code : uint8; subclass_code : uint8; prog_if : uint8; var count : uint32) : TdeviceArray;  //(Will in future)returns TPCI_DEVICE.vendor_id := 0xFFFF if no device found.
+procedure requestConfig(bus : uint8; slot : uint8; func : uint8; row : uint8);
+procedure writeConfig(bus: uint8; slot : uint8; func : uint8; row : uint8; val : uint32);
 
 implementation 
 
@@ -131,18 +137,47 @@ begin
     end;
 end;
 
+{
+  void pci_config_write_dword(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset, uint32_t val)
+
+  uint32_t addr;
+  uint32_t lbus = (uint32_t)bus;
+  uint32_t lslot = (uint32_t)slot;
+  uint32_t lfunc = (uint32_t)func;
+
+  addr = (uint32_t)((lbus<<16) | (lslot << 11) | (lfunc << 8) |
+          (offset & 0xfc) | ((uint32_t)0x80000000));
+  outl(PCI_PORT_CONF_ADDR, addr);
+  io_wait();
+  outl(PCI_PORT_CONF_DATA, val);
+  io_wait();
+}
+
+procedure writeConfig(bus: uint8; slot : uint8; func : uint8; row : uint8; val : uint32);
+var
+    addr  : uint32;
+
+begin
+    addr := ($1 shl 31);
+    addr := addr or (bus shl 16);
+    addr := addr or ((slot) shl 11);
+    addr := addr or ((func) shl 8);
+    addr := addr or ((row) shl 2);
+    outl(PCI_PORT_CONF_ADDR, addr);
+    outl(PCI_PORT_CONF_DATA, val);
+end;
+
 procedure requestConfig(bus : uint8; slot : uint8; func : uint8; row : uint8);
 var
-    packet : uint32;
+    addr : uint32;
     
 begin
-    packet := ($1 shl 31);
-    packet := packet or (bus shl 16);
-    packet := packet or ((slot) shl 11);
-    packet := packet or ((func) shl 8);
-    packet := packet or ((row) shl 2);
-
-    outl($CF8, uint32(packet)); 
+    addr := ($1 shl 31);
+    addr := addr or (bus shl 16);
+    addr := addr or ((slot) shl 11);
+    addr := addr or ((func) shl 8);
+    addr := addr or ((row) shl 2);
+    outl(PCI_PORT_CONF_ADDR, addr); 
 end;
 
 procedure loadBusConfig(bus : uint8; slot : uint8; func : uint8; device : TPCI_Device);
@@ -232,6 +267,10 @@ var
 begin
 
     loadDeviceConfig := false;
+
+    device.bus:= bus;
+    device.slot:= slot;
+    device.func:= func;
 
     requestConfig(bus, slot, func, 0);
     data := inl($CFC);

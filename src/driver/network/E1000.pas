@@ -9,7 +9,9 @@ uses
     lmemorymanager,
     drivermanagement,
     drivertypes,
-    util;
+    util,
+    IDT,
+    PCI;
 
 const
     INTEL_VEND  = $8086;
@@ -125,7 +127,6 @@ type
     TCardType = (ctUnknown, ctE1000, ctI217, ct82577LM);
 
 procedure init();
-procedure fire();
 function getMACAddress : puint8;
 function sendPacket(p_data : void; p_len : uint16) : sint32;
 
@@ -323,7 +324,9 @@ end;
 
 procedure enableInturrupt();
 begin
-
+    writeCommand(REG_IMASK, $1F6DC);
+    writeCommand(REG_IMASK, $FF AND NOT(4));
+    readCommand($C0);
 end;
 
 procedure handleReceive();
@@ -355,9 +358,33 @@ begin
     console.writestringln(' ');
 end;
 
+procedure fire(); interrupt;
+var
+    status : uint32;
+begin
+    status:= readCommand($0C);
+    console.writehexln(status);
+    case status of
+        $04:begin
+
+        end;
+        $10:begin
+
+        end;
+        $80:begin
+
+        end;
+    end;
+    console.writestringln('Fired.');
+end;
+
 function load(ptr : void) : boolean;
 var
     PCI_Info : PPCI_Device;
+    i        : uint32;
+    data     : uint32;
+    iline    : uint8;
+
 begin
     console.outputln('E1000 Driver', 'Load Start.');
 
@@ -384,6 +411,16 @@ begin
     writeMACAddress();
 
     startLink();
+
+    for i:=0 to $80 do begin
+        writeCommand($5200 + i*4, 0);
+    end; 
+
+    IDT.set_gate(32 + PCI_Info^.interrupt_line, uint32(@fire), $08, ISR_RING_0);
+    enableInturrupt();
+    rxinit();
+    txinit();
+
     load:= true;   
     console.outputln('E1000 Driver', 'Load Finish.');
 end;
@@ -433,11 +470,6 @@ begin
     drivermanagement.register_driver('I217 Ethernet Driver', @dev, @loadI217);
     dev.id4:= LM82577_DEV;
     drivermanagement.register_driver('82577LM Ethernet Driver', @dev, @load82577LM);
-end;
-
-procedure fire();
-begin
-
 end;
 
 function getMACAddress : puint8;
