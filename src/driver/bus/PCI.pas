@@ -4,7 +4,7 @@
   * Description: PCI Driver
   ************************************************
   * Author: Aaron Hance
-  * Contributors: 
+  * Contributors: Kieron Morris
   ************************************************ }
 
 unit PCI;
@@ -16,7 +16,12 @@ uses
     console,
     drivertypes,
     lmemorymanager,
+    vmemorymanager,
     drivermanagement;
+
+const
+    PCI_PORT_CONF_ADDR = $CF8;
+    PCI_PORT_CONF_DATA = $CFC;
 
 type 
 
@@ -71,6 +76,8 @@ procedure init();
 procedure scanBus(bus : uint8);
 function loadDeviceConfig(bus : uint8; slot : uint8; func : uint8) : boolean;
 function getDeviceInfo(class_code : uint8; subclass_code : uint8; prog_if : uint8; var count : uint32) : TdeviceArray;  //(Will in future)returns TPCI_DEVICE.vendor_id := 0xFFFF if no device found.
+procedure requestConfig(bus : uint8; slot : uint8; func : uint8; row : uint8);
+procedure writeConfig(bus: uint8; slot : uint8; func : uint8; row : uint8; val : uint32);
 
 implementation 
 
@@ -79,14 +86,14 @@ var
     current_bus : uint8;
 
 begin
-    console.writestringln('PCI: Scanning Bus: 0');
+    console.outputln('PCI', 'Scanning Bus: 0');
     scanBus(0);
     //while unscanned busses scan busses
     current_bus := 1;
     while true do begin
         if current_bus < bus_count then begin
-            console.writestringln('PCI: Scanning Bus: ');
-            console.writeint(bus_count);
+            console.output('PCI', 'Scanning Bus: ');
+            console.writeintln(bus_count);
             scanBus(current_bus);
             current_bus := current_bus + 1;
         end else break;
@@ -99,7 +106,7 @@ var
     DevID : TDeviceIdentifier;
 
 begin
-    console.writestringln('PCI: INIT BEGIN.');
+    console.outputln('PCI','INIT BEGIN.');
     DevID.Bus:= biUnknown;
     DevID.id0:= 0;
     DevID.id1:= 0;
@@ -107,7 +114,7 @@ begin
     DevID.id3:= 0;
     DevID.ex:= nil;
     drivermanagement.register_driver_ex('PCI Driver', @DevID, @load, true);
-    console.writestringln('PCI: INIT END.');
+    console.outputln('PCI', 'INIT END.');
 end;
 
 procedure scanBus(bus : uint8);
@@ -120,28 +127,56 @@ begin
     for slot := 0 to 31 do begin
         result := loadDeviceConfig(bus, slot, 0);
         if result = true then begin
-            if devices[device_count - 1].header_type and $40 = 40 then begin
+            if devices[device_count - 1].header_type and $80 <> 0 then begin
                 for func := 1 to 8 do begin
                     loadDeviceConfig(bus, slot, func);
-                    psleep(1000);
                 end;
             end;
         end;
     end;
 end;
 
+{
+  void pci_config_write_dword(uint8_t bus, uint8_t slot, uint8_t func, uint8_t offset, uint32_t val)
+
+  uint32_t addr;
+  uint32_t lbus = (uint32_t)bus;
+  uint32_t lslot = (uint32_t)slot;
+  uint32_t lfunc = (uint32_t)func;
+
+  addr = (uint32_t)((lbus<<16) | (lslot << 11) | (lfunc << 8) |
+          (offset & 0xfc) | ((uint32_t)0x80000000));
+  outl(PCI_PORT_CONF_ADDR, addr);
+  io_wait();
+  outl(PCI_PORT_CONF_DATA, val);
+  io_wait();
+}
+
+procedure writeConfig(bus: uint8; slot : uint8; func : uint8; row : uint8; val : uint32);
+var
+    addr  : uint32;
+
+begin
+    addr := ($1 shl 31);
+    addr := addr or (bus shl 16);
+    addr := addr or ((slot) shl 11);
+    addr := addr or ((func) shl 8);
+    addr := addr or ((row) shl 2);
+    outl(PCI_PORT_CONF_ADDR, addr);
+    outl(PCI_PORT_CONF_DATA, val);
+end;
+
 procedure requestConfig(bus : uint8; slot : uint8; func : uint8; row : uint8);
 var
-    packet : uint32;
+    addr : uint32;
     
 begin
-    packet := ($1 shl 31);
-    packet := packet or (bus shl 16);
-    packet := packet or ((slot) shl 11);
-    packet := packet or ((func) shl 8);
-    packet := packet or ((row) shl 2);
-
-    outl($CF8, uint32(packet)); 
+    addr := ($1 shl 31);
+    addr := addr or (bus shl 16);
+    addr := addr or ((slot) shl 11);
+    addr := addr or ((func) shl 8);
+    addr := addr or ((row) shl 2);
+    outl(PCI_PORT_CONF_ADDR, addr); 
 end;
 
 procedure loadBusConfig(bus : uint8; slot : uint8; func : uint8; device : TPCI_Device);
@@ -232,6 +267,10 @@ begin
 
     loadDeviceConfig := false;
 
+    device.bus:= bus;
+    device.slot:= slot;
+    device.func:= func;
+
     requestConfig(bus, slot, func, 0);
     data := inl($CFC);
     device.device_id := getword(data, false);
@@ -293,18 +332,18 @@ begin
     requestConfig(bus, slot, func, 13);
     data := inl($CFC);
     device.reserved0 := getword(data, false);
-    device.reserved1 := getbyte(data, 2);
-    device.capabilities := getbyte(data, 3);
+    device.reserved1 := getbyte(data, 1);
+    device.capabilities := getbyte(data, 0);
 
     requestConfig(bus, slot, func, 14);
     device.reserved2 := inl($CFC);
 
     requestConfig(bus, slot, func, 15);
     data := inl($CFC);
-    device.max_latency := getbyte(data, 0);
-    device.min_grant := getbyte(data, 1);
-    device.interrupt_pin := getbyte(data, 2);
-    device.interrupt_line := getbyte(data, 3);
+    device.max_latency := getbyte(data, 3);
+    device.min_grant := getbyte(data, 2);
+    device.interrupt_pin := getbyte(data, 1);
+    device.interrupt_line := getbyte(data, 0);
 
     DevID:= PDeviceIdentifier(kalloc(sizeof(TDeviceIdentifier)));
     DevID^.Bus:= biPCI;
@@ -315,7 +354,7 @@ begin
     DevID^.id4:= device.vendor_id;
     DevID^.ex:= nil;
 
-    console.writestring('PCI: Found Device: ');
+    console.output('PCI', 'Found Device: ');
     console.writehex(device.header_type);
     console.writestring('  ');
     console.writehex(device.device_id);        
