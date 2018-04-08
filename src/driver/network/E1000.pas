@@ -308,7 +308,7 @@ var
     i      : uint32;
 
 begin
-    ptr:= puint8(kalloc(sizeof(TE1000_tx_desc) * E1000_NUM_TX_DESC + 16)); 
+    ptr:= puint8(kalloc(sizeof(TE1000_tx_desc) * (E1000_NUM_TX_DESC + 16))); 
     descs:= PE1000_tx_desc(ptr);
     for i:=0 to E1000_NUM_TX_DESC do begin
         tx_descs[i]:= PE1000_tx_desc(uint32(descs + i*16));
@@ -432,7 +432,9 @@ begin
     kpalloc(io_base);
     kpalloc(mem_base);
     
+    setBusMaster(PCI_Info^.bus, PCI_Info^.slot, PCI_Info^.func, true);
     eeprom_exists:= false;
+    
     detectEEPROM();
     if eeprom_exists then console.outputln('E1000 Driver', 'EEPROM Exists: YES.') else console.outputln('E1000 Driver', 'EEPROM Exists: NO.');
     if not readMACAddress() then begin
@@ -449,14 +451,14 @@ begin
         writeCommand($5200 + i*4, 0);
     end; 
 
-    //IDT.set_gate(32 + PCI_Info^.interrupt_line, uint32(@fire), $08, ISR_RING_0);
-    //enableInturrupt();
+    IDT.set_gate(32 + PCI_Info^.interrupt_line, uint32(@fire), $08, ISR_RING_0);
+    enableInturrupt();
     rxinit();
     txinit();
 
     load:= true;   
 
-    if load then registercommand('E1000_SEND_TEST', @console_command_sendtest, 'Test sending a ARP Request');
+    if load then registercommand('E1000', @console_command_sendtest, 'Test sending a ARP Request');
 
     console.outputln('E1000 Driver', 'Load Finish.');
 end;
@@ -518,7 +520,7 @@ var
     old_cur : uint8;
 
 begin
-    tx_descs[tx_curr]^.address:= uint64(p_data - KERNEL_VIRTUAL_BASE);
+    tx_descs[tx_curr]^.address:= uint32(uint32(p_data) - KERNEL_VIRTUAL_BASE);
     tx_descs[tx_curr]^.length:= p_len;
     tx_descs[tx_curr]^.cmd:= CMD_EOP OR CMD_IFCS OR CMD_RS OR CMD_RPS;
     tx_descs[tx_curr]^.status:= 0;

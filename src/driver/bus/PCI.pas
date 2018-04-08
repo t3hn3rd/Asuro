@@ -15,7 +15,7 @@ uses
     util,
     console,
     drivertypes,
-    lmemorymanager,
+    lmemorymanager, 
     vmemorymanager,
     drivermanagement;
 
@@ -78,6 +78,7 @@ function loadDeviceConfig(bus : uint8; slot : uint8; func : uint8) : boolean;
 function getDeviceInfo(class_code : uint8; subclass_code : uint8; prog_if : uint8; var count : uint32) : TdeviceArray;  //(Will in future)returns TPCI_DEVICE.vendor_id := 0xFFFF if no device found.
 procedure requestConfig(bus : uint8; slot : uint8; func : uint8; row : uint8);
 procedure writeConfig(bus: uint8; slot : uint8; func : uint8; row : uint8; val : uint32);
+procedure setBusMaster(bus : uint8; slot : uint8; func : uint8; master : boolean);
 
 implementation 
 
@@ -164,6 +165,23 @@ begin
     addr := addr or ((row) shl 2);
     outl(PCI_PORT_CONF_ADDR, addr);
     outl(PCI_PORT_CONF_DATA, val);
+end;
+
+procedure setBusMaster(bus : uint8; slot : uint8; func : uint8; master : boolean);
+var
+    data : uint32;
+
+begin
+    requestConfig(bus, slot, func, 1);
+    data := inl($CFC);
+    if master then begin
+        data := data OR $00000004;
+    end else begin
+        data := data AND $FFFFFFFB;
+    end;
+    writeConfig(bus, slot, func, 1, data);
+    requestConfig(bus, slot, func, 1);
+    data := inl($CFC);
 end;
 
 procedure requestConfig(bus : uint8; slot : uint8; func : uint8; row : uint8);
