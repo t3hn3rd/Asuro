@@ -380,10 +380,11 @@ procedure fire(); interrupt;
 var
     status : uint32;
 begin
+    CLI;
     status:= readCommand($0C);
-    console.outputln('E1000 Driver', 'Interrupt Fired.');
-    console.output('E1000 Driver', 'Int Status: ');
-    console.writehexln(status);
+    //console.outputln('E1000 Driver', 'Interrupt Fired.');
+    //console.output('E1000 Driver', 'Int Status: ');
+    //console.writehexln(status);
     if (status AND $04) > 0 then begin
         startLink();
     end else if (Status AND $10) > 0 then begin
@@ -391,6 +392,8 @@ begin
     end else if (Status AND $80) > 0 then begin
         handleReceive();
     end;
+    outb($20, $20);
+    outb($A0, $20);
 end;
 
 procedure console_command_mac(params : PParamList);
