@@ -11,7 +11,8 @@ uses
     drivertypes,
     util,
     IDT,
-    PCI;
+    PCI,
+    terminal;
 
 const
     INTEL_VEND  = $8086;
@@ -144,6 +145,19 @@ var
     tx_descs : array[0..E1000_NUM_TX_DESC-1] of PE1000_tx_desc;
     rx_curr  : uint16;
     tx_curr  : uint16;
+    TestPacket : Array[0..41] of uint8 = (  $ff, $ff, $ff, $ff, $ff, $ff, { eth dest (broadcast) }
+                                            $52, $54, $00, $12, $34, $56, { eth source }
+                                            $08, $06,                     { eth type }
+                                            $00, $01,                     { ARP htype }
+                                            $08, $00,                     { ARP ptype }
+                                            $06,                          { ARP hlen }
+                                            $04,                          { ARP plen }
+                                            $00, $01,                     { ARP opcode: ARP_REQUEST }
+                                            $52, $54, $00, $12, $34, $56, { ARP hsrc }
+                                            169, 254, 13, 37,             { ARP psrc }
+                                            $00, $00, $00, $00, $00, $00, { ARP hdst }
+                                            192, 168, 0, 128              { ARP pdst }
+                                         );
 
 procedure writeCommand(p_address : uint16; p_value : uint32);
 var
@@ -330,8 +344,25 @@ begin
 end;
 
 procedure handleReceive();
+var
+    old_cur : uint16;
+    got_packet : boolean;
+    buf        : puint8;
+    len        : uint16;
+    
 begin
+    while (rx_descs[rx_curr]^.status AND $1) > 0 do begin
+        got_packet:= true;
+        buf:= puint8(rx_descs[rx_curr]^.address);
+        len:= rx_descs[rx_curr]^.length;
 
+        //Inject Packet into Network Stack
+
+        rx_descs[rx_curr]^.status:= 0;
+        old_cur:= rx_curr;
+        rx_curr:= (rx_curr + 1) mod E1000_NUM_RX_DESC;
+        writeCommand(REG_RXDESCTAIL, old_cur);
+    end;
 end;
 
 procedure writeCardType();
@@ -366,17 +397,18 @@ begin
     console.outputln('E1000 Driver', 'Interrupt Fired.');
     console.output('E1000 Driver', 'Int Status: ');
     console.writehexln(status);
-    case status of
-        $04:begin
-
-        end;
-        $10:begin
-
-        end;
-        $80:begin
-            handleReceive();
-        end;
+    if (status AND $04) > 0 then begin
+        startLink();
+    end else if (Status AND $10) > 0 then begin
+        //Good Threshold
+    end else if (Status AND $80) > 0 then begin
+        handleReceive();
     end;
+end;
+
+procedure console_command_sendtest(params : PParamList);
+begin
+    sendPacket(void(@TestPacket), 42);
 end;
 
 function load(ptr : void) : boolean;
@@ -423,6 +455,9 @@ begin
     txinit();
 
     load:= true;   
+
+    if load then registercommand('E1000_SEND_TEST', @console_command_sendtest, 'Test sending a ARP Request');
+
     console.outputln('E1000 Driver', 'Load Finish.');
 end;
 
@@ -479,8 +514,20 @@ begin
 end; 
 
 function sendPacket(p_data : void; p_len : uint16) : sint32;
-begin
+var
+    old_cur : uint8;
 
+begin
+    tx_descs[tx_curr]^.address:= uint64(p_data - KERNEL_VIRTUAL_BASE);
+    tx_descs[tx_curr]^.length:= p_len;
+    tx_descs[tx_curr]^.cmd:= CMD_EOP OR CMD_IFCS OR CMD_RS OR CMD_RPS;
+    tx_descs[tx_curr]^.status:= 0;
+    old_cur:= tx_curr;
+    tx_curr:= (tx_curr + 1) MOD E1000_NUM_TX_DESC;
+    writeCommand(REG_TXDESCTAIL, tx_curr);
+    while (tx_descs[old_cur]^.status AND $FF) = 0 do begin
+    end;
+    sendPacket:= 0;
 end;
 
 end.
