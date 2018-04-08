@@ -449,8 +449,8 @@ begin
         writeCommand($5200 + i*4, 0);
     end; 
 
-    IDT.set_gate(32 + PCI_Info^.interrupt_line, uint32(@fire), $08, ISR_RING_0);
-    enableInturrupt();
+    //IDT.set_gate(32 + PCI_Info^.interrupt_line, uint32(@fire), $08, ISR_RING_0);
+    //enableInturrupt();
     rxinit();
     txinit();
 
