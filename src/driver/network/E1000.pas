@@ -393,6 +393,11 @@ begin
     end;
 end;
 
+procedure console_command_mac(params : PParamList);
+begin
+    writeMACAddress();
+end;
+
 procedure console_command_sendtest(params : PParamList);
 var
     TestPacket : Array[0..41] of uint8 = (  $ff, $ff, $ff, $ff, $ff, $ff, { eth dest (broadcast) }
@@ -473,7 +478,8 @@ begin
 
     load:= true;   
 
-    if load then registercommand('E1000', @console_command_sendtest, 'Test sending a ARP Request');
+    if load then registercommand('E1000', @console_command_sendtest, 'Test sending a ARP Request.');
+    if load then registercommand('MAC', @console_command_mac, 'Print MAC Address.');
 
     console.outputln('E1000 Driver', 'Load Finish.');
 end;
