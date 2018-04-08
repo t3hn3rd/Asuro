@@ -180,8 +180,6 @@ begin
         data := data AND $FFFFFFFB;
     end;
     writeConfig(bus, slot, func, 1, data);
-    requestConfig(bus, slot, func, 1);
-    data := inl($CFC);
 end;
 
 procedure requestConfig(bus : uint8; slot : uint8; func : uint8; row : uint8);
