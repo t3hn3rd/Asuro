@@ -23,6 +23,7 @@ uses
 type 
 
     TControllerType = (ControllerIDE, ControllerUSB, ControllerAHCI, ControllerNET);
+    TFilesystem = (FAT32);
 
     PStorage_device = ^TStorage_Device;
     APStorage_Device = array[0..256] of PStorage_device;
@@ -31,6 +32,7 @@ type
         controllerId0    : uint32;
         maxSectorCount   : uint32;
         sectorSize       : uint32;
+        writable         : boolean;
     end;
 
 
