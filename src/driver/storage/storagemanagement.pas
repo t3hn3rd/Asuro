@@ -30,12 +30,12 @@ type
         controller       : TControllerType;
         controllerId0    : uint32;
         maxSectorCount   : uint32;
-        usedSectorCount  : uint32;
+        sectorSize       : uint32;
     end;
 
 
 var 
-    storageDevices : array[0..255] of TStorage_Device;
+    storageDevices : array[0..255] of TStorage_Device; //index in this array is global drive id
 
 //TODO need callback things for when new devices are connected
 procedure init();
@@ -46,7 +46,7 @@ procedure register_device(device : TStorage_Device);
 
 implementation 
 
-procedure list_drives_command(params : PParamList);
+procedure disk_command(params : PParamList);
 var
     i : uint8;
 begin
@@ -61,14 +61,14 @@ begin
             ControllerNET  : console.writestring('NET, ');
         end;
         console.writestring('Capacity: ');
-        console.writeint(((storageDevices[i].maxSectorCount * 512) DIV 1000) DIV 1000);
+        console.writeint(((storageDevices[i].maxSectorCount * storageDevices[i].sectorSize) DIV 1000) DIV 1000);
         console.writestringln('MB');
     end;
 end;
 
 procedure init();
 begin
-    terminal.registerCommand('disks', @list_drives_command, 'List storage devices');
+    terminal.registerCommand('disk', @disk_command, 'List storage devices');
 end;
 
 procedure register_device(device : TStorage_Device);

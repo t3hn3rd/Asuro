@@ -132,6 +132,7 @@ var
     secotrs : uint32;
     cpacityMB : uint32;
     buffer : puint32;
+    i : uint8;
 begin
     secotrs := IDEDevices[0].info[60];
     secotrs := secotrs or (IDEDevices[0].info[61] shl 16);
@@ -144,18 +145,35 @@ begin
     console.writestringln('MB');
 
     buffer := puint32(kalloc(1024));
-    buffer^:= cpacityMB;
+    //buffer^:= secotrs;
+
+    for i:=0 to 20 do begin
+        puint32(buffer + (i div 2))^:= $10010110;
+    end;
 
     writePIO28(0, 2, 1, buffer);
-    buffer^:= $FFFF;
+    //buffer^:= $FFFF;
+    for i:=0 to 20 do begin
+        puint32(buffer + (i div 2))^:= $FFFFFFFF;
+    end;
+    
     readPIO28(0, 2, 1, buffer);
 
-    if uint32(buffer^) = cpacityMB then begin
-        console.writestringln('Tests successful!');
-    end
-    else begin
-        console.writestringln('Tests failed!');
+    for i:=0 to 20 do begin
+        if puint32(buffer + (i div 2))^ <> $10010110 then begin
+            console.writestringln('Tests failed!');
+            exit;
+       end;
     end;
+
+   // if uint32(buffer^) = secotrs then begin
+        console.writestringln('Tests successful!');
+    // end
+    // else begin
+    //     console.writestringln('Tests failed!');
+    //     console.writehexln($01101001);
+    //     console.writehexln(uint32(buffer^));
+    // end;
 end;
 
 procedure init();  
@@ -171,7 +189,7 @@ begin
     devID.id4:= idANY;
     devID.ex:= nil;
     drivermanagement.register_driver('IDE ATA Driver', @devID, @load);
-    //terminal.registerCommand('IDE', @test_command, 'TEST IDE DRIVER');
+    terminal.registerCommand('IDE', @test_command, 'TEST IDE DRIVER');
     buffer := Puint32(kalloc(1024*2));
 end;
 
@@ -190,7 +208,9 @@ begin
         IDEDevices[0].info := identify_device(0, $A0);
 
         storageDevice.controller := ControllerIDE;
-        storageDevice.maxSectorCount:= (IDEDevices[0].info[60] or (IDEDevices[0].info[61] shl 16) ); //LBA28
+        storageDevice.controllerId0:= 0;
+        storageDevice.maxSectorCount:= (IDEDevices[0].info[60] or (IDEDevices[0].info[61] shl 16) ); //LBA28 SATA
+        storageDevice.sectorSize:= 512;
         storagemanagement.register_device(storageDevice);
     end 
     //identify_device(0, $B0);
@@ -244,7 +264,7 @@ begin
         outb($1F7, $E0 or ((LBA shr 24) and $0F)); //LBA command primary master
     end
     else begin
-        outb($1F7, $E0 or ((LBA shr 24) and $0F)); //LBA command primary slave
+        outb($1F7, $F0 or ((LBA shr 24) and $0F)); //LBA command primary slave
     end;
 
     outb($1F2, sectorCount);
@@ -266,10 +286,16 @@ begin
             end; //drive error
         end;
 
-        for ii:=0 to 254 do begin //read data
-            outw($1F0, Puint32(buffer + (i * 512) + (ii * 16))^);
+        for ii:=0 to 127 do begin //read data
+            outw($1F0, Puint32(buffer + ((i * 512) + (ii * 16) DIV 32) )^);
             while true do if (inw($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
             outb($1F7, $E7);
+            if ii <> 127 then begin
+                outw($1F0, Puint32(buffer + ((i * 512) + (ii * 16) DIV 32) )^ shr 16);
+                while true do if (inw($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
+                outb($1F7, $E7);
+            end;
+
         end;
     end;
 end;
@@ -284,7 +310,7 @@ begin
         outb($1F7, $E0 or ((LBA shr 24) and $0F)); //read command primary master
     end
     else begin
-        outb($1F7, $E0 or ((LBA shr 24) and $0F)); //read command primary slave
+        outb($1F7, $F0 or ((LBA shr 24) and $0F)); //read command primary slave
     end;
 
     outb($1F2, sectorCount);
@@ -306,11 +332,49 @@ begin
             end; //drive error
         end;
 
-        for ii:=0 to 254 do begin //read data
-            Puint32(buffer + (i * 512) + (ii * 16))^ := inw($1F0);
-            for iii:=0 to 10000 do if(ii = iii) then begin  end;
+        for ii:=0 to 127 do begin //read data
+            Puint32(buffer + ((i * 512) + (ii * 16) DIV 32))^ := uint32(inw($1F0)); //wrong
+            for iii:=0 to 1000 do if(ii = iii) then begin  end;
+            if ii <> 127 then begin
+                Puint32(buffer + ((i * 512) + (ii * 16) DIV 32))^ := ((uint32(inw($1F0)) shl 16) or Puint32(buffer + ((i * 512) + (ii * 16) DIV 32))^); //wrong
+                for iii:=0 to 1000 do if(ii = iii) then begin  end
+            end;
         end;
     end;
+end;
+
+procedure readPIOPI(drive : uint8; LBA : uint32; buffer : Puint32);
+var
+    i : uint16;
+begin 
+    if IDEDevices[drive].isMaster then begin
+        outb($1F7, $E0 or ((LBA shr 24) and $0F)); // command primary master
+    end
+    else begin
+        outb($1F7, $F0 or ((LBA shr 24) and $0F)); // command primary slave
+    end;
+
+    outb($1F2, 1);
+    outb($1F3, LBA);
+    outb($1F4, LBA shr 8);
+    outb($1F5, LBA shr 16);
+    outb($1F7, ATAPI_CMD_READ); //read command
+
+    //poll status
+    while true do if (inw($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
+
+    while true do begin
+        if (inw($1f7) and (1 shl 3)) <> 0 then break;
+        if (inw($1F7) and 1) <> 0 then begin
+            console.writestringln('IDE read ERROR');
+            exit;
+        end; //drive error
+    end;
+
+    // for i:=0 to 1023 do begin
+    //         Puint32(buffer + (i * 1))^ := inw($1F0);
+    // end;
+
 end;
 
 end.
