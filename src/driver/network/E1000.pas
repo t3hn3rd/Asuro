@@ -145,19 +145,6 @@ var
     tx_descs : array[0..E1000_NUM_TX_DESC-1] of PE1000_tx_desc;
     rx_curr  : uint16;
     tx_curr  : uint16;
-    TestPacket : Array[0..41] of uint8 = (  $ff, $ff, $ff, $ff, $ff, $ff, { eth dest (broadcast) }
-                                            $52, $54, $00, $12, $34, $56, { eth source }
-                                            $08, $06,                     { eth type }
-                                            $00, $01,                     { ARP htype }
-                                            $08, $00,                     { ARP ptype }
-                                            $06,                          { ARP hlen }
-                                            $04,                          { ARP plen }
-                                            $00, $01,                     { ARP opcode: ARP_REQUEST }
-                                            $52, $54, $00, $12, $34, $56, { ARP hsrc }
-                                            169, 254, 13, 37,             { ARP psrc }
-                                            $00, $00, $00, $00, $00, $00, { ARP hdst }
-                                            192, 168, 0, 128              { ARP pdst }
-                                         );
 
 procedure writeCommand(p_address : uint16; p_value : uint32);
 var
@@ -407,8 +394,36 @@ begin
 end;
 
 procedure console_command_sendtest(params : PParamList);
+var
+    TestPacket : Array[0..41] of uint8 = (  $ff, $ff, $ff, $ff, $ff, $ff, { eth dest (broadcast) }
+                                            $52, $54, $00, $12, $34, $56, { eth source }
+                                            $08, $06,                     { eth type }
+                                            $00, $01,                     { ARP htype }
+                                            $08, $00,                     { ARP ptype }
+                                            $06,                          { ARP hlen }
+                                            $04,                          { ARP plen }
+                                            $00, $01,                     { ARP opcode: ARP_REQUEST }
+                                            $52, $54, $00, $12, $34, $56, { ARP hsrc }
+                                            169, 254, 13, 37,             { ARP psrc }
+                                            $00, $00, $00, $00, $00, $00, { ARP hdst }
+                                            192, 168, 0, 128              { ARP pdst }
+                                         );
+
 begin
-    sendPacket(void(@TestPacket), 42);
+    TestPacket[6]:= mac[0];
+    TestPacket[7]:= mac[1];
+    TestPacket[8]:= mac[2];
+    TestPacket[9]:= mac[3];
+    TestPacket[10]:= mac[4];
+    TestPacket[11]:= mac[5];
+
+    TestPacket[22]:= mac[0];
+    TestPacket[23]:= mac[1];
+    TestPacket[24]:= mac[2];
+    TestPacket[25]:= mac[3];
+    TestPacket[26]:= mac[4];
+    TestPacket[27]:= mac[5];
+    sendPacket(void(@TestPacket[0]), 42);
 end;
 
 function load(ptr : void) : boolean;
