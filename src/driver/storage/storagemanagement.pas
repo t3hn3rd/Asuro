@@ -18,7 +18,8 @@ uses
     terminal,
     drivermanagement,
     vmemorymanager,
-    lmemorymanager;
+    lmemorymanager,
+    strings;
 
 type 
 
@@ -27,7 +28,6 @@ type
     PPIOHook = procedure(volume : PStorage_volume; directory : pchar; byteCount : uint32; buffer : puint32);
 
     TFilesystem = record
-        idx   : uint8; 
         sName : pchar;
         writeCallback : PPIOHook;
         readCallback  : PPIOHook;
@@ -39,6 +39,7 @@ type
         sectorSize  : uint32;
         filesystem  : TFilesystem; 
     end;
+    APStorage_Volume = array[0..255] of PStorage_volume;
 
     TStorage_Device = record
         idx              : uint8;
@@ -73,25 +74,27 @@ procedure disk_command(params : PParamList);
 var
     i : uint8;
 begin
-    for i:=0 to 255 do begin
-        if storageDevices[i].maxSectorCount = 0 then break;
-        console.writeint(i);
-        console.writestring(') Device_Type: ');
-        case storageDevices[i].controller of
-            ControllerIDE  : console.writestring('IDE, ');
-            ControllerUSB  : console.writestring('USB, ');
-            ControllerAHCI : console.writestring('AHCI, ');
-            ControllerNET  : console.writestring('NET, ');
+    if stringEquals(getParam(1, params), 'ls') then begin
+        for i:=0 to 255 do begin
+            if storageDevices[i].maxSectorCount = 0 then break;
+            console.writeint(i);
+            console.writestring(') Device_Type: ');
+            case storageDevices[i].controller of
+                ControllerIDE  : console.writestring('IDE, ');
+                ControllerUSB  : console.writestring('USB, ');
+                ControllerAHCI : console.writestring('AHCI, ');
+                ControllerNET  : console.writestring('NET, ');
+            end;
+            console.writestring('Capacity: ');
+            console.writeint(((storageDevices[i].maxSectorCount * storageDevices[i].sectorSize) DIV 1000) DIV 1000);
+            console.writestringln('MB');
         end;
-        console.writestring('Capacity: ');
-        console.writeint(((storageDevices[i].maxSectorCount * storageDevices[i].sectorSize) DIV 1000) DIV 1000);
-        console.writestringln('MB');
     end;
 end;
 
 procedure init();
 begin
-    terminal.registerCommand('disk', @disk_command, 'List storage devices');
+    terminal.registerCommand('DISK', @disk_command, 'List physical storage devices');
 end;
 
 procedure register_device(device : TStorage_Device);
