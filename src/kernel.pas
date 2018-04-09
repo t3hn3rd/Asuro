@@ -142,7 +142,7 @@ begin
      testdriver.init();
      E1000.init();
      //AHCI_OLD.init();
-     //IDE.init();
+     IDE.init();
      //Nothing beyond here
      USB.init();
      pci.init();
