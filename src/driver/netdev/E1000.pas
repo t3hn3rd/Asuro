@@ -393,31 +393,28 @@ var
     data     : uint32;
 
 begin
-    console.outputln('E1000 Driver', 'Interrupt begin.');
-    
-    CLI;
-    
-    requestConfig(bus, slot, func, 1);
-    data := inl($CFC);
-    data := data AND $FFF7FFFF;
-    writeConfig(bus, slot, func, 1, data);
-    status:= readCommand($0C);
-    
-    console.output('E1000 Driver', 'Int Status: ');
-    console.writehexln(status);
-    
+    status:= readCommand($C0);
+    //console.output('E1000 Driver', 'Int Status: ');
+    //console.writehexln(status);
     if (status AND $04) > 0 then begin
+        //console.outputln('E1000 Driver', 'Link Status.');
         startLink();
     end else if (Status AND $10) > 0 then begin
+        //console.outputln('E1000 Driver', 'Good Threshold.');
         //Good Threshold
     end else if (Status AND $80) > 0 then begin
+        //console.outputln('E1000 Driver', 'Packet Recv.');
         handleReceive();
-    end;
-    
+    end; 
+    //Clear the INT on the Device First by using write-1
+    writeCommand(REG_IMASK, 1);
+
+    //Clear INT on PIC and Cascade
     outb($A0, $20);
     outb($20, $20);
-    
-    console.outputln('E1000 Driver', 'Interrupt End.');
+
+    //CLI (Not 100% Nessisary as this is done on IRET)
+    CLI;
 end;
 
 procedure console_command_mac(params : PParamList);
@@ -503,7 +500,7 @@ begin
 
     IDT.set_gate(32 + PCI_Info^.interrupt_line, uint32(@fire), $08, ISR_RING_0);
 
-    //enableInturrupt();
+    enableInturrupt();
     rxinit();
     txinit();
 
