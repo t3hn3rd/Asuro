@@ -12,7 +12,9 @@ uses
     util,
     IDT,
     PCI,
-    terminal;
+    terminal,
+    net,
+    nettypes;
 
 const
     INTEL_VEND  = $8086;
@@ -355,6 +357,8 @@ begin
         len:= rx_descs[rx_curr]^.length;
 
         //Inject Packet into Network Stack
+        kpalloc(uint32(buf));
+        net.recv(void(buf), len);
 
         rx_descs[rx_curr]^.status:= 0;
         old_cur:= rx_curr;
@@ -372,19 +376,6 @@ begin
         ctE1000:writestringln('Generic E1000');
         ctI217:writestringln('I217');
     end;
-end;
-
-procedure writeMACAddress();
-var
-    i : integer;
-
-begin
-    console.writehexpair(mac[0]);
-    for i:=1 to 5 do begin
-        console.writestring(':');
-        console.writehexpair(mac[i]);
-    end;
-    console.writestringln(' ');
 end;
 
 procedure fire(); interrupt;
@@ -419,7 +410,7 @@ end;
 
 procedure console_command_mac(params : PParamList);
 begin
-    writeMACAddress();
+    writeMACAddress(@mac[0]);
 end;
 
 procedure console_command_sendtest(params : PParamList);
@@ -490,7 +481,7 @@ begin
         exit;
     end;
     console.output('E1000 Driver', 'MAC Address: ');
-    writeMACAddress();
+    writeMACAddress(@mac[0]);
 
     startLink();
 
@@ -498,9 +489,11 @@ begin
         writeCommand($5200 + i*4, 0);
     end; 
 
-    IDT.set_gate(32 + PCI_Info^.interrupt_line, uint32(@fire), $08, ISR_RING_0);
+    net.registerNetworkCard(@sendPacket, getMACAddress());
 
+    IDT.set_gate(32 + PCI_Info^.interrupt_line, uint32(@fire), $08, ISR_RING_0);
     enableInturrupt();
+
     rxinit();
     txinit();
 
