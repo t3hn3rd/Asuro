@@ -60,7 +60,7 @@ end;
 
 procedure register;
 var
-    i : integer;
+    i : uint8;
 
 begin
     if not Registered then begin
