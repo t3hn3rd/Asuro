@@ -388,7 +388,7 @@ var
     data     : uint32;
 
 begin
-    console.outputln('E1000 Driver', 'FIRED.');
+    //console.outputln('E1000 Driver', 'FIRED.');
 
     status:= readCommand($C0);
     //console.output('E1000 Driver', 'Int Status: ');

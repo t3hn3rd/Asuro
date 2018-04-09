@@ -41,7 +41,7 @@ end;
 
 procedure recv(p_data : void; p_len : uint16);
 begin
-    console.outputln('net', 'RECV.');
+    //console.outputln('net', 'RECV.');
     if CBNext <> nil then CBNext(p_data, p_len);
 end;
 
