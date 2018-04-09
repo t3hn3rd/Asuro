@@ -146,7 +146,7 @@ begin
      pci.init();
      console.outputln('KERNEL', 'DRIVERS: INIT END.');
 
-     ipv4.register();
+     //ipv4.register();
 
      console.writestringln('');
      console.setdefaultattribute(console.combinecolors(Green, Black));
