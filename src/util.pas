@@ -36,6 +36,8 @@ function inl(port : uint16) : uint32;
 procedure memset(location : uint32; value : uint8; size : uint32);
 procedure memcpy(source : uint32; dest : uint32; size : uint32);
 
+procedure printmemory(source : uint32; length : uint32; col : uint32; delim : PChar; offset_row : boolean);
+
 procedure halt_and_catch_fire();
 procedure halt_and_dont_catch_fire();
 procedure BSOD(fault : pchar; info : pchar);
@@ -49,6 +51,32 @@ implementation
 
 uses
     console;
+
+procedure printmemory(source : uint32; length : uint32; col : uint32; delim : PChar; offset_row : boolean);
+var
+    buf : puint8;
+    i   : uint32;
+
+begin
+    buf:= puint8(source);
+    for i:=0 to length do begin
+        if offset_row and (i = 0) then begin
+            console.writehex(source + (i * col));
+            console.writestring(': ');
+        end; 
+        console.writehexpair(buf[i]);
+        if ((i+1) MOD col) = 0 then begin
+            console.writestringln(' ');  
+            if offset_row then begin
+                console.writehex(source + (i * col));
+                console.writestring(': ');
+            end;  
+        end else begin
+            console.writestring(delim);
+        end;
+    end;
+    console.writestringln(' ');
+end;
 
 function hi(b : uint8) : uint8; [public, alias: 'util_hi'];
 begin

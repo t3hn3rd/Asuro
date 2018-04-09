@@ -14,7 +14,8 @@ uses
     PCI,
     terminal,
     net,
-    nettypes;
+    nettypes,
+    netutils;
 
 const
     INTEL_VEND  = $8086;
@@ -146,8 +147,10 @@ var
     mac : array[0..5] of uint8;
     rx_descs : array[0..E1000_NUM_RX_DESC-1] of PE1000_rx_desc;
     tx_descs : array[0..E1000_NUM_TX_DESC-1] of PE1000_tx_desc;
+    rx_buffs : array[0..E1000_NUM_RX_DESC-1] of puint8;
     rx_curr  : uint16;
     tx_curr  : uint16;
+    mem_aloc : boolean = false;
 
 procedure writeCommand(p_address : uint16; p_value : uint32);
 var
@@ -269,7 +272,8 @@ begin
     descs:= PE1000_rx_desc(ptr);
     for i:=0 to E1000_NUM_RX_DESC do begin
         rx_descs[i]:= @descs[i];//PE1000_rx_desc(uint32(descs) + i*16);
-        rx_descs[i]^.address:= uint64(kalloc(8192 + 16));
+        rx_buffs[i]:= puint8(kalloc(8192 + 16));
+        rx_descs[i]^.address:= uint64(vtop(uint32(rx_buffs[i])));
         rx_descs[i]^.status:= 0;
     end;
 
@@ -349,15 +353,15 @@ var
     got_packet : boolean;
     buf        : puint8;
     len        : uint16;
+    i          : uint16;
     
 begin
     while (rx_descs[rx_curr]^.status AND $1) > 0 do begin
         got_packet:= true;
-        buf:= puint8(rx_descs[rx_curr]^.address);
+        buf:= rx_buffs[rx_curr];
         len:= rx_descs[rx_curr]^.length;
 
         //Inject Packet into Network Stack
-        kpalloc(uint32(buf));
         net.recv(void(buf), len);
 
         rx_descs[rx_curr]^.status:= 0;
@@ -384,6 +388,8 @@ var
     data     : uint32;
 
 begin
+    console.outputln('E1000 Driver', 'FIRED.');
+
     status:= readCommand($C0);
     //console.output('E1000 Driver', 'Int Status: ');
     //console.writehexln(status);

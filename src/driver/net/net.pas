@@ -3,7 +3,8 @@ unit net;
 interface
 
 uses
-    nettypes;
+    console,
+    nettypes, netutils;
 
 procedure registerNetworkCard(SendCallback : TNetSendCallback; _MAC : puint8);
 procedure registerNextLayer(RecvCallback : TRecvCallback);
@@ -35,12 +36,13 @@ end;
 
 procedure send(p_data : void; p_len : uint16);
 begin
-    CBSend(p_data, p_len);
+    if CBSend <> nil then CBSend(p_data, p_len);
 end;
 
 procedure recv(p_data : void; p_len : uint16);
 begin
-    CBNext(p_data, p_len);
+    console.outputln('net', 'RECV.');
+    if CBNext <> nil then CBNext(p_data, p_len);
 end;
 
 function getMAC : puint8;

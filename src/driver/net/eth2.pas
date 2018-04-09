@@ -3,8 +3,11 @@ unit eth2;
 interface
 
 uses
-    net, nettypes, console;
+    nettypes, netutils, 
+    net,
+    console;
 
+procedure registerType(eType : uint16; RecvCB : TRecvCallback);
 procedure register;
 
 implementation
@@ -16,21 +19,40 @@ var
 
 procedure registerType(eType : uint16; RecvCB : TRecvCallback);
 begin
+    register;
     if EthTypes[eType] = nil then EthTypes[eType]:= RecvCB;
 end;
 
 procedure recv(p_data : void; p_len : uint16);
 var
-    src, dst   : puint8;
+    Header     : PEthernetHeader;
     proto_type : uint16;
+    buf        : puint8;
 
 begin
-    dst:= puint8(p_data);
-    src:= puint8(p_data + 6);
+    console.outputln('net.eth2', 'RECV.');
+    buf:= puint8(p_data);
+    
+    Header:= PEthernetHeader(buf);
+    
     console.output('net.eth2', 'DEST: ');
-    writeMACAddress(dst);
+    writeMACAddress(@Header^.dst[0]);
     console.output('net.eth2', 'SRC: ');
-    writeMACAddress(src);
+    writeMACAddress(@Header^.src[0]);
+
+    proto_type:= Header^.EthTypeHi SHL 8;
+    proto_type:= proto_type + Header^.EthTypeLo;
+    console.output('net.eth2', 'PROTO: ');
+    console.writehexln(proto_type);
+
+    buf:= buf + 14;
+
+    if MACEqual(@Header^.dst[0], @Header^.src[0]) or MACEqual(@Header^.dst[0], @BROADCAST_MAC[0]) then begin
+        console.outputln('net.eth2', 'MAC HIT');
+        if EthTypes[proto_type] <> nil then begin
+            EthTypes[proto_type](void(buf), p_len - 14);
+        end;    
+    end;
 end;
 
 procedure register;
