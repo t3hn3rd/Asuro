@@ -48,6 +48,7 @@ procedure free_page(page_number : uint16);
 procedure free_page_at_address(address : uint32);
 function new_page_directory : uint32;
 function new_kernel_mapped_page_directory : uint32;
+function vtop(address : uint32) : uint32;
 
 implementation
 
@@ -151,6 +152,19 @@ begin
         mov eax, rldpd
         mov CR3, eax
     end;
+end;
+
+function vtop(address : uint32) : uint32;
+var
+    idx : uint32;
+    paddress : uint32;
+    loadd    : uint32;
+
+begin
+    idx:= address SHR 22;
+    paddress:= uint32(KERNEL_PAGE_DIRECTORY^[idx].address) SHL 12;
+    loadd:= address AND $FFFFFF;
+    vtop:= paddress + loadd;
 end;
 
 function new_page(page_number : uint16) : boolean;

@@ -134,6 +134,7 @@ function sendPacket(p_data : void; p_len : uint16) : sint32;
 implementation
 
 var
+    bus, slot, func : uint8;
     loaded : boolean;
     card_type : TCardType;
     bar_type : uint8;
@@ -265,13 +266,18 @@ begin
     ptr:= puint8(kalloc(sizeof(TE1000_rx_desc) * E1000_NUM_RX_DESC + 16));
     descs:= PE1000_rx_desc(ptr);
     for i:=0 to E1000_NUM_RX_DESC do begin
-        rx_descs[i]:= PE1000_rx_desc(uint32(descs + i*16));
+        rx_descs[i]:= @descs[i];//PE1000_rx_desc(uint32(descs) + i*16);
         rx_descs[i]^.address:= uint64(kalloc(8192 + 16));
         rx_descs[i]^.status:= 0;
     end;
-    
-    outptr:= puint8(uint32(ptr) - KERNEL_VIRTUAL_BASE);
-    
+
+    outptr:= puint8(vtop(uint32(ptr)));//puint8(uint32(ptr) - KERNEL_VIRTUAL_BASE);
+
+    console.output('E1000 Driver', 'RX VMem: ');
+    console.writehexln(uint32(ptr));
+    console.output('E1000 Driver', 'RX Mem: ');
+    console.writehexln(uint32(outptr));
+
     writeCommand(REG_TXDESCLO, uint32(uint64(outptr) SHR 32));
     writeCommand(REG_TXDESCHI, uint32(uint64(outptr) AND $FFFFFFFF));
 
@@ -298,16 +304,21 @@ begin
     ptr:= puint8(kalloc(sizeof(TE1000_tx_desc) * (E1000_NUM_TX_DESC + 16))); 
     descs:= PE1000_tx_desc(ptr);
     for i:=0 to E1000_NUM_TX_DESC do begin
-        tx_descs[i]:= PE1000_tx_desc(uint32(descs + i*16));
+        tx_descs[i]:= @descs[i];//PE1000_tx_desc(uint32(descs + i*16));
         tx_descs[i]^.address:= 0;
         tx_descs[i]^.cmd:= 0;
         tx_descs[i]^.status:= TSTA_DD;
     end;
     
-    outptr:= puint8(uint32(ptr) - KERNEL_VIRTUAL_BASE);
+    outptr:= puint8(vtop(uint32(ptr))); //puint8(uint32(ptr) - KERNEL_VIRTUAL_BASE);
 
-    writeCommand(REG_TXDESCHI, uint32(uint64(outptr) SHR 32));
-    writeCommand(REG_TXDESCLO, uint32(uint64(outptr) AND $FFFFFFFF));
+    console.output('E1000 Driver', 'TX VMem: ');
+    console.writehexln(uint32(ptr));
+    console.output('E1000 Driver', 'TX Mem: ');
+    console.writehexln(uint32(outptr));
+
+    writeCommand(REG_TXDESCHI, 0);
+    writeCommand(REG_TXDESCLO, uint32(outptr));
 
     writeCommand(REG_TXDESCLEN, E1000_NUM_TX_DESC * 16);
 
@@ -379,12 +390,22 @@ end;
 procedure fire(); interrupt;
 var
     status : uint32;
+    data     : uint32;
+
 begin
+    console.outputln('E1000 Driver', 'Interrupt begin.');
+    
     CLI;
+    
+    requestConfig(bus, slot, func, 1);
+    data := inl($CFC);
+    data := data AND $FFF7FFFF;
+    writeConfig(bus, slot, func, 1, data);
     status:= readCommand($0C);
-    //console.outputln('E1000 Driver', 'Interrupt Fired.');
-    //console.output('E1000 Driver', 'Int Status: ');
-    //console.writehexln(status);
+    
+    console.output('E1000 Driver', 'Int Status: ');
+    console.writehexln(status);
+    
     if (status AND $04) > 0 then begin
         startLink();
     end else if (Status AND $10) > 0 then begin
@@ -392,8 +413,11 @@ begin
     end else if (Status AND $80) > 0 then begin
         handleReceive();
     end;
-    outb($20, $20);
+    
     outb($A0, $20);
+    outb($20, $20);
+    
+    console.outputln('E1000 Driver', 'Interrupt End.');
 end;
 
 procedure console_command_mac(params : PParamList);
@@ -455,6 +479,9 @@ begin
     kpalloc(io_base);
     kpalloc(mem_base);
     
+    bus:= PCI_Info^.bus;
+    slot:= PCI_Info^.slot;
+    func:= PCI_Info^.func;
     setBusMaster(PCI_Info^.bus, PCI_Info^.slot, PCI_Info^.func, true);
     eeprom_exists:= false;
     
@@ -475,7 +502,8 @@ begin
     end; 
 
     IDT.set_gate(32 + PCI_Info^.interrupt_line, uint32(@fire), $08, ISR_RING_0);
-    enableInturrupt();
+
+    //enableInturrupt();
     rxinit();
     txinit();
 
@@ -544,7 +572,7 @@ var
     old_cur : uint8;
 
 begin
-    tx_descs[tx_curr]^.address:= uint32(uint32(p_data) - KERNEL_VIRTUAL_BASE);
+    tx_descs[tx_curr]^.address:= uint32(vtop(uint32(p_data)));
     tx_descs[tx_curr]^.length:= p_len;
     tx_descs[tx_curr]^.cmd:= CMD_EOP OR CMD_IFCS OR CMD_RS OR CMD_RPS;
     tx_descs[tx_curr]^.status:= 0;
