@@ -23,28 +23,49 @@ uses
 type 
 
     TControllerType = (ControllerIDE, ControllerUSB, ControllerAHCI, ControllerNET);
-    TFilesystem = (FAT32);
+    PStorage_volume = ^TStorage_Volume;
+    PPIOHook = procedure(volume : PStorage_volume; directory : pchar; byteCount : uint32; buffer : puint32);
 
-    PStorage_device = ^TStorage_Device;
-    APStorage_Device = array[0..256] of PStorage_device;
+    TFilesystem = record
+        idx   : uint8; 
+        sName : pchar;
+        writeCallback : PPIOHook;
+        readCallback  : PPIOHook;
+    end;
+
+    TStorage_Volume = record
+        idx         : uint8; 
+        sectorStart : uint32;
+        sectorSize  : uint32;
+        filesystem  : TFilesystem; 
+    end;
+
     TStorage_Device = record
+        idx              : uint8;
         controller       : TControllerType;
         controllerId0    : uint32;
         maxSectorCount   : uint32;
         sectorSize       : uint32;
         writable         : boolean;
+        volumes          : array[0..255] of TStorage_Volume
     end;
+    PStorage_device = ^TStorage_Device;
+    APStorage_Device = array[0..255] of PStorage_device;
 
 
 var 
     storageDevices : array[0..255] of TStorage_Device; //index in this array is global drive id
+    fileSystems : array[0..31] of TFilesystem;
 
 //TODO need callback things for when new devices are connected
 procedure init();
+
 procedure register_device(device : TStorage_Device);
-//function get_all_devices() : APStorage_Device;
-//function read(device : uint16; address : uint32; byteCount : uint32) : PuInt32;
-//procedure write(device : uint16; address : uint32; byteCount : uint32; data : PuInt32);
+function get_all_devices() : APStorage_Device;
+
+//procedure register_filesystem(filesystem : TFilesystem);
+
+//procedure register_volume(volume : TStorage_Volume);
 
 implementation 
 
@@ -80,9 +101,23 @@ begin
     for i:=0 to 255 do begin 
         if storageDevices[i].maxSectorCount = 0 then begin
             storageDevices[i]:= device;
+            storageDevices[i].idx:= i;
             break;
         end;
     end;
+end;
+
+function get_all_devices() : APStorage_Device;
+var
+    devices : APStorage_Device;
+    i : uint8;
+begin
+    for i:= 0 to 255 do begin
+        if storageDevices[i].maxSectorCount <> 0 then begin
+            devices[i]:= @storageDevices[i];
+        end;
+    end;
+    get_all_devices:= devices;
 end;
 
 end.
