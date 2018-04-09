@@ -74,7 +74,8 @@ procedure disk_command(params : PParamList);
 var
     i : uint8;
 begin
-    if stringEquals(getParam(1, params), 'ls') then begin
+
+    if stringEquals(getParam(0, params), 'ls') then begin
         for i:=0 to 255 do begin
             if storageDevices[i].maxSectorCount = 0 then break;
             console.writeint(i);
