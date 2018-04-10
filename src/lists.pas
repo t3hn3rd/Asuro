@@ -29,6 +29,7 @@ function LL_Delete(LinkedList : PLinkedListBase; idx : uint32) : boolean;
 function LL_Size(LinkedList : PLinkedListBase) : uint32;
 function LL_Insert(LinkedList : PLinkedListBase; idx : uint32) : Void;
 function LL_Get(LinkedList : PLinkedListBase; idx : uint32) : Void;
+procedure LL_Free(LinkedList : PLinkedListBase);
 procedure LL_TEST();
 
 implementation
@@ -166,6 +167,14 @@ begin
     LL_Get:= Base^.Data;
 end;
 
+procedure LL_Free(LinkedList : PLinkedListBase);
+begin
+    while LL_Size(LinkedList) > 0 do begin
+        LL_Delete(LinkedList, 0);
+    end;
+    kfree(void(LinkedList));
+end;
+
 procedure LL_Test();
 var
     i : uint32;
@@ -211,6 +220,8 @@ begin
      for i:=0 to LL_Size(LList)-1 do begin
         console.writestringln(PChar(LL_Get(LList, i)));
      end;
+
+     LL_Free(LList);
 end;
 
 end.
