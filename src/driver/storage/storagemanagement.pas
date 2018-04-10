@@ -17,8 +17,6 @@ uses
     console,
     terminal,
     drivermanagement,
-    vmemorymanager,
-    lmemorymanager,
     strings;
 
 type 
@@ -34,8 +32,8 @@ type
         sName : pchar;
         writeCallback  : PPIOHook;
         readCallback   : PPIOHook;
-        createCallback : PPCreateHook;
-        detectCallback : PPDetectHook;
+        createCallback : uint32;
+        detectCallback : uint32;
     end;
 
     TStorage_Volume = record
@@ -44,7 +42,7 @@ type
         sectorSize  : uint32;
         filesystem  : TFilesystem; 
     end;
-    APStorage_Volume = array[0..255] of PStorage_volume;
+    APStorage_Volume = array[0..10] of PStorage_volume;
 
     TStorage_Device = record
         idx              : uint8;
@@ -59,8 +57,8 @@ type
 
 
 var 
-    storageDevices : array[0..255] of TStorage_Device; //index in this array is global drive id
-    fileSystems : array[0..31] of TFilesystem;
+    storageDevices : array[0..25] of PStorage_Device; //index in this array is global drive id
+    fileSystems : array[0..31] of PFilesystem;
 
 procedure init();
 

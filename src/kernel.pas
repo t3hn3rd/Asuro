@@ -93,7 +93,6 @@ begin
      console.init();
      console.writestringln('A');
 
-
      terminal.init();
 
      console.writestringln('B');
@@ -103,6 +102,9 @@ begin
      terminal.registerCommand('BSOD', @terminal_command_bsod, 'Force a Panic Screen.');
 
      console.writestringln('Booting Asuro...');
+
+     while true do begin
+     end;
 
      if (multibootmagic <> MULTIBOOT_BOOTLOADER_MAGIC) then begin
         console.setdefaultattribute(console.combinecolors(Red, Black));
@@ -135,7 +137,7 @@ begin
      bios_data_area.init();
 
      drivermanagement.init();
-     //storagemanagement.init();
+     storagemanagement.init();
 
      //asm INT 13 end;
      STI;
