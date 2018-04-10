@@ -36,8 +36,9 @@ uses
      testdriver,
      E1000,
      IDE,
-     storagemanagement;
-     //ipv4;
+     storagemanagement,
+     ipv4,
+     lists;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
@@ -85,6 +86,11 @@ var
    temp            : uint32;
    atmp            : puint32;
    test            : puint8;
+
+   LList           : PLinkedListBase;
+   Elem            : Void;
+   Str             : PChar;
+
    
 begin
      multibootinfo:= mbinfo;
@@ -141,7 +147,7 @@ begin
      mouse.init();
      testdriver.init();
      E1000.init();
-     IDE.init();
+     //IDE.init();
 
      //Nothing beyond here
      USB.init();
@@ -156,6 +162,8 @@ begin
      console.setdefaultattribute(console.combinecolors(White, Black));
      console.writestringln('');
      console.writestringln('Press any key to boot in to Asuro Terminal...');
+
+     LL_TEST();
 
      keyboard.hook(@temphook);
 
