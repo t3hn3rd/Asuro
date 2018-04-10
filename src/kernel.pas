@@ -133,9 +133,6 @@ begin
      tss.init();
      scheduler.init();
 
-     { BIOS Data Area}
-     bios_data_area.init();
-
      { Management Interfaces }
      drivermanagement.init();
      storagemanagement.init();
