@@ -82,7 +82,6 @@ var
    keyboard_layout : array [0..1] of TKeyInfo;
    i               : uint32;
    cEIP            : uint32;
-
    temp            : uint32;
    atmp            : puint32;
    test            : puint8;
@@ -92,14 +91,17 @@ begin
      multibootinfo:= mbinfo;
      multibootmagic:= mbmagic;
 
+     { Console Init }
      console.init();
 
+     { Terminal Init }
      terminal.init();
      terminal.registerCommand('MEMINFO', @terminal_command_meminfo, 'Print Simple Memory Information.');
      terminal.registerCommand('BSOD', @terminal_command_bsod, 'Force a Panic Screen.');
 
      console.writestringln('Booting Asuro...');
 
+     { Check for Multiboot }
      if (multibootmagic <> MULTIBOOT_BOOTLOADER_MAGIC) then begin
         console.setdefaultattribute(console.combinecolors(Red, Black));
         console.outputln('KERNEL', 'Multiboot Compliant Boot-Loader Needed!');
@@ -108,6 +110,7 @@ begin
         util.halt_and_catch_fire;
      end;
 
+     { GDT Init }
      gdt.init();
      asm
         MOV dds, CS
@@ -120,6 +123,7 @@ begin
         BSOD('GDT', 'Failed to load the GDT correctly.');
      end;
 
+     { Memory/CPU Init }
      idt.init();
      isr.init();
      irq.init();
@@ -129,15 +133,18 @@ begin
      tss.init();
      scheduler.init();
 
+     { BIOS Data Area}
      bios_data_area.init();
 
+     { Management Interfaces }
      drivermanagement.init();
      storagemanagement.init();
 
+     { Hook Timer for Ticks }
      STI;
      isr32.hook(uint32(@bios_data_area.tick_update));
 
-     //Device Drivers
+     { Device Drivers }
      console.outputln('KERNEL', 'DEVICE DRIVERS: INIT BEGIN.');
      keyboard.init(keyboard_layout);
      mouse.init();
@@ -146,17 +153,17 @@ begin
      //IDE.init();
      console.outputln('KERNEL', 'DEVICE DRIVERS: INIT END.');
 
-     //Bus Drivers
+     { Bus Drivers }
      console.outputln('KERNEL', 'BUS DRIVERS: INIT BEGIN.');
      USB.init();
      pci.init();
      console.outputln('KERNEL', 'BUS DRIVERS: INIT END.');
      
 
-     //Network Stack
+     { Network Stack }
      ipv4.register();
 
-     //End of Boot
+     { End of Boot }
      console.writestringln('');
      console.setdefaultattribute(console.combinecolors(Green, Black));
      console.writestringln('Asuro Booted Correctly!');
