@@ -9,6 +9,7 @@ uses
 
 type
     { Managed Linked List }
+
     PLinkedList = ^TLinkedList;
     TLinkedList = record
         Previous : PLinkedList;
@@ -24,6 +25,7 @@ type
     end;
 
 { Managed Linked List }
+
 function LL_New(ElementSize : uint32) : PLinkedListBase;
 function LL_Add(LinkedList : PLinkedListBase) : Void;
 function LL_Delete(LinkedList : PLinkedListBase; idx : uint32) : boolean;
@@ -222,7 +224,7 @@ begin
         console.writestringln(PChar(LL_Get(LList, i)));
      end;
 
-     LL_Free(LList);
+     LL_Free(LList);    
 end;
 
 end.

@@ -52,12 +52,7 @@ type
 const
      BDA : PBDA = PBDA($C0000400);
 
-var
-     EBDA : void;
-     MCFG : PMCFG;
-
 procedure tick_update(data : void);
-procedure init();
 
 implementation
 
@@ -67,12 +62,6 @@ uses
 procedure tick_update(data : void);
 begin
     BDA^.Ticks:= BDA^.Ticks + 1;
-end;
-
-procedure init();
-begin
-    console.outputln('BDA','Loaded.');
-    //TO-DO search for important structures like the MCFG or the EBDA.
 end;
 
 end.

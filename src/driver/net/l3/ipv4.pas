@@ -21,7 +21,6 @@ var
     Header  : PIPV4Header;
     AHeader : TIPV4AbstractHeader;
     i       : Integer;
-
     buf     : puint8;
     len     : uint16;
 
