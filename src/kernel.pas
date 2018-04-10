@@ -35,8 +35,9 @@ uses
      USB,
      testdriver,
      E1000,
-     IDE, storagemanagement,
-     ipv4;
+     IDE,
+     storagemanagement;
+     //ipv4;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
@@ -83,20 +84,23 @@ var
 
    temp            : uint32;
    atmp            : puint32;
-   test          : puint8;
+   test            : puint8;
    
 begin
      multibootinfo:= mbinfo;
      multibootmagic:= mbmagic;
 
-     terminal.init();
-     terminal.registerCommand('MEMINFO', @terminal_command_meminfo, 'Print Simple Memory Information.');
-     terminal.registerCommand('BSOD', @terminal_command_bsod, 'Force a Panic Screen.');
-
-     drivermanagement.init();
-     storagemanagement.init();
-
      console.init();
+     console.writestringln('A');
+
+
+     terminal.init();
+
+     console.writestringln('B');
+     terminal.registerCommand('MEMINFO', @terminal_command_meminfo, 'Print Simple Memory Information.');
+
+     console.writestringln('C');
+     terminal.registerCommand('BSOD', @terminal_command_bsod, 'Force a Panic Screen.');
 
      console.writestringln('Booting Asuro...');
 
@@ -130,6 +134,9 @@ begin
 
      bios_data_area.init();
 
+     drivermanagement.init();
+     //storagemanagement.init();
+
      //asm INT 13 end;
      STI;
      isr32.hook(uint32(@bios_data_area.tick_update));
@@ -141,6 +148,7 @@ begin
      testdriver.init();
      E1000.init();
      IDE.init();
+
      //Nothing beyond here
      USB.init();
      pci.init();
@@ -151,17 +159,6 @@ begin
      console.writestringln('');
      console.setdefaultattribute(console.combinecolors(Green, Black));
      console.writestringln('Asuro Booted Correctly!');
-     console.writestringln('');
-     console.setdefaultattribute(console.combinecolors(White, Black));
-     console.writestring('Lower Memory = ');
-     console.writeint(multibootinfo^.mem_lower);
-     console.writestringln('KB');
-     console.writestring('Higher Memory = ');
-     console.writeint(multibootinfo^.mem_upper);
-     console.writestringln('KB');
-     console.writestring('Total Memory = ');
-     console.writeint(((multibootinfo^.mem_upper + 1000) div 1024) + 1);
-     console.writestringln('MB');
      console.setdefaultattribute(console.combinecolors(White, Black));
      console.writestringln('');
      console.writestringln('Press any key to boot in to Asuro Terminal...');

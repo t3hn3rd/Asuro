@@ -124,6 +124,7 @@ function load(ptr : void) : boolean;
 function identify_device(bus : uint8; drive : uint8) : TIdentResponse;
 procedure readPIO28(drive : uint8; LBA : uint32; sectorCount : uint8; buffer : puint32);
 procedure writePIO28(drive : uint8; LBA : uint32; sectorCount : uint8; buffer : Puint32);
+//read/write must be capable of reading/writting any amknt of data upto disk size
 
 implementation 
 

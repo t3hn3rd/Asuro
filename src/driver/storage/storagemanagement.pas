@@ -25,12 +25,17 @@ type
 
     TControllerType = (ControllerIDE, ControllerUSB, ControllerAHCI, ControllerNET);
     PStorage_volume = ^TStorage_Volume;
+    PStorage_device = ^TStorage_Device;
     PPIOHook = procedure(volume : PStorage_volume; directory : pchar; byteCount : uint32; buffer : puint32);
+    PPCreateHook = procedure(disk : PStorage_Device; sectors : uint32; start : uint32);
+    PPDetectHook = procedure(disk : PStorage_Device);
 
     TFilesystem = record
         sName : pchar;
-        writeCallback : PPIOHook;
-        readCallback  : PPIOHook;
+        writeCallback  : PPIOHook;
+        readCallback   : PPIOHook;
+        createCallback : PPCreateHook;
+        detectCallback : PPDetectHook;
     end;
 
     TStorage_Volume = record
@@ -50,7 +55,6 @@ type
         writable         : boolean;
         volumes          : array[0..255] of TStorage_Volume
     end;
-    PStorage_device = ^TStorage_Device;
     APStorage_Device = array[0..255] of PStorage_device;
 
 
@@ -58,13 +62,12 @@ var
     storageDevices : array[0..255] of TStorage_Device; //index in this array is global drive id
     fileSystems : array[0..31] of TFilesystem;
 
-//TODO need callback things for when new devices are connected
 procedure init();
 
 procedure register_device(device : TStorage_Device);
 function get_all_devices() : APStorage_Device;
 
-//procedure register_filesystem(filesystem : TFilesystem);
+procedure register_filesystem(filesystem : TFilesystem);
 
 //procedure register_volume(volume : TStorage_Volume);
 
@@ -106,6 +109,7 @@ begin
         if storageDevices[i].maxSectorCount = 0 then begin
             storageDevices[i]:= device;
             storageDevices[i].idx:= i;
+            //for all filesystems look for volumes
             break;
         end;
     end;
@@ -122,6 +126,18 @@ begin
         end;
     end;
     get_all_devices:= devices;
+end;
+
+procedure register_filesystem(filesystem : TFilesystem);
+var
+    i : uint8;
+begin
+    for i:= 0 to 31 do begin
+        if fileSystems[i].sName = nil then begin
+            fileSystems[i]:= filesystem;
+            break;
+        end;
+    end; 
 end;
 
 end.
