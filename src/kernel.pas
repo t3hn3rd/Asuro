@@ -87,10 +87,6 @@ var
    atmp            : puint32;
    test            : puint8;
 
-   LList           : PLinkedListBase;
-   Elem            : Void;
-   Str             : PChar;
-
    
 begin
      multibootinfo:= mbinfo;

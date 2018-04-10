@@ -40,6 +40,7 @@ begin
     for i:=0 to MAX_HOOKS-1 do begin
         if uint32(Hooks[i]) <> 0 then Hooks[i](void(13));
     end;
+    BSOD('GPF', 'General Protection Fault.');
     console.writestringln('General Protection Fault.');
     console.writestring('Flags: ');
     console.writehexln(Regs^.EFlags);

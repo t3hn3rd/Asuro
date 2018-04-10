@@ -35,6 +35,7 @@ begin
     for i:=0 to MAX_HOOKS-1 do begin
         if uint32(Hooks[i]) <> 0 then Hooks[i](void(9));
     end;
+    BSOD('CSO', 'Coprocessor Seg Overrun Exception.');
     console.writestringln('Coprocessor Seg Overrun Exception.');
     util.halt_and_catch_fire;
 end;

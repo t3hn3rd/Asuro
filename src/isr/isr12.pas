@@ -35,6 +35,7 @@ begin
     for i:=0 to MAX_HOOKS-1 do begin
         if uint32(Hooks[i]) <> 0 then Hooks[i](void(12));
     end;
+    BSOD('SF', 'Stack Fault Exception.');
     console.writestringln('Stack Fault Exception.');
     util.halt_and_catch_fire;
 end;
