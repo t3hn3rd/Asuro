@@ -163,8 +163,6 @@ begin
      console.writestringln('');
      console.writestringln('Press any key to boot in to Asuro Terminal...');
 
-     LL_TEST();
-
      keyboard.hook(@temphook);
 
      util.halt_and_dont_catch_fire;

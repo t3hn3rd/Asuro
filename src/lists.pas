@@ -4,7 +4,8 @@ interface
 
 uses
     console,
-    lmemorymanager;
+    lmemorymanager,
+    util;
 
 type
     { Managed Linked List }
@@ -56,6 +57,7 @@ begin
         Element^.Previous:= nil;
         Element^.Next:= nil;
         Element^.Data:= kalloc(LinkedList^.ElementSize);
+        memset(uint32(Element^.Data), 0, LinkedList^.ElementSize);
         LinkedList^.Head:= Element;
         LinkedList^.Count:= LinkedList^.Count + 1;
         LL_Add:= Element^.Data;
@@ -71,6 +73,7 @@ begin
         Element^.Previous:= Base;
         Element^.Next:= nil;
         Element^.Data:= kalloc(LinkedList^.ElementSize);
+        memset(uint32(Element^.Data), 0, LinkedList^.ElementSize);
         LinkedList^.Count:= LinkedList^.Count + 1;
         LL_Add:= Element^.Data;
     end;
@@ -135,6 +138,7 @@ begin
     Next:= Base;
     Element:= PLinkedList(kalloc(sizeof(TLinkedList)));
     Element^.Data:= kalloc(LinkedList^.ElementSize);
+    memset(uint32(Element^.Data), 0, LinkedList^.ElementSize);
     Element^.Previous:= Prev;
     Element^.Next:= Next;
     if Prev = nil then begin
@@ -192,7 +196,6 @@ begin
      Str[2]:= 'L';
      Str[3]:= 'L';
      Str[4]:= 'O';
-     Str[5]:= Char(0);
      Elem:= LL_Add(LList);
      Str:= PChar(Elem);
      Str[0]:= 'W';
@@ -200,14 +203,12 @@ begin
      Str[2]:= 'R';
      Str[3]:= 'L';
      Str[4]:= 'D';
-     Str[5]:= Char(0);
      Elem:= LL_Add(LList);
      Str:= PChar(Elem);
      Str[0]:= 'T';
      Str[1]:= 'E';
      Str[2]:= 'S';
      Str[3]:= 'T';
-     Str[4]:= Char(0);
 
      for i:=0 to LL_Size(LList)-1 do begin
         console.writestringln(PChar(LL_Get(LList, i)));
