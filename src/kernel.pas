@@ -91,20 +91,12 @@ begin
      multibootmagic:= mbmagic;
 
      console.init();
-     console.writestringln('A');
 
      terminal.init();
-
-     console.writestringln('B');
      terminal.registerCommand('MEMINFO', @terminal_command_meminfo, 'Print Simple Memory Information.');
-
-     console.writestringln('C');
      terminal.registerCommand('BSOD', @terminal_command_bsod, 'Force a Panic Screen.');
 
      console.writestringln('Booting Asuro...');
-
-     while true do begin
-     end;
 
      if (multibootmagic <> MULTIBOOT_BOOTLOADER_MAGIC) then begin
         console.setdefaultattribute(console.combinecolors(Red, Black));

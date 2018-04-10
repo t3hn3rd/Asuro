@@ -57,8 +57,8 @@ type
 
 
 var 
-    storageDevices : array[0..25] of PStorage_Device; //index in this array is global drive id
-    fileSystems : array[0..31] of PFilesystem;
+    storageDevices : array[0..25] of TStorage_Device; //index in this array is global drive id
+    fileSystems : array[0..31] of TFilesystem;
 
 procedure init();
 
