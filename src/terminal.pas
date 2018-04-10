@@ -16,7 +16,8 @@ uses
     keyboard,
     util,
     lmemorymanager,
-    strings;
+    strings,
+    tracer;
 
 type
     PParamList = ^TParamList;

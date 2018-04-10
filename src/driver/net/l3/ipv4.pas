@@ -3,8 +3,8 @@ unit ipv4;
 interface
 
 uses
-    util, console,
-    nettypes, netutils,
+    util, console, terminal,
+    net, nettypes, netutils,
     eth2;
 
 procedure registerProtocol(Protocol_ID : uint8; recv_callback : TRecvCallback);
@@ -14,9 +14,10 @@ implementation
 
 var
     Registered : Boolean = false;
-    Protocols : Array[0..255] of TRecvCallback;
+    Protocols  : Array[0..255] of TRecvCallback;
+    Config     : TIPv4Configuration;
 
-procedure recv(p_data : void; p_len : uint16);
+procedure recv(p_data : void; p_len : uint16; p_context : PPacketContext);
 var
     Header  : PIPV4Header;
     AHeader : TIPV4AbstractHeader;
@@ -25,7 +26,7 @@ var
     len     : uint16;
 
 begin
-    console.outputln('net.ipv4', 'RECV.');
+    //console.outputln('net.ipv4', 'RECV.');
     Header:= PIPV4Header(p_data);
     AHeader.version:= Header^.version;
     AHeader.header_len:= Header^.header_len;
@@ -45,16 +46,41 @@ begin
     end;
     AHeader.Options:= Header^.Options;
 
-    console.output('net.ipv4', 'Source: ');
-    writeIPv4Address(puint8(@AHeader.Src[0]));
-    console.output('net.ipv4', 'Dest: ');
-    writeIPv4Address(puint8(@AHeader.Dst[0]));
+    //console.output('net.ipv4', 'Source: ');
+    //writeIPv4Address(puint8(@AHeader.Src[0]));
+    //console.output('net.ipv4', 'Dest: ');
+    //writeIPv4Address(puint8(@AHeader.Dst[0]));
 
     buf:= puint8(p_data);
     buf:= buf + AHeader.header_len;
     len:= p_len - AHeader.header_len;
 
-    if Protocols[AHeader.Protocol] <> nil then Protocols[AHeader.Protocol](void(buf), len);
+    copyIPv4(@AHeader.Src[0], @p_context^.IP.Source[0]);
+    copyIPv4(@AHeader.Dst[0], @p_context^.IP.Destination[0]);
+
+    if (IPEqual(@Config.Address[0], @AHeader.Dst[0])) OR (AHeader.Dst[3] = 255) then begin
+        if Protocols[AHeader.Protocol] <> nil then Protocols[AHeader.Protocol](void(buf), len, p_context);
+    end;
+end;
+
+procedure terminal_command_ifconfig(params : PParamList);
+begin
+    if paramCount(params) > 2 then begin
+
+    end else begin
+        writestring('   MAC:     ');
+        writeMACAddress(net.GetMAC);
+        writestring('   IPv4:    ');
+        writeIPv4Address(@Config.Address[0]);
+        writestring('   Gateway: ');
+        writeIPv4Address(@Config.Gateway[0]);
+        writestring('   Netmask: ');
+        writeIPv4Address(@Config.Netmask[0]);
+        if Config.UP then 
+        writestringln('   NetUP:   true') 
+        else 
+        writestringln('   NetUP:   false');
+    end;
 end;
 
 procedure register;
@@ -66,7 +92,14 @@ begin
         for i:=0 to 255 do begin
             Protocols[i]:= nil;
         end;
+        for i:=0 to 3 do begin
+            Config.Address[i]:= 0;
+            Config.Gateway[i]:= 0;
+            Config.Netmask[i]:= 0;
+        end;
+        Config.UP:= false;
         eth2.registerType($0800, @recv);
+        terminal.registerCommand('IFCONFIG', @terminal_command_ifconfig, 'Configure Network Settings.');
         Registered:= true;
     end;
 end;

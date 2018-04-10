@@ -26,6 +26,7 @@ uses
      vmemorymanager,
      pmemorymanager,
      lmemorymanager,
+     tracer,
      drivermanagement,
      tss,
      scheduler,
@@ -37,8 +38,8 @@ uses
      E1000,
      IDE,
      storagemanagement,
-     ipv4,
-     lists;
+     lists,
+     net;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
@@ -51,6 +52,8 @@ end;
 
 procedure terminal_command_meminfo(params : PParamList);
 begin
+    push_trace('kernel.terminal_command_meminfo');
+
     console.writestring('Lower Memory = ');
     console.writeint(multibootinfo^.mem_lower);
     console.writestringln('KB');
@@ -60,16 +63,22 @@ begin
     console.writestring('Total Memory = ');
     console.writeint(((multibootinfo^.mem_upper + 1000) div 1024) + 1);
     console.writestringln('MB');
+
+    pop_trace;
 end;
 
 procedure terminal_command_bsod(params : PParamList);
 begin
+    push_trace('kernel.terminal_command_bsod');
+
     if ParamCount(params) > 1 then begin
       bsod(getparam(0, params), getparam(1, params));
     end else begin
         console.writestringln('Invalid number of params.');
         console.writestringln('Usage: bsod <error> <info>');
-    end;   
+    end;  
+
+    pop_trace; 
 end;
 
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall; [public, alias: 'kmain'];   
@@ -134,6 +143,7 @@ begin
      scheduler.init();
 
      { Management Interfaces }
+     tracer.init();
      drivermanagement.init();
      storagemanagement.init();
 
@@ -157,7 +167,7 @@ begin
      console.outputln('KERNEL', 'BUS DRIVERS: INIT END.');
      
      { Network Stack }
-     ipv4.register();
+     net.init;
 
      { End of Boot }
      console.writestringln('');

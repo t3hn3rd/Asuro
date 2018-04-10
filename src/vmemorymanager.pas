@@ -14,7 +14,8 @@ interface
 uses
     util,
     pmemorymanager,
-    console;
+    console,
+    tracer;
 
 type
     PPageDirEntry = ^TPageDirEntry;
@@ -84,6 +85,7 @@ begin
     end;
     Directory:= Directory + KERNEL_VIRTUAL_BASE;
     load_current_page_directory:= PPageDirectory(Directory);
+    pop_trace;
 end;
 
 procedure init;

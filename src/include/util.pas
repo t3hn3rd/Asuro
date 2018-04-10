@@ -14,7 +14,7 @@ unit util;
 interface
 
 uses
-    bios_data_area;
+    bios_data_area, tracer;
 
 procedure CLI();
 procedure STI();
@@ -75,7 +75,7 @@ begin
             console.writestring(delim);
         end;
     end;
-    console.writestringln(' ');
+    console.writestringln(' ');   
 end;
 
 function hi(b : uint8) : uint8; [public, alias: 'util_hi'];
@@ -297,7 +297,8 @@ begin
     console.writestringln(fault);
     console.writestring('    Fault Info: ');
     console.writestringln(info);
-    console.writestringln(' ');
+    console.writestring('    Faulting Module: ');
+    console.writestringln(tracer.get_last_trace);
     console.writestringln(' ');
     halt_and_catch_fire();
 end;

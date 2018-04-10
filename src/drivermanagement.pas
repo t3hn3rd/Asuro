@@ -11,7 +11,7 @@ unit drivermanagement;
 interface
 
 uses
-    console, util, strings, lmemorymanager, terminal;
+    console, util, strings, lmemorymanager, terminal, tracer;
 
 const
     idANY = $FFFFFFFF;
@@ -88,6 +88,7 @@ var
     i   : uint32;
 
 begin
+    //push_trace('driver_management.terminal_command_drivers');
     Drv:= Root;
     i:= 1;
     while Drv <> nil do begin
@@ -119,6 +120,7 @@ begin
         end;
         Drv:= Drv^.Next;
     end;
+    //pop_trace;
 end;
 
 procedure terminal_command_driversex(Params : PParamList);
@@ -128,6 +130,7 @@ var
     i   : uint32;
 
 begin
+    //push_trace('driver_management.terminal_command_driversex');
     Drv:= Root;
     i:= 1;
     while Drv <> nil do begin
@@ -158,6 +161,7 @@ begin
         i:= i + 1;
         Drv:= Drv^.Next;
     end;
+    //pop_trace;
 end;
 
 procedure terminal_command_devices(Params : PParamList);
@@ -167,6 +171,7 @@ var
     i  : uint32;
 
 begin
+    //push_trace('driver_management.terminal_command_devices');
     Dv:= Dev;
     i:= 1;
     while Dv <> nil do begin
@@ -204,6 +209,7 @@ begin
         i:= i + 1;
         Dv:= Dv^.Next; 
     end;
+    //pop_trace;
 end;
 
 { Main Functions }
@@ -291,6 +297,7 @@ var
     RegList : PDriverRegistration;
 
 begin
+    //push_trace('driver_management.register_driver_ex');
     if DeviceID = nil then exit;
     NewReg:= PDriverRegistration(kalloc(sizeof(TDriverRegistration)));
     NewReg^.Driver_Name:= stringCopy(Driver_Name);
@@ -316,6 +323,7 @@ begin
         NewReg^.Loaded:= True;
         NewReg^.Driver_Load(nil);
     end;
+    //pop_trace;
 end;
 
 procedure register_device(Device_Name : PChar; DeviceID : PDeviceIdentifier; ptr : void);
@@ -325,6 +333,7 @@ var
     dev_list : PDeviceRegistration;
 
 begin
+    //push_trace('driver_management.register_device');
     drv:= Root;
     new_dev:= PDeviceRegistration(kalloc(sizeof(TDeviceRegistration)));
     new_dev^.Device_Name:= stringCopy(Device_Name);
@@ -361,6 +370,7 @@ begin
         end;
         drv:= drv^.Next;
     end;
+    //pop_trace;
 end;
 
 end.

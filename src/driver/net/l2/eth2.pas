@@ -23,34 +23,37 @@ begin
     if EthTypes[eType] = nil then EthTypes[eType]:= RecvCB;
 end;
 
-procedure recv(p_data : void; p_len : uint16);
+procedure recv(p_data : void; p_len : uint16; p_context : PPacketContext);
 var
     Header     : PEthernetHeader;
     proto_type : uint16;
     buf        : puint8;
 
 begin
-    console.outputln('net.eth2', 'RECV.');
+    //console.outputln('net.eth2', 'RECV.');
     buf:= puint8(p_data);
     
     Header:= PEthernetHeader(buf);
     
-    console.output('net.eth2', 'DEST: ');
-    writeMACAddress(@Header^.dst[0]);
-    console.output('net.eth2', 'SRC: ');
-    writeMACAddress(@Header^.src[0]);
+    //console.output('net.eth2', 'DEST: ');
+    //writeMACAddress(@Header^.dst[0]);
+    //console.output('net.eth2', 'SRC: ');
+    //writeMACAddress(@Header^.src[0]);
 
     proto_type:= Header^.EthTypeHi SHL 8;
     proto_type:= proto_type + Header^.EthTypeLo;
-    console.output('net.eth2', 'PROTO: ');
-    console.writehexln(proto_type);
+    //console.output('net.eth2', 'PROTO: ');
+    //console.writehexln(proto_type);
 
     buf:= buf + 14;
 
+    copyMAC(@Header^.src[0], @p_context^.MAC.Source[0]);
+    copyMAC(@Header^.dst[0], @p_context^.MAC.Destination[0]);
+
     if MACEqual(@Header^.dst[0], @Header^.src[0]) or MACEqual(@Header^.dst[0], @BROADCAST_MAC[0]) then begin
-        console.outputln('net.eth2', 'MAC HIT');
+        //console.outputln('net.eth2', 'MAC HIT');
         if EthTypes[proto_type] <> nil then begin
-            EthTypes[proto_type](void(buf), p_len - 14);
+            EthTypes[proto_type](void(buf), p_len - 14, p_context);
         end;    
     end;
 end;

@@ -6,6 +6,7 @@ uses
     console,
     nettypes, netutils;
 
+procedure init;
 procedure registerNetworkCard(SendCallback : TNetSendCallback; _MAC : puint8);
 procedure registerNextLayer(RecvCallback : TRecvCallback);
 procedure send(p_data : void; p_len : uint16);
@@ -13,6 +14,9 @@ procedure recv(p_data : void; p_len : uint16);
 function  getMAC : puint8;
 
 implementation
+
+uses
+    ipv4, arp, eth2;
 
 var
     CBSend : TNetSendCallback = nil;
@@ -40,14 +44,26 @@ begin
 end;
 
 procedure recv(p_data : void; p_len : uint16);
+var
+    context : PPacketContext;
+
 begin
     //console.outputln('net', 'RECV.');
-    if CBNext <> nil then CBNext(p_data, p_len);
+    context:= newPacketContext;
+    if CBNext <> nil then CBNext(p_data, p_len, context);
+    freePacketContext(context);
 end;
 
 function getMAC : puint8;
 begin
     getMAC:= MAC;
+end;
+
+procedure init;
+begin
+    eth2.register;
+    arp.register;
+    ipv4.register;
 end;
 
 end.

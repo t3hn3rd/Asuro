@@ -3,8 +3,62 @@ unit nettypes;
 interface
 
 type
-    TNetSendCallback = function(p_data : void; p_len : uint16) : sint32;
-    TRecvCallback    = procedure(p_data : void; p_len : uint16);
+
+
+    TMACAddress  = Array[0..5] of uint8;
+    TIPv4Address = Array[0..3] of uint8; 
+
+    TMACPair = record
+        Source      : TMACAddress;
+        Destination : TMACAddress;
+    end;
+
+    TIPv4Pair = record
+        Source      : TIPv4Address;
+        Destination : TIPv4Address;
+    end;
+
+    PPacketContext = ^TPacketContext;
+    TPacketContext = record
+        MAC : TMACPair;
+        IP  : TIPv4Pair;
+    end;
+
+    PIPv4Configuration = ^TIPv4Configuration;
+    TIPv4Configuration = record
+        Address   : array[0..3] of uint8;
+        Gateway   : array[0..3] of uint8;
+        Netmask   : array[0..3] of uint8;
+        UP        : Boolean;
+    end;
+
+    TARPAbstractHeader = record
+        Hardware_Type           : uint16;
+        Protocol_Type           : uint16;
+        Hardware_Address_Length : uint8;
+        Protocol_Address_Length : uint8;
+        Operation               : uint16;
+        Source_Hardware         : TMACAddress;
+        Source_Protocol         : TIPv4Address;
+        Destination_Hardware    : TMACAddress;
+        Destination_Protocol    : TIPv4Address;
+    end;
+
+    PARPHeader = ^TARPHeader;
+    TARPHeader = bitpacked record
+        Hardware_Type_Hi        : uint8;
+        Hardware_Type_Lo        : uint8;
+        Protocol_Type_Hi        : uint8;
+        Protocol_Type_Lo        : uint8;
+        Hardware_Address_Length : uint8;
+        Protocol_Address_Length : uint8;
+        Operation_Hi            : uint8;
+        Operation_Lo            : uint8;
+        Source_Hardware         : TMACAddress;
+        Source_Protocol         : TIPv4Address;
+        Destination_Hardware    : TMACAddress;
+        Destination_Protocol    : TIPv4Address;
+    end;
 
     PEthernetHeader = ^TEthernetHeader;
     TEthernetHeader = bitpacked record
@@ -56,6 +110,9 @@ type
         Dst           : Array[0..3] of uint8;
         Options       : uint32;
     end;
+
+    TNetSendCallback = function(p_data : void; p_len : uint16) : sint32;
+    TRecvCallback    = procedure(p_data : void; p_len : uint16; p_context : PPacketContext);
 
 const
     BROADCAST_MAC : Array[0..5] of uint8 = ($FF, $FF, $FF, $FF, $FF, $FF);
