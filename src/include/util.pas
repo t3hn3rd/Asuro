@@ -258,6 +258,7 @@ end;
 
 procedure BSOD(fault : pchar; info : pchar);
 begin
+    if not BSOD_ENABLE then exit;
     console.setdefaultattribute(console.combinecolors(white, Red));
     console.clear;
     console.writestringln(' ');

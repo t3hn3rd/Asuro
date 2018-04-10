@@ -156,7 +156,6 @@ begin
      pci.init();
      console.outputln('KERNEL', 'BUS DRIVERS: INIT END.');
      
-
      { Network Stack }
      ipv4.register();
 
