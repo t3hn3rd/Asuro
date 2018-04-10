@@ -104,6 +104,7 @@ begin
         console.setdefaultattribute(console.combinecolors(Red, Black));
         console.outputln('KERNEL', 'Multiboot Compliant Boot-Loader Needed!');
         console.outputln('KERNEL', 'HALTING.');
+        BSOD('Multiboot Error', 'Multiboot Compliant Boot-Loader Needed!');
         util.halt_and_catch_fire;
      end;
 
@@ -116,7 +117,7 @@ begin
      end else begin
         console.outputln('KERNEL', 'GDT: LOAD FAIL.');
         console.outputln('KERNEL', 'HALTING.');
-        halt_and_catch_fire;
+        BSOD('GDT', 'Failed to load the GDT correctly.');
      end;
 
      idt.init();
@@ -133,25 +134,29 @@ begin
      drivermanagement.init();
      storagemanagement.init();
 
-     //asm INT 13 end;
      STI;
      isr32.hook(uint32(@bios_data_area.tick_update));
 
-     //drivers
-     console.outputln('KERNEL', 'DRIVERS: INIT BEGIN.');
+     //Device Drivers
+     console.outputln('KERNEL', 'DEVICE DRIVERS: INIT BEGIN.');
      keyboard.init(keyboard_layout);
      mouse.init();
      testdriver.init();
      E1000.init();
      //IDE.init();
+     console.outputln('KERNEL', 'DEVICE DRIVERS: INIT END.');
 
-     //Nothing beyond here
+     //Bus Drivers
+     console.outputln('KERNEL', 'BUS DRIVERS: INIT BEGIN.');
      USB.init();
      pci.init();
-     console.outputln('KERNEL', 'DRIVERS: INIT END.');
+     console.outputln('KERNEL', 'BUS DRIVERS: INIT END.');
+     
 
-     //ipv4.register();
+     //Network Stack
+     ipv4.register();
 
+     //End of Boot
      console.writestringln('');
      console.setdefaultattribute(console.combinecolors(Green, Black));
      console.writestringln('Asuro Booted Correctly!');
