@@ -284,11 +284,11 @@ begin
     console.writestringln('    Your data is almost certainly safe. Probably.');
     console.writestringln(' ');
     console.writestringln('    The fault could have been caused by one or more of the following: ');
-    console.writestringln('    - LDH_NN_65 malfunctioning.');
+    console.writestringln('    - The fluxonium controller malfunctioning.');
     console.writestringln('    - A devlopers inability to handle faults correctly.');
     console.writestringln('    - Spilt coffee.');
-    console.writestringln('    - A monkey inside the PC Case.');
-    console.writestringln(' ');
+    console.writestringln('    - Monkeys inside the PC Case.');
+    console.writestringln('    - Something you did.');
     console.writestringln(' ');
     console.writestringln('    Details of the fault (for those boring enough to read) are as follows: ');
     console.writestringln(' ');
