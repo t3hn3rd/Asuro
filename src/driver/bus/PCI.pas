@@ -12,6 +12,7 @@ unit PCI;
 interface
 
 uses
+    tracer,
     util,
     console,
     drivertypes,
@@ -87,6 +88,7 @@ var
     current_bus : uint8;
 
 begin
+    push_trace('PCI.load');
     console.outputln('PCI', 'Scanning Bus: 0');
     scanBus(0);
     //while unscanned busses scan busses
@@ -100,6 +102,7 @@ begin
         end else break;
     end;
     load:= true;
+    pop_trace;
 end;
 
 procedure init();
@@ -107,6 +110,7 @@ var
     DevID : TDeviceIdentifier;
 
 begin
+    push_trace('PCI.init');
     console.outputln('PCI','INIT BEGIN.');
     DevID.Bus:= biUnknown;
     DevID.id0:= 0;
@@ -116,6 +120,7 @@ begin
     DevID.ex:= nil;
     drivermanagement.register_driver_ex('PCI Driver', @DevID, @load, true);
     console.outputln('PCI', 'INIT END.');
+    pop_trace;
 end;
 
 procedure scanBus(bus : uint8);
@@ -125,6 +130,7 @@ var
     result : boolean;
 
 begin
+    push_trace('PCI.scanBus');
     for slot := 0 to 31 do begin
         result := loadDeviceConfig(bus, slot, 0);
         if result = true then begin
@@ -135,6 +141,7 @@ begin
             end;
         end;
     end;
+    pop_trace;
 end;
 
 {
@@ -158,6 +165,7 @@ var
     addr  : uint32;
 
 begin
+    push_trace('PCI.writeConfig');
     addr := ($1 shl 31);
     addr := addr or (bus shl 16);
     addr := addr or ((slot) shl 11);
@@ -165,6 +173,7 @@ begin
     addr := addr or ((row) shl 2);
     outl(PCI_PORT_CONF_ADDR, addr);
     outl(PCI_PORT_CONF_DATA, val);
+    pop_trace;
 end;
 
 procedure setBusMaster(bus : uint8; slot : uint8; func : uint8; master : boolean);
@@ -172,6 +181,7 @@ var
     data : uint32;
 
 begin
+    push_trace('PCI.setBusMaster');
     requestConfig(bus, slot, func, 1);
     data := inl($CFC);
     if master then begin
@@ -180,6 +190,7 @@ begin
         data := data AND $FFFFFFFB;
     end;
     writeConfig(bus, slot, func, 1, data);
+    pop_trace;
 end;
 
 procedure requestConfig(bus : uint8; slot : uint8; func : uint8; row : uint8);
@@ -187,12 +198,14 @@ var
     addr : uint32;
     
 begin
+    push_trace('PCI.requestConfig');
     addr := ($1 shl 31);
     addr := addr or (bus shl 16);
     addr := addr or ((slot) shl 11);
     addr := addr or ((func) shl 8);
     addr := addr or ((row) shl 2);
     outl(PCI_PORT_CONF_ADDR, addr); 
+    pop_trace;
 end;
 
 procedure loadBusConfig(bus : uint8; slot : uint8; func : uint8; device : TPCI_Device);
@@ -201,6 +214,7 @@ var
     data : uint32;
 
 begin
+    push_trace('PCI.loadBusConfig');
 
     busT.device_id := device.device_id;
     busT.vendor_id := device.vendor_id;
@@ -270,7 +284,7 @@ begin
 
     busses[bus_count] := busT;
     bus_count := bus_count + 1;
-
+    pop_trace;
 end;
 
 function loadDeviceConfig(bus : uint8; slot : uint8; func : uint8) : boolean;
@@ -280,7 +294,7 @@ var
     DevID : PDeviceIdentifier;
 
 begin
-
+    push_trace('PCI.loadDeviceConfig');
     loadDeviceConfig := false;
 
     device.bus:= bus;
@@ -292,101 +306,100 @@ begin
     device.device_id := getword(data, false);
     device.vendor_id := getword(data, true);
 
-    if device.vendor_id = $FFFF then exit;
+    if device.vendor_id <> $FFFF then begin
+        requestConfig(bus, slot, func, 1);
+        data := inl($CFC);
+        device.status := getword(data, false);
+        device.command := getword(data, true);
 
-    requestConfig(bus, slot, func, 1);
-    data := inl($CFC);
-    device.status := getword(data, false);
-    device.command := getword(data, true);
+        requestConfig(bus, slot, func, 2);
+        data := inl($CFC);
+        device.class_code := getbyte(data, 3);
+        device.subclass_class := getbyte(data, 2);
+        device.prog_if := getbyte(data, 1);
+        device.revision_id := getbyte(data, 0);
 
-    requestConfig(bus, slot, func, 2);
-    data := inl($CFC);
-    device.class_code := getbyte(data, 3);
-    device.subclass_class := getbyte(data, 2);
-    device.prog_if := getbyte(data, 1);
-    device.revision_id := getbyte(data, 0);
+        requestConfig(bus, slot, func, 3);
+        data := inl($CFC);
+        device.BIST := getbyte(data, 3);
+        device.header_type := getbyte(data, 2);
+        device.latency_timer := getbyte(data, 1);
+        device.cache_size := getbyte(data, 0);
 
-    requestConfig(bus, slot, func, 3);
-    data := inl($CFC);
-    device.BIST := getbyte(data, 3);
-    device.header_type := getbyte(data, 2);
-    device.latency_timer := getbyte(data, 1);
-    device.cache_size := getbyte(data, 0);
+        if device.header_type and $7 = 0 then begin 
+            loadDeviceConfig := true;
+            requestConfig(bus, slot, func, 4);
+            device.address0 := inl($CFC);
+            requestConfig(bus, slot, func, 5);
+            device.address1 := inl($CFC);
+            requestConfig(bus, slot, func, 6);
+            device.address2 := inl($CFC);
+            requestConfig(bus, slot, func, 7);
+            device.address3 := inl($CFC);
+            requestConfig(bus, slot, func, 8);
+            device.address4 := inl($CFC);
+            requestConfig(bus, slot, func, 9);
+            device.address5 := inl($CFC);
+            
+            requestConfig(bus, slot, func, 10);
+            device.CIS_Pointer := inl($CFC);
 
-    if device.header_type and $7 = 0 then begin 
-        loadDeviceConfig := true;
-    end else begin
-        loadBusConfig(bus, slot, func, device);
-        exit(false);
-    end;
-     //TODO implement other types?
+            requestConfig(bus, slot, func, 11);
+            data := inl($CFC);
+            device.subsystem_id := getword(data, false);
+            device.subsystem_vid := getword(data, true);
+            
+            requestConfig(bus, slot, func, 12);
+            device.exp_rom_addr := inl($CFC);
 
-    requestConfig(bus, slot, func, 4);
-    device.address0 := inl($CFC);
-    requestConfig(bus, slot, func, 5);
-    device.address1 := inl($CFC);
-    requestConfig(bus, slot, func, 6);
-    device.address2 := inl($CFC);
-    requestConfig(bus, slot, func, 7);
-    device.address3 := inl($CFC);
-    requestConfig(bus, slot, func, 8);
-    device.address4 := inl($CFC);
-    requestConfig(bus, slot, func, 9);
-    device.address5 := inl($CFC);
-    
-    requestConfig(bus, slot, func, 10);
-    device.CIS_Pointer := inl($CFC);
+            requestConfig(bus, slot, func, 13);
+            data := inl($CFC);
+            device.reserved0 := getword(data, false);
+            device.reserved1 := getbyte(data, 1);
+            device.capabilities := getbyte(data, 0);
 
-    requestConfig(bus, slot, func, 11);
-    data := inl($CFC);
-    device.subsystem_id := getword(data, false);
-    device.subsystem_vid := getword(data, true);
-    
-    requestConfig(bus, slot, func, 12);
-    device.exp_rom_addr := inl($CFC);
+            requestConfig(bus, slot, func, 14);
+            device.reserved2 := inl($CFC);
 
-    requestConfig(bus, slot, func, 13);
-    data := inl($CFC);
-    device.reserved0 := getword(data, false);
-    device.reserved1 := getbyte(data, 1);
-    device.capabilities := getbyte(data, 0);
+            requestConfig(bus, slot, func, 15);
+            data := inl($CFC);
+            device.max_latency := getbyte(data, 3);
+            device.min_grant := getbyte(data, 2);
+            device.interrupt_pin := getbyte(data, 1);
+            device.interrupt_line := getbyte(data, 0);
 
-    requestConfig(bus, slot, func, 14);
-    device.reserved2 := inl($CFC);
+            DevID:= PDeviceIdentifier(kalloc(sizeof(TDeviceIdentifier)));
+            DevID^.Bus:= biPCI;
+            DevID^.id0:= device.device_id;
+            DevID^.id1:= device.class_code;
+            DevID^.id2:= device.subclass_class;
+            DevID^.id3:= device.prog_if;
+            DevID^.id4:= device.vendor_id;
+            DevID^.ex:= nil;
 
-    requestConfig(bus, slot, func, 15);
-    data := inl($CFC);
-    device.max_latency := getbyte(data, 3);
-    device.min_grant := getbyte(data, 2);
-    device.interrupt_pin := getbyte(data, 1);
-    device.interrupt_line := getbyte(data, 0);
+            console.output('PCI', 'Found Device: ');
+            console.writehex(device.header_type);
+            console.writestring('  ');
+            console.writehex(device.device_id);        
+            console.writestring('  ');        
+            console.writehex(device.class_code);        
+            console.writestring('  ');
+            console.writehex(device.subclass_class);        
+            console.writestring('  ');
+            console.writehexln(device.prog_if);
 
-    DevID:= PDeviceIdentifier(kalloc(sizeof(TDeviceIdentifier)));
-    DevID^.Bus:= biPCI;
-    DevID^.id0:= device.device_id;
-    DevID^.id1:= device.class_code;
-    DevID^.id2:= device.subclass_class;
-    DevID^.id3:= device.prog_if;
-    DevID^.id4:= device.vendor_id;
-    DevID^.ex:= nil;
+            devices[device_count] := device;
+            device_count := device_count + 1;
 
-    console.output('PCI', 'Found Device: ');
-    console.writehex(device.header_type);
-    console.writestring('  ');
-    console.writehex(device.device_id);        
-    console.writestring('  ');        
-    console.writehex(device.class_code);        
-    console.writestring('  ');
-    console.writehex(device.subclass_class);        
-    console.writestring('  ');
-    console.writehexln(device.prog_if);
-
-    devices[device_count] := device;
-    device_count := device_count + 1;
-
-    drivermanagement.register_device('PCI Device', DevID, @device);
-    kfree(void(DevID));
+            drivermanagement.register_device('PCI Device', DevID, @device);
+            kfree(void(DevID));
+        end else begin
+            loadBusConfig(bus, slot, func, device);
+        end;
+        //TODO implement other types?
+    end;   
     //if device.class_code = 1 then ata.init(device);   
+    pop_trace;
 end;
 
 function getDeviceInfo(class_code : uint8; subclass_code : uint8; prog_if : uint8; var count : uint32) : TDeviceArray; 
@@ -395,6 +408,7 @@ var
     devices_out : array[0..31] of TPCI_Device;
 
 begin
+    push_trace('PCI.getDeviceInfo');
     count := 0;
     for i:=0 to device_count do begin      
         {writehex(devices[i].class_code);
@@ -414,6 +428,7 @@ begin
         end;
     end;
     getDeviceInfo := devices_out;
+    pop_trace;
 end;
 
 end.

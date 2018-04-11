@@ -190,14 +190,15 @@ var
 begin
     push_trace('vmemorymanager.new_page');
     new_page:= false;
-    if PageDirectory^[page_number].Present then exit;
-    if PageDirectory^[page_number].Reserved then exit;
-    block:= pmemorymanager.new_block(uint32(PageDirectory));
-    if block < 2 then begin
-        GPF;
-        exit;
-    end else begin
-        new_page:= map_page(page_number, block);
+    if not PageDirectory^[page_number].Present then begin
+        if not PageDirectory^[page_number].Reserved then begin;
+            block:= pmemorymanager.new_block(uint32(PageDirectory));
+            if block < 2 then begin
+                GPF;
+            end else begin
+                new_page:= map_page(page_number, block);
+            end;
+        end;
     end;
     pop_trace;
 end;

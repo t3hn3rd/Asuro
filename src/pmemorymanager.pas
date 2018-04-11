@@ -48,18 +48,19 @@ begin
     push_trace('pmemorymanager.set_memory_area_present');
     FirstBlock:= base SHR 22;
     LastBlock:= (base+length) SHR 22;
-    if (FirstBlock > 1023) then exit;
-    while LastBlock > 1023 do begin
-        LastBlock:= LastBlock-1;
-    end;
-    for i:=FirstBlock to LastBlock do begin
-        if not present then begin
-            PhysicalMemory[i].Scanned:= True;
-            PhysicalMemory[i].Present:= present;
-        end else begin
-            If not PhysicalMemory[i].Scanned then begin
+    if not (FirstBlock > 1023) then begin
+        while LastBlock > 1023 do begin
+            LastBlock:= LastBlock-1;
+        end;
+        for i:=FirstBlock to LastBlock do begin
+            if not present then begin
                 PhysicalMemory[i].Scanned:= True;
                 PhysicalMemory[i].Present:= present;
+            end else begin
+                If not PhysicalMemory[i].Scanned then begin
+                    PhysicalMemory[i].Scanned:= True;
+                    PhysicalMemory[i].Present:= present;
+                end;
             end;
         end;
     end;
@@ -168,7 +169,7 @@ begin
             if not PhysicalMemory[i].Allocated then begin
                 if alloc_block(i, caller) then begin
                     new_block:= i;
-                    exit;
+                    break;
                 end;
             end;
         end;
@@ -181,19 +182,15 @@ begin
     push_trace('pmemorymanager.free_block');
     if block > 1023 then begin
         GPF;
-        exit;
     end;
     if block < 2 then begin
         GPF;
-        exit;
     end;
     if not PhysicalMemory[block].Present then begin
         GPF;
-        exit;
     end;
     if PhysicalMemory[block].MappedTo <> caller then begin
         GPF;
-        exit;
     end;
     PhysicalMemory[block].Allocated:= false;
     pop_trace;
