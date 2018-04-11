@@ -67,6 +67,15 @@ type
         byteSize      : uint32;
     end;
 
+    TFilesystemInfo = record
+        FATBaseAddress : uint32;
+        RootDirectory  : uint32;
+    end;
+
+    TFatVolumeInfo = record
+        sectorsPerCluster : uint8; // must be power of 2 and mult by sectorsize to max 32k
+    end;
+
 procedure init;
 procedure create_volume(disk : PStorage_Device; sectors : uint32; start : uint32);
 function detect_volumes(disk : PStorage_Device) : APStorage_volume;
@@ -100,8 +109,46 @@ begin
 
 end;
 
-procedure create_volume(disk : PStorage_Device; sectors : uint32; start : uint32);
+procedure create_volume(disk : PStorage_Device; sectors : uint32; start : uint32, config : puint32);
+var
+    i : uint8;
+    bootRecord : TBootRecord;
+    exBootRecord : TExtendedBootRecord;
 begin
+    bootrecord.jmp2boot:= $00 // TODO what ahppens here???
+    bootRecord.OEMName:= 'ASURO V1';
+    bootrecord.sectorsize:= disk^.sectorSize;
+    bootrecord.spc:= TFatVolumeInfo(config).sectorsPerCluster;
+    bootrecord.rsvSectors:= 32; //Is this acceptable?
+    bootrecord.numFats:= 2;
+    bootrecord.numDirEnt:= 0;
+    
+    if sectors < $10000 then begin
+        bootrecord.numSectors:= sectors; //maybe always needs to be 0?
+    end else bootRecord.numSectors:= 0;
+
+    bootrecord.mediaDescp:= $F8;
+    bootrecord.sectorsPerFat:= 0;
+    bootRecord.sectorsPerTrack:= 0;
+    bootRecord.heads:= 0;
+    bootRecord.hiddenSectors:= start;
+    bootRecord.manySectors:= sectors;
+
+    exBootRecord.FATSize:= ((sectors DIV TFatVolumeInfo(config).sectorsPerCluster) * 16 DIV disk^.sectorSize);
+    exBootRecord.flags:= 1 shl 7;
+    exBootRecord.FATVersion:= 0;
+    exBootRecord.rootCluster:= 2; // can be changed if needed.
+    exBootRecord.FSInfoCluster:=1; //TODO need FSINFO
+    exBootRecord.driveNumber:= $80;
+    exBootRecord.reserved0:=0;
+    exBootRecord.reserved1:=0;
+    exBootRecord.volumeID := 53424; //need random number generator
+    exBootRecord.volumeLabel[0] := 0; //needs to be set later !!!
+    exBootRecord.bsignature:= $29
+    exBootRecord.identString:= 'FAT32   ';
+
+    //448bytes bootstrap
+    //2bytes end mark 55AA
 
 end;
 

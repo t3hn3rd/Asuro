@@ -85,6 +85,8 @@ var
     i : uint8;
 begin
 
+    console.writestringln('poop');
+
     if stringEquals(getParam(0, params), 'ls') then begin
         for i:=0 to LL_Size(storageDevices) - 1 do begin
           //  if PStorage_Device(LL_Get(storageDevices, i))^.maxSectorCount = 0 then break;
