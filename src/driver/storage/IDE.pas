@@ -212,7 +212,7 @@ begin
         storageDevice.controllerId0:= 0;
         storageDevice.maxSectorCount:= (IDEDevices[0].info[60] or (IDEDevices[0].info[61] shl 16) ); //LBA28 SATA
         storageDevice.sectorSize:= 512;
-        storagemanagement.register_device(storageDevice);
+        storagemanagement.register_device(@storageDevice);
     end 
     //identify_device(0, $B0);
 

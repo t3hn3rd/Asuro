@@ -17,16 +17,21 @@ uses
     console,
     terminal,
     drivermanagement,
-    strings;
+    strings,
+    lists;
 
 type 
 
     TControllerType = (ControllerIDE, ControllerUSB, ControllerAHCI, ControllerNET);
     PStorage_volume = ^TStorage_Volume;
     PStorage_device = ^TStorage_Device;
+
     PPIOHook = procedure(volume : PStorage_volume; directory : pchar; byteCount : uint32; buffer : puint32);
+    PPHIOHook = procedure(volume : PStorage_device; addr : uint32; sectors : uint32; buffer : puint32);
     PPCreateHook = procedure(disk : PStorage_Device; sectors : uint32; start : uint32);
     PPDetectHook = procedure(disk : PStorage_Device);
+
+    PPHIOHook = procedure(device : PStorage_device; LBA : uint32; sectorCount : uint32; buffer : Puint32);
 
     TFilesystem = record
         sName : pchar;
@@ -37,10 +42,12 @@ type
     end;
 
     TStorage_Volume = record
-        idx         : uint8; 
-        sectorStart : uint32;
-        sectorSize  : uint32;
-        filesystem  : TFilesystem; 
+        sectorStart     : uint32;
+        sectorSize      : uint32;
+        freeSectors     : uint32;
+        filesystem      : TFilesystem; 
+        filesystemInfo  : Puint32; // type dependant on filesystem. can be null if not creating volume now
+        directory       : PLinkedListBase; // type dependant on filesytem?
     end;
     APStorage_Volume = array[0..10] of PStorage_volume;
 
@@ -51,19 +58,21 @@ type
         maxSectorCount   : uint32;
         sectorSize       : uint32;
         writable         : boolean;
-        volumes          : array[0..255] of TStorage_Volume
+        volumes          : array[0..7] of TStorage_Volume
+        writeCallback    : PPHIOHook;
+        readCallback     : PPHIOHook;
     end;
     APStorage_Device = array[0..255] of PStorage_device;
 
 
 var 
-    storageDevices : array[0..25] of TStorage_Device; //index in this array is global drive id
-    fileSystems : array[0..31] of TFilesystem;
+    storageDevices : PLinkedListBase; //index in this array is global drive id
+    fileSystems : array[0..7] of TFilesystem;
 
 procedure init();
 
-procedure register_device(device : TStorage_Device);
-function get_all_devices() : APStorage_Device;
+procedure register_device(device : PStorage_Device);
+function get_device_list() : PLinkedListBase;
 
 procedure register_filesystem(filesystem : TFilesystem);
 
@@ -77,18 +86,18 @@ var
 begin
 
     if stringEquals(getParam(0, params), 'ls') then begin
-        for i:=0 to 255 do begin
-            if storageDevices[i].maxSectorCount = 0 then break;
+        for i:=0 to LL_Size(storageDevices) - 1 do begin
+          //  if PStorage_Device(LL_Get(storageDevices, i))^.maxSectorCount = 0 then break;
             console.writeint(i);
             console.writestring(') Device_Type: ');
-            case storageDevices[i].controller of
+            case PStorage_Device(LL_Get(storageDevices, i))^.controller of
                 ControllerIDE  : console.writestring('IDE, ');
                 ControllerUSB  : console.writestring('USB, ');
                 ControllerAHCI : console.writestring('AHCI, ');
                 ControllerNET  : console.writestring('NET, ');
             end;
             console.writestring('Capacity: ');
-            console.writeint(((storageDevices[i].maxSectorCount * storageDevices[i].sectorSize) DIV 1000) DIV 1000);
+            console.writeint((( PStorage_Device(LL_Get(storageDevices, i))^.maxSectorCount * PStorage_Device(LL_Get(storageDevices, i))^.sectorSize) DIV 1000) DIV 1000);
             console.writestringln('MB');
         end;
     end;
@@ -96,34 +105,24 @@ end;
 
 procedure init();
 begin
+    storageDevices:= ll_New(sizeof(TStorage_Device));
     terminal.registerCommand('DISK', @disk_command, 'List physical storage devices');
 end;
 
-procedure register_device(device : TStorage_Device);
+procedure register_device(device : PStorage_device);
 var 
-    i : uint8;
+    i   : uint8;
+    elm : void;
+    dev : PStorage_device;
 begin
-    for i:=0 to 255 do begin 
-        if storageDevices[i].maxSectorCount = 0 then begin
-            storageDevices[i]:= device;
-            storageDevices[i].idx:= i;
-            //for all filesystems look for volumes
-            break;
-        end;
-    end;
+    elm:= LL_Add(storageDevices);
+    PStorage_device(elm)^ := device^;
+    //check for volumes
 end;
 
-function get_all_devices() : APStorage_Device;
-var
-    devices : APStorage_Device;
-    i : uint8;
+function get_device_list() : PLinkedListBase;
 begin
-    for i:= 0 to 255 do begin
-        if storageDevices[i].maxSectorCount <> 0 then begin
-            devices[i]:= @storageDevices[i];
-        end;
-    end;
-    get_all_devices:= devices;
+    get_device_list:= storageDevices;
 end;
 
 procedure register_filesystem(filesystem : TFilesystem);
