@@ -126,6 +126,9 @@ procedure readPIO28(drive : uint8; LBA : uint32; sectorCount : uint8; buffer : p
 procedure writePIO28(drive : uint8; LBA : uint32; sectorCount : uint8; buffer : Puint32);
 //read/write must be capable of reading/writting any amknt of data upto disk size
 
+procedure read(device : PStorage_device; LBA : uint32; sectorCount : uint32; buffer : Puint32);
+procedure write(device : PStorage_device; LBA : uint32; sectorCount : uint32; buffer : Puint32);
+
 implementation 
 
 procedure test_command(params : PParamList);
@@ -134,47 +137,54 @@ var
     cpacityMB : uint32;
     buffer : puint32;
     i : uint8;
+    d : uint8;
 begin
-    secotrs := IDEDevices[0].info[60];
-    secotrs := secotrs or (IDEDevices[0].info[61] shl 16);
 
-    cpacityMB :=  (secotrs * 512) DIV 1000 DIV 1000;
+    for d:= 0 to 1 do begin
+        secotrs := IDEDevices[d].info[60];
+        secotrs := secotrs or (IDEDevices[d].info[61] shl 16);
 
-    console.writestring('HHD_Primary_MASTER -');
-    console.writestring(' Capacity: ');
-    console.writeint(cpacityMB);
-    console.writestringln('MB');
+        cpacityMB :=  (secotrs * 512) DIV 1000 DIV 1000;
 
-    buffer := puint32(kalloc(1024));
-    //buffer^:= secotrs;
+        if d = 0 then console.writestring('HHD_Primary_MASTER -');
+        if d = 1 then console.writestring('HHD_Primary_SLAVE -');
 
-    for i:=0 to 20 do begin
-        puint32(buffer + (i div 2))^:= $10010110;
+        console.writestring(' Capacity: ');
+        console.writeint(cpacityMB);
+        console.writestringln('MB');
+
+        buffer := puint32(kalloc(1024));
+        //buffer^:= secotrs;
+
+        for i:=0 to 20 do begin
+            puint32(buffer + (i div 2))^:= $10010110;
+        end;
+
+        writePIO28(d, 2, 1, buffer);
+        //buffer^:= $FFFF;
+        for i:=0 to 20 do begin
+            puint32(buffer + (i div 2))^:= $FFFFFFFF;
+        end;
+        
+        readPIO28(d, 2, 1, buffer);
+
+        for i:=0 to 20 do begin
+            if puint32(buffer + (i div 2))^ <> $10010110 then begin
+                console.writestringln('Tests failed!');
+                exit;
+        end;
+        end;
+
+    // if uint32(buffer^) = secotrs then begin
+            console.writestringln('Tests successful!');
+        // end
+        // else begin
+        //     console.writestringln('Tests failed!');
+        //     console.writehexln($01101001);
+        //     console.writehexln(uint32(buffer^));
+        // end;
+        kfree(buffer);
     end;
-
-    writePIO28(0, 2, 1, buffer);
-    //buffer^:= $FFFF;
-    for i:=0 to 20 do begin
-        puint32(buffer + (i div 2))^:= $FFFFFFFF;
-    end;
-    
-    readPIO28(0, 2, 1, buffer);
-
-    for i:=0 to 20 do begin
-        if puint32(buffer + (i div 2))^ <> $10010110 then begin
-            console.writestringln('Tests failed!');
-            exit;
-       end;
-    end;
-
-   // if uint32(buffer^) = secotrs then begin
-        console.writestringln('Tests successful!');
-    // end
-    // else begin
-    //     console.writestringln('Tests failed!');
-    //     console.writehexln($01101001);
-    //     console.writehexln(uint32(buffer^));
-    // end;
 end;
 
 procedure init();  
@@ -201,10 +211,9 @@ var
 begin
     //controller := PPCI_Device(ptr);
 
-
     //check if bus is floating and identify device
     if inb($1F7) <> $FF then begin
-        outb($3F6, inb($3f6) or (1 shl 1)); // disable interrupts
+        //outb($3F6, inb($3f6) or (1 shl 1)); // disable interrupts
         IDEDevices[0].isMaster:= true;
         IDEDevices[0].info := identify_device(0, $A0);
 
@@ -214,6 +223,8 @@ begin
         storageDevice.sectorSize:= 512;
         if storageDevice.maxSectorCount <> 0 then begin
             IDEDevices[0].exists:= true;
+            storageDevice.readCallback:= @read;
+            storageDevice.writeCallback:= @write;
             storagemanagement.register_device(@storageDevice);
         end;
     end;
@@ -223,15 +234,32 @@ begin
         IDEDevices[1].info := identify_device(0, $B0);
 
         storageDevice1.controller := ControllerIDE;
-        storageDevice1.controllerId0:= 0;
+        storageDevice1.controllerId0:= 1;
         storageDevice1.maxSectorCount:= (IDEDevices[1].info[60] or (IDEDevices[1].info[61] shl 16) ); //LBA28 SATA
         storageDevice1.sectorSize:= 512;
         if storageDevice1.maxSectorCount <> 0 then begin
             IDEDevices[1].exists:= true;
+            storageDevice1.readCallback:= @read;
+            storageDevice1.writeCallback:= @write;
             storagemanagement.register_device(@storageDevice1);
         end;
     end 
 
+end;
+
+procedure noInt(drive : uint8);
+begin
+    if drive = 0 then begin
+        outb($1F6, $A0); //drive select
+        outb($3F6, inb($3f6) or (1 shl 1)); // disable interrupts
+        //outb($1F6, $B0); //drive select
+        //outb($3F6, inb($3f6) and (0 shl 1)); // disable interrupts
+    end else begin
+        outb($1F6, $B0); //drive select
+        outb($3F6, inb($3f6) or (1 shl 1)); // disable interrupts
+        //outb($1F6, $A0); //drive select
+        //outb($3F6, inb($3f6) and (0 shl 1)); // disable interrupts
+    end;
 end;
 
 function identify_device(bus : uint8; drive : uint8) : TIdentResponse;
@@ -241,6 +269,10 @@ var
     t : uint32 = 0;
 begin
     if bus = 0 then begin
+
+        if drive = $A0 then noInt(0);
+        if drive = $B0 then noInt(1);
+
         outb($1F6, drive); //drive select
 
         outw($1F2, 0); //clear sector count and lba
@@ -276,11 +308,19 @@ var
     i : uint8;
     ii : uint8;
     iii : uint32;
-begin 
+begin
+
+    while true do if (inw($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
+
+
+    noInt(drive);
+
     if IDEDevices[drive].isMaster then begin
+        //outb($1F6, $A0); //drive select
         outb($1F7, $E0 or ((LBA shr 24) and $0F)); //LBA command primary master
     end
     else begin
+        //outb($1F6, $B0); //drive select
         outb($1F7, $F0 or ((LBA shr 24) and $0F)); //LBA command primary slave
     end;
 
@@ -323,10 +363,17 @@ var
     ii : uint8;
     iii : uint32;
 begin 
+
+    while true do if (inw($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
+
+    noInt(drive);
+
     if IDEDevices[drive].isMaster then begin
+        //outb($1F6, $A0); //drive select
         outb($1F7, $E0 or ((LBA shr 24) and $0F)); //read command primary master
     end
     else begin
+        //outb($1F6, $B0); //drive select
         outb($1F7, $F0 or ((LBA shr 24) and $0F)); //read command primary slave
     end;
 
@@ -394,4 +441,14 @@ begin
 
 end;
 
+
+procedure read(device : PStorage_device; LBA : uint32; sectorCount : uint32; buffer : Puint32);
+begin
+    readPIO28(device^.controllerId0, LBA, sectorCount, buffer);
+end;
+
+procedure write(device : PStorage_device; LBA : uint32; sectorCount : uint32; buffer : Puint32);
+begin
+    writePIO28(device^.controllerId0, LBA, sectorCount, buffer);
+end;
 end.

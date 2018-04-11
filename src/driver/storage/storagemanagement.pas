@@ -31,7 +31,7 @@ type
     PPCreateHook = procedure(disk : PStorage_Device; sectors : uint32; start : uint32);
     PPDetectHook = procedure(disk : PStorage_Device);
 
-    PPHIOHook_ = procedure(device : PStorage_device; LBA : uint32; sectorCount : uint32; buffer : Puint32);
+    PPHIOHook_ = procedure;
 
     TFilesystem = record
         sName : pchar;
