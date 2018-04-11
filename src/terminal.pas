@@ -44,6 +44,7 @@ var
     History  : PHistory;
     bIndex   : uint32 = 0;
     Commands : array[0..65534] of TCommand;
+    Working_Directory : PChar = '/';
 
 procedure run;
 procedure init;
@@ -51,8 +52,22 @@ procedure registerCommand(command : pchar; method : TCommandMethod; description 
 function getParams(buf : TCommandBuffer) : PParamList;
 function paramCount(params : PParamList) : uint32;
 function getParam(index : uint32; params : PParamList) : pchar;
+procedure setWorkingDirectory(str : pchar);
+function getWorkingDirectory : pchar;
 
 implementation
+
+function getWorkingDirectory : pchar;
+begin
+    getWorkingDirectory:= Working_Directory;
+end;
+
+procedure setWorkingDirectory(str : pchar);
+begin
+    if str <> nil then begin
+        Working_Directory:= stringCopy(str);
+    end;
+end;
 
 function paramCount(params : PParamList) : uint32;
 var
@@ -257,7 +272,9 @@ begin
     end;
 
     { Reset the terminal ready for the next command }
-    console.writestring('Asuro#> ');
+    console.writestring('Asuro#');
+    console.writestring(Working_Directory);
+    console.writestring('> ');
     bIndex:= 0;
     memset(uint32(@buffer[0]), 0, 1024);
 
@@ -285,6 +302,13 @@ begin
     end;
 end;
 
+procedure change_dir(Params : PParamList);
+begin
+    if paramCount(Params) > 0 then begin
+        setWorkingDirectory(getParam(0, Params));
+    end;
+end;
+
 procedure init;
 begin
     console.writestringln('TERMINAL: INIT BEGIN.');
@@ -296,6 +320,7 @@ begin
     registerCommand('ECHO', @echo, 'Echo''s text to the terminal.');
     registerCommand('TESTPARAMS', @testParams, 'Tests param parsing.');
     registerCommand('TEST', @test, 'Command for testing.');
+    registerCommand('CD', @change_dir, 'Change Directory test');
     console.writestringln('TERMINAL: INIT END.');
 end;
 
@@ -303,7 +328,9 @@ procedure run;
 begin
     keyboard.hook(@key_event);
     console.clear();
-    console.writestring('Asuro#> ');
+    console.writestring('Asuro#');
+    console.writestring(Working_Directory);
+    console.writestring('> ');
 end;
 
 end.
