@@ -179,7 +179,7 @@ begin
      console.writestringln('');
      console.writestringln('Press any key to boot in to Asuro Terminal...');
 
-     GPF;
+     //GPF;
 
      keyboard.hook(@temphook);
 
