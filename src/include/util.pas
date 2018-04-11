@@ -265,6 +265,8 @@ end;
 procedure BSOD(fault : pchar; info : pchar);
 var
     trace : pchar;
+    i     : uint32;
+    z     : uint32;
 
 begin
     if not BSOD_ENABLE then exit;
@@ -291,25 +293,33 @@ begin
     console.writestringln(' ');
     console.writestringln('    Asuro encountered an error and your computer is now a teapot.');
     console.writestringln(' ');
-    console.writestringln('    Your data is almost certainly safe. Probably.');
-    console.writestringln(' ');
-    console.writestringln('    The fault could have been caused by one or more of the following: ');
-    console.writestringln('    - The fluxonium controller malfunctioning.');
-    console.writestringln('    - A devlopers inability to handle faults correctly.');
-    console.writestringln('    - Spilt coffee.');
-    console.writestringln('    - Monkeys inside the PC Case.');
-    console.writestringln('    - Something you did.');
+    console.writestringln('    Your data is almost certainly safe.');
     console.writestringln(' ');
     console.writestringln('    Details of the fault (for those boring enough to read) are as follows: ');
     console.writestringln(' ');
-    console.writestring('    Fault ID: ');
+    console.writestring('    Fault ID:   ');
     console.writestringln(fault);
     console.writestring('    Fault Info: ');
     console.writestringln(info);
-    console.writestring('    Faulting Module: ');
-    trace:= tracer.get_last_trace;
-    if trace <> nil then console.writestringln(tracer.get_last_trace) else console.writestringln('Unknown');
     console.writestringln(' ');
+    console.writestring('    Call Stack: ');
+    trace:= tracer.get_last_trace;
+    if trace <> nil then begin
+        console.writestring('[-0] ');
+        console.writestringln(trace);
+        for i:=1 to 6 do begin
+            trace:= tracer.get_trace_N(i);
+            if trace <> nil then begin
+                console.writestring('                [');
+                console.writestring('-');
+                console.writeint(i);
+                console.writestring('] ');
+                console.writestringln(trace);
+            end;
+        end;
+    end else begin
+        console.writestringln('Unknown.')
+    end;
     halt_and_catch_fire();
 end;
 
