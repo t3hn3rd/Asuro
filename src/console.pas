@@ -37,6 +37,8 @@ procedure init();
 procedure clear();
 procedure setdefaultattribute(attribute : char);
 
+procedure disable_cursor;
+
 procedure writechar(character : char);
 procedure writecharln(character : char);
 procedure writecharex(character : char; attributes : char);
@@ -120,6 +122,12 @@ var
    Console_Memory     : PVideoMemory = PVideoMemory($C00b8000);
    Console_Matrix     : P2DVideoMemory = P2DVideoMemory($C00b8000);
    Console_Cursor     : TCoord;
+
+procedure disable_cursor;
+begin
+     outb($3D4, $0A);
+     outb($3D5, $20);
+end;
 
 procedure init(); [public, alias: 'console_init'];
 Begin

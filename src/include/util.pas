@@ -16,6 +16,7 @@ interface
 uses
     bios_data_area, tracer;
 
+function  INTE : boolean;
 procedure CLI();
 procedure STI();
 procedure GPF();
@@ -32,6 +33,7 @@ procedure outl(port : uint16; val : uint32);
 function inb(port : uint16) : uint8;
 function inw(port : uint16) : uint16;
 function inl(port : uint16) : uint32;
+procedure io_wait;
 
 procedure memset(location : uint32; value : uint8; size : uint32);
 procedure memcpy(source : uint32; dest : uint32; size : uint32);
@@ -51,6 +53,38 @@ implementation
 
 uses
     console;
+
+function INTE : boolean;
+var
+    flags : uint32;
+begin
+    asm
+        PUSH EAX
+        PUSHF
+        POP EAX
+        MOV flags, EAX
+        POP EAX
+    end;
+    INTE:= (flags AND (1 SHL 9)) > 0;
+end;
+
+procedure io_wait;
+var
+    port : uint8;
+    val  : uint8;
+begin
+    port:= $80;
+    val:= 0;
+    asm
+        PUSH EAX
+        PUSH EDX
+        MOV DX, port
+        MOV AL, val
+        OUT DX, AL
+        POP EDX
+        POP EAX   
+    end;  
+end;
 
 procedure printmemory(source : uint32; length : uint32; col : uint32; delim : PChar; offset_row : boolean);
 var
@@ -269,6 +303,7 @@ var
     z     : uint32;
 
 begin
+    disable_cursor;
     if not BSOD_ENABLE then exit;
     console.setdefaultattribute(console.combinecolors(white, Red));
     console.clear;

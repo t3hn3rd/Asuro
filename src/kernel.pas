@@ -97,9 +97,11 @@ var
 
    
 begin
+     { Store Multiboot info }
      multibootinfo:= mbinfo;
      multibootmagic:= mbmagic;
 
+     { Ensure tracer is frozen }
      tracer.freeze();
 
      { Console Init }
@@ -144,16 +146,25 @@ begin
      tss.init();
      scheduler.init();
 
-     { Management Interfaces }
+     { Call Tracer }
      tracer.init();
+
+     { Management Interfaces }
+     tracer.push_trace('kmain.DRVMGMT');
      drivermanagement.init();
+     tracer.pop_trace;
+     tracer.push_trace('kmain.STRMGMT');
      storagemanagement.init();
+     tracer.pop_trace;
 
      { Hook Timer for Ticks }
+     tracer.push_trace('kmain.TMR');
      STI;
      isr32.hook(uint32(@bios_data_area.tick_update));
+     tracer.pop_trace;
 
      { Device Drivers }
+     tracer.push_trace('kmain.DEVDRV');
      console.outputln('KERNEL', 'DEVICE DRIVERS: INIT BEGIN.');
      keyboard.init(keyboard_layout);
      mouse.init();
@@ -161,26 +172,36 @@ begin
      E1000.init();
      IDE.init();
      console.outputln('KERNEL', 'DEVICE DRIVERS: INIT END.');
+     tracer.pop_trace;
 
      { Bus Drivers }
+     tracer.push_trace('kmain.BUSDRV');
      console.outputln('KERNEL', 'BUS DRIVERS: INIT BEGIN.');
      USB.init();
      pci.init();
      console.outputln('KERNEL', 'BUS DRIVERS: INIT END.');
-     
+     tracer.pop_trace;
+
      { Network Stack }
+     tracer.push_trace('kmain.NETDRV');
      net.init;
+     tracer.pop_trace;
 
      { End of Boot }
+     tracer.push_trace('kmain.EOB');
      console.writestringln('');
      console.setdefaultattribute(console.combinecolors(Green, Black));
      console.writestringln('Asuro Booted Correctly!');
      console.setdefaultattribute(console.combinecolors(White, Black));
      console.writestringln('');
      console.writestringln('Press any key to boot in to Asuro Terminal...');
+     tracer.pop_trace;
 
+     tracer.push_trace('kmain.KEYHOOK');
      keyboard.hook(@temphook);
+     tracer.pop_trace;
 
+     tracer.push_trace('kmain.END');
      util.halt_and_dont_catch_fire;
 end;
  

@@ -3,6 +3,7 @@ unit USB;
 interface
 
 uses
+    tracer,
     Console,
     PCI,
     drivertypes,
@@ -49,6 +50,7 @@ var
     MMR     : POHCI_MMR;
 
 begin
+    push_trace('USB.loadOHCI');
     devices:= PCI.getDeviceInfo($0C, $03, $10, count);
     console.output('USB-OHCI Driver', 'Found ');
     console.writeint(count);
@@ -70,6 +72,7 @@ begin
         end;
     end;
     loadOHCI:= true;
+    pop_trace;
 end;
 
 function loadUHCI(ptr : void) : boolean;
@@ -79,6 +82,7 @@ var
     i       : uint32;
 
 begin
+    push_trace('USB.loadUHCI');
     devices:= PCI.getDeviceInfo($0C, $03, $00, count);
     console.output('USB-UHCI Driver','Found ');
     console.writeint(count);
@@ -96,6 +100,7 @@ begin
         end;
     end;
     loadUHCI:= true;
+    pop_trace;
 end;
 
 procedure init;
@@ -103,6 +108,7 @@ var
     UHCI_ID, OHCI_ID : TDeviceIdentifier;
 
 begin
+    push_trace('USB.init');
     console.outputln('USB Driver', 'INIT BEGIN.');
     
     UHCI_ID.Bus:= biPCI;
@@ -125,6 +131,7 @@ begin
     drivermanagement.register_driver('USB-OHCI Driver', @OHCI_ID, @loadOHCI);
 
     console.outputln('USB Driver', 'INIT END.');
+    pop_trace;
 end;
 
 end.

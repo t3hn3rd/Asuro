@@ -3,7 +3,7 @@ unit testdriver;
 interface
 
 uses
-    console, drivermanagement;
+    tracer, console, drivermanagement;
 
 procedure init;
 
@@ -11,7 +11,9 @@ implementation
 
 function load(ptr : void) : boolean;
 begin
-    console.outputln('DUMMY DRIVER', 'LOADED.')
+    push_trace('testdriver.load');
+    console.outputln('DUMMY DRIVER', 'LOADED.');
+    pop_trace;
 end;
 
 procedure init;
@@ -19,6 +21,7 @@ var
     devID : TDeviceIdentifier;
 
 begin
+    push_trace('testdriver.init');
     devID.bus:= biPCI; { PCI BUS }
     devID.id0:= idANY; { ANY DEVICE ID }
     devID.id1:= $00000006; { CLASS }
@@ -27,6 +30,7 @@ begin
     devID.id4:= idANY;
     devID.ex:= nil; { NO EXTENDED INFO }
     drivermanagement.register_driver('DUMMY DRIVER', @devID, @load);
+    pop_trace;
 end;
 
 end.

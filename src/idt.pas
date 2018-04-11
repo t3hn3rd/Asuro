@@ -45,6 +45,12 @@ procedure set_gate(Number : uint8; Base : uint32; Selector : uint16; Flags : uin
 
 implementation
 
+procedure load(idt_pointer : uint32); assembler; nostackframe;
+asm
+    MOV EAX, idt_pointer
+    LIDT [EAX]
+end;
+
 procedure set_gate(Number : uint8; Base : uint32; Selector : uint16; Flags : uint8);
 begin
     IDT_Entries[Number].base_high:= (Base and $FFFF0000) SHR 16;
@@ -55,12 +61,7 @@ begin
     console.output('IDT','GATE ');
     console.writeint(Number);
     console.writestringln(' SET.');
-end;
-
-procedure load(idt_pointer : uint32); assembler; nostackframe;
-asm
-    MOV EAX, idt_pointer
-    LIDT [EAX]
+    load(uint32(@IDT_Pointer));
 end;
 
 procedure init();
