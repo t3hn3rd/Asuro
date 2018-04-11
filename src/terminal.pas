@@ -60,7 +60,6 @@ var
     i : uint32;
 
 begin
-    push_trace('terminal.paramCount');
     current:= params;
     i:= 0;
     while current^.param <> nil do begin
@@ -68,7 +67,6 @@ begin
         current:= current^.next;
     end;
     paramCount:= i-1;
-    pop_trace;
 end;
 
 function getParams(buf : TCommandBuffer) : PParamList;
@@ -80,7 +78,6 @@ var
     current : PParamList;
 
 begin
-    push_trace('terminal.getParams');
     root:= PParamList(kalloc(sizeof(TParamList)));
     current:= root;
     current^.next:= nil;
@@ -106,7 +103,6 @@ begin
         inc(finish);     
     end;
     getParams:= root;
-    pop_trace;
 end;
 
 function getParam(index : uint32; params : PParamList) : pchar;
@@ -116,14 +112,12 @@ var
     i      : uint32;
 
 begin
-    push_trace('terminal.getParam');
     result:= nil;
     search:= params;
     for i:=0 to index do begin
         search:= search^.next;
     end;
     result:= search^.param;
-    pop_trace;
 end;
 
 procedure freeParams(params : PParamList);
@@ -132,7 +126,6 @@ var
     next : PParamList;
 
 begin
-    push_trace('terminal.freeParams');
     p:= params;
     next:= p^.next;
     while p^.next <> nil do begin
@@ -141,17 +134,14 @@ begin
         p:= next;
         next:= p^.next;
     end;
-    pop_trace;
 end;
 
 procedure testParams(params : PParamList);
 begin
-    push_trace('terminal.testParams');
     while params^.Param <> nil do begin
         writestringln(params^.Param);
         params:= params^.next;
     end;
-    pop_trace;
 end;
 
 procedure echo(params : PParamList);
@@ -159,7 +149,6 @@ var
     current : PParamList;
 
 begin
-    push_trace('terminal.echo');
     current:= params^.next;
     while current^.param <> nil do begin
         console.writestring(current^.param);
@@ -167,28 +156,22 @@ begin
         current:= current^.next;
     end;
     console.writestringln('');
-    pop_trace;
 end;
 
 procedure clear(params : PParamList);
 begin
-    push_trace('terminal.clear');
     console.clear();
-    pop_trace;
 end;
 
 procedure version(params : PParamList);
 begin
-    push_trace('terminal.version');
     console.writestringln('Asuro v1.0');
-    pop_trace;
 end;
 
 procedure help(params : PParamList);
 var
     i : uint32;
 begin
-    push_trace('terminal.help');
     console.writestringln('Registered Commands: ');
     for i:=0 to 65534 do begin
         if Commands[i].Registered then begin
@@ -198,18 +181,15 @@ begin
             console.writestringln(Commands[i].description);
         end;
     end;
-    pop_trace;
 end;
 
 procedure test(params : PParamList);
 begin
-    push_trace('terminal.test');
     if paramCount(params) > 0 then begin
         console.writeintln(stringToInt(getParam(0, params)));
     end else begin
         console.writestringln('Invalid number of params');
-    end;    
-    pop_trace;
+    end;
 end;
 
 procedure registerCommand(command : pchar; method : TCommandMethod; description : pchar);
@@ -217,14 +197,12 @@ var
     index : uint32;
 
 begin
-    push_trace('terminal.registerCommand');
     index:= 0;
     while Commands[index].registered = true do inc(index);
     Commands[index].registered:= true;
     Commands[index].Command:= command;
     Commands[index].method:= method;
     Commands[index].description:= description;
-    pop_trace;
 end;
 
 procedure process_command;
@@ -279,7 +257,6 @@ end;
 
 procedure key_event(info : TKeyInfo);
 begin
-    push_trace('terminal.key_event');
     if (info.key_code >= 32) and (info.key_code <= 126) then begin
         if bIndex < 1024 then begin
             buffer[bIndex]:= info.key_code;
@@ -297,12 +274,10 @@ begin
     if info.key_code = 13 then begin //return
         process_command;
     end;
-    pop_trace;
 end;
 
 procedure init;
 begin
-    push_trace('terminal.init');
     console.writestringln('TERMINAL: INIT BEGIN.');
     memset(uint32(@Commands[0]), 0, 65535*sizeof(TCommand));
     memset(uint32(@buffer[0]), 0, 1024);
@@ -313,16 +288,13 @@ begin
     registerCommand('TESTPARAMS', @testParams, 'Tests param parsing.');
     registerCommand('TEST', @test, 'Command for testing.');
     console.writestringln('TERMINAL: INIT END.');
-    pop_trace;
 end;
 
 procedure run;
 begin
-    push_trace('terminal.run');
     keyboard.hook(@key_event);
     console.clear();
     console.writestring('Asuro#> ');
-    pop_trace;
 end;
 
 end.
