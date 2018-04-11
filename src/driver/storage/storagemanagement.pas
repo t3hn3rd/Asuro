@@ -88,7 +88,7 @@ var
 begin
 
 
-    if stringEquals(getParam(0, params), 'ls') then begin
+    if stringEquals(getParam(0, params), 'ls') and (LL_Size(storageDevices) > 0) then begin
         for i:=0 to LL_Size(storageDevices) - 1 do begin
           //  if PStorage_Device(LL_Get(storageDevices, i))^.maxSectorCount = 0 then break;
             console.writeint(i);
