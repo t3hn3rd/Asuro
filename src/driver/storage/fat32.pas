@@ -8,7 +8,7 @@
   * Contributors: 
   ************************************************ }
 
-unit fat32;
+unit FAT32;
 
 interface
 
@@ -17,24 +17,21 @@ uses
 
 type 
 
-    TBootRecord = bitpacked record 
+    TBootRecord = bitpacked record
         jmp2boot        : ubit24;
-        OEMName         : uint64;
+        OEMName         : array[0..7] of char;
         sectorSize      : uint16;
         spc             : uint8;
         rsvSectors      : uint16;
         numFats         : uint8;
         numDirEnt       : uint16;
-        numSecotrs      : uint16;
+        numSectors      : uint16;
         mediaDescp      : uint8;
         sectorsPerFat   : uint16;
         sectorsPerTrack : uint16;
         heads           : uint16;
-        hiddenSecotrs   : uint32;
+        hiddenSectors   : uint32;
         manySectors     : uint32;
-    end;
-    
-    TExtendedBootRecord = bitpacked record
         FATSize       : uint32;
         flags         : uint16;
         signature     : uint8;
@@ -45,11 +42,14 @@ type
         reserved0     : array[0..11] of uint8;
         driveNumber   : uint8;
         reserved1     : uint8;
-        signature     : uint8 = $28;
+        bsignature     : uint8;// = $28;
         volumeID      : uint32;
         volumeLabel   : array[0..10] of uint8;
-        identString   : pchar = 'FAT32 ';
+        identString   : array[0..7] of char;// = 'FAT32 ';
     end;
+
+    byteArray8 = array[0..7] of char;
+    byteArray12 = array[0..11] of uint8;
 
     TDirectory = bitpacked record
         fileName      : uint64;
@@ -75,28 +75,17 @@ type
     TFatVolumeInfo = record
         sectorsPerCluster : uint8; // must be power of 2 and mult by sectorsize to max 32k
     end;
+    PFatVolumeInfo = ^TFatVolumeInfo;
 
 procedure init;
-procedure create_volume(disk : PStorage_Device; sectors : uint32; start : uint32);
-function detect_volumes(disk : PStorage_Device) : APStorage_volume;
+procedure create_volume(disk : PStorage_Device; sectors : uint32; start : uint32; config : puint32);
+procedure detect_volumes(disk : PStorage_Device; volumes : puint32);
 
 implementation
 
 function load(ptr : void) : boolean;
 begin
     console.outputln('DUMMY DRIVER', 'LOADED.')
-end;
-
-procedure init;
-var
-    filesystem : TFilesystem;
-begin
-    filesystem.sName:= 'FAT32'; 
-    filesystem.writecallback:= write;
-    filesystem.readcallback:= read;
-    filesystem.createcallback:= create_volume;
-    filesystem.detectcallback:= detect_volumes; 
-    storagemanagement.register_filesystem(filesystem);
 end;
 
 procedure read(volume : PStorage_volume; directory : pchar; byteCount : uint32; buffer : puint32);
@@ -109,24 +98,54 @@ begin
 
 end;
 
-procedure create_volume(disk : PStorage_Device; sectors : uint32; start : uint32, config : puint32);
+procedure init;
+var
+    filesystem : TFilesystem;
+begin
+    filesystem.sName:= 'FAT32'; 
+    filesystem.writecallback:= @write;
+    filesystem.readcallback:= @read;
+    filesystem.createcallback:= @create_volume;
+    filesystem.detectcallback:= @detect_volumes; 
+    storagemanagement.register_filesystem(filesystem);
+end;
+
+procedure create_volume(disk : PStorage_Device; sectors : uint32; start : uint32; config : puint32);
 var
     i : uint8;
     bootRecord : TBootRecord;
-    exBootRecord : TExtendedBootRecord;
+    buffer : puint32;
+    asuroArray : byteArray8;// = byteArray8(['A','S','U','R','O',' ','V','1']);
+    fatArray : byteArray8;// = byteArray8(['F','A','T','3','2',' ',' ',' ']);
 begin
-    bootrecord.jmp2boot:= $00 // TODO what ahppens here???
-    bootRecord.OEMName:= 'ASURO V1';
+
+    asuroArray[0] := 'A';
+    asuroArray[1] := 's';
+    asuroArray[2] := 'u';
+    asuroArray[3] := 'r';
+    asuroArray[4] := 'o';
+    asuroArray[5] := ' ';
+    asuroArray[6] := 'V';
+    asuroArray[7] := '1';
+
+    fatArray[0] := 'F';
+    fatArray[1] := 'A';
+    fatArray[2] := 'T';
+    fatArray[3] := '3';
+    fatArray[4] := '2';
+    fatArray[5] := ' ';
+    fatArray[6] := ' ';
+    fatArray[7] := ' ';
+
+
+    bootrecord.jmp2boot:= $00; // TODO what ahppens here???
+    bootRecord.OEMName:= asuroArray;
     bootrecord.sectorsize:= disk^.sectorSize;
-    bootrecord.spc:= TFatVolumeInfo(config).sectorsPerCluster;
+    bootrecord.spc:= PFatVolumeInfo(config)^.sectorsPerCluster;
     bootrecord.rsvSectors:= 32; //Is this acceptable?
     bootrecord.numFats:= 2;
     bootrecord.numDirEnt:= 0;
-    
-    if sectors < $10000 then begin
-        bootrecord.numSectors:= sectors; //maybe always needs to be 0?
-    end else bootRecord.numSectors:= 0;
-
+    bootRecord.numSectors:= 0;
     bootrecord.mediaDescp:= $F8;
     bootrecord.sectorsPerFat:= 0;
     bootRecord.sectorsPerTrack:= 0;
@@ -134,25 +153,29 @@ begin
     bootRecord.hiddenSectors:= start;
     bootRecord.manySectors:= sectors;
 
-    exBootRecord.FATSize:= ((sectors DIV TFatVolumeInfo(config).sectorsPerCluster) * 16 DIV disk^.sectorSize);
-    exBootRecord.flags:= 1 shl 7;
-    exBootRecord.FATVersion:= 0;
-    exBootRecord.rootCluster:= 2; // can be changed if needed.
-    exBootRecord.FSInfoCluster:=1; //TODO need FSINFO
-    exBootRecord.driveNumber:= $80;
-    exBootRecord.reserved0:=0;
-    exBootRecord.reserved1:=0;
-    exBootRecord.volumeID := 53424; //need random number generator
-    exBootRecord.volumeLabel[0] := 0; //needs to be set later !!!
-    exBootRecord.bsignature:= $29
-    exBootRecord.identString:= 'FAT32   ';
+    BootRecord.FATSize:= ((sectors DIV PFatVolumeInfo(config)^.sectorsPerCluster) * 16 DIV disk^.sectorSize);
+    BootRecord.flags:= 1 shl 7;
+    BootRecord.FATVersion:= 0;
+    BootRecord.rootCluster:= 2; // can be changed if needed.
+    BootRecord.FSInfoCluster:=1; //TODO need FSINFO
+    BootRecord.driveNumber:= $80;
+    //BootRecord.reserved0:=0;
+    //BootRecord.reserved1:=0;
+    BootRecord.volumeID := 53424; //need random number generator
+    //BootRecord.volumeLabel[0] := 0; //needs to be set later !!!
+    BootRecord.bsignature:= $29;
+    BootRecord.identString:= fatArray;
+
+    buffer:= @bootrecord;
+    disk^.writeCallback(disk, 1, sizeof(TBootRecord), buffer);
+
 
     //448bytes bootstrap
     //2bytes end mark 55AA
 
 end;
 
-function detect_volumes(disk : PStorage_Device) : APStorage_volume;
+procedure detect_volumes(disk : PStorage_Device; volumes : puint32);
 begin
     
 end;

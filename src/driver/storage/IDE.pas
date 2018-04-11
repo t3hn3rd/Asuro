@@ -136,7 +136,7 @@ var
     secotrs : uint32;
     cpacityMB : uint32;
     buffer : puint32;
-    i : uint8;
+    i : uint32;
     d : uint8;
 begin
 
@@ -153,26 +153,26 @@ begin
         console.writeint(cpacityMB);
         console.writestringln('MB');
 
-        buffer := puint32(kalloc(1024));
+        buffer := puint32(kalloc(1024 * 2000));
         //buffer^:= secotrs;
 
         for i:=0 to 20 do begin
             puint32(buffer + (i div 2))^:= $10010110;
         end;
 
-        writePIO28(d, 2, 1, buffer);
+        writePIO28(d, 2, 2, buffer);
         //buffer^:= $FFFF;
         for i:=0 to 20 do begin
             puint32(buffer + (i div 2))^:= $FFFFFFFF;
         end;
         
-        readPIO28(d, 2, 1, buffer);
+        readPIO28(d, 2, 2, buffer);
 
         for i:=0 to 20 do begin
             if puint32(buffer + (i div 2))^ <> $10010110 then begin
                 console.writestringln('Tests failed!');
                 exit;
-        end;
+            end;
         end;
 
     // if uint32(buffer^) = secotrs then begin

@@ -25,11 +25,12 @@ type
     TControllerType = (ControllerIDE, ControllerUSB, ControllerAHCI, ControllerNET);
     PStorage_volume = ^TStorage_Volume;
     PStorage_device = ^TStorage_Device;
+    APStorage_Volume = array[0..10] of PStorage_volume;
 
     PPIOHook = procedure(volume : PStorage_volume; directory : pchar; byteCount : uint32; buffer : puint32);
     PPHIOHook = procedure(volume : PStorage_device; addr : uint32; sectors : uint32; buffer : puint32);
-    PPCreateHook = procedure(disk : PStorage_Device; sectors : uint32; start : uint32);
-    PPDetectHook = procedure(disk : PStorage_Device);
+    PPCreateHook = procedure(disk : PStorage_Device; sectors : uint32; start : uint32; config : puint32);
+    PPDetectHook = procedure(disk : PStorage_Device; volumes : Puint32);
 
     PPHIOHook_ = procedure;
 
@@ -37,8 +38,8 @@ type
         sName : pchar;
         writeCallback  : PPIOHook;
         readCallback   : PPIOHook;
-        createCallback : uint32;
-        detectCallback : uint32;
+        createCallback : PPCreateHook;
+        detectCallback : PPDetectHook;
     end;
 
     TStorage_Volume = record
@@ -49,7 +50,6 @@ type
         filesystemInfo  : Puint32; // type dependant on filesystem. can be null if not creating volume now
         directory       : PLinkedListBase; // type dependant on filesytem?
     end;
-    APStorage_Volume = array[0..10] of PStorage_volume;
 
     TStorage_Device = record
         idx              : uint8;
