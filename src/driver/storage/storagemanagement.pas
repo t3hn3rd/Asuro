@@ -85,7 +85,6 @@ var
     i : uint8;
 begin
 
-    console.writestringln('poop');
 
     if stringEquals(getParam(0, params), 'ls') then begin
         for i:=0 to LL_Size(storageDevices) - 1 do begin
@@ -99,7 +98,7 @@ begin
                 ControllerNET  : console.writestring('NET, ');
             end;
             console.writestring('Capacity: ');
-            console.writeint((( PStorage_Device(LL_Get(storageDevices, i))^.maxSectorCount * PStorage_Device(LL_Get(storageDevices, i))^.sectorSize) DIV 1000) DIV 1000);
+            console.writeint((( PStorage_Device(LL_Get(storageDevices, i))^.maxSectorCount * PStorage_Device(LL_Get(storageDevices, i))^.sectorSize) DIV 1024) DIV 1024);
             console.writestringln('MB');
         end;
     end;
@@ -119,6 +118,7 @@ var
 begin
     elm:= LL_Add(storageDevices);
     PStorage_device(elm)^ := device^;
+
     //check for volumes
 end;
 

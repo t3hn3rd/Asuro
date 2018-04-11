@@ -197,6 +197,7 @@ end;
 function load(ptr : void) : boolean;
 var
     storageDevice : TStorage_Device;
+    storageDevice1 : TStorage_Device;
 begin
     //controller := PPCI_Device(ptr);
 
@@ -204,7 +205,6 @@ begin
     //check if bus is floating and identify device
     if inb($1F7) <> $FF then begin
         outb($3F6, inb($3f6) or (1 shl 1)); // disable interrupts
-        IDEDevices[0].exists:= true;
         IDEDevices[0].isMaster:= true;
         IDEDevices[0].info := identify_device(0, $A0);
 
@@ -212,9 +212,25 @@ begin
         storageDevice.controllerId0:= 0;
         storageDevice.maxSectorCount:= (IDEDevices[0].info[60] or (IDEDevices[0].info[61] shl 16) ); //LBA28 SATA
         storageDevice.sectorSize:= 512;
-        storagemanagement.register_device(@storageDevice);
+        if storageDevice.maxSectorCount <> 0 then begin
+            IDEDevices[0].exists:= true;
+            storagemanagement.register_device(@storageDevice);
+        end;
+    end;
+
+    if inb($1F7) <> $FF then begin
+        IDEDevices[1].isMaster:= false;
+        IDEDevices[1].info := identify_device(0, $B0);
+
+        storageDevice1.controller := ControllerIDE;
+        storageDevice1.controllerId0:= 0;
+        storageDevice1.maxSectorCount:= (IDEDevices[1].info[60] or (IDEDevices[1].info[61] shl 16) ); //LBA28 SATA
+        storageDevice1.sectorSize:= 512;
+        if storageDevice1.maxSectorCount <> 0 then begin
+            IDEDevices[1].exists:= true;
+            storagemanagement.register_device(@storageDevice1);
+        end;
     end 
-    //identify_device(0, $B0);
 
 end;
 
