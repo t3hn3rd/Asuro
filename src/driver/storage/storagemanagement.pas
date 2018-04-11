@@ -78,6 +78,8 @@ procedure register_filesystem(filesystem : TFilesystem);
 
 //procedure register_volume(volume : TStorage_Volume);
 
+//TODO write partition table
+
 implementation 
 
 procedure disk_command(params : PParamList);

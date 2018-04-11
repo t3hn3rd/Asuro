@@ -20,7 +20,8 @@ uses
     drivermanagement,
     vmemorymanager,
     lmemorymanager,
-    storagemanagement;
+    storagemanagement,
+    tracer;
 
 type 
     TIdentResponse = array[0..255] of uint16;
@@ -191,6 +192,7 @@ procedure init();
 var
     devID : TDeviceIdentifier;
 begin
+    push_trace('ide.init');
     console.writestringln('IDE ATA Driver: Init()');
     devID.bus:= biPCI;
     devID.id0:= idANY;
@@ -202,6 +204,7 @@ begin
     drivermanagement.register_driver('IDE ATA Driver', @devID, @load);
     terminal.registerCommand('IDE', @test_command, 'TEST IDE DRIVER');
     buffer := Puint32(kalloc(1024*2));
+    pop_trace();
 end;
 
 function load(ptr : void) : boolean;
@@ -209,6 +212,7 @@ var
     storageDevice : TStorage_Device;
     storageDevice1 : TStorage_Device;
 begin
+    push_trace('ide.load');
     //controller := PPCI_Device(ptr);
 
     //check if bus is floating and identify device
@@ -243,8 +247,8 @@ begin
             storageDevice1.writeCallback:= @write;
             storagemanagement.register_device(@storageDevice1);
         end;
-    end 
-
+    end;
+    pop_trace();
 end;
 
 procedure noInt(drive : uint8);
@@ -268,6 +272,7 @@ var
     identResponse : TIdentResponse;
     t : uint32 = 0;
 begin
+    push_trace('ide.identify_device');
     if bus = 0 then begin
 
         if drive = $A0 then noInt(0);
@@ -301,6 +306,7 @@ begin
         identify_device:= identResponse;
         exit;
     end; 
+    pop_trace();
 end;
 
 procedure writePIO28(drive : uint8; LBA : uint32; sectorCount : uint8; buffer : Puint32);
@@ -309,7 +315,7 @@ var
     ii : uint8;
     iii : uint32;
 begin
-
+    push_trace('ide.writePIO28');
     while true do if (inw($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
 
 
@@ -355,6 +361,7 @@ begin
 
         end;
     end;
+    pop_trace();
 end;
 
 procedure readPIO28(drive : uint8; LBA : uint32; sectorCount : uint8; buffer : puint32);
@@ -363,7 +370,7 @@ var
     ii : uint8;
     iii : uint32;
 begin 
-
+    push_trace('ide.readPIO28');
     while true do if (inw($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
 
     noInt(drive);
@@ -405,6 +412,7 @@ begin
             end;
         end;
     end;
+    pop_trace();
 end;
 
 procedure readPIOPI(drive : uint8; LBA : uint32; buffer : Puint32);
@@ -444,7 +452,7 @@ end;
 
 procedure read(device : PStorage_device; LBA : uint32; sectorCount : uint32; buffer : Puint32);
 begin
-    readPIO28(device^.controllerId0, LBA, sectorCount, buffer);
+    readPIO28(device^.controllerId0, LBA, sectorCount, buffer); //need to figure out max read/write amount per operation
 end;
 
 procedure write(device : PStorage_device; LBA : uint32; sectorCount : uint32; buffer : Puint32);

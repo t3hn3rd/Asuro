@@ -13,7 +13,7 @@ unit FAT32;
 interface
 
 uses
-    console, storagemanagement;
+    console, storagemanagement, util, lmemorymanager;
 
 type 
 
@@ -49,7 +49,6 @@ type
     end;
 
     byteArray8 = array[0..7] of char;
-    byteArray12 = array[0..11] of uint8;
 
     TDirectory = bitpacked record
         fileName      : uint64;
@@ -66,6 +65,7 @@ type
         clusterLow    : uint16;
         byteSize      : uint32;
     end;
+    PDirectory = ^TDirectory;
 
     TFilesystemInfo = record
         FATBaseAddress : uint32;
@@ -143,7 +143,7 @@ begin
     bootrecord.sectorsize:= disk^.sectorSize;
     bootrecord.spc:= PFatVolumeInfo(config)^.sectorsPerCluster;
     bootrecord.rsvSectors:= 32; //Is this acceptable?
-    bootrecord.numFats:= 2;
+    bootrecord.numFats:= 1;
     bootrecord.numDirEnt:= 0;
     bootRecord.numSectors:= 0;
     bootrecord.mediaDescp:= $F8;
@@ -154,7 +154,7 @@ begin
     bootRecord.manySectors:= sectors;
 
     BootRecord.FATSize:= ((sectors DIV PFatVolumeInfo(config)^.sectorsPerCluster) * 16 DIV disk^.sectorSize);
-    BootRecord.flags:= 1 shl 7;
+    BootRecord.flags:= 0; //1 shl 7 for mirroring
     BootRecord.FATVersion:= 0;
     BootRecord.rootCluster:= 2; // can be changed if needed.
     BootRecord.FSInfoCluster:=1; //TODO need FSINFO
@@ -166,12 +166,21 @@ begin
     BootRecord.bsignature:= $29;
     BootRecord.identString:= fatArray;
 
+    puint32(buffer + (127))^:= $55AA; //end marker
+
     buffer:= @bootrecord;
-    disk^.writeCallback(disk, 1, sizeof(TBootRecord), buffer);
+    disk^.writeCallback(disk, start + 1, 1, buffer);
+
+    //TODO FSINFO struct
+
+    //write fat
+    buffer := puint32(kalloc((sectors DIV bootrecord.spc) * 4));
+    memset(uint32(buffer), 0, sectors DIV bootrecord.spc);
+    puint32(buffer + 1)^:= $FFF8; //root directory table cluster, currently root is only 1 cluster long
+    disk^.writeCallback(disk, start + 2, sectors DIV bootrecord.spc, buffer);
+    //disk^.writeCallback(disk, start + 2 + (sectors Div bootrecord.sectorsPerCluster DIV 512), sectors DIV bootrecord.sectorsPerCluster, buffer);
 
 
-    //448bytes bootstrap
-    //2bytes end mark 55AA
 
 end;
 
