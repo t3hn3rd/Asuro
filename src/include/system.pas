@@ -15,6 +15,7 @@ const
      KERNEL_VIRTUAL_BASE = $C0000000;
      KERNEL_PAGE_NUMBER = KERNEL_VIRTUAL_BASE SHR 22;
      BSOD_ENABLE = true;
+     TRACER_ENABLE = true;
 
 type
     //internal types
