@@ -271,7 +271,6 @@ begin
         b2:= ll2 <> nil;
         identifiers_match:= identifiers_match and (b1 = b2);
         if not (b1 and b2) then begin
-            identifiers_match:= false;
             break;
         end; 
         if b1 = b2 then begin
