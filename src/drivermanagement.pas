@@ -88,7 +88,7 @@ var
     i   : uint32;
 
 begin
-    //push_trace('driver_management.terminal_command_drivers');
+    push_trace('driver_management.terminal_command_drivers');
     Drv:= Root;
     i:= 1;
     while Drv <> nil do begin
@@ -120,7 +120,7 @@ begin
         end;
         Drv:= Drv^.Next;
     end;
-    //pop_trace;
+    pop_trace;
 end;
 
 procedure terminal_command_driversex(Params : PParamList);
@@ -130,7 +130,7 @@ var
     i   : uint32;
 
 begin
-    //push_trace('driver_management.terminal_command_driversex');
+    push_trace('driver_management.terminal_command_driversex');
     Drv:= Root;
     i:= 1;
     while Drv <> nil do begin
@@ -161,7 +161,7 @@ begin
         i:= i + 1;
         Drv:= Drv^.Next;
     end;
-    //pop_trace;
+    pop_trace;
 end;
 
 procedure terminal_command_devices(Params : PParamList);
@@ -171,7 +171,7 @@ var
     i  : uint32;
 
 begin
-    //push_trace('driver_management.terminal_command_devices');
+    push_trace('driver_management.terminal_command_devices');
     Dv:= Dev;
     i:= 1;
     while Dv <> nil do begin
@@ -209,7 +209,7 @@ begin
         i:= i + 1;
         Dv:= Dv^.Next; 
     end;
-    //pop_trace;
+    pop_trace;
 end;
 
 { Main Functions }
@@ -222,6 +222,7 @@ var
     new_ex: PDevEx;
 
 begin
+    push_trace('driver_management.copy_identifier');
     New_DevID:= PDeviceIdentifier(kalloc(sizeof(TDeviceIdentifier)));
     New_DevID^.Bus:= DeviceID^.Bus;
     New_DevID^.id0:= DeviceID^.id0;
@@ -246,6 +247,7 @@ begin
     end;
     New_DevID^.ex:= root_ex;
     copy_identifier:= New_DevID;
+    pop_trace;
 end;
 
 function identifiers_match(i1, i2 : PDeviceIdentifier) : boolean;
@@ -254,6 +256,7 @@ var
     b1, b2 : boolean;
 
 begin
+    push_trace('driver_management.identifiers_match');
     identifiers_match:= true;
     identifiers_match:= identifiers_match and ((i1^.Bus = i2^.Bus) OR (i1^.Bus = biANY) OR (i2^.Bus = biANY));
     identifiers_match:= identifiers_match and ((i1^.id0 = i2^.id0) OR (i1^.id0 = $FFFFFFFF) OR (i2^.id0 = $FFFFFFFF));
@@ -267,28 +270,36 @@ begin
         b1:= ll1 <> nil;
         b2:= ll2 <> nil;
         identifiers_match:= identifiers_match and (b1 = b2);
-        if not (b1 and b2) then exit;
+        if not (b1 and b2) then begin
+            identifiers_match:= false;
+            break;
+        end; 
         if b1 = b2 then begin
             identifiers_match:= identifiers_match and ((ll1^.idN = ll2^.idN) OR (ll1^.idN = $FFFFFFFF) OR (ll2^.idN = $FFFFFFFF));    
         end else begin
             identifiers_match:= false;
-            exit;
+            break;
         end;
         ll1:= ll1^.ex;
         ll2:= ll2^.ex;
     end;
+    pop_trace;
 end;
 
 procedure init;
 begin
+    push_trace('driver_management.init');
     terminal.registerCommand('DRIVERSEX', @terminal_command_driversex, 'List all available drivers.');
     terminal.registerCommand('DRIVERS', @terminal_command_drivers, 'List loaded drivers.');
     terminal.registerCommand('DEVICES', @terminal_command_devices, 'List devices.');
+    pop_trace;
 end;
 
 procedure register_driver(Driver_Name : PChar; DeviceID : PDeviceIdentifier; Load_Callback : TDriverLoadCallback);
 begin
+    push_trace('driver_management.register_driver');
     register_driver_ex(Driver_Name, DeviceID, Load_Callback, false);
+    pop_trace;
 end;
 
 procedure register_driver_ex(Driver_Name : PChar; DeviceID : PDeviceIdentifier; Load_Callback : TDriverLoadCallback; force_load : boolean);
@@ -297,33 +308,34 @@ var
     RegList : PDriverRegistration;
 
 begin
-    //push_trace('driver_management.register_driver_ex');
-    if DeviceID = nil then exit;
-    NewReg:= PDriverRegistration(kalloc(sizeof(TDriverRegistration)));
-    NewReg^.Driver_Name:= stringCopy(Driver_Name);
-    NewReg^.Identifier:= copy_identifier(DeviceID);
-    NewReg^.Loaded:= false;
-    NewReg^.Driver_Load:= Load_Callback;
-    NewReg^.Next:= nil;
-    if Root = nil then begin
-        Root:= NewReg;
-    end else begin
-        RegList:= Root;
-        While RegList^.Next <> nil do begin
-            RegList:= RegList^.Next;
+    push_trace('driver_management.register_driver_ex');
+    if DeviceID <> nil then begin;
+        NewReg:= PDriverRegistration(kalloc(sizeof(TDriverRegistration)));
+        NewReg^.Driver_Name:= stringCopy(Driver_Name);
+        NewReg^.Identifier:= copy_identifier(DeviceID);
+        NewReg^.Loaded:= false;
+        NewReg^.Driver_Load:= Load_Callback;
+        NewReg^.Next:= nil;
+        if Root = nil then begin
+            Root:= NewReg;
+        end else begin
+            RegList:= Root;
+            While RegList^.Next <> nil do begin
+                RegList:= RegList^.Next;
+            end;
+            RegList^.Next:= NewReg;
         end;
-        RegList^.Next:= NewReg;
+        console.output('Driver Management', 'New Driver Registered: ');
+        console.writestringln(NewReg^.Driver_Name);
+        if force_load then begin
+            console.output('Driver Management', 'Driver (');
+            console.writestring(NewReg^.Driver_Name);
+            console.writestringln(') forced to load.');
+            NewReg^.Loaded:= True;
+            NewReg^.Driver_Load(nil);
+        end;
     end;
-    console.output('Driver Management', 'New Driver Registered: ');
-    console.writestringln(NewReg^.Driver_Name);
-    if force_load then begin
-        console.output('Driver Management', 'Driver (');
-        console.writestring(NewReg^.Driver_Name);
-        console.writestringln(') forced to load.');
-        NewReg^.Loaded:= True;
-        NewReg^.Driver_Load(nil);
-    end;
-    //pop_trace;
+    pop_trace;
 end;
 
 procedure register_device(Device_Name : PChar; DeviceID : PDeviceIdentifier; ptr : void);
@@ -333,7 +345,7 @@ var
     dev_list : PDeviceRegistration;
 
 begin
-    //push_trace('driver_management.register_device');
+    push_trace('driver_management.register_device');
     drv:= Root;
     new_dev:= PDeviceRegistration(kalloc(sizeof(TDeviceRegistration)));
     new_dev^.Device_Name:= stringCopy(Device_Name);
@@ -365,12 +377,12 @@ begin
                 drv^.Loaded:= true;
                 new_dev^.Driver_Loaded:= true;
                 new_dev^.Driver:= drv;
-                exit;
+                break;
             end;
         end;
         drv:= drv^.Next;
     end;
-    //pop_trace;
+    pop_trace;
 end;
 
 end.

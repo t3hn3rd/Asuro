@@ -58,7 +58,9 @@ uses
 
 function new_page_directory : uint32;
 begin
+     push_trace('vmemorymanager.new_page_directory');
      new_page_directory:= uint32(kalloc(sizeof(TPageDirectory)));
+     pop_trace;
 end;
 
 function new_kernel_mapped_page_directory : uint32;
@@ -67,11 +69,13 @@ var
     i  : uint32;
 
 begin
+    push_trace('vmemorymanager.new_kernel_mapped_page_directory');
     PD:= PPageDirectory(new_page_directory);
     for i:=KERNEL_PAGE_NUMBER to 1023 do begin
         PD^[i]:= KERNEL_PAGE_DIRECTORY^[i];
     end;
     new_kernel_mapped_page_directory:= uint32(PD);
+    pop_trace;
 end;
 
 function load_current_page_directory : PPageDirectory;
@@ -79,6 +83,7 @@ var
     Directory : uint32;
 
 begin
+    push_trace('vmemorymanager.load_current_page_directory');
     asm
         MOV EAX, CR3
         MOV Directory, EAX
@@ -93,6 +98,7 @@ var
     i : uint32;
 
 begin
+    push_trace('vmemorymanager.init');
     console.outputln('VMM','INIT BEGIN.');
     PageDirectory:= load_current_page_directory;
     KERNEL_PAGE_DIRECTORY:= PageDirectory;
@@ -101,6 +107,7 @@ begin
     map_page(KERNEL_PAGE_NUMBER + 2, 2);
     map_page(KERNEL_PAGE_NUMBER + 3, 3);    
     console.outputln('VMM','INIT END.');
+    pop_trace;
 end;
 
 function map_page_ex(page_number : uint16; block : uint16; PD : PPageDirectory) : boolean;
@@ -109,6 +116,7 @@ var
     page  : uint16;
 
 begin
+    push_trace('vmemorymanager.map_page_ex');
     map_page_ex:= false;
     PD^[page_number].Present:= true;
     addr:= block;
@@ -134,6 +142,7 @@ begin
     // console.writestringln(']');
     
     map_page_ex:= true;
+    pop_trace;
 end;
 
 function map_page(page_number : uint16; block : uint16) : boolean;
@@ -143,6 +152,7 @@ var
     rldpd : uint32;
 
 begin
+    push_trace('vmemorymanager.map_page');
     map_page:= false; 
     PageDirectory^[page_number].Present:= true;
     addr:= block;
@@ -155,6 +165,7 @@ begin
         mov eax, rldpd
         mov CR3, eax
     end;
+    pop_trace;
 end;
 
 function vtop(address : uint32) : uint32;
@@ -164,10 +175,12 @@ var
     loadd    : uint32;
 
 begin
+    push_trace('vmemorymanager.vtop');
     idx:= address SHR 22;
     paddress:= uint32(KERNEL_PAGE_DIRECTORY^[idx].address) SHL 12;
     loadd:= address AND $FFFFFF;
     vtop:= paddress + loadd;
+    pop_trace;
 end;
 
 function new_page(page_number : uint16) : boolean;
@@ -175,6 +188,7 @@ var
     block : uint16;
 
 begin
+    push_trace('vmemorymanager.new_page');
     new_page:= false;
     if PageDirectory^[page_number].Present then exit;
     if PageDirectory^[page_number].Reserved then exit;
@@ -185,6 +199,7 @@ begin
     end else begin
         new_page:= map_page(page_number, block);
     end;
+    pop_trace;
 end;
 
 function new_page_at_address(address : uint32) : boolean;
@@ -192,8 +207,10 @@ var
     page_number : uint16;
 
 begin
+    push_trace('vmemorymanager.new_page_at_address');
     page_number:= address SHR 22;
     new_page_at_address:= new_page(page_number);
+    pop_trace;
 end;
 
 procedure free_page(page_number : uint16);
@@ -201,6 +218,7 @@ var
     block : uint16;
 
 begin
+    push_trace('vmemorymanager.free_page');
     if PageDirectory^[page_number].Present then begin
         block:= PageDirectory^[page_number].Address;
         asm
@@ -210,6 +228,7 @@ begin
     end else begin
         GPF;
     end;
+    pop_trace;
 end;
 
 procedure free_page_at_address(address : uint32);
@@ -217,8 +236,10 @@ var
     page_number : uint16;
 
 begin
+    push_trace('vmemorymanager.free_page_at_address');
     page_number:= address SHR 22;
     free_page(page_number);
+    pop_trace;
 end;
 
 end.

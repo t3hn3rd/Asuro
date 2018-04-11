@@ -31,7 +31,7 @@ type
     PPCreateHook = procedure(disk : PStorage_Device; sectors : uint32; start : uint32);
     PPDetectHook = procedure(disk : PStorage_Device);
 
-    PPHIOHook = procedure(device : PStorage_device; LBA : uint32; sectorCount : uint32; buffer : Puint32);
+    PPHIOHook_ = procedure(device : PStorage_device; LBA : uint32; sectorCount : uint32; buffer : Puint32);
 
     TFilesystem = record
         sName : pchar;
@@ -58,7 +58,7 @@ type
         maxSectorCount   : uint32;
         sectorSize       : uint32;
         writable         : boolean;
-        volumes          : array[0..7] of TStorage_Volume
+        volumes          : array[0..7] of TStorage_Volume;
         writeCallback    : PPHIOHook;
         readCallback     : PPHIOHook;
     end;

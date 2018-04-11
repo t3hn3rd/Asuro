@@ -100,6 +100,8 @@ begin
      multibootinfo:= mbinfo;
      multibootmagic:= mbmagic;
 
+     tracer.freeze();
+
      { Console Init }
      console.init();
 
@@ -176,6 +178,8 @@ begin
      console.setdefaultattribute(console.combinecolors(White, Black));
      console.writestringln('');
      console.writestringln('Press any key to boot in to Asuro Terminal...');
+
+     GPF;
 
      keyboard.hook(@temphook);
 

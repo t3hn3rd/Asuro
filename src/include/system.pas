@@ -14,7 +14,7 @@ interface
 const
      KERNEL_VIRTUAL_BASE = $C0000000;
      KERNEL_PAGE_NUMBER = KERNEL_VIRTUAL_BASE SHR 22;
-     BSOD_ENABLE = false;
+     BSOD_ENABLE = true;
 
 type
     //internal types

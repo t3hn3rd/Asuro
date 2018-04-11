@@ -14,7 +14,8 @@ interface
 uses
     util,
     console,
-    multiboot;
+    multiboot,
+    tracer;
 
 type
     TPhysicalMemoryEntry = packed record
@@ -44,6 +45,7 @@ var
    i          : uint32;
 
 begin
+    push_trace('pmemorymanager.set_memory_area_present');
     FirstBlock:= base SHR 22;
     LastBlock:= (base+length) SHR 22;
     if (FirstBlock > 1023) then exit;
@@ -61,6 +63,7 @@ begin
             end;
         end;
     end;
+    pop_trace;
 end;
 
 procedure walk_memory_map;
@@ -71,6 +74,7 @@ var
   i       : uint16;
 
 begin
+    push_trace('pmemorymanager.walk_memory_map');
     address:= multibootinfo^.mmap_addr + KERNEL_VIRTUAL_BASE;
     length:= multibootinfo^.mmap_length;
     mmap:= Pmemory_map_t(address);
@@ -92,10 +96,12 @@ begin
     for i:=0 to 1023 do begin
         if PhysicalMemory[i].Present then nPresent:= nPresent + 1;
     end;
+    pop_trace;
 end;
 
 procedure force_alloc_block(block : uint16; caller : uint32);
 begin
+    push_trace('pmemorymanager.force_alloc_block');
     PhysicalMemory[block].Allocated:= True;
     PhysicalMemory[block].MappedTo:= caller;
     // console.writestring('PMM: 4MiB Block Force Allocated @ ');
@@ -105,10 +111,12 @@ begin
     // console.writestring(' - ');
     // console.writehex(((block+1) SHL 22));
     // console.writestringln(']');
+    pop_trace;
 end;
 
 procedure init;
 begin
+    push_trace('pmemorymanager.init');
     console.outputln('PMM','INIT BEGIN.');
     walk_memory_map;
     force_alloc_block(0, 0);
@@ -119,10 +127,12 @@ begin
     console.writeword(nPresent);
     console.writestringln('/1024 Block Available for Allocation.');
     console.outputln('PMM','INIT END.');
+    pop_trace;
 end;
 
 function alloc_block(block : uint16; caller : uint32) : boolean;
 begin
+    push_trace('pmemorymanager.alloc_block');
     alloc_block:= false;
     if (PhysicalMemory[block].Present) then begin
         if PhysicalMemory[block].Allocated then begin
@@ -143,6 +153,7 @@ begin
         GPF;
         alloc_block:= false;
     end;
+    pop_trace;
 end;
 
 function new_block(caller : uint32) : uint16;
@@ -150,6 +161,7 @@ var
     i : uint16;
 
 begin
+    push_trace('pmemorymanager.new_block');
     new_block:= 0;
     for i:=2 to 1023 do begin
         if PhysicalMemory[i].Present then begin
@@ -161,10 +173,12 @@ begin
             end;
         end;
     end; 
+    pop_trace;
 end;
 
 procedure free_block(block : uint16; caller : uint32);
 begin
+    push_trace('pmemorymanager.free_block');
     if block > 1023 then begin
         GPF;
         exit;
@@ -182,6 +196,7 @@ begin
         exit;
     end;
     PhysicalMemory[block].Allocated:= false;
+    pop_trace;
 end;
 
 end.

@@ -3,6 +3,7 @@ unit ipv4;
 interface
 
 uses
+    tracer,
     util, console, terminal,
     net, nettypes, netutils,
     eth2;
@@ -26,6 +27,7 @@ var
     len     : uint16;
 
 begin
+    push_trace('ipv4.recv');
     //console.outputln('net.ipv4', 'RECV.');
     Header:= PIPV4Header(p_data);
     AHeader.version:= Header^.version;
@@ -61,12 +63,13 @@ begin
     if (IPEqual(@Config.Address[0], @AHeader.Dst[0])) OR (AHeader.Dst[3] = 255) then begin
         if Protocols[AHeader.Protocol] <> nil then Protocols[AHeader.Protocol](void(buf), len, p_context);
     end;
+    pop_trace;
 end;
 
 procedure terminal_command_ifconfig(params : PParamList);
 begin
+    push_trace('ipv4.terminal_command_ifconfig');
     if paramCount(params) > 2 then begin
-
     end else begin
         writestring('   MAC:     ');
         writeMACAddress(net.GetMAC);
@@ -81,6 +84,7 @@ begin
         else 
         writestringln('   NetUP:   false');
     end;
+    pop_trace;
 end;
 
 procedure register;
@@ -88,6 +92,7 @@ var
     i : uint8;
 
 begin
+    push_trace('ipv4.register');
     if not Registered then begin
         for i:=0 to 255 do begin
             Protocols[i]:= nil;
@@ -102,12 +107,15 @@ begin
         terminal.registerCommand('IFCONFIG', @terminal_command_ifconfig, 'Configure Network Settings.');
         Registered:= true;
     end;
+    pop_trace;
 end;
 
 procedure registerProtocol(Protocol_ID : uint8; recv_callback : TRecvCallback);
 begin
+    push_trace('ipv4.registerProtocol');
     register;
     if Protocols[Protocol_ID] = nil then Protocols[Protocol_ID]:= recv_callback;
+    pop_trace;
 end;
 
 end.

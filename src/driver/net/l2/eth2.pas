@@ -3,6 +3,7 @@ unit eth2;
 interface
 
 uses
+    tracer,
     nettypes, netutils, 
     net,
     console;
@@ -19,8 +20,10 @@ var
 
 procedure registerType(eType : uint16; RecvCB : TRecvCallback);
 begin
+    push_trace('eth2.registerType');
     register;
     if EthTypes[eType] = nil then EthTypes[eType]:= RecvCB;
+    pop_trace;
 end;
 
 procedure recv(p_data : void; p_len : uint16; p_context : PPacketContext);
@@ -30,6 +33,7 @@ var
     buf        : puint8;
 
 begin
+    push_trace('eth2.recv');
     //console.outputln('net.eth2', 'RECV.');
     buf:= puint8(p_data);
     
@@ -56,6 +60,7 @@ begin
             EthTypes[proto_type](void(buf), p_len - 14, p_context);
         end;    
     end;
+    pop_trace;
 end;
 
 procedure register;
@@ -63,6 +68,7 @@ var
     i : uint16;
 
 begin
+    push_trace('eth2.register');
     if not Registered then begin
         for i:=0 to 65535 do begin
             EthTypes[i]:= nil;
@@ -71,6 +77,7 @@ begin
         MAC:= net.getMAC;
         Registered:= true;
     end;
+    pop_trace;
 end;
 
 end.

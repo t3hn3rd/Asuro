@@ -3,6 +3,7 @@ unit E1000;
 interface
 
 uses
+    tracer,
     console,
     strings,
     vmemorymanager,
@@ -157,6 +158,7 @@ var
     mem : puint32;
 
 begin
+    push_trace('E1000.writeCommand');
     if (bar_type = 0) then begin
         mem:= puint32(mem_base + p_address);
         mem^:= p_value;
@@ -164,6 +166,7 @@ begin
         outl(io_base + 0, p_address);
         outl(io_base + 4, p_address)
     end;
+    pop_trace;
 end;
 
 function readCommand(p_address : uint16) : uint32;
@@ -171,13 +174,15 @@ var
     mem : puint32;
 
 begin
+    push_trace('E1000.readCommand');
     if (bar_type = 0) then begin
         mem:= puint32(mem_base + p_address);
         readCommand:= mem^;
     end else begin
         outl(io_base, p_address);
         readCommand:= inl(io_base + 4);
-    end;    
+    end;   
+    pop_trace; 
 end;
 
 function detectEEPROM() : boolean;
@@ -185,6 +190,7 @@ var
     val, i : uint32;
 
 begin
+    push_trace('E1000.detectEEPROM');
     val:= 0;
     writeCommand(REG_EEPROM, $1);
     for i:=0 to 1000 do begin
@@ -193,6 +199,7 @@ begin
         if (val and $10) > 0 then eeprom_exists:= true else eeprom_exists:= false;
     end;
     detectEEPROM:= eeprom_exists;
+    pop_trace;
 end;
 
 function EEPROMRead( address : uint8 ) : uint32;
@@ -201,6 +208,7 @@ var
     tmp  : uint32;
 
 begin
+    push_trace('E1000.EEPROMRead');
     tmp:= 0;
     if (eeprom_exists) then begin
         writeCommand( REG_EEPROM, 1 OR (uint32(address) SHL 8) );
@@ -215,6 +223,7 @@ begin
     end;
     data:= uint16( (tmp SHR 16) AND ($FFFF) );
     EEPROMRead:= data;
+    pop_trace;
 end;
 
 function readMACAddress() : boolean;
@@ -226,6 +235,7 @@ var
     i   : uint32;
 
 begin
+    push_trace('E1000.readMACAddress');
     res:= true;
     if (eeprom_exists) then begin
         temp:= EEPROMRead(0);
@@ -249,6 +259,7 @@ begin
         end;
     end;
     readMACAddress:= res;
+    pop_trace;
 end;
 
 procedure startLink();
@@ -256,8 +267,10 @@ var
     val : uint32;
 
 begin
+    push_trace('E1000.startLink');
     val:= readCommand(REG_CTRL);
     writeCommand(REG_CTRL, val OR ECTRL_SLU);
+    pop_trace;
 end;
 
 procedure rxinit();
@@ -268,6 +281,7 @@ var
     i      : uint32;
 
 begin
+    push_trace('E1000.rxinit');
     ptr:= puint8(kalloc(sizeof(TE1000_rx_desc) * E1000_NUM_RX_DESC + 16));
     descs:= PE1000_rx_desc(ptr);
     for i:=0 to E1000_NUM_RX_DESC do begin
@@ -297,6 +311,7 @@ begin
     rx_curr:= 0;
 
     writeCommand(REG_RCTRL, RCTL_EN OR RCTL_SBP OR RCTL_UPE OR RCTL_MPE OR RCTL_LBM_NONE OR RTCL_RDMTS_HALF OR RCTL_BAM OR RCTL_SECRC OR RCTL_BSIZE_2048);
+    pop_trace;
 end;
 
 procedure txinit();
@@ -307,6 +322,7 @@ var
     i      : uint32;
 
 begin
+    push_trace('E1000.txinit');
     ptr:= puint8(kalloc(sizeof(TE1000_tx_desc) * (E1000_NUM_TX_DESC + 16))); 
     descs:= PE1000_tx_desc(ptr);
     for i:=0 to E1000_NUM_TX_DESC do begin
@@ -338,13 +354,16 @@ begin
         writeCommand(REG_TCTRL, $3003F0FA);
         writeCommand(REG_TIPG, $0060200A);
     end;
+    pop_trace;
 end;
 
 procedure enableInturrupt();
 begin
+    push_trace('E1000.enableInterrupt');
     writeCommand(REG_IMASK, $1F6DC);
     writeCommand(REG_IMASK, $FF AND NOT(4));
     readCommand($C0);
+    pop_trace;
 end;
 
 procedure handleReceive();
@@ -356,6 +375,7 @@ var
     i          : uint16;
     
 begin
+    push_trace('E1000.handleReceive');
     while (rx_descs[rx_curr]^.status AND $1) > 0 do begin
         got_packet:= true;
         buf:= rx_buffs[rx_curr];
@@ -369,6 +389,7 @@ begin
         rx_curr:= (rx_curr + 1) mod E1000_NUM_RX_DESC;
         writeCommand(REG_RXDESCTAIL, old_cur);
     end;
+    pop_trace;
 end;
 
 procedure writeCardType();
@@ -388,6 +409,7 @@ var
     data     : uint32;
 
 begin
+    push_trace('E1000.fire');
     //console.outputln('E1000 Driver', 'FIRED.');
 
     status:= readCommand($C0);
@@ -412,11 +434,14 @@ begin
 
     //CLI (Not 100% Nessisary as this is done on IRET)
     CLI;
+    pop_trace;
 end;
 
 procedure console_command_mac(params : PParamList);
 begin
+    push_trace('E1000.console_command_mac');
     writeMACAddress(@mac[0]);
+    pop_trace;
 end;
 
 procedure console_command_sendtest(params : PParamList);
@@ -436,6 +461,7 @@ var
                                          );
 
 begin
+    push_trace('E1000.console_command_sendtest');
     TestPacket[6]:= mac[0];
     TestPacket[7]:= mac[1];
     TestPacket[8]:= mac[2];
@@ -450,6 +476,7 @@ begin
     TestPacket[26]:= mac[4];
     TestPacket[27]:= mac[5];
     sendPacket(void(@TestPacket[0]), 42);
+    pop_trace;
 end;
 
 function load(ptr : void) : boolean;
@@ -460,6 +487,8 @@ var
     iline    : uint8;
 
 begin
+    push_trace('E1000.load');
+
     console.outputln('E1000 Driver', 'Load Start.');
 
     writeCardType();
@@ -484,58 +513,66 @@ begin
     if not readMACAddress() then begin
         console.outputln('E1000 Driver', 'MAC Read Failed.');
         load:= false;
-        exit;
+    end else begin
+        console.output('E1000 Driver', 'MAC Address: ');
+        writeMACAddress(@mac[0]);
+
+        startLink();
+
+        for i:=0 to $80 do begin
+            writeCommand($5200 + i*4, 0);
+        end; 
+
+        net.registerNetworkCard(@sendPacket, getMACAddress());
+
+        IDT.set_gate(32 + PCI_Info^.interrupt_line, uint32(@fire), $08, ISR_RING_0);
+        enableInturrupt();
+
+        rxinit();
+        txinit();
+
+        load:= true;   
+
+        if load then registercommand('E1000', @console_command_sendtest, 'Test sending a ARP Request.');
+        if load then registercommand('MAC', @console_command_mac, 'Print MAC Address.');
     end;
-    console.output('E1000 Driver', 'MAC Address: ');
-    writeMACAddress(@mac[0]);
-
-    startLink();
-
-    for i:=0 to $80 do begin
-        writeCommand($5200 + i*4, 0);
-    end; 
-
-    net.registerNetworkCard(@sendPacket, getMACAddress());
-
-    IDT.set_gate(32 + PCI_Info^.interrupt_line, uint32(@fire), $08, ISR_RING_0);
-    enableInturrupt();
-
-    rxinit();
-    txinit();
-
-    load:= true;   
-
-    if load then registercommand('E1000', @console_command_sendtest, 'Test sending a ARP Request.');
-    if load then registercommand('MAC', @console_command_mac, 'Print MAC Address.');
 
     console.outputln('E1000 Driver', 'Load Finish.');
+
+    pop_trace;
 end;
 
 function loadE1000(ptr : void) : boolean;
 begin
+    push_trace('E1000.loadE1000');
     loadE1000:= false;
     if not Loaded then begin
         card_type:= ctE1000;
         loadE1000:= load(ptr);
     end;
+    pop_trace;
 end;
 
 function load82577LM(ptr : void) : boolean;
 begin
+    push_trace('E1000.load82577LM');
     load82577LM:= false;
     if not Loaded then begin
         card_type:= ct82577LM;
         load82577LM:= load(ptr);
     end;
+    pop_trace;
 end;
 
 function loadI217(ptr : void) : boolean;
 begin
+    push_trace('E1000.loadI217');
     loadI217:= false;
     if not Loaded then begin
         card_type:= ctI217;
         loadI217:= load(ptr);
     end;
+    pop_trace;
 end;
 
 procedure init();
@@ -543,6 +580,7 @@ var
     dev : TDeviceIdentifier;
 
 begin
+    push_trace('E1000.init');
     card_type:= ctUnknown;
     dev.Bus:= biPCI;
     dev.id0:= INTEL_VEND;
@@ -556,6 +594,7 @@ begin
     drivermanagement.register_driver('I217 Ethernet Driver', @dev, @loadI217);
     dev.id4:= LM82577_DEV;
     drivermanagement.register_driver('82577LM Ethernet Driver', @dev, @load82577LM);
+    pop_trace;
 end;
 
 function getMACAddress : puint8;
@@ -568,6 +607,7 @@ var
     old_cur : uint8;
 
 begin
+    push_trace('E1000.sendPacket');
     tx_descs[tx_curr]^.address:= uint32(vtop(uint32(p_data)));
     tx_descs[tx_curr]^.length:= p_len;
     tx_descs[tx_curr]^.cmd:= CMD_EOP OR CMD_IFCS OR CMD_RS OR CMD_RPS;
@@ -578,6 +618,7 @@ begin
     while (tx_descs[old_cur]^.status AND $FF) = 0 do begin
     end;
     sendPacket:= 0;
+    pop_trace;
 end;
 
 end.

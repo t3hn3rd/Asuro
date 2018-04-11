@@ -128,31 +128,42 @@ var
 
 begin
     LL_Insert:= nil;
-    if idx >= LinkedList^.Count then exit;
+    if idx > LinkedList^.Count then exit;
     Base:= LinkedList^.Head;
     i:=0;
     while (i < idx) and (Base <> nil) do begin
         i:= i + 1;
         Base:= Base^.Next;
     end;
-    if Base = nil then exit;
-    Prev:= Base^.Previous;
-    Next:= Base;
-    Element:= PLinkedList(kalloc(sizeof(TLinkedList)));
-    Element^.Data:= kalloc(LinkedList^.ElementSize);
-    memset(uint32(Element^.Data), 0, LinkedList^.ElementSize);
-    Element^.Previous:= Prev;
-    Element^.Next:= Next;
-    if Prev = nil then begin
+    if i = 0 then begin
+        Element:= PLinkedList(kalloc(sizeof(TLinkedList)));
+        Element^.Data:= kalloc(LinkedList^.ElementSize);
+        memset(uint32(Element^.Data), 0, LinkedList^.ElementSize);
+        Element^.Next:= LinkedList^.Head;
+        Element^.Previous:= nil;
         LinkedList^.Head:= Element;
+        LinkedList^.Count:= LinkedList^.Count + 1;
+        LL_Insert:= Element^.Data;
     end else begin
-        Prev^.Next:= Element;
+        if Base = nil then exit;
+        Prev:= Base^.Previous;
+        Next:= Base;
+        Element:= PLinkedList(kalloc(sizeof(TLinkedList)));
+        Element^.Data:= kalloc(LinkedList^.ElementSize);
+        memset(uint32(Element^.Data), 0, LinkedList^.ElementSize);
+        Element^.Previous:= Prev;
+        Element^.Next:= Next;
+        if Prev = nil then begin
+            LinkedList^.Head:= Element;
+        end else begin
+            Prev^.Next:= Element;
+        end;
+        if Next <> nil then begin
+            Next^.Previous:= Element;
+        end;
+        LinkedList^.Count:= LinkedList^.Count + 1;
+        LL_Insert:= Element^.Data;
     end;
-    if Next <> nil then begin
-        Next^.Previous:= Element;
-    end;
-    LinkedList^.Count:= LinkedList^.Count + 1;
-    LL_Insert:= Element^.Data;
 end;
 
 function LL_Get(LinkedList : PLinkedListBase; idx : uint32) : void;

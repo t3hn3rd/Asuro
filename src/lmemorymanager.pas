@@ -15,7 +15,8 @@ uses
     util,
     vmemorymanager,
     pmemorymanager,
-    console;
+    console,
+    tracer;
 
 const
     ALLOC_SPACE = 8; //64-Bit Allocations 
@@ -56,11 +57,13 @@ var
     i : integer;
 
 begin
+    push_trace('lmemorymanager.new_lmm_page');
     i:= KERNEL_PAGE_NUMBER + 4;
     while not vmemorymanager.new_page(i) do begin
         i:= i + 1;
     end;
     new_lmm_page:= i SHL 22;
+    pop_trace;
 end;
 
 function new_heap_page(CurrentPage : PHeapPage) : PHeapPage;
@@ -68,6 +71,7 @@ var
     i : integer;
 
 begin
+    push_trace('lmemorymanager.new_heap_page');
     new_heap_page:= PHeapPage(new_lmm_page);
     if CurrentPage <> nil then CurrentPage^.Next_Page:= uint32(new_heap_page);
     new_heap_page^.Next_Page:= 0;
@@ -78,7 +82,8 @@ begin
             Root:= False;
             Last:= False;
         end;
-    end;    
+    end;   
+    pop_trace; 
 end;
 
 procedure init;
@@ -86,6 +91,7 @@ var
     i : uint32;
 
 begin
+    push_trace('lmemorymanager.init');
     console.outputln('LMM','INIT BEGIN.');
     Root_Page:= PHeapPage(new_lmm_page);
     Search_Page:= Root_Page;
@@ -97,6 +103,7 @@ begin
         Root_Page^.Entries[i].Last:= False;
     end; 
     console.outputln('LMM','INIT END.');
+    pop_trace;
 end;
 
 function kpalloc(address : uint32) : void;
@@ -104,10 +111,12 @@ var
     block : uint16;
 
 begin
+    push_trace('lmemorymanager.kpalloc');
     block:= address SHR 22;
     force_alloc_block(block, 0);
     map_page(block, block);
     kpalloc:= void(block SHL 22);
+    pop_trace;
 end;
 
 function kalloc(size : uint32) : void;
@@ -118,6 +127,7 @@ var
    miss         : boolean;
 
 begin
+    push_trace('lmemorymanager.kalloc');
     Heap_Entries:= size div 8;
     If sint32(size-(Heap_Entries*8)) > 0 then Heap_Entries:= Heap_Entries + 1;
     hp:= Search_Page;
@@ -153,6 +163,7 @@ begin
             Search_Page:= hp;
         end;
     end;
+    pop_trace;
 end;
 
 procedure kfree(area : void);
@@ -161,6 +172,7 @@ var
     entry : uint32;
 
 begin
+    push_trace('lmemorymanager.kfree');
     hp:= PHeapPage((uint32(area) SHR 22) SHL 22);
     entry:= (uint32(area) - DATA_OFFSET - uint32(hp)) div 8;
     if hp^.Entries[entry].Present then begin
@@ -180,6 +192,7 @@ begin
     end else begin
         GPF;
     end;
+    pop_trace;
 end;
 
 end.

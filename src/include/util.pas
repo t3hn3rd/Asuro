@@ -57,7 +57,8 @@ var
     buf : puint8;
     i   : uint32;
 
-begin
+begin   
+    push_trace('util.printmemory');
     buf:= puint8(source);
     for i:=0 to length do begin
         if offset_row and (i = 0) then begin
@@ -76,6 +77,7 @@ begin
         end;
     end;
     console.writestringln(' ');   
+    pop_trace;
 end;
 
 function hi(b : uint8) : uint8; [public, alias: 'util_hi'];
@@ -219,10 +221,12 @@ var
     i   : uint32;
 
 begin
+    push_trace('util.memset');
     for i:=0 to size-1 do begin
         loc:= puint8(location + i);
         loc^:= value;
     end;
+    pop_trace;
 end;
 
 procedure memcpy(source : uint32; dest : uint32; size : uint32);
@@ -231,11 +235,13 @@ var
     i : uint32;
 
 begin
+    push_trace('util.memcpy');
     for i:=0 to size-1 do begin
         src:= puint8(source + i);
         dst:= puint8(dest + i);
         dst^:= src^;
     end;
+    pop_trace;
 end;
 
 function getWord(i : uint32; hi : boolean) : uint16;
@@ -257,6 +263,9 @@ begin
 end;
 
 procedure BSOD(fault : pchar; info : pchar);
+var
+    trace : pchar;
+
 begin
     if not BSOD_ENABLE then exit;
     console.setdefaultattribute(console.combinecolors(white, Red));
@@ -298,7 +307,8 @@ begin
     console.writestring('    Fault Info: ');
     console.writestringln(info);
     console.writestring('    Faulting Module: ');
-    console.writestringln(tracer.get_last_trace);
+    trace:= tracer.get_last_trace;
+    if trace <> nil then console.writestringln(tracer.get_last_trace) else console.writestringln('Unknown');
     console.writestringln(' ');
     halt_and_catch_fire();
 end;
