@@ -150,9 +150,14 @@ begin
      tss.init();
      scheduler.init();
 
-     fb:= puint8(uint32(multibootinfo^.framebuffer_addr) + KERNEL_VIRTUAL_BASE);
-     for i:=0 to 500 do begin
-        fb[i]:= $0F;
+     i:= $2000000;
+     kpalloc(i);
+     atmp:= puint32(i);
+     fb:= puint8(uint32(multibootinfo^.framebuffer_addr));
+     kpalloc(uint32(fb));
+     atmp^:= uint32(fb);
+     for i:=0 to (1280 * 1024 * 16)-5000 do begin
+        fb[i]:= $FF;
      end;
 
      { Call Tracer }
