@@ -115,32 +115,13 @@ var
     i : uint8;
     bootRecord : TBootRecord;
     buffer : puint32;
-    asuroArray : byteArray8;// = byteArray8(['A','S','U','R','O',' ','V','1']);
-    fatArray : byteArray8;// = byteArray8(['F','A','T','3','2',' ',' ',' ']);
+    asuroArray : byteArray8 = ('A','S','U','R','O',' ','V','1');
+    fatArray : byteArray8 = ('F','A','T','3','2',' ',' ',' ');
     tmpArray : byteArray8;
 
     fatStart : uint32;
     dataStart: uint32;
 begin
-
-    asuroArray[0] := 'A';
-    asuroArray[1] := 's';
-    asuroArray[2] := 'u';
-    asuroArray[3] := 'r';
-    asuroArray[4] := 'o';
-    asuroArray[5] := ' ';
-    asuroArray[6] := 'V';
-    asuroArray[7] := '1';
-
-    fatArray[0] := 'F';
-    fatArray[1] := 'A';
-    fatArray[2] := 'T';
-    fatArray[3] := '3';
-    fatArray[4] := '2';
-    fatArray[5] := ' ';
-    fatArray[6] := ' ';
-    fatArray[7] := ' ';
-
     buffer:= puint32(kalloc(512));
 
     bootrecord.jmp2boot:= $00; // TODO what ahppens here???

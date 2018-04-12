@@ -200,7 +200,7 @@ begin
      console.setdefaultattribute(console.combinecolors(Green, Black));
      console.writestringln('Asuro Booted Correctly!');
      console.setdefaultattribute(console.combinecolors(White, Black));
-     if INTE then console.writestringln('Interrupts are enabled.') else console.writestringln('Interrupts are disabled.');
+     //if INTE then console.writestringln('Interrupts are enabled.') else console.writestringln('Interrupts are disabled.');
      console.writestringln('');
      console.writestringln('Press any key to boot in to Asuro Terminal...');
      tracer.pop_trace;
