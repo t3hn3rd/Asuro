@@ -36,7 +36,7 @@ uses
      USB,
      testdriver,
      E1000,
-     //IDE,
+     IDE,
      storagemanagement,
      lists,
      net,
@@ -177,7 +177,7 @@ begin
      mouse.init();
      testdriver.init();
      E1000.init();
-     //IDE.init();
+     IDE.init();
      console.outputln('KERNEL', 'DEVICE DRIVERS: INIT END.');
      tracer.pop_trace;
 
