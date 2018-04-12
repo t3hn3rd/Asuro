@@ -20,10 +20,10 @@ uses
     isrmanager;
 
 const
-    INTEL_VEND  = $8086;
-    E1000_DEV   = $100E;
-    I217_DEV    = $153A;
-    LM82577_DEV = $10EA;
+    INTEL_VEND      = $8086;
+    E1000_DEV       = $100E;
+    I217_DEV        = $153A;
+    LM82577_DEV     = $10EA;
 
     REG_CTRL        = $0000;
     REG_STATUS      = $0008;
@@ -410,7 +410,7 @@ var
     data     : uint32;
 
 begin
-    console.writestringln('E1000');
+    //console.writestringln('E1000');
     push_trace('E1000.fire');
     //console.outputln('E1000 Driver', 'FIRED.');
 
