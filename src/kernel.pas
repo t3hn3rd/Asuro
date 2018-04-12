@@ -40,7 +40,8 @@ uses
      storagemanagement,
      lists,
      net,
-     fat32;
+     fat32,
+     isrmanager;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
@@ -140,6 +141,7 @@ begin
      { Memory/CPU Init }
      idt.init();
      isr.init();
+     //isrmanager.init();
      irq.init();
      pmemorymanager.init();
      vmemorymanager.init();
@@ -194,6 +196,7 @@ begin
      console.setdefaultattribute(console.combinecolors(Green, Black));
      console.writestringln('Asuro Booted Correctly!');
      console.setdefaultattribute(console.combinecolors(White, Black));
+     if INTE then console.writestringln('Interrupts are enabled.') else console.writestringln('Interrupts are disabled.');
      console.writestringln('');
      console.writestringln('Press any key to boot in to Asuro Terminal...');
      tracer.pop_trace;

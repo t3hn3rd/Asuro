@@ -12,6 +12,7 @@ unit mouse;
 interface
 
 uses 
+    tracer,
     console,
     util,
     isr44,
@@ -44,6 +45,7 @@ var
     r : pchar;
 
 begin
+    push_trace('mouse.callback');
     packet:= PMousePacket(kalloc(sizeof(TMousePacket)));
     f:= (uint32(raw) AND $FF000000) SHR 24;
     x:= (uint32(raw) AND $00FF0000) SHR 16;
@@ -102,13 +104,16 @@ begin
     kfree(void(packet));
     //console.writestring('Mouse Packet: ');
     //console.writehexln(DWORD(raw));
+    pop_trace;
 end;
 
 function load(ptr : void) : boolean;
 begin
+    push_trace('mouse.load');
     isr44.hook(uint32(@callback));
     console.outputln('PS/2 MOUSE', 'LOADED.');  
     load:= true;
+    pop_trace;
 end;
 
 procedure init();
@@ -116,6 +121,7 @@ var
     devid : TDeviceIdentifier;
 
 begin
+    push_trace('mouse.init');
     console.outputln('PS/2 MOUSE', 'INIT BEGIN.');
     devid.bus:= biUnknown;
     devid.id0:= 0;
@@ -126,6 +132,7 @@ begin
     devid.ex:= nil;
     drivermanagement.register_driver_ex('PS/2 Mouse', @devid, @load, true);
     console.outputln('PS/2 MOUSE', 'INIT END.');
+    pop_trace;
 end;
 
 end.

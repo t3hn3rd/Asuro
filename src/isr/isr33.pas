@@ -49,6 +49,7 @@ procedure register();
 begin
     memset(uint32(@Hooks[0]), 0, sizeof(pp_hook_method)*MAX_HOOKS);
     IDT.set_gate(33, uint32(@Main), $08, ISR_RING_0);
+    inb($60); 
 end;
  
 procedure hook(hook_method : uint32);
