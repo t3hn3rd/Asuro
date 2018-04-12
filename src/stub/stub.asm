@@ -29,13 +29,13 @@ MULTIBOOT_ADDRESS_FIELDS        equ     1<<16
 ; Multiboot header defines
 ;
 MULTIBOOT_HEADER_MAGIC          equ     0x1BADB002
-MULTIBOOT_HEADER_FLAGS          equ     MULTIBOOT_MODULE_ALIGN | MULTIBOOT_MEMORY_MAP
+MULTIBOOT_HEADER_FLAGS          equ     MULTIBOOT_MODULE_ALIGN | MULTIBOOT_MEMORY_MAP | MULTIBOOT_GRAPHICS_FIELDS
 MULTIBOOT_HEADER_CHECKSUM       equ     -(MULTIBOOT_HEADER_MAGIC + MULTIBOOT_HEADER_FLAGS)
  
 ;
 ; Kernel stack size
 ;
-KERNEL_STACKSIZE              equ     0x4000
+KERNEL_STACKSIZE                equ     0x4000
 KERNEL_VIRTUAL_BASE 		  equ	0xC0000000
 KERNEL_PAGE_NUMBER			  equ	(KERNEL_VIRTUAL_BASE >> 22)
  
@@ -57,7 +57,16 @@ align 4
 dd MULTIBOOT_HEADER_MAGIC
 dd MULTIBOOT_HEADER_FLAGS
 dd MULTIBOOT_HEADER_CHECKSUM
- 
+dd 0
+dd 0
+dd 0
+dd 0
+dd 0
+dd 0
+dd 1920
+dd 1600
+dd 8
+
 ;
 ; Entrypoint
 ;
@@ -81,8 +90,8 @@ _loader:
 	jmp ecx
 
 kstart:
-	    mov dword [BootPageDirectory], 0
-    	invlpg [0]	   		
+	   mov dword [BootPageDirectory], 0
+    	   invlpg [0]	   		
         mov esp, KERNEL_STACK+KERNEL_STACKSIZE  ;Create kernel stack
         push eax                                ;Multiboot magic number
 	    add ebx, KERNEL_VIRTUAL_BASE

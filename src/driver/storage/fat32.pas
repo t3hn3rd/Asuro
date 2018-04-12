@@ -121,6 +121,7 @@ var
 
     fatStart : uint32;
     dataStart: uint32;
+    
 begin
     buffer:= puint32(kalloc(512));
 
