@@ -16,7 +16,8 @@ uses
     terminal,
     net,
     nettypes,
-    netutils;
+    netutils,
+    isrmanager;
 
 const
     INTEL_VEND  = $8086;
@@ -403,12 +404,13 @@ begin
     end;
 end;
 
-procedure fire(); interrupt;
+procedure fire();
 var
     status : uint32;
     data     : uint32;
 
 begin
+    console.writestringln('E1000');
     push_trace('E1000.fire');
     //console.outputln('E1000 Driver', 'FIRED.');
 
@@ -429,11 +431,7 @@ begin
     writeCommand(REG_IMASK, 1);
 
     //Clear INT on PIC and Cascade
-    outb($A0, $20);
-    outb($20, $20);
 
-    //CLI (Not 100% Nessisary as this is done on IRET)
-    CLI;
     pop_trace;
 end;
 
@@ -525,7 +523,8 @@ begin
 
         net.registerNetworkCard(@sendPacket, getMACAddress());
 
-        IDT.set_gate(32 + PCI_Info^.interrupt_line, uint32(@fire), $08, ISR_RING_0);
+        isrmanager.registerISR(32 + PCI_Info^.interrupt_line, @fire);
+        //IDT.set_gate(32 + PCI_Info^.interrupt_line, uint32(@fire), $08, ISR_RING_0);
         enableInturrupt();
 
         rxinit();
