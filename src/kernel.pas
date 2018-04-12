@@ -156,7 +156,7 @@ begin
      fb:= puint8(uint32(multibootinfo^.framebuffer_addr));
      kpalloc(uint32(fb));
      atmp^:= uint32(fb);
-     for i:=0 to (1280 * 1024 * 16)-5000 do begin
+     for i:=0 to (1280 * 1024 * 2)-5000 do begin
         fb[i]:= $FF;
      end;
 
