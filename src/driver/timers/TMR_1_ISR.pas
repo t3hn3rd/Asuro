@@ -1,0 +1,78 @@
+{ ************************************************
+  * Asuro
+  * Unit: Drivers/isr40
+  * Description: 1024/s Timer interrupt
+  ************************************************
+  * Author: Aaron Hance
+  * Contributors: K Morris
+  ************************************************ }
+
+unit TMR_1_ISR;
+
+interface
+
+uses
+    util,
+    console,
+    isr_types,
+    IDT;
+
+procedure register();
+procedure hook(hook_method : uint32);
+procedure unhook(hook_method : uint32);
+
+implementation
+
+var
+    Hooks : Array[1..MAX_HOOKS] of pp_hook_method;
+    Registered : boolean = false;
+
+procedure Main; //IRQ0, called 1024 times a second.
+var
+    i : integer;
+
+begin
+    for i:=0 to MAX_HOOKS-1 do begin
+        if uint32(Hooks[i]) <> 0 then Hooks[i](void(18));
+    end;
+end;
+
+procedure register();
+begin
+    if not registered then begin
+        memset(uint32(@Hooks[0]), 0, sizeof(pp_hook_method)*MAX_HOOKS);
+        isrmanager.registerISR(40, @Main);
+        //IDT.set_gate(40, uint32(@Main), $08, ISR_RING_0);
+        Registered:= true;
+    end;
+end;
+
+procedure hook(hook_method : uint32);
+var
+    i : uint32;
+
+begin
+    register();
+    for i:=0 to MAX_HOOKS-1 do begin
+        if uint32(Hooks[i]) = hook_method then exit;
+    end;
+    for i:=0 to MAX_HOOKS-1 do begin
+        if uint32(Hooks[i]) = 0 then begin
+            Hooks[i]:= pp_hook_method(hook_method);
+            exit;
+        end;
+    end;
+end;
+
+procedure unhook(hook_method : uint32);
+var
+    i : uint32;
+begin
+    for i:=0 to MAX_HOOKS-1 do begin
+        If uint32(Hooks[i]) = hook_method then Hooks[i]:= nil;
+        exit;
+    end;
+end;
+
+end.
+ 

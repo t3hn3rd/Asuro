@@ -13,7 +13,7 @@ interface
 
 uses
     console,
-    isr32,
+    TMR_0_ISR,
     lmemorymanager,
     terminal;
 
@@ -114,7 +114,7 @@ begin
     Current_Task:= Root_Task;
     Tick:= 0;
     Active:= False;
-    isr32.hook(uint32(@delta));
+    TMR_0_ISR.hook(uint32(@delta));
     terminal.registerCommand('TASKS', @terminal_command_tasks, 'List Active Processes.');
     console.outputln('SCHEDULER','INIT END.');
 end;

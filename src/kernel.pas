@@ -18,7 +18,7 @@ uses
      idt,
      isr,
      irq,
-     isr32,
+     TMR_0_ISR,
      console,
      bios_data_area,
      keyboard,
@@ -36,12 +36,13 @@ uses
      USB,
      testdriver,
      E1000,
-     IDE,
+     //IDE,
      storagemanagement,
      lists,
      net,
      fat32,
-     isrmanager;
+     isrmanager,
+     faults;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
@@ -140,9 +141,9 @@ begin
 
      { Memory/CPU Init }
      idt.init();
-     isr.init();
-     //isrmanager.init();
      irq.init();
+     isrmanager.init();
+     faults.init();
      pmemorymanager.init();
      vmemorymanager.init();
      lmemorymanager.init();
@@ -163,7 +164,7 @@ begin
      { Hook Timer for Ticks }
      tracer.push_trace('kmain.TMR');
      STI;
-     isr32.hook(uint32(@bios_data_area.tick_update));
+     TMR_0_ISR.hook(uint32(@bios_data_area.tick_update));
      tracer.pop_trace;
 
      { Device Drivers }
@@ -173,7 +174,7 @@ begin
      mouse.init();
      testdriver.init();
      E1000.init();
-     IDE.init();
+     //IDE.init();
      console.outputln('KERNEL', 'DEVICE DRIVERS: INIT END.');
      tracer.pop_trace;
 

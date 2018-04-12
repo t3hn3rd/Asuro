@@ -15,7 +15,7 @@ uses
     tracer,
     console,
     util,
-    isr44,
+    PS2_MOUSE_ISR,
     lmemorymanager,
     strings,
     drivermanagement;
@@ -110,7 +110,8 @@ end;
 function load(ptr : void) : boolean;
 begin
     push_trace('mouse.load');
-    isr44.hook(uint32(@callback));
+    PS2_MOUSE_ISR.register();
+    PS2_MOUSE_ISR.hook(uint32(@callback));
     console.outputln('PS/2 MOUSE', 'LOADED.');  
     load:= true;
     pop_trace;

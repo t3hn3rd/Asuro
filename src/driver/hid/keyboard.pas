@@ -14,7 +14,7 @@ interface
 uses 
     console,
     util,
-    isr33;
+    PS2_KEYBOARD_ISR;
 
 
 type
@@ -61,7 +61,8 @@ end;
 
 function load(ptr : void) : boolean;
 begin
-    isr33.hook(uint32(@callback));
+    PS2_KEYBOARD_ISR.register();
+    PS2_KEYBOARD_ISR.hook(uint32(@callback));
     console.outputln('PS/2 KEYBOARD', 'LOADED.');
     load:= true;
 end;
