@@ -51,7 +51,7 @@ type
     byteArray8 = array[0..7] of char;
 
     TDirectory = bitpacked record
-        fileName      : uint64;
+        fileName      : array[0..7] of char;
         fileExtension : ubit24;
         attributes    : uint8;
         reserved0     : uint8;
@@ -107,7 +107,7 @@ begin
     filesystem.readcallback:= @read;
     filesystem.createcallback:= @create_volume;
     filesystem.detectcallback:= @detect_volumes; 
-    storagemanagement.register_filesystem(filesystem);
+    storagemanagement.register_filesystem(@filesystem);
 end;
 
 procedure create_volume(disk : PStorage_Device; sectors : uint32; start : uint32; config : puint32);
@@ -117,6 +117,10 @@ var
     buffer : puint32;
     asuroArray : byteArray8;// = byteArray8(['A','S','U','R','O',' ','V','1']);
     fatArray : byteArray8;// = byteArray8(['F','A','T','3','2',' ',' ',' ']);
+    tmpArray : byteArray8;
+
+    fatStart : uint32;
+    dataStart: uint32;
 begin
 
     asuroArray[0] := 'A';
@@ -137,6 +141,7 @@ begin
     fatArray[6] := ' ';
     fatArray[7] := ' ';
 
+    buffer:= puint32(kalloc(512));
 
     bootrecord.jmp2boot:= $00; // TODO what ahppens here???
     bootRecord.OEMName:= asuroArray;
@@ -153,7 +158,8 @@ begin
     bootRecord.hiddenSectors:= start;
     bootRecord.manySectors:= sectors;
 
-    BootRecord.FATSize:= ((sectors DIV PFatVolumeInfo(config)^.sectorsPerCluster) * 16 DIV disk^.sectorSize);
+    //BootRecord.FATSize:= ((sectors DIV PFatVolumeInfo(config)^.sectorsPerCluster) * 16 DIV disk^.sectorSize);
+    BootRecord.FATSize:= ((sectors DIV 4) * 16 DIV disk^.sectorSize);
     BootRecord.flags:= 0; //1 shl 7 for mirroring
     BootRecord.FATVersion:= 0;
     BootRecord.rootCluster:= 2; // can be changed if needed.
@@ -166,10 +172,12 @@ begin
     BootRecord.bsignature:= $29;
     BootRecord.identString:= fatArray;
 
+    buffer:= @bootrecord;
     puint32(buffer + (127))^:= $55AA; //end marker
 
-    buffer:= @bootrecord;
     disk^.writeCallback(disk, start + 1, 1, buffer);
+
+    dataStart:= (sectors DIV bootrecord.spc) + 2;
 
     //TODO FSINFO struct
 
@@ -177,10 +185,33 @@ begin
     buffer := puint32(kalloc((sectors DIV bootrecord.spc) * 4));
     memset(uint32(buffer), 0, sectors DIV bootrecord.spc);
     puint32(buffer + 1)^:= $FFF8; //root directory table cluster, currently root is only 1 cluster long
-    disk^.writeCallback(disk, start + 2, sectors DIV bootrecord.spc, buffer);
+    disk^.writeCallback(disk, start + 2, sectors DIV bootrecord.spc, buffer); 
     //disk^.writeCallback(disk, start + 2 + (sectors Div bootrecord.sectorsPerCluster DIV 512), sectors DIV bootrecord.sectorsPerCluster, buffer);
+    kfree(buffer);
 
+    //setup root directory
+    buffer:= puint32(kalloc(512));
+    memset(uint32(buffer), 0, 512);
 
+    tmpArray[0]:= '.';
+    tmpArray[1]:= ' ';
+    tmpArray[2]:= ' ';
+    tmpArray[3]:= ' ';
+    tmpArray[4]:= ' ';
+    tmpArray[5]:= ' ';
+    tmpArray[6]:= ' ';
+    tmpArray[7]:= ' ';
+
+    PDirectory(buffer)^.fileName:= tmpArray;
+    PDirectory(buffer)^.attributes:= $10; // is directory
+    PDirectory(buffer)^.clusterLow:= 2; //my cluster location
+
+    tmpArray[1]:= '.';
+    PDirectory(buffer + (sizeof(TDirectory) DIV 4 ) )^.fileName:= tmpArray;
+    PDirectory(buffer + (sizeof(TDirectory) DIV 4) )^.attributes:= $08; // volume id
+    PDirectory(buffer + (sizeof(TDirectory) DIV 4) )^.clusterLow:= 2; //my cluster location
+
+    disk^.writeCallback(disk, dataStart + (bootRecord.spc), 1, buffer);
 
 end;
 

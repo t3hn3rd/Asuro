@@ -167,6 +167,9 @@ begin
      TMR_0_ISR.hook(uint32(@bios_data_area.tick_update));
      tracer.pop_trace;
 
+     { Filsystems }
+     fat32.init();
+
      { Device Drivers }
      tracer.push_trace('kmain.DEVDRV');
      console.outputln('KERNEL', 'DEVICE DRIVERS: INIT BEGIN.');

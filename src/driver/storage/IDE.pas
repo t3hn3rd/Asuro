@@ -16,7 +16,6 @@ uses
     drivertypes,
     console,
     terminal,
-    isr76,
     drivermanagement,
     vmemorymanager,
     lmemorymanager,
@@ -350,11 +349,11 @@ begin
         end;
 
         for ii:=0 to 127 do begin //read data
-            outw($1F0, Puint32(buffer + ((i * 512) + (ii * 16) DIV 32) )^);
+            outw($1F0, Puint32(buffer + ((i * 512) + (ii * 32) DIV 32) )^);
             while true do if (inw($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
             outb($1F7, $E7);
             if ii <> 127 then begin
-                outw($1F0, Puint32(buffer + ((i * 512) + (ii * 16) DIV 32) )^ shr 16);
+                outw($1F0, Puint32(buffer + ((i * 512) + (ii * 32) DIV 32) )^ shr 16);
                 while true do if (inw($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
                 outb($1F7, $E7);
             end;
@@ -404,10 +403,10 @@ begin
         end;
 
         for ii:=0 to 127 do begin //read data
-            Puint32(buffer + ((i * 512) + (ii * 16) DIV 32))^ := uint32(inw($1F0)); //wrong
+            Puint32(buffer + ((i * 512) + (ii * 32) DIV 32))^ := uint32(inw($1F0)); //wrong
             for iii:=0 to 1000 do if(ii = iii) then begin  end;
             if ii <> 127 then begin
-                Puint32(buffer + ((i * 512) + (ii * 16) DIV 32))^ := ((uint32(inw($1F0)) shl 16) or Puint32(buffer + ((i * 512) + (ii * 16) DIV 32))^); //wrong
+                Puint32(buffer + ((i * 512) + (ii * 32) DIV 32))^ := ((uint32(inw($1F0)) shl 16) or Puint32(buffer + ((i * 512) + (ii * 16) DIV 32))^); //wrong
                 for iii:=0 to 1000 do if(ii = iii) then begin  end
             end;
         end;
