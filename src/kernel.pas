@@ -97,7 +97,7 @@ var
    temp            : uint32;
    atmp            : puint32;
    test            : puint8;
-
+   fb              : puint8;
    
 begin
      { Store Multiboot info }
@@ -149,6 +149,11 @@ begin
      lmemorymanager.init();
      tss.init();
      scheduler.init();
+
+     fb:= puint8(uint32(multibootinfo^.framebuffer_addr) + KERNEL_VIRTUAL_BASE);
+     for i:=0 to 500 do begin
+        fb[i]:= $0F;
+     end;
 
      { Call Tracer }
      tracer.init();
