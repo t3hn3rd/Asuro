@@ -84,6 +84,49 @@ begin
     pop_trace; 
 end;
 
+procedure GraphicsTesting();
+var
+   i               : uint32;
+   z               : uint32;
+   atmp            : puint32;
+   fb              : puint16;
+   val             : uint16;
+   AChar           : Array[0..15] of uint8 = ( %00000000, 
+                                               %00000000, 
+                                               %00000000, 
+                                               %00010000, 
+                                               %00111000, 
+                                               %01101100, 
+                                               %11000110,
+                                               %11000110,
+                                               %11111110,
+                                               %11000110,
+                                               %11000110,
+                                               %11000110,
+                                               %11000110,
+                                               %00000000,
+                                               %00000000,
+                                               %00000000 );
+   //AChar : uint8 = %00000000;
+
+begin
+    i:= $2000000;
+    kpalloc(i);
+    atmp:= puint32(i);
+    fb:= puint16(uint32(multibootinfo^.framebuffer_addr));
+    kpalloc(uint32(fb));
+    atmp^:= multibootinfo^.framebuffer_bpp;
+    for z:=0 to 15 do begin
+        for i:=0 to 8 do begin
+            val:= $0000;
+            if ((AChar[z] SHR i) AND $1) = $1 then val:= $FFFF;
+            if val <> 0 then fb[(z * 1280)+i]:= val;
+        end;
+    end;
+    while true do begin
+    end;
+end;
+
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall; [public, alias: 'kmain'];   
 var
    c               : uint8;
@@ -97,7 +140,7 @@ var
    temp            : uint32;
    atmp            : puint32;
    test            : puint8;
-   fb              : puint8;
+   fb              : puint16;
    
 begin
      { Store Multiboot info }
@@ -150,15 +193,8 @@ begin
      tss.init();
      scheduler.init();
 
-     i:= $2000000;
-     kpalloc(i);
-     atmp:= puint32(i);
-     fb:= puint8(uint32(multibootinfo^.framebuffer_addr));
-     kpalloc(uint32(fb));
-     atmp^:= uint32(fb);
-     for i:=0 to (1280 * 1024 * 2)-5000 do begin
-        fb[i]:= $FF;
-     end;
+     { Graphics Mode Test Stuff }
+     GraphicsTesting();
 
      { Call Tracer }
      tracer.init();
