@@ -32,7 +32,7 @@ type
     PPIOHook = procedure(volume : PStorage_volume; directory : pchar; byteCount : uint32; buffer : puint32);
     PPHIOHook = procedure(volume : PStorage_device; addr : uint32; sectors : uint32; buffer : puint32);
     PPCreateHook = procedure(disk : PStorage_Device; sectors : uint32; start : uint32; config : puint32);
-    PPDetectHook = procedure(disk : PStorage_Device; volumes : Puint32);
+    PPDetectHook = procedure(disk : PStorage_Device);
 
     PPHIOHook_ = procedure;
 
@@ -50,8 +50,8 @@ type
         sectorSize      : uint32;
         freeSectors     : uint32;
         filesystem      : PFilesystem; 
-        filesystemInfo  : Puint32; // type dependant on filesystem. can be null if not creating volume now
-        directory       : PLinkedListBase; // type dependant on filesytem?
+        //filesystemInfo  : Puint32; // type dependant on filesystem. can be null if not creating volume now
+        //directory       : PLinkedListBase; // type dependant on filesytem?
     end;
 
     TStorage_Device = record
@@ -61,7 +61,7 @@ type
         maxSectorCount   : uint32;
         sectorSize       : uint32;
         writable         : boolean;
-        volumes          : array[0..7] of TStorage_Volume;
+        volumes          : PLinkedListBase;
         writeCallback    : PPHIOHook;
         readCallback     : PPHIOHook;
     end;
@@ -79,11 +79,29 @@ function get_device_list() : PLinkedListBase;
 
 procedure register_filesystem(filesystem : PFilesystem);
 
-//procedure register_volume(volume : TStorage_Volume);
+procedure register_volume(device : PStorage_Device; volume : PStorage_Volume);
 
 //TODO write partition table
 
 implementation 
+
+procedure test_command(params : PParamList);
+var
+    i : uint32;
+    elm : puint32;
+    str : pchar;
+    list : PLinkedListBase;
+begin
+    str := getParam(0, params);
+
+    list := stringToLL(str, '/');
+
+    for i:=0 to LL_Size(list) - 1 do begin
+        elm:= puint32(LL_Get(list, i));
+        str := pchar(elm^);
+        console.writestringln(str);
+    end;
+end;
 
 procedure disk_command(params : PParamList);
 var
@@ -130,12 +148,41 @@ begin
     pop_trace;
 end;
 
+procedure volume_command(params : PParamList);
+var
+    i : uint32;
+    ii : uint16;
+    device : PStorage_device;
+    volume : PStorage_volume;
+begin
+    if stringEquals(getParam(0, params), 'ls') and (LL_Size(storageDevices) > 0) then begin
+        for i:=0 to LL_Size(storageDevices) - 1 do begin
+            device := PStorage_device(LL_Get(storageDevices, i));
+
+            if LL_Size(device^.volumes) > 0 then begin
+                for ii:= 0 to LL_Size(device^.volumes) - 1 do begin
+                    volume:= PStorage_volume(LL_Get(device^.volumes, ii));
+                    console.writeint(i);
+                    console.writestring(') Filesystem: ');
+                    console.writestring(volume^.filesystem^.sName);
+                    console.writestring(' Free Space: ');
+                    console.writeintln(volume^.freeSectors * volume^.sectorSize DIV 1024 DIV 1024);
+                end;
+            end;
+
+        end;
+    end;
+end;
+
+
 procedure init();
 begin
     push_trace('storagemanagement.init');
     storageDevices:= ll_New(sizeof(TStorage_Device));
     fileSystems:= ll_New(sizeof(TFilesystem));
-    terminal.registerCommand('DISK', @disk_command, 'List physical storage devices');
+    terminal.registerCommand('DISK', @disk_command, 'Disk utility');
+    terminal.registerCommand('VOLUME', @volume_command, 'Volume utility');
+    terminal.registerCommand('POO', @test_command, 'Volume utility');
     pop_trace();
 end;
 
@@ -144,10 +191,15 @@ var
     i   : uint8;
     elm : void;
 begin
+
     elm:= LL_Add(storageDevices);
     PStorage_device(elm)^ := device^;
 
+    PStorage_Device(LL_Get(storageDevices, LL_Size(storageDevices) - 1))^.volumes := LL_New(sizeof(TStorage_Volume));
     //check for volumes
+    for i:=0 to ll_size(filesystems) - 1 do begin
+        PFileSystem(LL_Get(filesystems, i))^.detectCallback(PStorage_Device(LL_Get(storageDevices, LL_Size(storageDevices) - 1)));
+    end;
 end;
 
 function get_device_list() : PLinkedListBase;
@@ -155,13 +207,21 @@ begin
     get_device_list:= storageDevices;
 end;
 
+
 procedure register_filesystem(filesystem : PFilesystem);
 var
-    i : uint8;
     elm : void;    
 begin
     elm:= LL_Add(fileSystems);
     PFileSystem(elm)^ := filesystem^;
+end;
+
+procedure register_volume(device : PStorage_Device; volume : PStorage_Volume);
+var
+    elm : void;
+begin
+    elm := LL_Add(device^.volumes);
+    PStorage_volume(elm)^:= volume^;
 end;
 
 end.

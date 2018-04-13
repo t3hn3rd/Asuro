@@ -13,7 +13,7 @@ unit FAT32;
 interface
 
 uses
-    console, storagemanagement, util, lmemorymanager;
+    console, storagemanagement, util, lmemorymanager, strings;
 
 type 
 
@@ -47,6 +47,7 @@ type
         volumeLabel   : array[0..10] of uint8;
         identString   : array[0..7] of char;// = 'FAT32 ';
     end;
+    PBootRecord = ^TBootRecord;
 
     byteArray8 = array[0..7] of char;
 
@@ -77,9 +78,12 @@ type
     end;
     PFatVolumeInfo = ^TFatVolumeInfo;
 
+var
+    filesystem : TFilesystem;
+
 procedure init;
 procedure create_volume(disk : PStorage_Device; sectors : uint32; start : uint32; config : puint32);
-procedure detect_volumes(disk : PStorage_Device; volumes : puint32);
+procedure detect_volumes(disk : PStorage_Device);
 
 implementation
 
@@ -88,23 +92,34 @@ begin
     console.outputln('DUMMY DRIVER', 'LOADED.')
 end;
 
-procedure read(volume : PStorage_volume; directory : pchar; byteCount : uint32; buffer : puint32);
+procedure readDirectory(volume : PStorage_volume; directory : pchar; buffer : puint32);
+begin
+    //get location of first directory entre
+    
+    //check if it takes up more than one cluster
+    //read all entries
+end;
+
+procedure writeDirectory(volume : PStorage_volume; directory : pchar; buffer : puint32);
 begin
 
 end;
 
-procedure write(volume : PStorage_volume; directory : pchar; byteCount : uint32; buffer : puint32);
+procedure readFile(volume : PStorage_volume; directory : pchar; byteCount : uint32; buffer : puint32);
+begin
+
+end;
+
+procedure writeFile(volume : PStorage_volume; directory : pchar; byteCount : uint32; buffer : puint32);
 begin
 
 end;
 
 procedure init;
-var
-    filesystem : TFilesystem;
 begin
     filesystem.sName:= 'FAT32'; 
-    filesystem.writecallback:= @write;
-    filesystem.readcallback:= @read;
+    filesystem.writecallback:= @writeFile;
+    filesystem.readcallback:= @readFile;
     filesystem.createcallback:= @create_volume;
     filesystem.detectcallback:= @detect_volumes; 
     storagemanagement.register_filesystem(@filesystem);
@@ -197,9 +212,27 @@ begin
 
 end;
 
-procedure detect_volumes(disk : PStorage_Device; volumes : puint32);
+procedure detect_volumes(disk : PStorage_Device);
+var
+    buffer : puint32;
+    i : uint8;
+    volume : PStorage_volume;
 begin
-    
+    volume:= PStorage_volume(kalloc(sizeof(TStorage_Volume)));
+    //check first address for MBR
+    //if found then add volume and use info to see if there is another volume
+    buffer := puint32(kalloc(512));
+    memset(uint32(buffer), 0, 512);
+    disk^.readcallback(disk, 2, 1, buffer);
+
+    if (puint32(buffer + (127))^ = $55AA) and (PBootRecord(buffer)^.bsignature = $29) then begin
+        console.writestringln('FAT32: volume found!');
+        volume^.sectorStart:= 1;
+        volume^.sectorSize:= PBootRecord(buffer)^.sectorSize;
+        volume^.freeSectors:= 1000000; //TODO implement get free sectors need FSINFO implemented first
+        volume^.filesystem := @filesystem;
+        storagemanagement.register_volume(disk, volume);
+    end;
 end;
 
 end.

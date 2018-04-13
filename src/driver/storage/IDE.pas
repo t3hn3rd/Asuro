@@ -406,7 +406,7 @@ begin
             Puint32(buffer + ((i * 512) + (ii * 32) DIV 32))^ := uint32(inw($1F0)); //wrong
             for iii:=0 to 1000 do if(ii = iii) then begin  end;
             if ii <> 127 then begin
-                Puint32(buffer + ((i * 512) + (ii * 32) DIV 32))^ := ((uint32(inw($1F0)) shl 16) or Puint32(buffer + ((i * 512) + (ii * 16) DIV 32))^); //wrong
+                Puint32(buffer + ((i * 512) + (ii * 32) DIV 32))^ := ((uint32(inw($1F0)) shl 16) or Puint32(buffer + ((i * 512) + (ii * 32) DIV 32))^); //wrong
                 for iii:=0 to 1000 do if(ii = iii) then begin  end
             end;
         end;
