@@ -195,6 +195,7 @@ end;
 
 procedure help(params : PParamList);
 var
+
     i : uint32;
 begin
     console.writestringln('Registered Commands: ');

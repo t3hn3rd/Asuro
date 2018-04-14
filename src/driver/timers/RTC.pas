@@ -101,6 +101,8 @@ begin
     outb($71, prev OR $40);
     STI;
     outb($70, $00);
+    inb($71);
+    
     isrmanager.registerISR(32 + 8, @update);
     //TMR_0_ISR.hook(uint32(@update));
 end;

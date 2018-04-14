@@ -15,7 +15,8 @@ uses
      util, 
      bios_data_area,
      multiboot,
-     fonts;
+     fonts,
+     tracer;
 
 type
     TColor = ( Black   = $0,
@@ -96,6 +97,8 @@ procedure _safeincrement_x();
 procedure _newline();
 
 procedure outputChar(c : char; x : uint8; y : uint8; fgcolor : uint16; bgcolor : uint16);
+function getPixel(x : uint32; y : uint32) : uint16;
+procedure drawPixel(x : uint32; y : uint32; color : uint16);
  
 implementation
 
@@ -130,6 +133,32 @@ var
    Console_Matrix     : T2DVideoMemory;//P2DVideoMemory = P2DVideoMemory($C00b8000);
    Console_Cursor     : TCoord;
    Ready : Boolean = false;
+
+function getPixel(x : uint32; y : uint32) : uint16;
+var
+    dest : puint16;
+
+begin
+    //push_trace('console.getPixel');
+    if not ready then exit;
+    dest:= puint16(multibootinfo^.framebuffer_addr);
+    dest:= dest + (y * 1280) + x;
+    getPixel:= dest^;
+    //pop_trace;
+end;
+
+procedure drawPixel(x : uint32; y : uint32; color : uint16);
+var
+    dest : puint16;
+
+begin
+    //push_trace('console.drawPixel');
+    if not ready then exit;
+    dest:= puint16(multibootinfo^.framebuffer_addr);
+    dest:= dest + (y * 1280) + x;
+    dest^:= color;
+    //pop_trace;
+end;
 
 procedure outputChar(c : char; x : uint8; y : uint8; fgcolor : uint16; bgcolor : uint16);
 var
