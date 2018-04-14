@@ -139,8 +139,8 @@ var
 
 begin
     if not ready then exit;
-    fgcolor32:= fgcolor OR (fgcolor SHL 8) OR (fgcolor SHL 16) OR (fgcolor SHL 24);
-    bgcolor32:= bgcolor OR (bgcolor SHL 8) OR (bgcolor SHL 16) OR (bgcolor SHL 24);
+    fgcolor32:= fgcolor OR (fgcolor SHL 16);
+    bgcolor32:= bgcolor OR (bgcolor SHL 16);
     mask:= puint32(@Std_Mask[uint32(c) * (16 * 8)]);
     dest:= puint16(multibootinfo^.framebuffer_addr);
     dest:= dest + (y*(1280 * 16)) + (x * 8);
