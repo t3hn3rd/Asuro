@@ -42,7 +42,8 @@ uses
      net,
      fat32,
      isrmanager,
-     faults;
+     faults,
+     fonts;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
@@ -84,45 +85,68 @@ begin
     pop_trace; 
 end;
 
+procedure outputChar(c : char; x : uint8; y : uint8; fgcolor : uint16; bgcolor : uint16);
+var
+    dest : puint16;
+    dest32 : puint32;
+    fgcolor32, bgcolor32 : uint32;
+    mask : puint32;
+    i : uint32;
+
+begin
+    fgcolor32:= fgcolor OR (fgcolor SHL 8) OR (fgcolor SHL 16) OR (fgcolor SHL 24);
+    bgcolor32:= bgcolor OR (bgcolor SHL 8) OR (bgcolor SHL 16) OR (bgcolor SHL 24);
+    mask:= puint32(@Std_Mask[uint32(c) * (16 * 8)]);
+    dest:= puint16(multibootinfo^.framebuffer_addr);
+    dest:= dest + (y*(1280 * 16)) + (x * 8);
+    dest32:= puint32(dest);
+    for i:=0 to 15 do begin
+        dest32[(i*640)+0]:= (bgcolor32 AND NOT(mask[(i*4)+0])) OR (fgcolor32 AND mask[(i*4)+0]);
+        dest32[(i*640)+1]:= (bgcolor32 AND NOT(mask[(i*4)+1])) OR (fgcolor32 AND mask[(i*4)+1]);
+        dest32[(i*640)+2]:= (bgcolor32 AND NOT(mask[(i*4)+2])) OR (fgcolor32 AND mask[(i*4)+2]);
+        dest32[(i*640)+3]:= (bgcolor32 AND NOT(mask[(i*4)+3])) OR (fgcolor32 AND mask[(i*4)+3]);
+    end;
+end;
+
 procedure GraphicsTesting();
 var
    i               : uint32;
    z               : uint32;
    atmp            : puint32;
-   fb              : puint16;
-   val             : uint16;
-   AChar           : Array[0..15] of uint8 = ( %00000000, 
-                                               %00000000, 
-                                               %00000000, 
-                                               %00010000, 
-                                               %00111000, 
-                                               %01101100, 
-                                               %11000110,
-                                               %11000110,
-                                               %11111110,
-                                               %11000110,
-                                               %11000110,
-                                               %11000110,
-                                               %11000110,
-                                               %00000000,
-                                               %00000000,
-                                               %00000000 );
-   //AChar : uint8 = %00000000;
+   fb              : puint32;
+   val             : uint32;
+   test            : pchar = 'helloworld';
+   mask            : puint32;
 
 begin
-    i:= $2000000;
-    kpalloc(i);
-    atmp:= puint32(i);
-    fb:= puint16(uint32(multibootinfo^.framebuffer_addr));
+    fb:= puint32(uint32(multibootinfo^.framebuffer_addr));
     kpalloc(uint32(fb));
-    atmp^:= multibootinfo^.framebuffer_bpp;
-    for z:=0 to 15 do begin
-        for i:=0 to 8 do begin
-            val:= $0000;
-            if ((AChar[z] SHR i) AND $1) = $1 then val:= $FFFF;
-            if val <> 0 then fb[(z * 1280)+i]:= val;
-        end;
-    end;
+
+    outputChar('T', 0, 0, $FFFF, $0000);
+    outputChar('E', 0, 1, $FFFF, $0000);
+    outputChar('S', 0, 2, $FFFF, $0000);
+    outputChar('T', 0, 3, $FFFF, $0000);
+    outputChar('E', 1, 0, $FFFF, $0000);
+    outputChar('S', 2, 0, $FFFF, $0000);
+    outputChar('T', 3, 0, $FFFF, $0000);
+
+    {mask:= puint32(@Std_Mask[uint32(test[0]) * (16 * 8)]);
+    for i:=0 to 15 do begin
+        fb[(i*640)+0]:= mask[(i*4)+0];
+        fb[(i*640)+1]:= mask[(i*4)+1];
+        fb[(i*640)+2]:= mask[(i*4)+2];
+        fb[(i*640)+3]:= mask[(i*4)+3];
+    end;}
+    
+    //for z:=0 to 15 do begin
+    //    for i:=0 to 8 do begin
+    //        val:= $0000;
+    //        //if ((Std_Font[(37*16)+z] SHR i) AND $1) = $1 then val:= $FFFF;
+    //        
+    //        //if ((Std_Font[(38 * 16)+z]) AND ($1 SHL ((8-i)+1))) > 0 then val:= $FFFF;
+    //        //if val <> 0 then fb[(z * 1280)+i]:= val;
+    //    end;
+    //end;
     while true do begin
     end;
 end;
@@ -150,9 +174,6 @@ begin
      { Ensure tracer is frozen }
      tracer.freeze();
 
-     { Console Init }
-     console.init();
-
      { Terminal Init }
      terminal.init();
      terminal.registerCommand('MEMINFO', @terminal_command_meminfo, 'Print Simple Memory Information.');
@@ -162,7 +183,7 @@ begin
 
      { Check for Multiboot }
      if (multibootmagic <> MULTIBOOT_BOOTLOADER_MAGIC) then begin
-        console.setdefaultattribute(console.combinecolors(Red, Black));
+        console.setdefaultattribute(console.combinecolors($F800, $0000));
         console.outputln('KERNEL', 'Multiboot Compliant Boot-Loader Needed!');
         console.outputln('KERNEL', 'HALTING.');
         BSOD('Multiboot Error', 'Multiboot Compliant Boot-Loader Needed!');
@@ -194,7 +215,9 @@ begin
      scheduler.init();
 
      { Graphics Mode Test Stuff }
-     GraphicsTesting();
+     //GraphicsTesting();
+     { Console Init }
+     console.init();
 
      { Call Tracer }
      tracer.init();
@@ -243,9 +266,9 @@ begin
      { End of Boot }
      tracer.push_trace('kmain.EOB');
      console.writestringln('');
-     console.setdefaultattribute(console.combinecolors(Green, Black));
+     console.setdefaultattribute(console.combinecolors($17E0, $0000));
      console.writestringln('Asuro Booted Correctly!');
-     console.setdefaultattribute(console.combinecolors(White, Black));
+     console.setdefaultattribute(console.combinecolors($FFFF, $0000));
      //if INTE then console.writestringln('Interrupts are enabled.') else console.writestringln('Interrupts are disabled.');
      console.writestringln('');
      console.writestringln('Press any key to boot in to Asuro Terminal...');

@@ -13,7 +13,9 @@ interface
 
 uses
      util, 
-     bios_data_area;
+     bios_data_area,
+     multiboot,
+     fonts;
 
 type
     TColor = ( Black   = $0,
@@ -35,57 +37,57 @@ type
 
 procedure init();
 procedure clear();
-procedure setdefaultattribute(attribute : char);
+procedure setdefaultattribute(attribute : uint32);
 
 procedure disable_cursor;
 
 procedure writechar(character : char);
 procedure writecharln(character : char);
-procedure writecharex(character : char; attributes : char);
-procedure writecharlnex(character : char; attributes : char);
+procedure writecharex(character : char; attributes: uint32);
+procedure writecharlnex(character : char; attributes: uint32);
 
 procedure Output(identifier : PChar; str : PChar);
 procedure Outputln(identifier : PChar; str : PChar);
 
 procedure writestring(str: PChar);
 procedure writestringln(str: PChar);
-procedure writestringex(str: PChar; attributes : char);
-procedure writestringlnex(str: PChar; attributes : char);
+procedure writestringex(str: PChar; attributes: uint32);
+procedure writestringlnex(str: PChar; attributes: uint32);
 
 procedure writeint(i: Integer);
 procedure writeintln(i: Integer);
-procedure writeintex(i: Integer; attributes : char);
-procedure writeintlnex(i: Integer; attributes : char);
+procedure writeintex(i: Integer; attributes: uint32);
+procedure writeintlnex(i: Integer; attributes: uint32);
 
 procedure writeword(i: DWORD);
 procedure writewordln(i: DWORD);
-procedure writewordex(i: DWORD; attributes : char);
-procedure writewordlnex(i: DWORD; attributes : char);
+procedure writewordex(i: DWORD; attributes: uint32);
+procedure writewordlnex(i: DWORD; attributes: uint32);
 
 procedure writehexpair(b : uint8);
 procedure writehex(i: DWORD);
 procedure writehexln(i: DWORD);
-procedure writehexex(i : DWORD; attributes : char);
-procedure writehexlnex(i: DWORD; attributes : char);
+procedure writehexex(i : DWORD; attributes: uint32);
+procedure writehexlnex(i: DWORD; attributes: uint32);
 
 procedure writebin8(b : uint8);
 procedure writebin8ln(b : uint8);
-procedure writebin8ex(b : uint8; attributes : char);
-procedure writebin8lnex(b : uint8; attributes : char);
+procedure writebin8ex(b : uint8; attributes: uint32);
+procedure writebin8lnex(b : uint8; attributes: uint32);
 
 procedure writebin16(b : uint16);
 procedure writebin16ln(b : uint16);
-procedure writebin16ex(b : uint16; attributes : char);
-procedure writebin16lnex(b : uint16; attributes : char);
+procedure writebin16ex(b : uint16; attributes: uint32);
+procedure writebin16lnex(b : uint16; attributes: uint32);
 
 procedure writebin32(b : uint32);
 procedure writebin32ln(b : uint32);
-procedure writebin32ex(b : uint32; attributes : char);
-procedure writebin32lnex(b : uint32; attributes : char);
+procedure writebin32ex(b : uint32; attributes: uint32);
+procedure writebin32lnex(b : uint32; attributes: uint32);
 
 procedure backspace;
 
-function combinecolors(Foreground, Background : TColor) : char;
+function combinecolors(Foreground, Background : uint16) : uint32;
 
 procedure _increment_x();
 procedure _increment_y();
@@ -95,21 +97,24 @@ procedure _newline();
  
 implementation
 
+uses
+    lmemorymanager;
+
 type
     TConsoleProperties = record
-      Default_Attribute : Char;
+      Default_Attribute : uint32;
     end;
 
     TCharacter = bitpacked record
       Character  : Char;
-      Attributes : Char;
+      attributes: uint32;
     end;
     PCharacter = ^TCharacter;
 
     TVideoMemory = Array[0..1999] of TCharacter;
     PVideoMemory = ^TVideoMemory;
 
-    T2DVideoMemory = Array[0..24] of Array[0..79] of TCharacter;
+    T2DVideoMemory = Array[0..63] of Array[0..159] of TCharacter;
     P2DVideoMemory = ^T2DVideoMemory;
 
     TCoord = record
@@ -119,9 +124,34 @@ type
 
 var
    Console_Properties : TConsoleProperties;
-   Console_Memory     : PVideoMemory = PVideoMemory($C00b8000);
-   Console_Matrix     : P2DVideoMemory = P2DVideoMemory($C00b8000);
+   //Console_Memory     : PVideoMemory = PVideoMemory($C00b8000);
+   Console_Matrix     : T2DVideoMemory;//P2DVideoMemory = P2DVideoMemory($C00b8000);
    Console_Cursor     : TCoord;
+   Ready : Boolean = false;
+
+procedure outputChar(c : char; x : uint8; y : uint8; fgcolor : uint16; bgcolor : uint16);
+var
+    dest : puint16;
+    dest32 : puint32;
+    fgcolor32, bgcolor32 : uint32;
+    mask : puint32;
+    i : uint32;
+
+begin
+    if not ready then exit;
+    fgcolor32:= fgcolor OR (fgcolor SHL 8) OR (fgcolor SHL 16) OR (fgcolor SHL 24);
+    bgcolor32:= bgcolor OR (bgcolor SHL 8) OR (bgcolor SHL 16) OR (bgcolor SHL 24);
+    mask:= puint32(@Std_Mask[uint32(c) * (16 * 8)]);
+    dest:= puint16(multibootinfo^.framebuffer_addr);
+    dest:= dest + (y*(1280 * 16)) + (x * 8);
+    dest32:= puint32(dest);
+    for i:=0 to 15 do begin
+        dest32[(i*640)+0]:= (bgcolor32 AND NOT(mask[(i*4)+0])) OR (fgcolor32 AND mask[(i*4)+0]);
+        dest32[(i*640)+1]:= (bgcolor32 AND NOT(mask[(i*4)+1])) OR (fgcolor32 AND mask[(i*4)+1]);
+        dest32[(i*640)+2]:= (bgcolor32 AND NOT(mask[(i*4)+2])) OR (fgcolor32 AND mask[(i*4)+2]);
+        dest32[(i*640)+3]:= (bgcolor32 AND NOT(mask[(i*4)+3])) OR (fgcolor32 AND mask[(i*4)+3]);
+    end;
+end;
 
 procedure disable_cursor;
 begin
@@ -130,9 +160,15 @@ begin
 end;
 
 procedure init(); [public, alias: 'console_init'];
+var
+   fb: puint32;
+
 Begin
-     Console_Properties.Default_Attribute:= console.combinecolors(White, Black);
+     fb:= puint32(uint32(multibootinfo^.framebuffer_addr));
+     kpalloc(uint32(fb));
+     Console_Properties.Default_Attribute:= console.combinecolors($FFFF, $0000);
      console.clear();
+     Ready:= True;
 end;
 
 procedure clear(); [public, alias: 'console_clear'];
@@ -140,17 +176,18 @@ var
    x,y: Byte;
 
 begin
-     for x:=0 to 79 do begin
-         for y:=0 to 24 do begin
-	     Console_Matrix^[y][x].Character:= #0;
-	     Console_Matrix^[y][x].Attributes:= Console_Properties.Default_Attribute;
+     for x:=0 to 159 do begin
+         for y:=0 to 63 do begin
+	     Console_Matrix[y][x].Character:= ' ';
+	     Console_Matrix[y][x].Attributes:= Console_Properties.Default_Attribute;
+             OutputChar(Console_Matrix[y][x].Character, x, y, Console_Matrix[y][x].Attributes SHR 16, Console_Matrix[y][x].Attributes AND $FFFF);
 	 end;
      end;
      Console_Cursor.X:= 0;
      Console_Cursor.Y:= 0;
 end;
 
-procedure writebin8ex(b : uint8; attributes : char);
+procedure writebin8ex(b : uint8; attributes: uint32);
 var
    Mask : PMask;
    i    : uint8;
@@ -162,7 +199,7 @@ begin
      end;
 end;
 
-procedure writebin16ex(b : uint16; attributes : char);
+procedure writebin16ex(b : uint16; attributes: uint32);
 var
    Mask : PMask;
    i,j  : uint8;
@@ -176,7 +213,7 @@ begin
      end;
 end;
 
-procedure writebin32ex(b : uint32; attributes : char);
+procedure writebin32ex(b : uint32; attributes: uint32);
 var
    Mask : PMask;
    i,j  : uint8;
@@ -205,19 +242,19 @@ begin
      writebin32ex(b, Console_Properties.Default_Attribute);
 end;
 
-procedure writebin8lnex(b : uint8; attributes : char);
+procedure writebin8lnex(b : uint8; attributes: uint32);
 begin
      writebin8ex(b, attributes);
      console._safeincrement_y();
 end;
 
-procedure writebin16lnex(b : uint16; attributes : char);
+procedure writebin16lnex(b : uint16; attributes: uint32);
 begin
      writebin16ex(b, attributes);
      console._safeincrement_y();
 end;
 
-procedure writebin32lnex(b : uint32; attributes : char);
+procedure writebin32lnex(b : uint32; attributes: uint32);
 begin
      writebin32ex(b, attributes);
      console._safeincrement_y();
@@ -238,7 +275,7 @@ begin
      writebin32lnex(b, Console_Properties.Default_Attribute);
 end;
 
-procedure setdefaultattribute(attribute: char); [public, alias: 'console_setdefaultattribute'];
+procedure setdefaultattribute(attribute: uint32); [public, alias: 'console_setdefaultattribute'];
 begin
      Console_Properties.Default_Attribute:= attribute;
 end;
@@ -283,10 +320,11 @@ begin
      console.writewordlnex(i, Console_Properties.Default_Attribute);
 end;
 
-procedure writecharex(character: char; attributes: char); [public, alias: 'console_writecharex'];
+procedure writecharex(character: char; attributes: uint32); [public, alias: 'console_writecharex'];
 begin
-     Console_Matrix^[Console_Cursor.Y][Console_Cursor.X].Character:= character;
-     Console_Matrix^[Console_Cursor.Y][Console_Cursor.X].Attributes:= attributes;
+     outputChar(character, Console_Cursor.X, Console_Cursor.Y, attributes SHR 16, attributes AND $FFFF);
+     Console_Matrix[Console_Cursor.Y][Console_Cursor.X].Character:= character;
+     Console_Matrix[Console_Cursor.Y][Console_Cursor.X].Attributes:= attributes;
      console._safeincrement_x();
 end;
 
@@ -320,7 +358,7 @@ begin
     end;
 end;
 
-procedure writehexex(i : dword; attributes: char); [public, alias: 'console_writehexex'];
+procedure writehexex(i : dword; attributes: uint32); [public, alias: 'console_writehexex'];
 var
    Hex : Array[0..7] of Byte;
    Res : DWORD;
@@ -371,7 +409,7 @@ begin
      console.writehexex(i, Console_Properties.Default_Attribute);
 end;
 
-procedure writehexlnex(i : dword; attributes : char);
+procedure writehexlnex(i : dword; attributes: uint32);
 begin
      console.writehexex(i, attributes);
      console._safeincrement_y();
@@ -396,7 +434,7 @@ begin
      writestringln(' ');
 end;
 
-procedure writestringex(str: PChar; attributes: char); [public, alias: 'console_writestringex'];
+procedure writestringex(str: PChar; attributes: uint32); [public, alias: 'console_writestringex'];
 var
    i : integer;
 
@@ -408,7 +446,7 @@ begin
      end;
 end;
 
-procedure writeintex(i: Integer; attributes : char); [public, alias: 'console_writeintex'];
+procedure writeintex(i: Integer; attributes: uint32); [public, alias: 'console_writeintex'];
 var
         buffer: array [0..11] of Char;
         str: PChar;
@@ -436,7 +474,7 @@ begin
         console.writestringex(str, attributes);
 end;
  
-procedure writewordex(i: DWORD; attributes : char); [public, alias: 'console_writedwordex'];
+procedure writewordex(i: DWORD; attributes: uint32); [public, alias: 'console_writedwordex'];
 var
         buffer: array [0..11] of Char;
         str: PChar;
@@ -454,33 +492,33 @@ begin
         console.writestringex(@Buffer[0], attributes);
 end;
 
-procedure writecharlnex(character: char; attributes: char); [public, alias: 'console_writecharlnex'];
+procedure writecharlnex(character: char; attributes: uint32); [public, alias: 'console_writecharlnex'];
 begin
      console.writecharex(character, attributes);
      console._safeincrement_y();
 end;
 
-procedure writestringlnex(str: PChar; attributes: char); [public, alias: 'console_writestringlnex'];
+procedure writestringlnex(str: PChar; attributes: uint32); [public, alias: 'console_writestringlnex'];
 begin
      console.writestringex(str, attributes);
      console._safeincrement_y();
 end;
 
-procedure writeintlnex(i: Integer; attributes: char); [public, alias: 'console_writeintlnex'];
+procedure writeintlnex(i: Integer; attributes: uint32); [public, alias: 'console_writeintlnex'];
 begin
      console.writeintex(i, attributes);
      console._safeincrement_y();
 end;
 
-procedure writewordlnex(i: DWORD; attributes: char); [public, alias: 'console_writewordlnex'];
+procedure writewordlnex(i: DWORD; attributes: uint32); [public, alias: 'console_writewordlnex'];
 begin
      console.writewordex(i, attributes);
      console._safeincrement_y();
 end;
 
-function combinecolors(Foreground, Background: TColor): char; [public, alias: 'console_combinecolors'];
+function combinecolors(Foreground, Background: uint16): uint32; 
 begin
-     combinecolors:= char(((ord(Background) shl 4) or ord(Foreground)));
+     combinecolors:= (uint32(Foreground) SHL 16) OR Background;
 end;
 
 procedure _update_cursor(); [public, alias: '_console_update_cursor'];
@@ -509,16 +547,16 @@ end;
 procedure _increment_x(); [public, alias: '_console_increment_x'];
 begin
      Console_Cursor.X:= Console_Cursor.X+1;
-     If Console_Cursor.X > 79 then Console_Cursor.X:= 0;
+     If Console_Cursor.X > 159 then Console_Cursor.X:= 0;
      console._update_cursor;
 end;
 
 procedure _increment_y(); [public, alias: '_console_increment_y'];
 begin
      Console_Cursor.Y:= Console_Cursor.Y+1;
-     If Console_Cursor.Y > 24 then begin
+     If Console_Cursor.Y > 63 then begin
              console._newline();
-             Console_Cursor.Y:= 24;
+             Console_Cursor.Y:= 63;
      end;
      console._update_cursor;
 end;
@@ -526,7 +564,7 @@ end;
 procedure _safeincrement_x(); [public, alias: '_console_safeincrement_x'];
 begin
      Console_Cursor.X:= Console_Cursor.X+1;
-     If Console_Cursor.X > 79 then begin
+     If Console_Cursor.X > 159 then begin
         console._safeincrement_y();
      end;
      console._update_cursor;
@@ -535,9 +573,9 @@ end;
 procedure _safeincrement_y(); [public, alias: '_console_safeincrement_y'];
 begin
      Console_Cursor.Y:= Console_Cursor.Y+1;
-     If Console_Cursor.Y > 24 then begin
+     If Console_Cursor.Y > 63 then begin
              console._newline();
-             Console_Cursor.Y:= 24;
+             Console_Cursor.Y:= 63;
      end;
      Console_Cursor.X:= 0;
      console._update_cursor;
@@ -548,16 +586,21 @@ var
    x, y : byte;
 
 begin
-     for x:=0 to 79 do begin
-         for y:=0 to 23 do begin
-             Console_Matrix^[y][x]:= Console_Matrix^[y+1][x];
+     for x:=0 to 159 do begin
+         for y:=0 to 63 do begin
+             Console_Matrix[y][x]:= Console_Matrix[y+1][x];
          end;
      end;
-     for x:=0 to 79 do begin
-         Console_Matrix^[24][x].Character:= #0;
-         Console_Matrix^[24][x].Attributes:= #7;
+     for x:=0 to 159 do begin
+         Console_Matrix[63][x].Character:= ' ';
+         Console_Matrix[63][x].Attributes:= $FFFF0000;
      end;
-     console._update_cursor
+     for x:=0 to 159 do begin
+        for y:=0 to 63 do begin
+            OutputChar(Console_Matrix[y][x].Character, x, y, Console_Matrix[y][x].Attributes SHR 16, Console_Matrix[y][x].Attributes AND $FFFF);
+        end;
+     end;
+     console._update_cursor;
 end;
  
 end.
