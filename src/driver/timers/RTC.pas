@@ -1,0 +1,108 @@
+unit RTC;
+
+interface
+
+uses
+    console, isrmanager, util;
+
+type
+    TDateTime = record
+        Seconds : uint8;
+        Minutes : uint8;
+        Hours   : uint8;
+        Weekday : uint8;
+        Day     : uint8;
+        Month   : uint8;
+        Year    : uint8;
+        Century : uint8;
+    end;
+
+var
+    DateTime : TDateTime;
+
+procedure init;
+
+implementation
+
+function is_update_in_progress : boolean;
+var
+    bin : uint8;
+
+begin
+    outb($70, $0A);
+    io_wait();
+    bin:= inb($71);
+    is_update_in_progress:= (bin AND ($1 SHL 7)) <> 0;
+end;
+
+procedure update();
+begin
+    outb($70, $0C);	// select register C
+    io_wait();
+    inb($71);
+    console.writestringln('RTC Update');
+    while not is_update_in_progress do begin 
+    end;
+    while is_update_in_progress do begin 
+    end;
+    outb($70, $00);
+    io_wait();
+    DateTime.Seconds:= inb($71);
+    io_wait();
+    outb($70, $02);
+    io_wait();
+    DateTime.Minutes:= inb($71);
+    io_wait();
+    outb($70, $04);
+    io_wait();
+    DateTime.Hours:= inb($71);
+    io_wait();
+    outb($70, $06);
+    io_wait();
+    DateTime.Weekday:= inb($71);
+    io_wait();
+    outb($70, $07);
+    io_wait();
+    DateTime.Day:= inb($71);
+    io_wait();
+    outb($70, $08);
+    io_wait();
+    DateTime.Month:= inb($71);
+    io_wait();
+    outb($70, $09);
+    io_wait();
+    DateTime.Year:= inb($71);
+    io_wait();
+    outb($70, $32);
+    io_wait();
+    DateTime.Century:= inb($71);
+    io_wait();
+end;
+
+procedure init;
+var
+    prev : uint8;
+
+begin
+    CLI;
+    //setup RTC
+    outb($70, $8A);
+    io_wait();
+    outb($71, $20);
+    io_wait();
+
+    //enable ints
+    outb($70, $8B);
+    io_wait();
+    prev:= inb($71);
+    io_wait();
+    outb($70, $8B);
+    io_wait();
+    outb($71, prev OR $40);
+    STI;
+    outb($70, $00);
+    isrmanager.registerISR(32 + 8, @update);
+    //TMR_0_ISR.hook(uint32(@update));
+end;
+
+end.

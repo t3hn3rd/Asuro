@@ -36,8 +36,8 @@ MULTIBOOT_HEADER_CHECKSUM       equ     -(MULTIBOOT_HEADER_MAGIC + MULTIBOOT_HEA
 ; Kernel stack size
 ;
 KERNEL_STACKSIZE                equ     0x4000
-KERNEL_VIRTUAL_BASE 		  equ	0xC0000000
-KERNEL_PAGE_NUMBER			  equ	(KERNEL_VIRTUAL_BASE >> 22)
+KERNEL_VIRTUAL_BASE 		  	equ		0xC0000000
+KERNEL_PAGE_NUMBER			  	equ		(KERNEL_VIRTUAL_BASE >> 22)
  
 section .data
 align 0x1000
@@ -90,7 +90,7 @@ _loader:
 	jmp ecx
 
 kstart:
-	   mov dword [BootPageDirectory], 0
+	    mov dword [BootPageDirectory], 0
     	   invlpg [0]	   		
         mov esp, KERNEL_STACK+KERNEL_STACKSIZE  ;Create kernel stack
         push eax                                ;Multiboot magic number

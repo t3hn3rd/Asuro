@@ -43,7 +43,8 @@ uses
      fat32,
      isrmanager,
      faults,
-     fonts;
+     fonts,
+     RTC;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
@@ -230,6 +231,8 @@ begin
      storagemanagement.init();
      tracer.pop_trace;
 
+     //RTC.init();
+
      { Hook Timer for Ticks }
      tracer.push_trace('kmain.TMR');
      STI;
@@ -273,6 +276,10 @@ begin
      console.writestringln('');
      console.writestringln('Press any key to boot in to Asuro Terminal...');
      tracer.pop_trace;
+
+     writeint(DateTime.Hours);
+     writestring(':');
+     writeintln(DateTime.Minutes);
 
      tracer.push_trace('kmain.KEYHOOK');
      keyboard.hook(@temphook);
