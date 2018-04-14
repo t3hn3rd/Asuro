@@ -595,8 +595,8 @@ begin
          Console_Matrix[63][x].Character:= ' ';
          Console_Matrix[63][x].Attributes:= $FFFF0000;
      end;
-     for x:=0 to 159 do begin
-        for y:=0 to 63 do begin
+     for y:=0 to 63 do begin
+        for x:=0 to 159 do begin
             OutputChar(Console_Matrix[y][x].Character, x, y, Console_Matrix[y][x].Attributes SHR 16, Console_Matrix[y][x].Attributes AND $FFFF);
         end;
      end;
