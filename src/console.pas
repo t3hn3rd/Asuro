@@ -94,6 +94,8 @@ procedure _increment_y();
 procedure _safeincrement_y();
 procedure _safeincrement_x();
 procedure _newline();
+
+procedure outputChar(c : char; x : uint8; y : uint8; fgcolor : uint16; bgcolor : uint16);
  
 implementation
 
@@ -176,8 +178,8 @@ var
    x,y: Byte;
 
 begin
-     for x:=0 to 159 do begin
-         for y:=0 to 63 do begin
+     for y:=0 to 63 do begin
+         for x:=0 to 159 do begin
 	     Console_Matrix[y][x].Character:= ' ';
 	     Console_Matrix[y][x].Attributes:= Console_Properties.Default_Attribute;
              OutputChar(Console_Matrix[y][x].Character, x, y, Console_Matrix[y][x].Attributes SHR 16, Console_Matrix[y][x].Attributes AND $FFFF);

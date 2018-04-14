@@ -12,6 +12,7 @@ unit terminal;
 interface
 
 uses
+    bios_data_area,
     console,
     keyboard,
     util,
@@ -207,6 +208,25 @@ begin
     end;
 end;
 
+procedure cockwomble(params : PParamList);
+var
+    x, y : uint8;
+    o : uint16;
+    i : uint32;
+
+begin
+    i:= 1;
+    while true do begin
+        for y:=0 to 63 do begin
+            for x:=0 to 159 do begin
+                o:= uint16(y * i + x * i + i + (BDA^.Ticks SHR 3));
+                outputChar(' ', x, y, $FFFF, o);
+            end;
+        end;
+        i:= uint32(i) + 1;
+    end;
+end;
+
 procedure test(params : PParamList);
 begin
     if paramCount(params) > 0 then begin
@@ -321,6 +341,7 @@ begin
     registerCommand('TESTPARAMS', @testParams, 'Tests param parsing.');
     registerCommand('TEST', @test, 'Command for testing.');
     registerCommand('CD', @change_dir, 'Change Directory test');
+    registerCommand('COCKWOMBLE', @cockwomble, 'Womblecocks');
     console.writestringln('TERMINAL: INIT END.');
 end;
 
