@@ -173,7 +173,7 @@ begin
     clusterByteSize := bootrecord.spc * bootrecord.sectorSize;
     fatSectorSize   := bootrecord.fatSize;
 
-
+    readDirectory:= 0;
     // if readFat(volume, bootrecord.rootCluster) = $FFFFFFF8 then begin
     //     buffer:= puint32(kalloc((bootrecord.spc * 512) + 1));
     //     volume^.device^.readcallback(volume^.device, volume^.sectorStart + 1 + (bootrecord.fatSize div 512) + (bootRecord.spc * bootRecord.rootCluster), bootrecord.spc, buffer);
@@ -218,13 +218,9 @@ begin
         bufferI := buffer;
         for i:= 0 to LL_size(clusters) - 1 do begin
             cc:= uint32(LL_Get(clusters, i)^);
-            console.writeintln(volume^.sectorStart + 1 + fatSectorSize + (bootRecord.spc * cc));
-            console.writeintln(cc);
-            console.writeintln(bootrecord.fatSize);
             device^.readcallback(device, volume^.sectorStart + 1 + fatSectorSize + (bootRecord.spc * cc), bootrecord.spc, puint32(buffer + (i * clusterByteSize)) );
         end;
 
-        console.writestringln('loaded table clusters');
         if dirI = LL_size(directories) - 1 then break;
 
         //get elements in the directory table
@@ -247,7 +243,6 @@ begin
 
         //set CC
         dirI += 1;
-        console.writestringln('finished loop');
     end;
 
     while true do begin
@@ -255,15 +250,10 @@ begin
         if dir^.fileName[0] = char(0) then break; //need to check if I have found the right directoy and set cc if not last
         dirElm:= LL_Add(rootTable);
         PDirectory(dirElm)^:= PDirectory(bufferI)^;
-
-        console.writestringln(PDirectory(bufferI)^.fileName);
-        //console.writecharln(PDirectory(bufferI)^.fileName[1]);
-        psleep(300);
         bufferI:= puint32(bufferI + 8);
     end;
 
     kfree(buffer);
-    readDirectory:= 0;
     listPtr := rootTable;
 
     // while true do begin // I need to be inside another loop
@@ -280,16 +270,55 @@ begin
     pop_trace();
 end;
 
-procedure writeDirectory(volume : PStorage_volume; directory : pchar; buffer : puint32);
+function writeDirectory(volume : PStorage_volume; directory : pchar) : uint8;
+var
+    dirList      : PLinkedListBase;
+    str          : pchar;
+    str2         : pchar;
+    i            : uint32 = 0;
+    ii           : uint32;
+    buffer       : puint32;
+    foundCluster : boolean = false;
+    emptyCluster : uint32;
+    targetDirectory : TDirectory;
 begin
+    dirList:= stringToLL(directory, '/');
+    buffer:= puint32(kalloc(sizeof(volume^.sectorSize)));
+    
+    //find un allocated cluster
+    while not foundCluster do begin
+        volume^.device^.readcallback(volume^.device, volume^.sectorStart + 2 + (i * 32 div volume^.sectorSize), 1, buffer);
+        for ii:=0 to 15 do begin
+            if puint32(buffer + ii)^ = 0 then begin //found unallocated cluster
+                emptyCluster:= (i * 16) + ii;
+                foundCluster:= true;
+            end;
+        end;
+        i+= 1;
+    end;
+    kfree(buffer);
 
+    //write fat
+    writeFat(volume, emptyCluster, $FFFFFFF8);
+
+    //find directory table
+    for i:=0 to LL_size(dirList) - 2 do begin
+        str2:= pchar( puint32(LL_Get(dirList, i))^ );
+        str:= stringConcat(str, str2);    
+    end;
+
+    writeDirectory:= readDirectory(volume, str, dirList);
+    targetDirectory:= PDirectory(LL_Get(dirList, 0))^;
+
+    //insert table entree
+    //write new directory table at emptyCluster
 end;
 
 procedure readFile(volume : PStorage_volume; directory : pchar; byteCount : uint32; buffer : puint32);
 begin
 
 end;
-
+//need to be able to increase no of clusted used by a directory
 procedure writeFile(volume : PStorage_volume; directory : pchar; byteCount : uint32; buffer : puint32);
 begin
 
