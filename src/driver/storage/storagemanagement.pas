@@ -46,6 +46,7 @@ type
     PFileSystem = ^TFilesystem;
 
     TStorage_Volume = record
+        device            : PStorage_device;
         sectorStart     : uint32;
         sectorSize      : uint32;
         freeSectors     : uint32;
@@ -133,7 +134,7 @@ begin
         drive :=  stringToInt(getParam(1, params));
         console.writeintln(drive); // works
         if stringEquals(getParam(2, params), 'fat32') then begin
-                PFilesystem(LL_Get(filesystems, 0))^.createCallback((PStorage_Device(LL_Get(storageDevices, drive))), 100000, 1, @spc); //todo check fs
+                PFilesystem(LL_Get(filesystems, 0))^.createCallback((PStorage_Device(LL_Get(storageDevices, drive))), 1000000, 1, spc); //todo check fs
                 console.writestring('Drive ');
                 //console.writeint(drive); // page faults
                 console.writestringln(' formatted.');

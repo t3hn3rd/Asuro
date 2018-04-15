@@ -389,6 +389,7 @@ begin
     outb($1F5, LBA shr 16);
     outb($1F7, $20); //read command
 
+
     for i:=0 to sectorCount do begin
 
         //poll status
@@ -403,11 +404,11 @@ begin
         end;
 
         for ii:=0 to 127 do begin //read data
-            Puint32(buffer + ((i * 512) + (ii * 32) DIV 32))^ := uint32(inw($1F0)); //wrong
-            for iii:=0 to 1000 do if(ii = iii) then begin  end;
+            Puint32(buffer + ((i * 512) + (ii * 32) DIV 32))^ := uint32(inw($1F0)); 
+            while true do if (inw($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
             if ii <> 127 then begin
                 Puint32(buffer + ((i * 512) + (ii * 32) DIV 32))^ := ((uint32(inw($1F0)) shl 16) or Puint32(buffer + ((i * 512) + (ii * 32) DIV 32))^); //wrong
-                for iii:=0 to 1000 do if(ii = iii) then begin  end
+                while true do if (inw($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
             end;
         end;
     end;

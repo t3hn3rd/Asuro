@@ -201,16 +201,14 @@ begin
         if (head^ = delimter) or (head^ = char(0)) then begin
             if head^ = char(0) then null_delim:= true;
             size:= uint32(head) - uint32(tail);
-            console.writeintln(size);
             if size > 0 then begin
                 elm:= puint32(LL_Add(list));
-                out_str:= stringNew(size);
+                out_str:= stringNew(size + 1); //maybe
                 memcpy(uint32(tail), uint32(out_str), size);
                 elm^:= uint32(out_str);
             end;
             tail:= head+1;
         end else begin
-            console.writecharln(head^);
         end;
         inc(head);
     end;
