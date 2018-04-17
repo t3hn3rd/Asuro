@@ -152,22 +152,23 @@ begin
             if Packet.y_sign then y32:= y32 OR $FFFFFF00;
             if x32 <> 0 then begin
                 if x32 > 0 then begin
-                    inc(Current.x);
+                    inc(Current.x, (Packet.x_movement div 4));
                 end else begin
-                    Dec(Current.x);
+                    Dec(Current.x, (Packet.x_movement div 4));
                 end;
             end; 
             if y32 <> 0 then begin
-                if y32 > 0 then begin
-                    inc(Current.y);
+                if y32 < 0 then begin
+                    inc(Current.y, (Packet.y_movement div 4));
                 end else begin
-                    dec(Current.y)
+                    dec(Current.y, (Packet.y_movement div 4))
                 end;
             end;
             if Current.x < 0 then Current.x:= 0;
             if Current.y < 0 then Current.y:= 0;
             if Current.x > 1279 then Current.x:= 1279;
             if Current.y > 1023 then Current.y:= 1023;
+            DrawCursor;
         end;
         {console.writestring('Packet[0]: ');
         console.writeintln(Mouse_Byte[0]);
@@ -176,8 +177,6 @@ begin
         console.writestring('Packet[2]: ');
         console.writeintln(Mouse_Byte[2]);}
         Cycle:= 0;
-
-        DrawCursor;
     end;
     pop_trace;
 end;

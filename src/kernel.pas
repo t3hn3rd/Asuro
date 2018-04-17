@@ -246,7 +246,7 @@ begin
      tracer.push_trace('kmain.DEVDRV');
      console.outputln('KERNEL', 'DEVICE DRIVERS: INIT BEGIN.');
      keyboard.init(keyboard_layout);
-     mouse.init();
+     //mouse.init();
      testdriver.init();
      E1000.init();
      IDE.init();
