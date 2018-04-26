@@ -141,40 +141,20 @@ begin
         if Cycle = 3 then begin
             //Process
             f:= Mouse_Byte[0];
-            //Packet.x_movement:= Mouse_Byte[1];
-            //Packet.y_movement:= Mouse_Byte[2];
             Packet.x_sign:= (f AND %00010000) = %00010000;
             Packet.y_sign:= (f AND %00100000) = %00100000;
             Packet.x_overflow:= (f AND $40) = $40;
             Packet.y_overflow:= (f AND $80) = $80;
             Packet.x_movement:= Mouse_Byte[1] - ((f SHL 4) AND $100);//Packet.x_movement div 4;
-            Packet.y_movement:= Mouse_Byte[2] - ((f SHL 3) AND $100);//Packet.y_movement div 4;
-            //if Packet.x_movement < 1 then Packet.x_movement:= 1;
-            //if Packet.y_movement < 1 then Packet.y_movement:= 1;
+            Packet.y_movement:= Mouse_Byte[2] + ((f SHL 3) AND $100);//Packet.y_movement div 4;
             if not(Packet.x_overflow) and not(Packet.y_overflow) then begin
                 Current.x:= Current.x + Packet.x_movement;
                 Current.y:= Current.y + Packet.y_movement;            
-                {If (Packet.x_sign) and (Packet.x_movement > 0) then begin
-                    dec(Current.x, Packet.x_movement);
-                end;
-                If not(Packet.x_sign) and (Packet.x_movement > 0) then begin
-                    inc(Current.x, Packet.x_movement);
-                end;
-                If not(Packet.y_sign) and (Packet.y_movement > 0) then begin
-                    dec(Current.y, Packet.y_movement);
-                end;
-                If (Packet.y_sign) and (Packet.y_movement > 0) then begin
-                    inc(Current.y, Packet.y_movement);
-                end;}
+
                 if Current.x < 0 then Current.x:= 0;
                 if Current.y < 0 then Current.y:= 0;
                 if Current.x > 1279 then Current.x:= 1279;
                 if Current.y > 1023 then Current.y:= 1023;
-                //console.writestring('Mouse X: ');
-                //console.writeintln(current.x);
-                //console.writestring('Mouse Y: ');
-                //console.writeintln(current.y);
-                //DrawCursor;
             end;
             Cycle:= 0;
             NeedsRedraw:= true;
