@@ -146,11 +146,10 @@ begin
             Packet.x_overflow:= (f AND $40) = $40;
             Packet.y_overflow:= (f AND $80) = $80;
             Packet.x_movement:= Mouse_Byte[1] - ((f SHL 4) AND $100);//Packet.x_movement div 4;
-            Packet.y_movement:= Mouse_Byte[2] + ((f SHL 3) AND $100);//Packet.y_movement div 4;
+            Packet.y_movement:= Mouse_Byte[2] - ((f SHL 3) AND $100);//Packet.y_movement div 4;
             if not(Packet.x_overflow) and not(Packet.y_overflow) then begin
                 Current.x:= Current.x + Packet.x_movement;
-                Current.y:= Current.y + Packet.y_movement;            
-
+                Current.y:= Current.y - Packet.y_movement;            
                 if Current.x < 0 then Current.x:= 0;
                 if Current.y < 0 then Current.y:= 0;
                 if Current.x > 1279 then Current.x:= 1279;
