@@ -240,7 +240,7 @@ begin
      tracer.pop_trace;
 
      { Filsystems }
-     fat32.init();
+     //fat32.init();
 
      { Device Drivers }
      tracer.push_trace('kmain.DEVDRV');
