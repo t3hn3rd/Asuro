@@ -40,6 +40,7 @@ type
     end;
 
 procedure init();
+procedure DrawCursor;
 
 implementation
 
@@ -51,12 +52,18 @@ var
     Mouse_Byte : Array[0..2] of uint8;
     Packet : uint32;
     Registered : Boolean = false;
+    NeedsRedraw : Boolean = false;
 
 procedure DrawCursor;
 var
     x, y : uint32;
+    nx, ny : uint32;
 
-begin
+begin 
+    nx:= Current.x;
+    ny:= Current.y;
+    if not NeedsRedraw then exit;
+    NeedsRedraw:= false;
     if not FirstDraw then begin
         for y:=0 to 1 do begin
             for x:=0 to 1 do begin
@@ -64,23 +71,23 @@ begin
             end;
         end;        
     end;
-    Last.x:= Current.x;
-    Last.y:= Current.y;
+    Last.x:= nx;
+    Last.y:= ny;
     for y:=0 to 1 do begin
         for x:=0 to 1 do begin
-            BackPixels[x][y]:= GetPixel(Current.x + x, Current.y + y);
-            DrawPixel(Current.x + x, Current.y + y, $FFFF);
+            BackPixels[x][y]:= GetPixel(nx + x, ny + y);
+            DrawPixel(nx + x, ny + y, $FFFF);
         end;
     end;
     FirstDraw:= false;
 end;
 
-procedure mouse_wait(w_type : uint8);
+function mouse_wait(w_type : uint8) : boolean;
 var
     timeout : uint32;
 
 begin
-    timeout:= 100000;
+    timeout:= 100;
     if (w_type = 0) then begin
         while (timeout > 0) do begin
             if ((inb($64) AND $01) = $01) then break;
@@ -92,6 +99,7 @@ begin
             timeout := timeout - 1;
         end;
     end;
+    mouse_wait:= timeout > 0;
 end;
 
 procedure mouse_write(value : uint8);
@@ -118,67 +126,54 @@ var
     r : pchar;
 
 begin
-    push_trace('mouse.main');
-    b:= mouse_read;
-    if Cycle = 0 then begin
-        if (b AND $08) = $08 then begin
-            Mouse_Byte[Cycle]:= b;
-            Inc(Cycle);
-        end;
-    end else begin
-        If Cycle = 1 then begin
-            Mouse_Byte[Cycle]:= b;
-            Inc(Cycle);
+    //push_trace('mouse.main');
+    while mouse_wait(0) do begin
+        b:= mouse_read;
+        if Cycle = 0 then begin
+            if (b AND $08) = $08 then begin
+                Mouse_Byte[Cycle]:= b;
+                Inc(Cycle);
+            end;
         end else begin
             Mouse_Byte[Cycle]:= b;
             Inc(Cycle);
         end;
-    end;
-    if Cycle = 3 then begin
-        //Process
-        f:= Mouse_Byte[0];
-        Packet.x_movement:= Mouse_Byte[1];
-        Packet.y_movement:= Mouse_Byte[2];
-        Packet.x_sign:= (f AND $10) = $10;
-        Packet.y_sign:= (f AND $20) = $20;
-        Packet.x_overflow:= (f AND $40) = $40;
-        Packet.y_overflow:= (f AND $80) = $80;
-        if not(Packet.x_overflow) and not(Packet.y_overflow) then begin
-            //if Packet.x_sign then Current.x:= Current.x - Packet.x_movement else Current.x:= Current.x + Packet.x_movement;
-            //if Packet.y_sign then Current.y:= Current.y - Packet.y_movement else Current.y:= Current.y + Packet.y_movement;
-            x32:= Packet.x_movement;
-            if Packet.x_sign then x32:= x32 OR $FFFFFF00;
-            y32:= Packet.y_movement;
-            if Packet.y_sign then y32:= y32 OR $FFFFFF00;
-            if x32 <> 0 then begin
-                if x32 > 0 then begin
-                    inc(Current.x, (Packet.x_movement div 4));
-                end else begin
-                    Dec(Current.x, (Packet.x_movement div 4));
+        if Cycle = 3 then begin
+            //Process
+            f:= Mouse_Byte[0];
+            Packet.x_movement:= Mouse_Byte[1];
+            Packet.y_movement:= Mouse_Byte[2];
+            Packet.x_sign:= (f AND %00010000) = %00010000;
+            Packet.y_sign:= (f AND %00100000) = %00100000;
+            Packet.x_overflow:= (f AND $40) = $40;
+            Packet.y_overflow:= (f AND $80) = $80;
+            if not(Packet.x_overflow) and not(Packet.y_overflow) then begin
+                If (Packet.x_sign) and (Packet.x_movement > 0) then begin
+                    dec(Current.x);
                 end;
-            end; 
-            if y32 <> 0 then begin
-                if y32 < 0 then begin
-                    inc(Current.y, (Packet.y_movement div 4));
-                end else begin
-                    dec(Current.y, (Packet.y_movement div 4))
+                If not(Packet.x_sign) and (Packet.x_movement > 0) then begin
+                    inc(Current.x);
                 end;
+                If not(Packet.y_sign) and (Packet.y_movement > 0) then begin
+                    dec(Current.y);
+                end;
+                If (Packet.y_sign) and (Packet.y_movement > 0) then begin
+                    inc(Current.y);
+                end;
+                if Current.x < 0 then Current.x:= 0;
+                if Current.y < 0 then Current.y:= 0;
+                if Current.x > 1279 then Current.x:= 1279;
+                if Current.y > 1023 then Current.y:= 1023;
+                //console.writestring('Mouse X: ');
+                //console.writeintln(current.x);
+                //console.writestring('Mouse Y: ');
+                //console.writeintln(current.y);
+                //DrawCursor;
             end;
-            if Current.x < 0 then Current.x:= 0;
-            if Current.y < 0 then Current.y:= 0;
-            if Current.x > 1279 then Current.x:= 1279;
-            if Current.y > 1023 then Current.y:= 1023;
-            DrawCursor;
+            Cycle:= 0;
+            NeedsRedraw:= true;
         end;
-        {console.writestring('Packet[0]: ');
-        console.writeintln(Mouse_Byte[0]);
-        console.writestring('Packet[1]: ');
-        console.writeintln(Mouse_Byte[1]);
-        console.writestring('Packet[2]: ');
-        console.writeintln(Mouse_Byte[2]);}
-        Cycle:= 0;
     end;
-    pop_trace;
 end;
 
 function load(ptr : void) : boolean;

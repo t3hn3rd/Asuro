@@ -246,7 +246,7 @@ begin
      tracer.push_trace('kmain.DEVDRV');
      console.outputln('KERNEL', 'DEVICE DRIVERS: INIT BEGIN.');
      keyboard.init(keyboard_layout);
-     //mouse.init();
+     mouse.init();
      testdriver.init();
      E1000.init();
      IDE.init();
@@ -286,7 +286,12 @@ begin
      tracer.pop_trace;
 
      tracer.push_trace('kmain.END');
-     util.halt_and_dont_catch_fire;
+
+     while true do begin
+        mouse.DrawCursor();
+     end;
+
+     //util.halt_and_dont_catch_fire;
 end;
  
 end.
