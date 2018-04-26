@@ -97,7 +97,7 @@ procedure _safeincrement_x();
 procedure _newline();
 
 procedure outputChar(c : char; x : uint8; y : uint8; fgcolor : uint16; bgcolor : uint16);
-procedure outputCharToScreenSpace(c : char; x : uint8; y : uint8; fgcolor : uint16);
+procedure outputCharToScreenSpace(c : char; x : uint32; y : uint32; fgcolor : uint16);
 procedure outputCharTransparent(c : char; x : uint8; y : uint8; fgcolor : uint16);
 
 function  getPixel(x : uint32; y : uint32) : uint16;
@@ -211,7 +211,7 @@ begin
     dest64^:= pixel;
 end;
 
-procedure outputCharToScreenSpace(c : char; x : uint8; y : uint8; fgcolor : uint16);
+procedure outputCharToScreenSpace(c : char; x : uint32; y : uint32; fgcolor : uint16);
 var
     dest : puint16;
     dest32 : puint32;
