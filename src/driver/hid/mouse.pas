@@ -147,6 +147,10 @@ begin
             Packet.y_sign:= (f AND %00100000) = %00100000;
             Packet.x_overflow:= (f AND $40) = $40;
             Packet.y_overflow:= (f AND $80) = $80;
+            Packet.x_movement:= Packet.x_movement div 4;
+            Packet.y_movement:= Packet.y_movement div 4;
+            if Packet.x_movement < 1 then Packet.x_movement:= 1;
+            if Packet.y_movement < 1 then Packet.y_movement:= 1;
             if not(Packet.x_overflow) and not(Packet.y_overflow) then begin
                 If (Packet.x_sign) and (Packet.x_movement > 0) then begin
                     dec(Current.x, Packet.x_movement);
