@@ -65,11 +65,6 @@ begin
     if not NeedsRedraw then exit;
     NeedsRedraw:= false;
     if not FirstDraw then begin
-        {for y:=0 to 1 do begin
-            for x:=0 to 1 do begin
-                DrawPixel(Last.x + x, Last.y + y, BackPixels[x][y]);
-            end;
-        end;}
         for y:=0 to 7 do begin
             for x:=0 to 1 do begin
                 drawPixel64(Last.x + (x * 4), Last.y + y, BackPixels[x][y]);
@@ -78,12 +73,6 @@ begin
     end;
     Last.x:= nx;
     Last.y:= ny;
-    {for y:=0 to 1 do begin
-        for x:=0 to 1 do begin
-            BackPixels[x][y]:= GetPixel(nx + x, ny + y);
-            DrawPixel(nx + x, ny + y, $FFFF);
-        end;
-    end;}
     for y:=0 to 7 do begin
         for x:=0 to 1 do begin
             BackPixels[x][y]:= GetPixel64(nx + (x * 4), ny + y);
@@ -162,8 +151,8 @@ begin
                 Current.y:= Current.y - Packet.y_movement;            
                 if Current.x < 0 then Current.x:= 0;
                 if Current.y < 0 then Current.y:= 0;
-                if Current.x > 1279 then Current.x:= 1279;
-                if Current.y > 1023 then Current.y:= 1023;
+                if Current.x > 1272 then Current.x:= 1272;
+                if Current.y > 1015 then Current.y:= 1015;
             end;
             Cycle:= 0;
             NeedsRedraw:= true;
