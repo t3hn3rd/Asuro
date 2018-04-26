@@ -149,16 +149,16 @@ begin
             Packet.y_overflow:= (f AND $80) = $80;
             if not(Packet.x_overflow) and not(Packet.y_overflow) then begin
                 If (Packet.x_sign) and (Packet.x_movement > 0) then begin
-                    dec(Current.x);
+                    dec(Current.x, Packet.x_movement);
                 end;
                 If not(Packet.x_sign) and (Packet.x_movement > 0) then begin
-                    inc(Current.x);
+                    inc(Current.x, Packet.x_movement);
                 end;
                 If not(Packet.y_sign) and (Packet.y_movement > 0) then begin
-                    dec(Current.y);
+                    dec(Current.y, Packet.y_movement);
                 end;
                 If (Packet.y_sign) and (Packet.y_movement > 0) then begin
-                    inc(Current.y);
+                    inc(Current.y, Packet.y_movement);
                 end;
                 if Current.x < 0 then Current.x:= 0;
                 if Current.y < 0 then Current.y:= 0;
