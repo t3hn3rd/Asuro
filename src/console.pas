@@ -97,9 +97,17 @@ procedure _safeincrement_x();
 procedure _newline();
 
 procedure outputChar(c : char; x : uint8; y : uint8; fgcolor : uint16; bgcolor : uint16);
-function getPixel(x : uint32; y : uint32) : uint16;
+procedure outputCharToScreenSpace(c : char; x : uint8; y : uint8; fgcolor : uint16);
+procedure outputCharTransparent(c : char; x : uint8; y : uint8; fgcolor : uint16);
+
+function  getPixel(x : uint32; y : uint32) : uint16;
 procedure drawPixel(x : uint32; y : uint32; color : uint16);
- 
+function  getPixel32(x : uint32; y : uint32) : uint32;
+procedure drawPixel32(x : uint32; y : uint32; pixel : uint32);
+function  getPixel64(x : uint32; y : uint32) : uint64;
+procedure drawPixel64(x : uint32; y : uint32; pixel : uint64);
+
+
 implementation
 
 uses
@@ -129,8 +137,7 @@ type
 
 var
    Console_Properties : TConsoleProperties;
-   //Console_Memory     : PVideoMemory = PVideoMemory($C00b8000);
-   Console_Matrix     : T2DVideoMemory;//P2DVideoMemory = P2DVideoMemory($C00b8000);
+   Console_Matrix     : T2DVideoMemory;
    Console_Cursor     : TCoord;
    Ready : Boolean = false;
 
@@ -139,12 +146,10 @@ var
     dest : puint16;
 
 begin
-    //push_trace('console.getPixel');
     if not ready then exit;
     dest:= puint16(multibootinfo^.framebuffer_addr);
     dest:= dest + (y * 1280) + x;
     getPixel:= dest^;
-    //pop_trace;
 end;
 
 procedure drawPixel(x : uint32; y : uint32; color : uint16);
@@ -152,12 +157,104 @@ var
     dest : puint16;
 
 begin
-    //push_trace('console.drawPixel');
     if not ready then exit;
     dest:= puint16(multibootinfo^.framebuffer_addr);
     dest:= dest + (y * 1280) + x;
     dest^:= color;
-    //pop_trace;
+end;
+
+function getPixel32(x : uint32; y : uint32) : uint32;
+var
+    dest : puint16;
+    dest32 : puint32;
+
+begin
+    dest:= puint16(multibootinfo^.framebuffer_addr);
+    dest:= dest + (y * 1280) + x;
+    dest32:= puint32(dest);
+    getPixel32:= dest32[0];
+end;
+
+procedure drawPixel32(x : uint32; y : uint32; pixel : uint32);
+var
+    dest : puint16;
+    dest32 : puint32;
+
+begin
+    dest:= puint16(multibootinfo^.framebuffer_addr);
+    dest:= dest + (y * 1280) + x;
+    dest32:= puint32(dest);
+    dest32[0]:= pixel;
+end;
+
+function getPixel64(x : uint32; y : uint32) : uint64;
+var
+    dest : puint16;
+    dest64 : puint64;
+
+begin
+    dest:= puint16(multibootinfo^.framebuffer_addr);
+    dest:= dest + (y * 1280) + x;
+    dest64:= puint64(dest);
+    getPixel64:= dest64[0];
+end;
+
+procedure drawPixel64(x : uint32; y : uint32; pixel : uint64);
+var
+    dest : puint16;
+    dest64 : puint64;
+
+begin
+    dest:= puint16(multibootinfo^.framebuffer_addr);
+    dest:= dest + (y * 1280) + x;
+    dest64:= puint64(dest);
+    dest64[0]:= pixel;
+end;
+
+procedure outputCharToScreenSpace(c : char; x : uint8; y : uint8; fgcolor : uint16);
+var
+    dest : puint16;
+    dest32 : puint32;
+    fgcolor32, bgcolor32 : uint32;
+    mask : puint32;
+    i : uint32;
+
+begin
+    if not ready then exit;
+    fgcolor32:= fgcolor OR (fgcolor SHL 16);
+    mask:= puint32(@Std_Mask[uint32(c) * (16 * 8)]);
+    dest:= puint16(multibootinfo^.framebuffer_addr);
+    dest:= dest + (y*1280) + x;
+    dest32:= puint32(dest);
+    for i:=0 to 15 do begin
+        dest32[(i*640)+0]:= (dest32[(i*640)+0] AND NOT(mask[(i*4)+0])) OR (fgcolor32 AND mask[(i*4)+0]);
+        dest32[(i*640)+1]:= (dest32[(i*640)+1] AND NOT(mask[(i*4)+1])) OR (fgcolor32 AND mask[(i*4)+1]);
+        dest32[(i*640)+2]:= (dest32[(i*640)+2] AND NOT(mask[(i*4)+2])) OR (fgcolor32 AND mask[(i*4)+2]);
+        dest32[(i*640)+3]:= (dest32[(i*640)+3] AND NOT(mask[(i*4)+3])) OR (fgcolor32 AND mask[(i*4)+3]);
+    end;
+end;
+
+procedure outputCharTransparent(c : char; x : uint8; y : uint8; fgcolor : uint16);
+var
+    dest : puint16;
+    dest32 : puint32;
+    fgcolor32, bgcolor32 : uint32;
+    mask : puint32;
+    i : uint32;
+
+begin
+    if not ready then exit;
+    fgcolor32:= fgcolor OR (fgcolor SHL 16);
+    mask:= puint32(@Std_Mask[uint32(c) * (16 * 8)]);
+    dest:= puint16(multibootinfo^.framebuffer_addr);
+    dest:= dest + (y*(1280 * 16)) + (x * 8);
+    dest32:= puint32(dest);
+    for i:=0 to 15 do begin
+        dest32[(i*640)+0]:= (dest32[(i*640)+0] AND NOT(mask[(i*4)+0])) OR (fgcolor32 AND mask[(i*4)+0]);
+        dest32[(i*640)+1]:= (dest32[(i*640)+1] AND NOT(mask[(i*4)+1])) OR (fgcolor32 AND mask[(i*4)+1]);
+        dest32[(i*640)+2]:= (dest32[(i*640)+2] AND NOT(mask[(i*4)+2])) OR (fgcolor32 AND mask[(i*4)+2]);
+        dest32[(i*640)+3]:= (dest32[(i*640)+3] AND NOT(mask[(i*4)+3])) OR (fgcolor32 AND mask[(i*4)+3]);
+    end;
 end;
 
 procedure outputChar(c : char; x : uint8; y : uint8; fgcolor : uint16; bgcolor : uint16);

@@ -47,7 +47,7 @@ implementation
 var
     Current, Last : TMousePos;
     FirstDraw : boolean = true;
-    BackPixels : Array[0..1] of Array[0..1] of uint16;
+    BackPixels : Array[0..1] of Array[0..7] of uint64;
     Cycle : uint32 = 0;
     Mouse_Byte : Array[0..2] of uint8;
     Packet : uint32;
@@ -65,20 +65,31 @@ begin
     if not NeedsRedraw then exit;
     NeedsRedraw:= false;
     if not FirstDraw then begin
-        for y:=0 to 1 do begin
+        {for y:=0 to 1 do begin
             for x:=0 to 1 do begin
                 DrawPixel(Last.x + x, Last.y + y, BackPixels[x][y]);
+            end;
+        end;}
+        for y:=0 to 7 do begin
+            for x:=0 to 1 do begin
+                drawPixel64(Last.x + x * 4, Last.y + y, BackPixels[x][y]);
             end;
         end;        
     end;
     Last.x:= nx;
     Last.y:= ny;
-    for y:=0 to 1 do begin
+    {for y:=0 to 1 do begin
         for x:=0 to 1 do begin
             BackPixels[x][y]:= GetPixel(nx + x, ny + y);
             DrawPixel(nx + x, ny + y, $FFFF);
         end;
+    end;}
+    for y:=0 to 7 do begin
+        for x:=0 to 1 do begin
+            BackPixels[x][y]:= GetPixel64(nx + x * 4, ny + y);
+        end; 
     end;
+    outputCharToScreenSpace(char(0), nx, ny, $FFFF);
     FirstDraw:= false;
 end;
 
@@ -126,7 +137,6 @@ var
     r : pchar;
 
 begin
-    //push_trace('mouse.main');
     while mouse_wait(0) do begin
         b:= mouse_read;
         if Cycle = 0 then begin
@@ -145,8 +155,8 @@ begin
             Packet.y_sign:= (f AND %00100000) = %00100000;
             Packet.x_overflow:= (f AND $40) = $40;
             Packet.y_overflow:= (f AND $80) = $80;
-            Packet.x_movement:= Mouse_Byte[1] - ((f SHL 4) AND $100);//Packet.x_movement div 4;
-            Packet.y_movement:= Mouse_Byte[2] - ((f SHL 3) AND $100);//Packet.y_movement div 4;
+            Packet.x_movement:= Mouse_Byte[1] - ((f SHL 4) AND $100);
+            Packet.y_movement:= Mouse_Byte[2] - ((f SHL 3) AND $100);
             if not(Packet.x_overflow) and not(Packet.y_overflow) then begin
                 Current.x:= Current.x + Packet.x_movement;
                 Current.y:= Current.y - Packet.y_movement;            
