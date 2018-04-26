@@ -196,7 +196,7 @@ begin
     dest:= puint16(multibootinfo^.framebuffer_addr);
     dest:= dest + (y * 1280) + x;
     dest64:= puint64(dest);
-    getPixel64:= dest64[0];
+    getPixel64:= dest64^;
 end;
 
 procedure drawPixel64(x : uint32; y : uint32; pixel : uint64);
@@ -208,7 +208,7 @@ begin
     dest:= puint16(multibootinfo^.framebuffer_addr);
     dest:= dest + (y * 1280) + x;
     dest64:= puint64(dest);
-    dest64[0]:= pixel;
+    dest64^:= pixel;
 end;
 
 procedure outputCharToScreenSpace(c : char; x : uint8; y : uint8; fgcolor : uint16);
@@ -224,7 +224,7 @@ begin
     fgcolor32:= fgcolor OR (fgcolor SHL 16);
     mask:= puint32(@Std_Mask[uint32(c) * (16 * 8)]);
     dest:= puint16(multibootinfo^.framebuffer_addr);
-    dest:= dest + (y*1280) + x;
+    dest:= dest + (y * 1280) + x;
     dest32:= puint32(dest);
     for i:=0 to 15 do begin
         dest32[(i*640)+0]:= (dest32[(i*640)+0] AND NOT(mask[(i*4)+0])) OR (fgcolor32 AND mask[(i*4)+0]);

@@ -72,7 +72,7 @@ begin
         end;}
         for y:=0 to 7 do begin
             for x:=0 to 1 do begin
-                drawPixel64(Last.x + x * 4, Last.y + y, BackPixels[x][y]);
+                drawPixel64(Last.x + (x * 4), Last.y + y, BackPixels[x][y]);
             end;
         end;        
     end;
@@ -86,7 +86,7 @@ begin
     end;}
     for y:=0 to 7 do begin
         for x:=0 to 1 do begin
-            BackPixels[x][y]:= GetPixel64(nx + x * 4, ny + y);
+            BackPixels[x][y]:= GetPixel64(nx + (x * 4), ny + y);
         end; 
     end;
     outputCharToScreenSpace(char(0), nx, ny, $FFFF);

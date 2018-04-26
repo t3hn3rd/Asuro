@@ -287,7 +287,7 @@ begin
 
      tracer.push_trace('kmain.END');
 
-     outputCharToScreenSpace(char(0), 10, 10, $FFFF);
+     //outputCharToScreenSpace(char(0), 10, 10, $FFFF);
 
      while true do begin
         mouse.DrawCursor();
