@@ -232,7 +232,7 @@ begin
         while true do begin
             dir:= PDirectory(bufferI);
             if dir^.fileName[0] = char(0) then break; //need to check if I have found the right directoy and set cc if not last
-            if (dir^.attributes and $10) = $10 then begin // is a directory;
+            if (dir^.attributes and $10) = $10 then begin // is a directory; 
                 str:= dir^.fileName;
                 str[9]:= char(0);
                 if stringEquals(str, targetStr) then begin //need to get current folder searching for
@@ -252,7 +252,7 @@ begin
 
     while true do begin
         dir:= PDirectory(bufferI);
-        if dir^.fileName[0] = char(0) then break; //need to check if I have found the right directoy and set cc if not last
+        if dir^.fileName[0] = char(0) then break; 
         dirElm:= LL_Add(rootTable);
         PDirectory(dirElm)^:= PDirectory(bufferI)^;
         bufferI:= puint32(bufferI + 8);
@@ -275,7 +275,7 @@ begin
     pop_trace();
 end;
 
-function writeDirectory(volume : PStorage_volume; directory : pchar) : uint8; // need to handle parent table cluster overflow, need to take attributes
+function writeDirectory(volume : PStorage_volume; directory : pchar; attributes : uint32) : uint8; // need to handle parent table cluster overflow, need to take attributes
 var
     dirAddr         : PLinkedListBase;
     dirList         : PLinkedListBase;
@@ -290,12 +290,18 @@ var
     targetDirectory : PDirectory;
     bootRecord      : TBootRecord;
     device          : PStorage_Device;
+    dataStart       : uint32;
+    currentSector   : uint32;
+    meArray         : byteArray8 = ('.', ' ', ' ', ' ', ' ', ' ', ' ', ' ');
+    parentArray     : byteArray8 = ('.', '.', ' ', ' ', ' ', ' ', ' ', ' ');
 begin
     dirAddr    := stringToLL(directory, '/');
     //dirList    := LL_New(sizeof(TDirectory));
     bootRecord := readBootRecord(volume);
     device     := volume^.device;
     buffer     := puint32(kalloc(sizeof(volume^.sectorSize)));
+    dataStart:= (bootrecord.fatSize) + 1 + volume^.sectorStart;
+
     
     //find un allocated cluster
     while not foundCluster do begin
@@ -323,16 +329,64 @@ begin
     prevDirCluster:= targetDirectory^.clusterLow or (targetDirectory^.clusterHigh shl 16);
 
     buffer:= puint32(kalloc(volume^.sectorSize)); //nope, need write one sector, the right sector
-    //size of dirlist           (byte size of cluster) / 32 = max no of directories per cluster
-    device^.readcallback(device, volume^.sectorStart + 1 + bootrecord.fatSize + (bootRecord.spc * prevDirCluster), 1, buffer); //only writes first cluster
+    //size of dirlist TDIRECTORY          (byte size of cluster) / 32 = max no of directories per cluster
+    //device^.readcallback(device, volume^.sectorStart + 1 + bootrecord.fatSize + (bootRecord.spc * prevDirCluster), 1, buffer); //only writes first cluster
     // volume^.sectorStart + 1 + fatSectorSize + (bootRecord.spc * cc)
 
-    //insert table entree
-        //construct buffer from dirAddr
-        //add new directory
-        //write to disk
+    //find empty parent table entree
+    i:= (sizeof(TDirectory) * LL_size(dirList)) DIV bootrecord.sectorsize; // number of secotrs used by the parent directory
+    //i:= i DIV bootrecord.sectorsPerCluster; // num of clusters used by the parent dfirectory
+    ii:= (bootrecord.sectorSize DIV sizeof(TDirectory)); // max entrees per sector
+    currentSector:= i DIV ii; // sector of last table entree
+    currentSector+= prevDirCluster;
 
-    //write new directory table at emptyCluster
+    //read sector of cluster
+    //read datastart + i, 1; 
+    device^.readcallback(device, datastart + currentSector, 1, buffer);
+    i:= 0;
+    ii:=0;
+    while true do begin 
+        if i > (bootRecord.sectorSize / sizeof(TDirectory)) then begin //sector is full of entries
+            device^.readcallback(device, datastart + (currentSector + ii), 1, buffer);
+            ii+=1; //TODO need to check if overflowing and need to make a new cluster for table
+            i:=0;
+        end;
+
+        if buffer^ = 0 then begin //found empty slot
+            str:= pchar(LL_Get(dirAddr, LL_size(dirAddr) - 1));
+
+            PDirectory(buffer + ((sizeof(TDirectory) * i) DIV 4) )^.fileName:= byteArray8(str);
+            PDirectory(buffer + ((sizeof(TDirectory) * i) DIV 4) )^.attributes:= attributes;
+            PDirectory(buffer + ((sizeof(TDirectory) * i) DIV 4) )^.clusterLow:= emptyCluster;
+            PDirectory(buffer + ((sizeof(TDirectory) * i) DIV 4) )^.clusterHigh:= emptyCluster shl 16;
+
+            device^.writeCallback(device, datastart + (currentSector + ii), 1, buffer);
+            break;
+        end;
+        
+        buffer:= buffer + sizeof(TDirectory);
+        i+=1;
+    end;
+
+    //if directory
+    if attributes = $10 then begin
+        kfree(buffer);
+        buffer:= puint32(kalloc(sizeof(TDirectory)));
+        i:=0;
+        PDirectory(buffer + ((sizeof(TDirectory) * i) DIV 4) )^.fileName:= meArray;
+        PDirectory(buffer + ((sizeof(TDirectory) * i) DIV 4) )^.attributes:= attributes;
+        PDirectory(buffer + ((sizeof(TDirectory) * i) DIV 4) )^.clusterLow:= emptyCluster;
+        PDirectory(buffer + ((sizeof(TDirectory) * i) DIV 4) )^.clusterHigh:= emptyCluster shl 16;
+        
+        i:=1;
+        PDirectory(buffer + ((sizeof(TDirectory) * i) DIV 4) )^.fileName:= parentArray;
+        PDirectory(buffer + ((sizeof(TDirectory) * i) DIV 4) )^.attributes:= targetDirectory^.attributes;
+        PDirectory(buffer + ((sizeof(TDirectory) * i) DIV 4) )^.clusterLow:= targetDirectory^.clusterLow;
+        PDirectory(buffer + ((sizeof(TDirectory) * i) DIV 4) )^.clusterHigh:= targetDirectory^.clusterHigh;
+
+        device^.writecallback(device, datastart + emptyCluster, 1, buffer);
+    end;
+    kfree(buffer);
 end;
 
 procedure readFile(volume : PStorage_volume; directory : pchar; byteCount : uint32; buffer : puint32);

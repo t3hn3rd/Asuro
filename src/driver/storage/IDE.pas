@@ -201,7 +201,7 @@ begin
     devID.id4:= idANY;
     devID.ex:= nil;
     drivermanagement.register_driver('IDE ATA Driver', @devID, @load);
-    terminal.registerCommand('IDE', @test_command, 'TEST IDE DRIVER');
+    //terminal.registerCommand('IDE', @test_command, 'TEST IDE DRIVER');
     buffer := Puint32(kalloc(1024*2));
     pop_trace();
 end;
