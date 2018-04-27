@@ -8,6 +8,11 @@
   * Contributors: 
   ************************************************ }
 
+  {
+      Todo in the future, optimise by prvoiding batch read/write commands
+
+  }
+
 unit FAT32;
 
 interface
@@ -270,25 +275,32 @@ begin
     pop_trace();
 end;
 
-function writeDirectory(volume : PStorage_volume; directory : pchar) : uint8;
+function writeDirectory(volume : PStorage_volume; directory : pchar) : uint8; // need to handle parent table cluster overflow, need to take attributes
 var
-    dirList      : PLinkedListBase;
-    str          : pchar;
-    str2         : pchar;
-    i            : uint32 = 0;
-    ii           : uint32;
-    buffer       : puint32;
-    foundCluster : boolean = false;
-    emptyCluster : uint32;
-    targetDirectory : TDirectory;
+    dirAddr         : PLinkedListBase;
+    dirList         : PLinkedListBase;
+    str             : pchar;
+    str2            : pchar;
+    i               : uint32 = 0;
+    ii              : uint32;
+    buffer          : puint32;
+    foundCluster    : boolean = false;
+    emptyCluster    : uint32;
+    prevDirCluster  : uint32;
+    targetDirectory : PDirectory;
+    bootRecord      : TBootRecord;
+    device          : PStorage_Device;
 begin
-    dirList:= stringToLL(directory, '/');
-    buffer:= puint32(kalloc(sizeof(volume^.sectorSize)));
+    dirAddr    := stringToLL(directory, '/');
+    //dirList    := LL_New(sizeof(TDirectory));
+    bootRecord := readBootRecord(volume);
+    device     := volume^.device;
+    buffer     := puint32(kalloc(sizeof(volume^.sectorSize)));
     
     //find un allocated cluster
     while not foundCluster do begin
         volume^.device^.readcallback(volume^.device, volume^.sectorStart + 2 + (i * 32 div volume^.sectorSize), 1, buffer);
-        for ii:=0 to 15 do begin
+        for ii:=0 to 127 do begin
             if puint32(buffer + ii)^ = 0 then begin //found unallocated cluster
                 emptyCluster:= (i * 16) + ii;
                 foundCluster:= true;
@@ -302,15 +314,24 @@ begin
     writeFat(volume, emptyCluster, $FFFFFFF8);
 
     //find directory table
-    for i:=0 to LL_size(dirList) - 2 do begin
-        str2:= pchar( puint32(LL_Get(dirList, i))^ );
+    for i:=0 to LL_size(dirAddr) - 2 do begin //construct address for parent directory
+        str2:= pchar( puint32(LL_Get(dirAddr, i))^ );
         str:= stringConcat(str, str2);    
     end;
+    writeDirectory:= readDirectory(volume, str, dirList); //hope str is correct, maybe need /
+    targetDirectory:= PDirectory(LL_Get(dirList, 0));
+    prevDirCluster:= targetDirectory^.clusterLow or (targetDirectory^.clusterHigh shl 16);
 
-    writeDirectory:= readDirectory(volume, str, dirList);
-    targetDirectory:= PDirectory(LL_Get(dirList, 0))^;
+    buffer:= puint32(kalloc(volume^.sectorSize)); //nope, need write one sector, the right sector
+    //size of dirlist           (byte size of cluster) / 32 = max no of directories per cluster
+    device^.readcallback(device, volume^.sectorStart + 1 + bootrecord.fatSize + (bootRecord.spc * prevDirCluster), 1, buffer); //only writes first cluster
+    // volume^.sectorStart + 1 + fatSectorSize + (bootRecord.spc * cc)
 
     //insert table entree
+        //construct buffer from dirAddr
+        //add new directory
+        //write to disk
+
     //write new directory table at emptyCluster
 end;
 
@@ -458,7 +479,7 @@ begin
         storagemanagement.register_volume(disk, volume);
     end;
 
-    readDirectory(volume, 'hello/word', nil);
+    //readDirectory(volume, 'hello/word', nil);
     pop_trace();
 end;
 

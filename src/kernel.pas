@@ -240,7 +240,7 @@ begin
      tracer.pop_trace;
 
      { Filsystems }
-     //fat32.init();
+     fat32.init();
 
      { Device Drivers }
      tracer.push_trace('kmain.DEVDRV');
@@ -249,7 +249,7 @@ begin
      mouse.init();
      testdriver.init();
      E1000.init();
-     //IDE.init();
+     IDE.init();
      console.outputln('KERNEL', 'DEVICE DRIVERS: INIT END.');
      tracer.pop_trace;
 
