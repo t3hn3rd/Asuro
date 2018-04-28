@@ -155,7 +155,7 @@ begin
                 if Current.y > 1015 then Current.y:= 1015;
             end;
             Cycle:= 0;
-            NeedsRedraw:= true;
+            console.setMousePosition(Current.x, Current.y);
         end;
     end;
 end;

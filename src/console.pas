@@ -107,11 +107,17 @@ procedure drawPixel32(x : uint32; y : uint32; pixel : uint32);
 function  getPixel64(x : uint32; y : uint32) : uint64;
 procedure drawPixel64(x : uint32; y : uint32; pixel : uint64);
 
+procedure setMousePosition(x : uint32; y : uint32);
+
+procedure redrawWindows;
 
 implementation
 
 uses
-    lmemorymanager;
+    lmemorymanager, strings;
+
+const
+    MAX_WINDOWS = 5;
 
 type
     TConsoleProperties = record
@@ -120,7 +126,8 @@ type
 
     TCharacter = bitpacked record
       Character  : Char;
-      attributes: uint32;
+      attributes : uint32;
+      visible    : boolean;
     end;
     PCharacter = ^TCharacter;
 
@@ -130,16 +137,217 @@ type
     T2DVideoMemory = Array[0..63] of Array[0..159] of TCharacter;
     P2DVideoMemory = ^T2DVideoMemory;
 
+    TMouseCoord = record
+        X : sint32;
+        Y : sint32;
+    end;
+
     TCoord = record
       X : Byte;
       Y : Byte;
     end;
 
+    TWindow = record
+        visible     : boolean;
+        buffer      : T2DVideoMemory;
+        row_dirty   : Array[0..63] of Boolean;
+        WND_X       : uint32;
+        WND_Y       : uint32;
+        WND_W       : uint32;
+        WND_H       : uint32;
+        Cursor      : TCoord;
+        WND_NAME    : PChar;
+    end;
+
+    TWindows = Array[0..MAX_WINDOWS-1] of TWindow;
+
+    TWindowManager = record
+        Windows     : TWindows;
+        MousePos    : TMouseCoord;
+        MousePrev   : TMouseCoord;
+    end;
+
+    TMouseDirt = record
+        TopLeft     : TMouseCoord;
+        BottomRight : TMouseCoord;
+    end;
+
 var
-   Console_Properties : TConsoleProperties;
-   Console_Matrix     : T2DVideoMemory;
-   Console_Cursor     : TCoord;
-   Ready : Boolean = false;
+   Console_Properties : TConsoleProperties; //Generic Properties
+   Console_Real       : T2DVideoMemory;     //The real state of the Console/TUI
+   Console_Matrix     : T2DVideoMemory;     //The next buffer to be written
+   Console_Cursor     : TCoord;             //The text cursor position
+   WindowManager      : TWindowManager;     //Window Manager
+   Ready              : Boolean = false;    //Is the unit ready for use?
+   FocusedWND         : uint32 = 0;         //The currently focused Window for printing
+   MouseDrawActive    : Boolean = false;    //Is the Mouse currently being updated?
+   mouse_dirt         : TMouseDirt;         //Character Cell(s) the mouse occupies, these need to be rewritten on mouse move.
+   Window_Border      : TCharacter;
+   Default_Char       : TCharacter;
+
+procedure drawMouse;
+var
+    x, y       : uint32;
+    MX, MY     : uint32;
+
+begin
+    MouseDrawActive:= true;
+    MX:= WindowManager.MousePos.X;
+    MY:= WindowManager.MousePos.Y;
+    WindowManager.MousePrev.x:= MX;
+    WindowManager.MousePrev.y:= MY;
+    mouse_dirt.TopLeft.x:= (MX div 8) - 2;
+    mouse_dirt.TopLeft.y:= (MY div 16) - 2;
+    mouse_dirt.BottomRight.x:= (MX div 8) + 2;
+    mouse_dirt.BottomRight.y:= (MY div 16) + 2;
+    if mouse_dirt.TopLeft.x < 0 then mouse_dirt.TopLeft.x:= 0;
+    if mouse_dirt.TopLeft.y < 0 then mouse_dirt.TopLeft.y:= 0;
+    if mouse_dirt.BottomRight.x > 159 then mouse_dirt.BottomRight.x:= 159;
+    if mouse_dirt.BottomRight.y > 63 then mouse_dirt.BottomRight.y:= 63;
+    MouseDrawActive:= false;
+end;
+
+procedure redrawMatrix;
+var
+    x, y, w: uint32;
+
+begin
+    if (WindowManager.MousePos.x <> WindowManager.MousePrev.x) OR (WindowManager.MousePos.y <> WindowManager.MousePrev.y) then begin
+        for y:=mouse_dirt.TopLeft.y to mouse_dirt.BottomRight.y do begin
+            for x:=mouse_dirt.TopLeft.x to mouse_dirt.BottomRight.x do begin
+                Console_Real[y][x].character:= char(1);
+            end; 
+        end;
+        drawMouse;
+    end;
+    for y:=0 to 63 do begin
+        for x:=0 to 159 do begin
+            if (Console_Matrix[y][x].character <> Console_Real[y][x].character) or (Console_Matrix[y][x].attributes <> Console_Real[y][x].attributes) then begin
+                OutputChar(Console_Matrix[y][x].Character, x, y, Console_Matrix[y][x].Attributes SHR 16, Console_Matrix[y][x].Attributes AND $FFFF);
+                Console_Real[y][x]:= Console_Matrix[y][x];
+            end;
+        end;
+    end;
+    outputCharToScreenSpace(char(0), WindowManager.MousePrev.x, WindowManager.MousePrev.y, $FFFF);
+end;
+
+procedure setMousePosition(x : uint32; y : uint32);
+begin
+    if MouseDrawActive then exit;
+    WindowManager.MousePos.X:= x;
+    WindowManager.MousePos.Y:= y;
+end;
+
+procedure redrawWindows;
+var
+    x, y, w : uint32;
+    WXL, WYL : sint32;
+    WXR, WYR : sint32;
+    STRC : uint32;
+    MIDP, STARTP : uint32;
+
+begin
+    for y:=0 to 63 do begin
+        for x:=0 to 159 do begin
+            Console_Matrix[y][x]:= Default_Char;
+        end;
+    end;
+    for w:=0 to MAX_WINDOWS-1 do begin
+        If WindowManager.Windows[w].visible then begin
+            if w <> 0 then begin
+                WXL:= WindowManager.Windows[w].WND_X - 1;
+                WYL:= WindowManager.Windows[w].WND_Y - 1;
+                WXR:= WindowManager.Windows[w].WND_X + WindowManager.Windows[w].WND_W + 1;
+                WYR:= WindowManager.Windows[w].WND_Y + WindowManager.Windows[w].WND_H + 1;
+                for y:=WYL to WYR do begin
+                    Console_Matrix[y][WXL]:= Window_Border;
+                    Console_Matrix[y][WXL-1]:= Window_Border;
+                    Console_Matrix[y][WXR]:= Window_Border;
+                    Console_Matrix[y][WXR+1]:= Window_Border;
+                    Console_Real[y][WXL].Character:= char(3);
+                    Console_Real[y][WXL-1].Character:= char(3);
+                    Console_Real[y][WXR].Character:= char(3);
+                    Console_Real[y][WXR+1].Character:= char(3);
+                end;
+                STRC:= 0;
+                MIDP:= (WXR + WXL) div 2;
+                STARTP:= MIDP - (StringSize(WindowManager.Windows[w].WND_NAME) div 2) - 1;
+                for x:=WXL to WXR do begin
+                    Console_Matrix[WYL][x]:= Window_Border;
+                    if (x >= STARTP) and (STRC < StringSize(WindowManager.Windows[w].WND_NAME)) then begin
+                        Console_Matrix[WYL][x].character:= WindowManager.Windows[w].WND_NAME[STRC];
+                        inc(STRC);
+                    end;
+                    if x = WXR then begin
+                        Console_Matrix[WYL][x].character:= 'x';
+                    end;
+                    Console_Matrix[WYR][x]:= Window_Border;
+                    Console_Real[WYL][x].Character:= char(3);
+                    Console_Real[WYR][x].Character:= char(3);
+                end;
+            end;
+            for y:=WindowManager.Windows[w].WND_Y to WindowManager.Windows[w].WND_Y + WindowManager.Windows[w].WND_H do begin
+                if y > 63 then break;
+                for x:=WindowManager.Windows[w].WND_X to WindowManager.Windows[w].WND_X + WindowManager.Windows[w].WND_W do begin
+                    if x > 159 then break;
+                    Console_Matrix[y][x]:= WindowManager.Windows[w].buffer[y - WindowManager.Windows[w].WND_Y][x - WindowManager.Windows[w].WND_X];
+                end;
+            end;
+        end;
+    end;
+    redrawMatrix;
+end;
+
+procedure initWindows;
+var
+    x, y, w : uint32;
+
+begin
+    Default_Char.Character:= ' ';
+    Default_Char.attributes:= Console_Properties.Default_Attribute;
+    Default_Char.visible:= true;
+
+    Window_Border.Character:= ' ';
+    Window_Border.Attributes:= $0000FFFF;
+    Window_Border.visible:= true;
+
+    for w:=0 to MAX_WINDOWS-1 do begin
+        WindowManager.Windows[w].visible:= false;
+        for y:=0 to 63 do begin
+            for x:=0 to 159 do begin
+                WindowManager.Windows[w].Buffer[y][x].visible:= true;
+                WindowManager.Windows[w].Buffer[y][x].character:= ' ';
+                WindowManager.Windows[w].Buffer[y][x].attributes:= Console_Properties.Default_Attribute;
+                Console_Real[y][x].character:= char(1);
+            end;
+        end;
+    end;
+
+    WindowManager.Windows[0].visible:= true;
+    WindowManager.Windows[0].WND_X:= 0;
+    WindowManager.Windows[0].WND_Y:= 0;
+    WindowManager.Windows[0].WND_H:= 63;
+    WindowManager.Windows[0].WND_W:= 159;
+    for y:=0 to 63 do begin
+        for x:=0 to 159 do begin
+            WindowManager.Windows[0].Buffer[y][x].visible:= true;
+            WindowManager.Windows[0].Buffer[y][x].character:= ' ';
+        end;
+     end;
+
+     WindowManager.Windows[1].visible:= true;
+     WindowManager.Windows[1].WND_X:= 50;
+     WindowManager.Windows[1].WND_W:= 50;
+     WindowManager.Windows[1].WND_Y:= 20;
+     WindowManager.Windows[1].WND_H:= 20;
+     WindowManager.Windows[1].WND_NAME:= 'Test Window';
+     for y:=0 to 63 do begin
+        for x:=0 to 159 do begin
+            WindowManager.Windows[1].Buffer[y][x].visible:= true;
+            WindowManager.Windows[1].Buffer[y][x].character:= ' ';
+        end;
+     end;
+end;
 
 function getPixel(x : uint32; y : uint32) : uint16;
 var
@@ -169,6 +377,7 @@ var
     dest32 : puint32;
 
 begin
+    if not ready then exit;
     dest:= puint16(multibootinfo^.framebuffer_addr);
     dest:= dest + (y * 1280) + x;
     dest32:= puint32(dest);
@@ -181,6 +390,7 @@ var
     dest32 : puint32;
 
 begin
+    if not ready then exit;
     dest:= puint16(multibootinfo^.framebuffer_addr);
     dest:= dest + (y * 1280) + x;
     dest32:= puint32(dest);
@@ -193,6 +403,7 @@ var
     dest64 : puint64;
 
 begin
+    if not ready then exit;
     dest:= puint16(multibootinfo^.framebuffer_addr);
     dest:= dest + (y * 1280) + x;
     dest64:= puint64(dest);
@@ -205,6 +416,7 @@ var
     dest64 : puint64;
 
 begin
+    if not ready then exit;
     dest:= puint16(multibootinfo^.framebuffer_addr);
     dest:= dest + (y * 1280) + x;
     dest64:= puint64(dest);
@@ -224,6 +436,7 @@ begin
     fgcolor32:= fgcolor OR (fgcolor SHL 16);
     mask:= puint32(@Std_Mask[uint32(c) * (16 * 8)]);
     dest:= puint16(multibootinfo^.framebuffer_addr);
+    //dest:= puint16(windowmanager.getBuffer(0));
     dest:= dest + (y * 1280) + x;
     dest32:= puint32(dest);
     for i:=0 to 15 do begin
@@ -232,6 +445,7 @@ begin
         dest32[(i*640)+2]:= (dest32[(i*640)+2] AND NOT(mask[(i*4)+2])) OR (fgcolor32 AND mask[(i*4)+2]);
         dest32[(i*640)+3]:= (dest32[(i*640)+3] AND NOT(mask[(i*4)+3])) OR (fgcolor32 AND mask[(i*4)+3]);
     end;
+    //windowmanager.redraw;
 end;
 
 procedure outputCharTransparent(c : char; x : uint8; y : uint8; fgcolor : uint16);
@@ -247,6 +461,7 @@ begin
     fgcolor32:= fgcolor OR (fgcolor SHL 16);
     mask:= puint32(@Std_Mask[uint32(c) * (16 * 8)]);
     dest:= puint16(multibootinfo^.framebuffer_addr);
+    //dest:= puint16(windowmanager.getBuffer(0));
     dest:= dest + (y*(1280 * 16)) + (x * 8);
     dest32:= puint32(dest);
     for i:=0 to 15 do begin
@@ -255,6 +470,7 @@ begin
         dest32[(i*640)+2]:= (dest32[(i*640)+2] AND NOT(mask[(i*4)+2])) OR (fgcolor32 AND mask[(i*4)+2]);
         dest32[(i*640)+3]:= (dest32[(i*640)+3] AND NOT(mask[(i*4)+3])) OR (fgcolor32 AND mask[(i*4)+3]);
     end;
+    //windowmanager.redraw;
 end;
 
 procedure outputChar(c : char; x : uint8; y : uint8; fgcolor : uint16; bgcolor : uint16);
@@ -271,6 +487,7 @@ begin
     bgcolor32:= bgcolor OR (bgcolor SHL 16);
     mask:= puint32(@Std_Mask[uint32(c) * (16 * 8)]);
     dest:= puint16(multibootinfo^.framebuffer_addr);
+    //dest:= puint16(windowmanager.getBuffer(0));
     dest:= dest + (y*(1280 * 16)) + (x * 8);
     dest32:= puint32(dest);
     for i:=0 to 15 do begin
@@ -279,6 +496,7 @@ begin
         dest32[(i*640)+2]:= (bgcolor32 AND NOT(mask[(i*4)+2])) OR (fgcolor32 AND mask[(i*4)+2]);
         dest32[(i*640)+3]:= (bgcolor32 AND NOT(mask[(i*4)+3])) OR (fgcolor32 AND mask[(i*4)+3]);
     end;
+    //windowmanager.redraw;
 end;
 
 procedure disable_cursor;
@@ -294,6 +512,7 @@ var
 Begin
      fb:= puint32(uint32(multibootinfo^.framebuffer_addr));
      kpalloc(uint32(fb));
+     initWindows;
      Console_Properties.Default_Attribute:= console.combinecolors($FFFF, $0000);
      console.clear();
      Ready:= True;
@@ -306,13 +525,19 @@ var
 begin
      for y:=0 to 63 do begin
          for x:=0 to 159 do begin
-	     Console_Matrix[y][x].Character:= ' ';
-	     Console_Matrix[y][x].Attributes:= Console_Properties.Default_Attribute;
-             OutputChar(Console_Matrix[y][x].Character, x, y, Console_Matrix[y][x].Attributes SHR 16, Console_Matrix[y][x].Attributes AND $FFFF);
-	 end;
+	        WindowManager.Windows[FocusedWND].Buffer[y][x].Character:= ' ';
+            WindowManager.Windows[FocusedWND].Buffer[y][x].Attributes:= Console_Properties.Default_Attribute;
+            WindowManager.Windows[FocusedWND].row_dirty[y]:= true;
+            //Console_Matrix[y][x].Character:= ' ';
+	        //Console_Matrix[y][x].Attributes:= Console_Properties.Default_Attribute;
+            //OutputChar(Console_Matrix[y][x].Character, x, y, Console_Matrix[y][x].Attributes SHR 16, Console_Matrix[y][x].Attributes AND $FFFF);
+	    end;
      end;
-     Console_Cursor.X:= 0;
-     Console_Cursor.Y:= 0;
+     WindowManager.Windows[FocusedWND].Cursor.X:= 0;
+     WindowManager.Windows[FocusedWND].Cursor.Y:= 0;
+     redrawWindows;
+     //Console_Cursor.X:= 0;
+     //Console_Cursor.Y:= 0;
 end;
 
 procedure writebin8ex(b : uint8; attributes: uint32);
@@ -450,10 +675,13 @@ end;
 
 procedure writecharex(character: char; attributes: uint32); [public, alias: 'console_writecharex'];
 begin
-     outputChar(character, Console_Cursor.X, Console_Cursor.Y, attributes SHR 16, attributes AND $FFFF);
-     Console_Matrix[Console_Cursor.Y][Console_Cursor.X].Character:= character;
-     Console_Matrix[Console_Cursor.Y][Console_Cursor.X].Attributes:= attributes;
-     console._safeincrement_x();
+    WindowManager.Windows[FocusedWND].Buffer[WindowManager.Windows[FocusedWND].Cursor.Y][WindowManager.Windows[FocusedWND].Cursor.X].Character:= character;
+    WindowManager.Windows[FocusedWND].Buffer[WindowManager.Windows[FocusedWND].Cursor.Y][WindowManager.Windows[FocusedWND].Cursor.X].Attributes:= attributes;
+    //outputChar(character, Console_Cursor.X, Console_Cursor.Y, attributes SHR 16, attributes AND $FFFF);
+    //Console_Matrix[Console_Cursor.Y][Console_Cursor.X].Character:= character;
+    //Console_Matrix[Console_Cursor.Y][Console_Cursor.X].Attributes:= attributes;
+    WindowManager.Windows[FocusedWND].row_dirty[WindowManager.Windows[FocusedWND].Cursor.Y]:= true;
+    console._safeincrement_x();
 end;
 
 procedure writehexpair(b : uint8);
@@ -655,58 +883,80 @@ var
    b   : byte;
    
 begin
-     pos:= (Console_Cursor.Y * 80) + Console_Cursor.X;
-     outb($3D4, $0F);
-     b:= pos and $00FF;
-     outb($3D5, b);
-     outb($3D4, $0E);
-     b:= pos shr 8;
-     outb($3D5, b);
+     //pos:= (Console_Cursor.Y * 80) + Console_Cursor.X;
+     //outb($3D4, $0F);
+     //b:= pos and $00FF;
+     //outb($3D5, b);
+     //outb($3D4, $0E);
+     //b:= pos shr 8;
+     //outb($3D5, b);
+     redrawWindows;
 end;
 
 procedure backspace;
 begin
-     Dec(Console_Cursor.X);
+     Dec(WindowManager.Windows[FocusedWND].Cursor.X);
      writechar(' ');
-     Dec(Console_Cursor.X);
+     Dec(WindowManager.Windows[FocusedWND].Cursor.X);
      _update_cursor();
 end;
 
 procedure _increment_x(); [public, alias: '_console_increment_x'];
 begin
-     Console_Cursor.X:= Console_Cursor.X+1;
-     If Console_Cursor.X > 159 then Console_Cursor.X:= 0;
+     WindowManager.Windows[FocusedWND].Cursor.X:= WindowManager.Windows[FocusedWND].Cursor.X+1;
+     If WindowManager.Windows[FocusedWND].Cursor.X > WindowManager.Windows[FocusedWND].WND_W-1 then WindowManager.Windows[FocusedWND].Cursor.X:= 0;
      console._update_cursor;
+     //Console_Cursor.X:= Console_Cursor.X+1;
+     //If Console_Cursor.X > 159 then Console_Cursor.X:= 0;
+     //console._update_cursor;
 end;
 
 procedure _increment_y(); [public, alias: '_console_increment_y'];
 begin
-     Console_Cursor.Y:= Console_Cursor.Y+1;
-     If Console_Cursor.Y > 63 then begin
-             console._newline();
-             Console_Cursor.Y:= 63;
+     WindowManager.Windows[FocusedWND].Cursor.Y:= WindowManager.Windows[FocusedWND].Cursor.Y+1;
+     If WindowManager.Windows[FocusedWND].Cursor.Y > WindowManager.Windows[FocusedWND].WND_H-1 then begin
+        console._newline();
+        WindowManager.Windows[FocusedWND].Cursor.Y:= WindowManager.Windows[FocusedWND].WND_H-1;
      end;
      console._update_cursor;
+     //Console_Cursor.Y:= Console_Cursor.Y+1;
+     //If Console_Cursor.Y > 63 then begin
+     //        console._newline();
+     //        Console_Cursor.Y:= 63;
+     //end;
+     //console._update_cursor;
 end;
 
 procedure _safeincrement_x(); [public, alias: '_console_safeincrement_x'];
 begin
-     Console_Cursor.X:= Console_Cursor.X+1;
-     If Console_Cursor.X > 159 then begin
+     WindowManager.Windows[FocusedWND].Cursor.X:= WindowManager.Windows[FocusedWND].Cursor.X+1;
+     if WindowManager.Windows[FocusedWND].Cursor.X > WindowManager.Windows[FocusedWND].WND_W-1 then begin
         console._safeincrement_y();
      end;
      console._update_cursor;
+     //Console_Cursor.X:= Console_Cursor.X+1;
+     //If Console_Cursor.X > 159 then begin
+     //   console._safeincrement_y();
+     //end;
+     //console._update_cursor;
 end;
 
 procedure _safeincrement_y(); [public, alias: '_console_safeincrement_y'];
 begin
-     Console_Cursor.Y:= Console_Cursor.Y+1;
-     If Console_Cursor.Y > 63 then begin
-             console._newline();
-             Console_Cursor.Y:= 63;
+     WindowManager.Windows[FocusedWND].Cursor.Y:= WindowManager.Windows[FocusedWND].Cursor.Y+1;
+     if WindowManager.Windows[FocusedWND].Cursor.Y > WindowManager.Windows[FocusedWND].WND_H-1 then begin
+        console._newline();
+        WindowManager.Windows[FocusedWND].Cursor.Y:= WindowManager.Windows[FocusedWND].WND_H-1;
      end;
-     Console_Cursor.X:= 0;
+     WindowManager.Windows[FocusedWND].Cursor.X:= 0;
      console._update_cursor;
+     //Console_Cursor.Y:= Console_Cursor.Y+1;
+     //If Console_Cursor.Y > 63 then begin
+     //        console._newline();
+     //        Console_Cursor.Y:= 63;
+     //end;
+     //Console_Cursor.X:= 0;
+     //console._update_cursor;
 end;
 
 procedure _newline(); [public, alias: '_console_newline'];
@@ -714,20 +964,26 @@ var
    x, y : byte;
 
 begin
-     for x:=0 to 159 do begin
-         for y:=0 to 63 do begin
-             Console_Matrix[y][x]:= Console_Matrix[y+1][x];
+     if WindowManager.Windows[FocusedWND].WND_W = 0 then exit;
+     if WindowManager.Windows[FocusedWND].WND_H = 0 then exit;
+     for x:=0 to WindowManager.Windows[FocusedWND].WND_W do begin
+         for y:=0 to WindowManager.Windows[FocusedWND].WND_H-1 do begin
+             WindowManager.Windows[FocusedWND].buffer[y][x]:= WindowManager.Windows[FocusedWND].buffer[y+1][x];
+             WindowManager.Windows[FocusedWND].row_dirty[y]:= true;
+             //Console_Matrix[y][x]:= Console_Matrix[y+1][x];
          end;
      end;
-     for x:=0 to 159 do begin
-         Console_Matrix[63][x].Character:= ' ';
-         Console_Matrix[63][x].Attributes:= $FFFF0000;
+     for x:=0 to WindowManager.Windows[FocusedWND].WND_W do begin
+         WindowManager.Windows[FocusedWND].buffer[WindowManager.Windows[FocusedWND].WND_H-1][x].Character:= ' ';
+         WindowManager.Windows[FocusedWND].buffer[WindowManager.Windows[FocusedWND].WND_H-1][x].Attributes:= $FFFF0000;
+         //Console_Matrix[63][x].Character:= ' ';
+         //Console_Matrix[63][x].Attributes:= $FFFF0000;
      end;
-     for y:=0 to 63 do begin
-        for x:=0 to 159 do begin
-            OutputChar(Console_Matrix[y][x].Character, x, y, Console_Matrix[y][x].Attributes SHR 16, Console_Matrix[y][x].Attributes AND $FFFF);
-        end;
-     end;
+     //for y:=0 to 63 do begin
+     //   for x:=0 to 159 do begin
+     //       OutputChar(Console_Matrix[y][x].Character, x, y, Console_Matrix[y][x].Attributes SHR 16, Console_Matrix[y][x].Attributes AND $FFFF);
+     //   end;
+     //end;
      console._update_cursor;
 end;
  

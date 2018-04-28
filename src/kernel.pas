@@ -218,6 +218,7 @@ begin
      { Graphics Mode Test Stuff }
      //GraphicsTesting();
      { Console Init }
+     //windowmanager.init();
      console.init();
 
      { Call Tracer }
@@ -290,7 +291,9 @@ begin
      //outputCharToScreenSpace(char(0), 10, 10, $FFFF);
 
      while true do begin
-        mouse.DrawCursor();
+        console.redrawWindows;
+        //windowmanager.redraw();
+        //mouse.DrawCursor();
      end;
 
      //util.halt_and_dont_catch_fire;
