@@ -372,7 +372,7 @@ begin
     if trace <> nil then begin
         console.writestring('[-0] ');
         console.writestringln(trace);
-        for i:=1 to 6 do begin
+        for i:=1 to tracer.get_trace_count-1 do begin
             trace:= tracer.get_trace_N(i);
             if trace <> nil then begin
                 console.writestring('                [');

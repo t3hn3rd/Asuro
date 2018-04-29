@@ -13,12 +13,17 @@ function  get_trace_N(idx : uint32) : pchar;
 implementation
 
 uses
-    console, util, lists, strings;
+    console, util, lists, strings, serial;
+
+const
+    MAX_TRACE = 40;
+    SERIALID = '[TRACER] ';
 
 var
     t_ready     : Boolean;
     Locked      : Boolean;
     TraceStack  : PLinkedListBase;
+    Traces      : Array[0..MAX_TRACE-1] of PChar;
 
 procedure freeze;
 begin
@@ -27,16 +32,24 @@ end;
 
 procedure push_trace(t_name : pchar);
 var
-    mem : void;
+    i   : uint32;
 
 begin
     if TRACER_ENABLE then begin
         if t_ready then begin
             if not Locked then begin
                 Locked:= true;
-                mem:= LL_Insert(TraceStack, 0);
-                memset(uint32(mem), 0, StringSize(t_name) + 5);
-                memcpy(uint32(t_name), uint32(mem), StringSize(t_name) + 1);
+                for i:=MAX_TRACE-1 downto 1 do begin
+                    Traces[i]:= Traces[i-1];
+                end;
+                Traces[0]:= StringCopy(t_name);
+                for i:=0 to StringSize(SERIALID)-1 do begin
+                    serial.send(COM1, uint8(SERIALID[i]), 10);
+                end;
+                for i:=0 to StringSize(t_name)-1 do begin
+                    serial.send(COM1, uint8(t_name[i]), 10);
+                end;
+                serial.send(COM1, 10, 10);
                 Locked:= false;
             end;
         end;
@@ -45,31 +58,17 @@ end;
 
 procedure pop_trace;
 begin
-    if TRACER_ENABLE then begin
-        if t_ready then begin
-            if not Locked then begin
-                Locked:= true;
-                LL_Delete(TraceStack, 0);
-                Locked:= false;
-            end;
-        end;
-    end;
+
 end;
 
 function get_last_trace : pchar;
 begin
-    get_last_trace:= nil;
-    if TRACER_ENABLE then begin
-        if t_ready then begin
-            get_last_trace:= pchar(LL_Get(TraceStack, 0));
-        end;
-    end;
+    get_last_trace:= Traces[0];
 end;
 
 procedure init;
 begin
     if TRACER_ENABLE then begin
-        TraceStack:= LL_New(255);
         t_ready:= true;
         push_trace('kmain');
     end;
@@ -78,14 +77,15 @@ end;
 function get_trace_count : uint32;
 begin
     if TRACER_ENABLE then begin
-        get_trace_count:= LL_Size(TraceStack);
+        get_trace_count:= MAX_TRACE;
     end;
 end;
 
 function get_trace_N(idx : uint32) : pchar;
 begin
+    if idx > MAX_TRACE-1 then exit;
     if TRACER_ENABLE then begin
-        get_trace_N:= pchar(LL_Get(TraceStack, idx));
+        get_trace_N:= traces[idx];
     end;
 end;
 
