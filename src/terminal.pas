@@ -19,7 +19,8 @@ uses
     lmemorymanager,
     strings,
     tracer,
-    asuro;
+    asuro,
+    serial;
 
 const
     TERMINAL_HWND = 1;
@@ -370,6 +371,21 @@ begin
     console.toggleWNDVisible(1);
 end;
 
+procedure SendSerial(Params : PParamList);
+begin
+    Serial.init(COM1);
+    Serial.Send(uint8('H'), COM1, 1000);
+    Serial.Send(uint8('E'), COM1, 1000);
+    Serial.Send(uint8('L'), COM1, 1000);
+    Serial.Send(uint8('L'), COM1, 1000);
+    Serial.Send(uint8('O'), COM1, 1000);
+    Serial.Send(uint8('W'), COM1, 1000);
+    Serial.Send(uint8('O'), COM1, 1000);
+    Serial.Send(uint8('R'), COM1, 1000);
+    Serial.Send(uint8('L'), COM1, 1000);
+    Serial.Send(uint8('D'), COM1, 1000);
+end;
+
 procedure init;
 begin
     console.writestringln('TERMINAL: INIT BEGIN.');
@@ -384,7 +400,8 @@ begin
     registerCommand('CD', @change_dir, 'Change Directory test.');
     registerCommand('PATTERN', @cockwomble, 'Print an animated pattern to the screen.');
     registerCommand('TOGGLEWND1', @ToggleWND1, 'Toggle WND 1 Visibility.');
-    registerCommand('TIME', @printTime, 'PRINT TIME!');
+    registerCommand('TIME', @printTime, 'Print the current time.');
+    registerCommand('SERIAL', @SendSerial, 'Send ''helloworld'' through COM1.');
     console.writestringln('TERMINAL: INIT END.');
 end;
 

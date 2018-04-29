@@ -961,6 +961,7 @@ begin
      //b:= pos shr 8;
      //outb($3D5, b);
      //redrawWindows;
+     //sleep(1);
 end;
 
 procedure backspace;
