@@ -90,7 +90,7 @@ var
     i : uint32;
 
 begin
-    push_trace('terminal.paramCount');
+    //push_trace('terminal.paramCount');
     current:= params;
     i:= 0;
     while current^.param <> nil do begin
@@ -98,7 +98,7 @@ begin
         current:= current^.next;
     end;
     paramCount:= i-1;
-    pop_trace;
+    //pop_trace;
 end;
 
 function getParams(buf : TCommandBuffer) : PParamList;
@@ -110,7 +110,7 @@ var
     current : PParamList;
 
 begin
-    push_trace('terminal.getParams');
+    //push_trace('terminal.getParams');
     root:= PParamList(kalloc(sizeof(TParamList)));
     current:= root;
     current^.next:= nil;
@@ -136,7 +136,7 @@ begin
         inc(finish);     
     end;
     getParams:= root;
-    pop_trace;
+    //pop_trace;
 end;
 
 function getParam(index : uint32; params : PParamList) : pchar;
@@ -146,7 +146,7 @@ var
     i      : uint32;
 
 begin
-    push_trace('terminal.getParam');
+    //push_trace('terminal.getParam');
     result:= nil;
     search:= params;
     for i:=0 to index do begin
@@ -154,7 +154,7 @@ begin
     end;
     result:= search^.param;
     getParam:= result;
-    pop_trace;
+    //pop_trace;
 end;
 
 procedure freeParams(params : PParamList);
@@ -163,7 +163,7 @@ var
     next : PParamList;
 
 begin
-    push_trace('terminal.freeParams');
+    //push_trace('terminal.freeParams');
     p:= params;
     next:= p^.next;
     while p^.next <> nil do begin
@@ -172,7 +172,7 @@ begin
         p:= next;
         next:= p^.next;
     end;
-    pop_trace;
+    //pop_trace;
 end;
 
 procedure testParams(params : PParamList);

@@ -279,12 +279,12 @@ var
     i   : uint32;
 
 begin
-    push_trace('util.memset');
+    //push_trace('util.memset');
     for i:=0 to size-1 do begin
         loc:= puint8(location + i);
         loc^:= value;
     end;
-    pop_trace;
+    //pop_trace;
 end;
 
 procedure memcpy(source : uint32; dest : uint32; size : uint32);
@@ -293,13 +293,13 @@ var
     i : uint32;
 
 begin
-    push_trace('util.memcpy');
+    //push_trace('util.memcpy');
     for i:=0 to size-1 do begin
         src:= puint8(source + i);
         dst:= puint8(dest + i);
         dst^:= src^;
     end;
-    pop_trace;
+    //pop_trace;
 end;
 
 function getWord(i : uint32; hi : boolean) : uint16;
