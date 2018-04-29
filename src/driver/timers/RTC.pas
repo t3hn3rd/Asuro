@@ -92,7 +92,7 @@ begin
     io_wait();
 
     //enable ints
-    {outb($70, $8B);
+    outb($70, $8B);
     io_wait();
     prev:= inb($71);
     io_wait();
@@ -101,7 +101,7 @@ begin
     outb($71, prev OR $40);
     STI;
     outb($70, $00);
-    inb($71);}
+    inb($71);
     
     //isrmanager.registerISR(32 + 8, @update);
     TMR_0_ISR.hook(uint32(@update));
