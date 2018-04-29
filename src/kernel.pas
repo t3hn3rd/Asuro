@@ -86,72 +86,6 @@ begin
     pop_trace; 
 end;
 
-procedure outputChar(c : char; x : uint8; y : uint8; fgcolor : uint16; bgcolor : uint16);
-var
-    dest : puint16;
-    dest32 : puint32;
-    fgcolor32, bgcolor32 : uint32;
-    mask : puint32;
-    i : uint32;
-
-begin
-    fgcolor32:= fgcolor OR (fgcolor SHL 8) OR (fgcolor SHL 16) OR (fgcolor SHL 24);
-    bgcolor32:= bgcolor OR (bgcolor SHL 8) OR (bgcolor SHL 16) OR (bgcolor SHL 24);
-    mask:= puint32(@Std_Mask[uint32(c) * (16 * 8)]);
-    dest:= puint16(multibootinfo^.framebuffer_addr);
-    dest:= dest + (y*(1280 * 16)) + (x * 8);
-    dest32:= puint32(dest);
-    for i:=0 to 15 do begin
-        dest32[(i*640)+0]:= (bgcolor32 AND NOT(mask[(i*4)+0])) OR (fgcolor32 AND mask[(i*4)+0]);
-        dest32[(i*640)+1]:= (bgcolor32 AND NOT(mask[(i*4)+1])) OR (fgcolor32 AND mask[(i*4)+1]);
-        dest32[(i*640)+2]:= (bgcolor32 AND NOT(mask[(i*4)+2])) OR (fgcolor32 AND mask[(i*4)+2]);
-        dest32[(i*640)+3]:= (bgcolor32 AND NOT(mask[(i*4)+3])) OR (fgcolor32 AND mask[(i*4)+3]);
-    end;
-end;
-
-procedure GraphicsTesting();
-var
-   i               : uint32;
-   z               : uint32;
-   atmp            : puint32;
-   fb              : puint32;
-   val             : uint32;
-   test            : pchar = 'helloworld';
-   mask            : puint32;
-
-begin
-    fb:= puint32(uint32(multibootinfo^.framebuffer_addr));
-    kpalloc(uint32(fb));
-
-    outputChar('T', 0, 0, $FFFF, $0000);
-    outputChar('E', 0, 1, $FFFF, $0000);
-    outputChar('S', 0, 2, $FFFF, $0000);
-    outputChar('T', 0, 3, $FFFF, $0000);
-    outputChar('E', 1, 0, $FFFF, $0000);
-    outputChar('S', 2, 0, $FFFF, $0000);
-    outputChar('T', 3, 0, $FFFF, $0000);
-
-    {mask:= puint32(@Std_Mask[uint32(test[0]) * (16 * 8)]);
-    for i:=0 to 15 do begin
-        fb[(i*640)+0]:= mask[(i*4)+0];
-        fb[(i*640)+1]:= mask[(i*4)+1];
-        fb[(i*640)+2]:= mask[(i*4)+2];
-        fb[(i*640)+3]:= mask[(i*4)+3];
-    end;}
-    
-    //for z:=0 to 15 do begin
-    //    for i:=0 to 8 do begin
-    //        val:= $0000;
-    //        //if ((Std_Font[(37*16)+z] SHR i) AND $1) = $1 then val:= $FFFF;
-    //        
-    //        //if ((Std_Font[(38 * 16)+z]) AND ($1 SHL ((8-i)+1))) > 0 then val:= $FFFF;
-    //        //if val <> 0 then fb[(z * 1280)+i]:= val;
-    //    end;
-    //end;
-    while true do begin
-    end;
-end;
-
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall; [public, alias: 'kmain'];   
 var
    c               : uint8;
@@ -209,16 +143,14 @@ begin
      irq.init();
      isrmanager.init();
      faults.init();
+     RTC.init();
      pmemorymanager.init();
      vmemorymanager.init();
      lmemorymanager.init();
      tss.init();
      scheduler.init();
 
-     { Graphics Mode Test Stuff }
-     //GraphicsTesting();
      { Console Init }
-     //windowmanager.init();
      console.init();
 
      { Call Tracer }
@@ -231,8 +163,6 @@ begin
      tracer.push_trace('kmain.STRMGMT');
      storagemanagement.init();
      tracer.pop_trace;
-
-     RTC.init();
 
      { Hook Timer for Ticks }
      tracer.push_trace('kmain.TMR');
@@ -273,14 +203,9 @@ begin
      console.setdefaultattribute(console.combinecolors($17E0, $0000));
      console.writestringln('Asuro Booted Correctly!');
      console.setdefaultattribute(console.combinecolors($FFFF, $0000));
-     //if INTE then console.writestringln('Interrupts are enabled.') else console.writestringln('Interrupts are disabled.');
      console.writestringln('');
      console.writestringln('Press any key to boot in to Asuro Terminal...');
      tracer.pop_trace;
-
-     //writeint(DateTime.Hours);
-     //writestring(':');
-     //writeintln(DateTime.Minutes);
 
      tracer.push_trace('kmain.KEYHOOK');
      keyboard.hook(@temphook);
@@ -288,15 +213,9 @@ begin
 
      tracer.push_trace('kmain.END');
 
-     //outputCharToScreenSpace(char(0), 10, 10, $FFFF);
-
      while true do begin
         console.redrawWindows;
-        //windowmanager.redraw();
-        //mouse.DrawCursor();
      end;
-
-     //util.halt_and_dont_catch_fire;
 end;
  
 end.

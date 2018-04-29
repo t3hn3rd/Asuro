@@ -44,6 +44,7 @@ procedure halt_and_catch_fire();
 procedure halt_and_dont_catch_fire();
 procedure BSOD(fault : pchar; info : pchar);
 procedure psleep(t : uint16);
+procedure sleep(seconds : uint32);
 
 function BCDToUint8(bcd : uint8) : uint8;
 
@@ -54,7 +55,30 @@ var
 implementation
 
 uses
-    console;
+    console, RTC;
+
+procedure sleep1;
+var
+   DateTimeStart, DateTimeEnd : TDateTime;
+
+
+begin
+    DateTimeStart:= getDateTime;
+    DateTimeEnd:= DateTimeStart;
+    while DateTimeStart.seconds = DateTimeEnd.seconds do begin
+        DateTimeEnd:= getDateTime;
+    end;
+end;
+
+procedure sleep(seconds : uint32);
+var
+    i : uint32;
+
+begin
+    for i:=1 to seconds do begin
+        sleep1;
+    end;
+end;
 
 function INTE : boolean;
 var
