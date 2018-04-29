@@ -37,9 +37,9 @@ end;
 
 procedure update();
 begin
-    outb($70, $0C);	// select register C
-    io_wait();
-    inb($71);
+    //outb($70, $0C);	// select register C
+    //io_wait();
+    //inb($71);
     //console.writestringln('RTC Update');
     //while not is_update_in_progress do begin 
     //end;
@@ -47,35 +47,35 @@ begin
     //end;
     outb($70, $00);
     io_wait();
-    DateTime.Seconds:= inb($71);
+    DateTime.Seconds:= BCDToUint8(inb($71));
     io_wait();
     outb($70, $02);
     io_wait();
-    DateTime.Minutes:= inb($71);
+    DateTime.Minutes:= BCDToUint8(inb($71));
     io_wait();
     outb($70, $04);
     io_wait();
-    DateTime.Hours:= inb($71);
+    DateTime.Hours:= BCDToUint8(inb($71));
     io_wait();
     outb($70, $06);
     io_wait();
-    DateTime.Weekday:= inb($71);
+    DateTime.Weekday:= BCDToUint8(inb($71));
     io_wait();
     outb($70, $07);
     io_wait();
-    DateTime.Day:= inb($71);
+    DateTime.Day:= BCDToUint8(inb($71));
     io_wait();
     outb($70, $08);
     io_wait();
-    DateTime.Month:= inb($71);
+    DateTime.Month:= BCDToUint8(inb($71));
     io_wait();
     outb($70, $09);
     io_wait();
-    DateTime.Year:= inb($71);
+    DateTime.Year:= BCDToUint8(inb($71));
     io_wait();
     outb($70, $32);
     io_wait();
-    DateTime.Century:= inb($71);
+    DateTime.Century:= BCDToUint8(inb($71));
     io_wait();
 end;
 
@@ -92,7 +92,7 @@ begin
     io_wait();
 
     //enable ints
-    outb($70, $8B);
+    {outb($70, $8B);
     io_wait();
     prev:= inb($71);
     io_wait();
@@ -101,7 +101,7 @@ begin
     outb($71, prev OR $40);
     STI;
     outb($70, $00);
-    inb($71);
+    inb($71);}
     
     //isrmanager.registerISR(32 + 8, @update);
     TMR_0_ISR.hook(uint32(@update));

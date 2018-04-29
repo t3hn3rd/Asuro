@@ -45,6 +45,8 @@ procedure halt_and_dont_catch_fire();
 procedure BSOD(fault : pchar; info : pchar);
 procedure psleep(t : uint16);
 
+function BCDToUint8(bcd : uint8) : uint8;
+
 var
     endptr : uint32; external name '__end';
     stack  : uint32; external name 'KERNEL_STACK';
@@ -294,6 +296,11 @@ var
 begin
     mask:= ($FF SHL (8*index));
     getByte:= (i AND mask) SHR (8*index);
+end;
+
+function BCDToUint8(bcd : uint8) : uint8;
+begin
+    BCDToUint8:= ((bcd SHR 4) * 10) + (bcd AND $0F);
 end;
 
 procedure BSOD(fault : pchar; info : pchar);

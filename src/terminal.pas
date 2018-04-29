@@ -252,22 +252,20 @@ end;
 
 procedure printTime(Params : PParamList);
 begin
-     writeStringWND('Seconds: ', TERMINAL_HWND);
+     writeIntWND(DateTime.Day, TERMINAL_HWND);     
+     writeStringWND('/', TERMINAL_HWND);
+     writeIntWND(DateTime.Month, TERMINAL_HWND);
+     writeStringWND('/', TERMINAL_HWND);  
+     writeIntWND(DateTime.Century, TERMINAL_HWND);  
+     writeIntWND(DateTime.Year, TERMINAL_HWND);    
+     writeStringWND(' ', TERMINAL_HWND);  
+     writeIntWND(DateTime.Hours, TERMINAL_HWND);
+     writeStringWND(':', TERMINAL_HWND);
+     writeIntWND(DateTime.Minutes, TERMINAL_HWND);
+     writeStringWND(':', TERMINAL_HWND);
      writeIntlnWND(DateTime.Seconds, TERMINAL_HWND);
-     writeStringWND('Minutes: ', TERMINAL_HWND);
-     writeIntlnWND(DateTime.Minutes, TERMINAL_HWND);
-     writeStringWND('Hours: ', TERMINAL_HWND);
-     writeIntlnWND(DateTime.Hours, TERMINAL_HWND);
-     writeStringWND('Weekday: ', TERMINAL_HWND);
-     writeIntlnWND(DateTime.Weekday, TERMINAL_HWND); 
-     writeStringWND('Day: ', TERMINAL_HWND);
-     writeIntlnWND(DateTime.Day, TERMINAL_HWND);     
-     writeStringWND('Month: ', TERMINAL_HWND);
-     writeIntlnWND(DateTime.Month, TERMINAL_HWND);
-     writeStringWND('Year: ', TERMINAL_HWND);  
-     writeIntlnWND(DateTime.Year, TERMINAL_HWND);    
-     writeStringWND('Century: ', TERMINAL_HWND);
-     writeIntlnWND(DateTime.Century, TERMINAL_HWND);  
+     //writeStringWND('Weekday: ', TERMINAL_HWND);
+     //writeIntlnWND(DateTime.Weekday, TERMINAL_HWND); 
 end;
 
 procedure registerCommand(command : pchar; method : TCommandMethod; description : pchar);
