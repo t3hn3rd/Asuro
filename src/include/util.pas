@@ -383,7 +383,7 @@ begin
             end;
         end;
     end else begin
-        console.writestringln('Unknown.')
+        console.writestringln('Unknown.');
     end;
     console.redrawWindows;
     halt_and_catch_fire();

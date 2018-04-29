@@ -13,16 +13,14 @@ function  get_trace_N(idx : uint32) : pchar;
 implementation
 
 uses
-    console, util, lists, strings, serial;
+    console, lmemorymanager, util, strings, serial;
 
 const
     MAX_TRACE = 40;
-    SERIALID = '[TRACER]  ';
 
 var
     t_ready     : Boolean;
     Locked      : Boolean;
-    TraceStack  : PLinkedListBase;
     Traces      : Array[0..MAX_TRACE-1] of PChar;
 
 procedure freeze;
@@ -39,6 +37,7 @@ begin
         if t_ready then begin
             if not Locked then begin
                 Locked:= true;
+                if Traces[MAX_TRACE-1] <> nil then kfree(void(Traces[MAX_TRACE-1]));
                 for i:=MAX_TRACE-1 downto 1 do begin
                     Traces[i]:= Traces[i-1];
                 end;
@@ -60,8 +59,14 @@ begin
 end;
 
 procedure init;
+var
+    i   : uint32;
+
 begin
     if TRACER_ENABLE then begin
+        for i:=0 to MAX_TRACE-1 do begin
+            traces[i]:= nil;
+        end;
         t_ready:= true;
         push_trace('kmain');
     end;
