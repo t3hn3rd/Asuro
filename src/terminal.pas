@@ -377,16 +377,17 @@ var
 
 begin
     success:= true;
-    success:= success AND Serial.Send(COM1, uint8('H'), 100000);
-    success:= success AND Serial.Send(COM1, uint8('E'), 100000);
-    success:= success AND Serial.Send(COM1, uint8('L'), 100000);
-    success:= success AND Serial.Send(COM1, uint8('L'), 100000);
-    success:= success AND Serial.Send(COM1, uint8('O'), 100000);
-    success:= success AND Serial.Send(COM1, uint8('W'), 100000);
-    success:= success AND Serial.Send(COM1, uint8('O'), 100000);
-    success:= success AND Serial.Send(COM1, uint8('R'), 100000);
-    success:= success AND Serial.Send(COM1, uint8('L'), 100000);
-    success:= success AND Serial.Send(COM1, uint8('D'), 100000);
+    success:= success AND Serial.Send(COM1, uint8('H'), 1000);
+    success:= success AND Serial.Send(COM1, uint8('E'), 1000);
+    success:= success AND Serial.Send(COM1, uint8('L'), 1000);
+    success:= success AND Serial.Send(COM1, uint8('L'), 1000);
+    success:= success AND Serial.Send(COM1, uint8('O'), 1000);
+    success:= success AND Serial.Send(COM1, uint8('W'), 1000);
+    success:= success AND Serial.Send(COM1, uint8('O'), 1000);
+    success:= success AND Serial.Send(COM1, uint8('R'), 1000);
+    success:= success AND Serial.Send(COM1, uint8('L'), 1000);
+    success:= success AND Serial.Send(COM1, uint8('D'), 1000);
+    success:= success AND Serial.Send(COM1, 13, 1000);
     if success then begin
         console.writestringlnWND('Send Success!', TERMINAL_HWND);
     end else begin

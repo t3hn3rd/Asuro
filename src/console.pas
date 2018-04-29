@@ -960,7 +960,7 @@ begin
      //outb($3D4, $0E);
      //b:= pos shr 8;
      //outb($3D5, b);
-     //redrawWindows;
+     if CONSOLE_SLOW_REDRAW then redrawWindows;
      //sleep(1);
 end;
 

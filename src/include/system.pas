@@ -16,6 +16,7 @@ const
      KERNEL_PAGE_NUMBER = KERNEL_VIRTUAL_BASE SHR 22;
      BSOD_ENABLE = false;
      TRACER_ENABLE = true;
+     CONSOLE_SLOW_REDRAW = false; //Redraws the Window manager after every character, but slows performance.
 
 type
     //internal types
