@@ -72,7 +72,6 @@ begin
     if TRACER_ENABLE then begin
         t_ready:= true;
         push_trace('kmain');
-        Locked:= true;
     end;
 end;
 
