@@ -44,7 +44,8 @@ uses
      isrmanager,
      faults,
      fonts,
-     RTC;
+     RTC,
+     serial;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
@@ -152,6 +153,8 @@ begin
 
      { Console Init }
      console.init();
+
+     serial.init();
 
      { Call Tracer }
      tracer.init();

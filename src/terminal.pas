@@ -377,7 +377,6 @@ var
 
 begin
     success:= true;
-    Serial.init(COM1);
     success:= success AND Serial.Send(uint8('H'), COM1, 100000);
     success:= success AND Serial.Send(uint8('E'), COM1, 100000);
     success:= success AND Serial.Send(uint8('L'), COM1, 100000);
@@ -388,8 +387,6 @@ begin
     success:= success AND Serial.Send(uint8('R'), COM1, 100000);
     success:= success AND Serial.Send(uint8('L'), COM1, 100000);
     success:= success AND Serial.Send(uint8('D'), COM1, 100000);
-    success:= success AND Serial.Send(uint8(10),  COM1, 100000);
-    success:= success AND Serial.Send(uint8(13),  COM1, 100000);
     if success then begin
         console.writestringlnWND('Send Success!', TERMINAL_HWND);
     end else begin
