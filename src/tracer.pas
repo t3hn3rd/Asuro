@@ -44,10 +44,10 @@ begin
                 end;
                 Traces[0]:= StringCopy(t_name);
                 for i:=0 to StringSize(SERIALID)-1 do begin
-                    serial.send(COM1, uint8(SERIALID[i]), 10);
+                    serial.send(COM1, uint8(SERIALID[i]), 1000);
                 end;
                 for i:=0 to StringSize(t_name)-1 do begin
-                    serial.send(COM1, uint8(t_name[i]), 10);
+                    serial.send(COM1, uint8(t_name[i]), 1000);
                 end;
                 serial.send(COM1, 13, 10);
                 //serial.send(COM1, 10, 10);
