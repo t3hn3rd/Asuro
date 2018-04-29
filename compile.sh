@@ -22,6 +22,8 @@ echo " "
 echo "======================="
 echo " "
 
+./versioning.sh
+
 if [ "$1" = "-d" ]
 then
 	echo "Compiling Debug FPC Sources..."

@@ -304,6 +304,7 @@ var
 
 begin
     disable_cursor;
+    closeAllWindows;
     if not BSOD_ENABLE then exit;
     console.setdefaultattribute(console.combinecolors($FFFF, $F800));
     console.clear;
@@ -355,6 +356,7 @@ begin
     end else begin
         console.writestringln('Unknown.')
     end;
+    console.redrawWindows;
     halt_and_catch_fire();
 end;
 

@@ -18,7 +18,11 @@ uses
     util,
     lmemorymanager,
     strings,
-    tracer;
+    tracer,
+    asuro;
+
+const
+    TERMINAL_HWND = 1;
 
 type
     PParamList = ^TParamList;
@@ -55,8 +59,14 @@ function paramCount(params : PParamList) : uint32;
 function getParam(index : uint32; params : PParamList) : pchar;
 procedure setWorkingDirectory(str : pchar);
 function getWorkingDirectory : pchar;
+function getTerminalHWND : uint32;
 
 implementation
+
+function getTerminalHWND : uint32;
+begin
+    getTerminalHWND:= TERMINAL_HWND;
+end;
 
 function getWorkingDirectory : pchar;
 begin
@@ -164,7 +174,7 @@ end;
 procedure testParams(params : PParamList);
 begin
     while params^.Param <> nil do begin
-        writestringln(params^.Param);
+        writestringlnWND(params^.Param, TERMINAL_HWND);
         params:= params^.next;
     end;
 end;
@@ -176,21 +186,21 @@ var
 begin
     current:= params^.next;
     while current^.param <> nil do begin
-        console.writestring(current^.param);
-        console.writestring(' ');
+        console.writestringWND(current^.param, TERMINAL_HWND);
+        console.writestringWND(' ', TERMINAL_HWND);
         current:= current^.next;
     end;
-    console.writestringln('');
+    console.writestringlnWND('', TERMINAL_HWND);
 end;
 
 procedure clear(params : PParamList);
 begin
-    console.clear();
+    console.clearWND(TERMINAL_HWND);
 end;
 
 procedure version(params : PParamList);
 begin
-    console.writestringln('Asuro v1.0');
+    console.writestringlnWND(asuro.VERSION, TERMINAL_HWND);
 end;
 
 procedure help(params : PParamList);
@@ -198,13 +208,13 @@ var
 
     i : uint32;
 begin
-    console.writestringln('Registered Commands: ');
+    console.writestringlnWND('Registered Commands: ', TERMINAL_HWND);
     for i:=0 to 65534 do begin
         if Commands[i].Registered then begin
-            console.writestring('  ');
-            console.writestring(Commands[i].command);
-            console.writestring(' - ');
-            console.writestringln(Commands[i].description);
+            console.writestringWND('  ', TERMINAL_HWND);
+            console.writestringWND(Commands[i].command, TERMINAL_HWND);
+            console.writestringWND(' - ', TERMINAL_HWND);
+            console.writestringlnWND(Commands[i].description, TERMINAL_HWND);
         end;
     end;
 end;
@@ -231,9 +241,9 @@ end;
 procedure test(params : PParamList);
 begin
     if paramCount(params) > 0 then begin
-        console.writeintln(stringToInt(getParam(0, params)));
+        console.writeintlnWND(stringToInt(getParam(0, params)), TERMINAL_HWND);
     end else begin
-        console.writestringln('Invalid number of params');
+        console.writestringlnWND('Invalid number of params', TERMINAL_HWND);
     end;
 end;
 
@@ -262,7 +272,7 @@ begin
     push_trace('terminal.process_command');
 
     { Start a new line. }
-    console.writecharln(' ');
+    console.writecharlnWND(' ', TERMINAL_HWND);
 
     { Enable fallthrough/Unrecognized command }
     fallthrough:= true;
@@ -289,13 +299,13 @@ begin
 
     { Display message if command is unknown AKA fallthrough is active }
     if fallthrough then begin
-        console.writestringln('Unknown Command.');
+        console.writestringlnWND('Unknown Command.', TERMINAL_HWND);
     end;
 
     { Reset the terminal ready for the next command }
-    console.writestring('Asuro#');
-    console.writestring(Working_Directory);
-    console.writestring('> ');
+    console.writestringWND('Asuro#', TERMINAL_HWND);
+    console.writestringWND(Working_Directory, TERMINAL_HWND);
+    console.writestringWND('> ', TERMINAL_HWND);
     bIndex:= 0;
     memset(uint32(@buffer[0]), 0, 1024);
 
@@ -308,12 +318,12 @@ begin
         if bIndex < 1024 then begin
             buffer[bIndex]:= info.key_code;
             inc(bIndex);
-            console.writechar(char(info.key_code));
+            console.writecharWND(char(info.key_code), TERMINAL_HWND);
         end;
     end; 
     if info.key_code = 8 then begin //backspace
         if bIndex > 0 then begin
-            console.backspace;
+            console.backspaceWND(TERMINAL_HWND);
             dec(bIndex);
             buffer[bIndex]:= 0;
         end;
@@ -330,6 +340,11 @@ begin
     end;
 end;
 
+procedure ToggleWND1(Params : PParamList);
+begin
+    console.toggleWNDVisible(1);
+end;
+
 procedure init;
 begin
     console.writestringln('TERMINAL: INIT BEGIN.');
@@ -341,18 +356,20 @@ begin
     registerCommand('ECHO', @echo, 'Echo''s text to the terminal.');
     registerCommand('TESTPARAMS', @testParams, 'Tests param parsing.');
     registerCommand('TEST', @test, 'Command for testing.');
-    registerCommand('CD', @change_dir, 'Change Directory test');
-    registerCommand('COCKWOMBLE', @cockwomble, 'Womblecocks');
+    registerCommand('CD', @change_dir, 'Change Directory test.');
+    registerCommand('PATTERN', @cockwomble, 'Print an animated pattern to the screen.');
+    registerCommand('TOGGLEWND1', @ToggleWND1, 'Toggle WND 1 Visibility.');
     console.writestringln('TERMINAL: INIT END.');
 end;
 
 procedure run;
 begin
     keyboard.hook(@key_event);
-    console.clear();
-    console.writestring('Asuro#');
-    console.writestring(Working_Directory);
-    console.writestring('> ');
+    console.clearWND(TERMINAL_HWND);
+    console.writestringWND('Asuro#', TERMINAL_HWND);
+    console.writestringWND(Working_Directory, TERMINAL_HWND);
+    console.writestringWND('> ', TERMINAL_HWND);
+    console.setWNDVisible(TERMINAL_HWND, true);
 end;
 
 end.
