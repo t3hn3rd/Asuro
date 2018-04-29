@@ -251,7 +251,11 @@ begin
 end;
 
 procedure printTime(Params : PParamList);
+var
+    DateTime : TDateTime;
+
 begin
+     DateTime:= getDateTime;
      writeIntWND(DateTime.Day, TERMINAL_HWND);     
      writeStringWND('/', TERMINAL_HWND);
      writeIntWND(DateTime.Month, TERMINAL_HWND);

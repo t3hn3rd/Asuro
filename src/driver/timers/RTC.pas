@@ -17,12 +17,13 @@ type
         Century : uint8;
     end;
 
-var
-    DateTime : TDateTime;
-
 procedure init;
+function getDateTime : TDateTime;
 
 implementation
+
+var
+    DateTime : TDateTime;
 
 function is_update_in_progress : boolean;
 var
@@ -79,6 +80,12 @@ begin
     io_wait();
 end;
 
+function getDateTime : TDateTime;
+begin
+    update();
+    getDateTime:= DateTime;
+end;
+
 procedure init;
 var
     prev : uint8;
@@ -104,7 +111,7 @@ begin
     inb($71);
     
     //isrmanager.registerISR(32 + 8, @update);
-    TMR_0_ISR.hook(uint32(@update));
+    //TMR_0_ISR.hook(uint32(@update));
 end;
 
 end.

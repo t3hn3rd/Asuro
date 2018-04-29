@@ -278,9 +278,9 @@ begin
      console.writestringln('Press any key to boot in to Asuro Terminal...');
      tracer.pop_trace;
 
-     writeint(DateTime.Hours);
-     writestring(':');
-     writeintln(DateTime.Minutes);
+     //writeint(DateTime.Hours);
+     //writestring(':');
+     //writeintln(DateTime.Minutes);
 
      tracer.push_trace('kmain.KEYHOOK');
      keyboard.hook(@temphook);
