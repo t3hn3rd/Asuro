@@ -14,7 +14,12 @@ echo " " >> $outfile
 echo "interface" >> $outfile
 echo " " >> $outfile
 echo "const" >> $outfile
-echo "     VERSION = '$major.$minor.$sub-$revision$release';" >> $outfile
+echo "     VERSION       = '$major.$minor.$sub-$revision$release';" >> $outfile
+echo "     VERSION_MAJOR = '$major';" >> $outfile
+echo "     VERSION_MINOR = '$minor';" >> $outfile
+echo "     VERSION_SUB   = '$sub';" >> $outfile
+echo "     REVISION      = '$revision';" >> $outfile
+echo "     RELEASE       = '$release';" >> $outfile
 echo " " >> $outfile
 echo "implementation" >> $outfile
 echo " " >> $outfile
