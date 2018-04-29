@@ -118,18 +118,17 @@ var
     i   : uint32;
 
 begin   
-    push_trace('util.printmemory');
     buf:= puint8(source);
-    for i:=0 to length do begin
+    for i:=0 to length-1 do begin
         if offset_row and (i = 0) then begin
-            console.writehex(source + (i * col));
+            console.writehex(source + (i));
             console.writestring(': ');
         end; 
         console.writehexpair(buf[i]);
         if ((i+1) MOD col) = 0 then begin
             console.writestringln(' ');  
             if offset_row then begin
-                console.writehex(source + (i * col));
+                console.writehex(source + (i + 1));
                 console.writestring(': ');
             end;  
         end else begin
@@ -137,7 +136,6 @@ begin
         end;
     end;
     console.writestringln(' ');   
-    pop_trace;
 end;
 
 function hi(b : uint8) : uint8; [public, alias: 'util_hi'];

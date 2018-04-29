@@ -33,15 +33,20 @@ type
     PPHIOHook = procedure(volume : PStorage_device; addr : uint32; sectors : uint32; buffer : puint32);
     PPCreateHook = procedure(disk : PStorage_Device; sectors : uint32; start : uint32; config : puint32);
     PPDetectHook = procedure(disk : PStorage_Device);
+    PPCreateDirHook = function(volume : PStorage_volume; directory : pchar; dirname : pchar; attributes : uint32) : uint8;
+    PPReadDirHook = function(volume : PStorage_volume; directory : pchar; listPtr : PLinkedListBase) : uint8; //returns: 0 = success, 1 = dir not exsist, 2 = not directory, 3 = error
+
 
     PPHIOHook_ = procedure;
 
     TFilesystem = record
         sName : pchar;
-        writeCallback  : PPIOHook;
-        readCallback   : PPIOHook;
-        createCallback : PPCreateHook;
-        detectCallback : PPDetectHook;
+        writeCallback     : PPIOHook;
+        readCallback      : PPIOHook;
+        createCallback    : PPCreateHook;
+        detectCallback    : PPDetectHook;
+        createDirCallback : PPCreateDirHook;
+        readDirCallback   : PPReadDirHook;
     end;
     PFileSystem = ^TFilesystem;
 
@@ -134,7 +139,7 @@ begin
         drive :=  stringToInt(getParam(1, params));
         console.writeintln(drive); // works
         if stringEquals(getParam(2, params), 'fat32') then begin
-                PFilesystem(LL_Get(filesystems, 0))^.createCallback((PStorage_Device(LL_Get(storageDevices, drive))), 1000000, 1, spc); //todo check fs
+                PFilesystem(LL_Get(filesystems, 0))^.createCallback((PStorage_Device(LL_Get(storageDevices, drive))), 10000, 1, spc); //todo check fs
                 console.writestring('Drive ');
                 //console.writeint(drive); // page faults
                 console.writestringln(' formatted.');
@@ -147,6 +152,65 @@ begin
         end;
     end;
     pop_trace;
+end;
+
+procedure mkdir_command(params : PParamList);
+var
+    dir : pchar;
+    device : PStorage_Device;
+    volume : PStorage_Volume;
+    error : uint32;
+begin
+    if paramCount(params) > 0 then begin
+        dir := getParam(0, params);
+        device:= PStorage_Device(LL_Get(storageDevices, 0));
+        volume:= PStorage_Volume(LL_Get(device^.volumes, 0));
+
+        //error:= volume^.filesystem^.createDirCallback(volume, dir, $10);
+        if error <> 1 then console.writestringln('ERROR');
+    end;
+end;
+
+procedure ls_command(params : PParamList);
+type
+    TDirectory = bitpacked record
+        fileName      : array[0..7] of char;
+        fileExtension : array[0..2] of char;
+        attributes    : uint8;
+        reserved0     : uint8;
+        timeFine      : uint8;
+        time          : uint16;
+        date          : uint16;
+        accessTime    : uint16;
+        clusterHigh   : uint16;
+        modifiedTime  : uint16;
+        modifiedDate  : uint16;
+        clusterLow    : uint16;
+        byteSize      : uint32;
+    end;
+    PDirectory = ^TDirectory;
+var
+    dirs : PLinkedListBase;
+    dir : pchar;
+    device : PStorage_Device;
+    volume : PStorage_Volume;
+    error : uint32;
+    i : uint32;
+begin
+    if paramCount(params) > 0 then begin
+        dir := getParam(0, params);
+        device:= PStorage_Device(LL_Get(storageDevices, 0));
+        volume:= PStorage_Volume(LL_Get(device^.volumes, 0));
+
+        error:= volume^.filesystem^.readDirCallback(volume, dir, dirs);
+
+        if error <> 1 then console.writestringln('ERROR');
+
+        for i:=0 to LL_Size(dirs) - 1 do begin
+            console.writestring('    ');
+            console.writestringln(pchar( PDirectory(LL_Get(dirs, 0))^.filename ));
+        end;
+    end;
 end;
 
 procedure volume_command(params : PParamList);
@@ -183,7 +247,8 @@ begin
     fileSystems:= ll_New(sizeof(TFilesystem));
     terminal.registerCommand('DISK', @disk_command, 'Disk utility');
     terminal.registerCommand('VOLUME', @volume_command, 'Volume utility');
-    terminal.registerCommand('POO', @test_command, 'Volume utility');
+    terminal.registerCommand('mkdir', @mkdir_command, 'Volume utility');
+    terminal.registerCommand('ls', @ls_command, 'Volume utility');
     pop_trace();
 end;
 

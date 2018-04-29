@@ -247,6 +247,7 @@ begin
             storagemanagement.register_device(@storageDevice1);
         end;
     end;
+
     pop_trace();
 end;
 
