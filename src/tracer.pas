@@ -35,7 +35,6 @@ var
     i   : uint32;
 
 begin
-    CLI;
     if TRACER_ENABLE then begin
         if t_ready then begin
             if not Locked then begin
@@ -44,19 +43,10 @@ begin
                     Traces[i]:= Traces[i-1];
                 end;
                 Traces[0]:= StringCopy(t_name);
-                for i:=0 to StringSize(SERIALID)-1 do begin
-                    serial.send(COM1, uint8(SERIALID[i]), 1000);
-                end;
-                for i:=0 to StringSize(t_name)-1 do begin
-                    serial.send(COM1, uint8(t_name[i]), 1000);
-                end;
-                serial.send(COM1, 13, 10);
-                //serial.send(COM1, 10, 10);
                 Locked:= false;
             end;
         end;
     end;
-    STI;
 end;
 
 procedure pop_trace;

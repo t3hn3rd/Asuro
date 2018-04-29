@@ -17,7 +17,6 @@ const
      BSOD_ENABLE = true;
      TRACER_ENABLE = true;
      CONSOLE_SLOW_REDRAW = false; //Redraws the Window manager after every character, but slows performance.
-     TRACE_TO_SERIAL = true;
 
 type
     //internal types
