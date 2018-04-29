@@ -35,6 +35,7 @@ var
     i   : uint32;
 
 begin
+    CLI;
     if TRACER_ENABLE then begin
         if t_ready then begin
             if not Locked then begin
@@ -55,6 +56,7 @@ begin
             end;
         end;
     end;
+    STI;
 end;
 
 procedure pop_trace;
