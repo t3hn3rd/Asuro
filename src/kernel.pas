@@ -232,7 +232,7 @@ begin
      storagemanagement.init();
      tracer.pop_trace;
 
-     //RTC.init();
+     RTC.init();
 
      { Hook Timer for Ticks }
      tracer.push_trace('kmain.TMR');

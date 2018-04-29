@@ -3,7 +3,7 @@ unit RTC;
 interface
 
 uses
-    console, isrmanager, util;
+    console, isrmanager, util, TMR_0_ISR;
 
 type
     TDateTime = record
@@ -40,11 +40,11 @@ begin
     outb($70, $0C);	// select register C
     io_wait();
     inb($71);
-    console.writestringln('RTC Update');
-    while not is_update_in_progress do begin 
-    end;
-    while is_update_in_progress do begin 
-    end;
+    //console.writestringln('RTC Update');
+    //while not is_update_in_progress do begin 
+    //end;
+    //while is_update_in_progress do begin 
+    //end;
     outb($70, $00);
     io_wait();
     DateTime.Seconds:= inb($71);
@@ -103,8 +103,8 @@ begin
     outb($70, $00);
     inb($71);
     
-    isrmanager.registerISR(32 + 8, @update);
-    //TMR_0_ISR.hook(uint32(@update));
+    //isrmanager.registerISR(32 + 8, @update);
+    TMR_0_ISR.hook(uint32(@update));
 end;
 
 end.
