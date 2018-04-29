@@ -374,16 +374,16 @@ end;
 procedure SendSerial(Params : PParamList);
 begin
     Serial.init(COM1);
-    Serial.Send(uint8('H'), COM1, 1000);
-    Serial.Send(uint8('E'), COM1, 1000);
-    Serial.Send(uint8('L'), COM1, 1000);
-    Serial.Send(uint8('L'), COM1, 1000);
-    Serial.Send(uint8('O'), COM1, 1000);
-    Serial.Send(uint8('W'), COM1, 1000);
-    Serial.Send(uint8('O'), COM1, 1000);
-    Serial.Send(uint8('R'), COM1, 1000);
-    Serial.Send(uint8('L'), COM1, 1000);
-    Serial.Send(uint8('D'), COM1, 1000);
+    Serial.Send(uint8('H'), COM1, 100000);
+    Serial.Send(uint8('E'), COM1, 100000);
+    Serial.Send(uint8('L'), COM1, 100000);
+    Serial.Send(uint8('L'), COM1, 100000);
+    Serial.Send(uint8('O'), COM1, 100000);
+    Serial.Send(uint8('W'), COM1, 100000);
+    Serial.Send(uint8('O'), COM1, 100000);
+    Serial.Send(uint8('R'), COM1, 100000);
+    Serial.Send(uint8('L'), COM1, 100000);
+    Serial.Send(uint8('D'), COM1, 100000);
 end;
 
 procedure init;
