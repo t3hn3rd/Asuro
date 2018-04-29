@@ -372,18 +372,27 @@ begin
 end;
 
 procedure SendSerial(Params : PParamList);
+var
+    success : boolean;
+
 begin
+    success:= true;
     Serial.init(COM1);
-    Serial.Send(uint8('H'), COM1, 100000);
-    Serial.Send(uint8('E'), COM1, 100000);
-    Serial.Send(uint8('L'), COM1, 100000);
-    Serial.Send(uint8('L'), COM1, 100000);
-    Serial.Send(uint8('O'), COM1, 100000);
-    Serial.Send(uint8('W'), COM1, 100000);
-    Serial.Send(uint8('O'), COM1, 100000);
-    Serial.Send(uint8('R'), COM1, 100000);
-    Serial.Send(uint8('L'), COM1, 100000);
-    Serial.Send(uint8('D'), COM1, 100000);
+    success:= success AND Serial.Send(uint8('H'), COM1, 100000);
+    success:= success AND Serial.Send(uint8('E'), COM1, 100000);
+    success:= success AND Serial.Send(uint8('L'), COM1, 100000);
+    success:= success AND Serial.Send(uint8('L'), COM1, 100000);
+    success:= success AND Serial.Send(uint8('O'), COM1, 100000);
+    success:= success AND Serial.Send(uint8('W'), COM1, 100000);
+    success:= success AND Serial.Send(uint8('O'), COM1, 100000);
+    success:= success AND Serial.Send(uint8('R'), COM1, 100000);
+    success:= success AND Serial.Send(uint8('L'), COM1, 100000);
+    success:= success AND Serial.Send(uint8('D'), COM1, 100000);
+    if success then begin
+        console.writestringlnWND('Send Success!', TERMINAL_HWND);
+    end else begin
+        console.writestringlnWND('Send Failed!', TERMINAL_HWND);
+    end;
 end;
 
 procedure init;
