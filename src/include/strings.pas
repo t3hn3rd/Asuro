@@ -12,7 +12,7 @@ unit strings;
 interface
 
 uses
-    util,
+    util, 
     lmemorymanager,
     lists;
 

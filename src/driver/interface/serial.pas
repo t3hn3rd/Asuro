@@ -20,9 +20,9 @@ implementation
 uses
     console;
 
-procedure hook();
+procedure IRQ_Hook();
 begin
-    console.writestringln('SERIAL ISR FIRED!');   
+ 
 end;
 
 procedure initPort(PORT : uint16);
@@ -42,8 +42,6 @@ begin
     initPort(COM2);
     initPort(COM3);
     initPort(COM4);
-    isrmanager.registerISR(32 + 3, @Hook);
-    isrmanager.registerISR(32 + 4, @Hook);
 end;
 
 function serial_received(PORT : uint16) : uint32;
@@ -63,7 +61,9 @@ var
 begin
     receive:= 0;
     _timeout:= timeout;
-    while (serial_received(PORT) = 0) do begin end;
+    while (serial_received(PORT) = 0) AND (_timeout > 0) do begin 
+        dec(_timeout);
+    end;
     if _timeout <> 0 then begin
         receive:= inb(PORT);
     end;
@@ -76,7 +76,9 @@ var
 begin
     send:= false;
     _timeout:= timeout;
-    while (is_transmit_empty(PORT) = 0) do begin end;
+    while (is_transmit_empty(PORT) = 0) and (_timeout > 0) do begin 
+        dec(_timeout);
+    end;
     if _timeout <> 0 then begin
         outb(PORT, data);
         send:= true;

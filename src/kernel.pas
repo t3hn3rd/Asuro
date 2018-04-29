@@ -154,7 +154,7 @@ begin
      { Console Init }
      console.init();
 
-     serial.init();
+     //serial.init();
 
      { Call Tracer }
      tracer.init();
