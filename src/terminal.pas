@@ -63,6 +63,9 @@ function getTerminalHWND : uint32;
 
 implementation
 
+uses
+    RTC;
+
 function getTerminalHWND : uint32;
 begin
     getTerminalHWND:= TERMINAL_HWND;
@@ -247,6 +250,26 @@ begin
     end;
 end;
 
+procedure printTime(Params : PParamList);
+begin
+     writeStringWND('Seconds: ', TERMINAL_HWND);
+     writeIntlnWND(DateTime.Seconds, TERMINAL_HWND);
+     writeStringWND('Minutes: ', TERMINAL_HWND);
+     writeIntlnWND(DateTime.Minutes, TERMINAL_HWND);
+     writeStringWND('Hours: ', TERMINAL_HWND);
+     writeIntlnWND(DateTime.Hours, TERMINAL_HWND);
+     writeStringWND('Weekday: ', TERMINAL_HWND);
+     writeIntlnWND(DateTime.Weekday, TERMINAL_HWND); 
+     writeStringWND('Day: ', TERMINAL_HWND);
+     writeIntlnWND(DateTime.Day, TERMINAL_HWND);     
+     writeStringWND('Month: ', TERMINAL_HWND);
+     writeIntlnWND(DateTime.Month, TERMINAL_HWND);
+     writeStringWND('Year: ', TERMINAL_HWND);  
+     writeIntlnWND(DateTime.Year, TERMINAL_HWND);    
+     writeStringWND('Century: ', TERMINAL_HWND);
+     writeIntlnWND(DateTime.Century, TERMINAL_HWND);  
+end;
+
 procedure registerCommand(command : pchar; method : TCommandMethod; description : pchar);
 var
     index : uint32;
@@ -359,6 +382,7 @@ begin
     registerCommand('CD', @change_dir, 'Change Directory test.');
     registerCommand('PATTERN', @cockwomble, 'Print an animated pattern to the screen.');
     registerCommand('TOGGLEWND1', @ToggleWND1, 'Toggle WND 1 Visibility.');
+    registerCommand('TIME', @printTime, 'PRINT TIME!');
     console.writestringln('TERMINAL: INIT END.');
 end;
 
