@@ -56,6 +56,7 @@ type
     PDouble = ^Double;
 
     Void = ^uInt32;
+    HWND = uint32;
 
     //Alternate Types
     UBit1 =  0..(1 shl 01) - 1;

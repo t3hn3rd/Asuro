@@ -333,7 +333,7 @@ var
 
 begin
     disable_cursor;
-    closeAllWindows;
+    console.forceQuitAll;
     if not BSOD_ENABLE then exit;
     console.setdefaultattribute(console.combinecolors($FFFF, $F800));
     console.clear;

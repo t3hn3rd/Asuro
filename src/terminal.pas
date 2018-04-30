@@ -22,9 +22,6 @@ uses
     asuro,
     serial;
 
-const
-    TERMINAL_HWND = 1;
-
 type
     PParamList = ^TParamList;
     TParamList = record
@@ -66,6 +63,9 @@ implementation
 
 uses
     RTC;
+
+var
+    TERMINAL_HWND : HWND = 1;
 
 function getTerminalHWND : uint32;
 begin
@@ -387,6 +387,7 @@ begin
     success:= success AND Serial.Send(COM1, uint8('R'), 1000);
     success:= success AND Serial.Send(COM1, uint8('L'), 1000);
     success:= success AND Serial.Send(COM1, uint8('D'), 1000);
+    success:= success AND Serial.Send(COM1, 10, 1000);
     success:= success AND Serial.Send(COM1, 13, 1000);
     if success then begin
         console.writestringlnWND('Send Success!', TERMINAL_HWND);
@@ -416,6 +417,8 @@ end;
 
 procedure run;
 begin
+    TERMINAL_HWND:= newWindow(20, 10, 90, 20, 'ASURO TERMINAL');
+    //newWindow(10, 10, 32, 32, 'MEMVIEW');
     keyboard.hook(@key_event);
     console.clearWND(TERMINAL_HWND);
     console.writestringWND('Asuro#', TERMINAL_HWND);

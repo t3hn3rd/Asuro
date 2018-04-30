@@ -36,15 +36,6 @@ type
                lYellow = $E,
                lWhite  = $F );
 
-    TEventType = ( EVENT_DRAW,
-                   EVENT_MOUSE_CLICK,
-                   EVENT_MOUSE_MOVE,
-                   EVENT_MOUSE_DOWN,
-                   EVENT_MOUSE_UP,
-                   EVENT_KEY_PRESSED,
-                   EVENT_CLOSE,
-                   EVENT_MINIMIZE );
-
 procedure init();
 procedure clear();
 procedure setdefaultattribute(attribute : uint32);
@@ -181,18 +172,14 @@ procedure redrawWindows;
 procedure toggleWNDVisible(WND : uint32);
 procedure setWNDVisible(WND : uint32; visible : boolean);
 procedure closeAllWindows;
-function  newWindow(x : uint32; y : uint32; Width : uint32; Height : uint32; Title : PChar) : HWND;
-function  registerEventHandler(WND : HWND; Event : TEventType; Handler : void) : boolean;
-procedure forceQuitAll;
-procedure closeWindow(WND : HWND);
 
 implementation
 
 uses
-    lmemorymanager, strings, keyboard, serial;
+    lmemorymanager, strings;
 
 const
-    MAX_WINDOWS = 255;
+    MAX_WINDOWS = 10;
     DefaultWND  = 0;
 
 type
@@ -223,26 +210,6 @@ type
       Y : Byte;
     end;
 
-    TDrawHook       = procedure();
-    TMouseClickHook = procedure(x : uint32; y : uint32; left : boolean);
-    TMouseMoveHook  = procedure(x : uint32; y : uint32);
-    TMouseDownHook  = procedure(x : uint32; y : uint32);
-    TMouseUpHook    = procedure(x : uint32; y : uint32);
-    TKeyPressedHook = procedure(info : TKeyInfo);
-    TCloseHook      = procedure();
-    TMinimizeHook   = procedure();
-
-    THooks = record
-        OnDraw       : TDrawHook;
-        OnMouseClick : TMouseClickHook;
-        OnMouseMove  : TMouseMoveHook;
-        OnMouseDown  : TMouseDownHook;
-        OnMouseUp    : TMouseUpHook;
-        OnKeyPressed : TKeyPressedHook;
-        OnClose      : TCloseHook;
-        OnMinimize   : TMinimizeHook;
-    end;
-
     TWindow = record
         visible     : boolean;
         buffer      : T2DVideoMemory;
@@ -253,12 +220,10 @@ type
         WND_H       : uint32;
         Cursor      : TCoord;
         WND_NAME    : PChar;
-        Hooks       : THooks;
-        Closed      : boolean;
     end;
     PWindow = ^TWindow;
 
-    TWindows = Array[0..MAX_WINDOWS-1] of PWindow;
+    TWindows = Array[0..MAX_WINDOWS-1] of TWindow;
 
     TWindowManager = record
         Windows     : TWindows;
@@ -280,102 +245,8 @@ var
    Ready              : Boolean = false;    //Is the unit ready for use?
    MouseDrawActive    : Boolean = false;    //Is the Mouse currently being updated?
    mouse_dirt         : TMouseDirt;         //Character Cell(s) the mouse occupies, these need to be rewritten on mouse move.
-   Window_Border      : TCharacter;
+   Window_Border      : TCharacter; 
    Default_Char       : TCharacter;
-
-function registerEventHandler(WND : HWND; Event : TEventType; Handler : void) : boolean;
-begin
-    registerEventHandler:= true;
-    if WindowManager.Windows[WND] <> nil then begin
-        case Event of
-            EVENT_DRAW        : WindowManager.Windows[WND]^.Hooks.OnDraw:=       TDrawHook(Handler);
-            EVENT_MOUSE_CLICK : WindowManager.Windows[WND]^.Hooks.OnMouseClick:= TMouseClickHook(Handler);
-            EVENT_MOUSE_MOVE  : WindowManager.Windows[WND]^.Hooks.OnMouseMove:=  TMouseMoveHook(Handler);
-            EVENT_MOUSE_DOWN  : WindowManager.Windows[WND]^.Hooks.OnMouseDown:=  TMouseDownHook(Handler);
-            EVENT_MOUSE_UP    : WindowManager.Windows[WND]^.Hooks.OnMouseUp:=    TMouseUpHook(Handler);
-            EVENT_KEY_PRESSED : WindowManager.Windows[WND]^.Hooks.OnKeyPressed:= TKeyPressedHook(Handler);
-            EVENT_CLOSE       : WindowManager.Windows[WND]^.Hooks.OnClose:=      TCloseHook(Handler);
-            EVENT_MINIMIZE    : WindowManager.Windows[WND]^.Hooks.OnMinimize:=   TMinimizeHook(Handler);
-            else registerEventHandler:= false;
-        end;
-    end else begin
-        registerEventHandler:= false;
-    end;
-end;
-
-function newWindow(x : uint32; y : uint32; Width : uint32; Height : uint32; Title : PChar) : HWND;
-var
-    idx : uint32;
-    WND : PWindow;
-
-begin
-    newWindow:= 0;
-    for idx:=1 to MAX_WINDOWS-1 do begin
-        if WindowManager.Windows[idx] = nil then begin
-            newWindow:= idx;
-            break;
-        end;
-    end;
-    if newWindow <> 0 then begin
-        WND:= PWindow(kalloc(sizeof(TWindow)));
-        WND^.WND_NAME:= StringCopy(Title);
-        WND^.WND_X:= x;
-        WND^.WND_Y:= y;
-        WND^.WND_W:= Width;
-        WND^.WND_H:= Height;
-        WND^.Cursor.x:= 0;
-        WND^.Cursor.y:= 0;
-        WND^.visible:= true;
-        WND^.Closed:= false;
-        WND^.Hooks.OnDraw       := nil;
-        WND^.Hooks.OnMouseClick := nil;
-        WND^.Hooks.OnMouseMove  := nil;
-        WND^.Hooks.OnMouseDown  := nil;
-        WND^.Hooks.OnMouseUp    := nil;
-        WND^.Hooks.OnKeyPressed := nil;
-        WND^.Hooks.OnClose      := nil;
-        WND^.Hooks.OnMinimize   := nil;
-        WindowManager.Windows[newWindow]:= WND;
-    end;
-end;
-
-procedure forceQuitAll;
-var
-    i : uint32;
-    WND : PWindow;
-
-begin
-    for i:=1 to MAX_WINDOWS-1 do begin
-        if WindowManager.Windows[i] <> nil then begin
-            WND:= WindowManager.Windows[i];
-            WindowManager.Windows[i]:= nil;
-            kfree(void(WND^.WND_NAME));
-            kfree(void(WND));
-        end;
-    end;
-end;
-
-
-procedure _closeWindow(WND : HWND);
-var
-    WNDCopy : PWindow;
-
-begin
-    if WindowManager.Windows[WND] <> nil then begin
-        WNDCopy:= WindowManager.Windows[WND];
-        WindowManager.Windows[WND]:= nil;
-        if WNDCopy^.Hooks.OnClose <> nil then WNDCopy^.Hooks.OnClose();
-        kfree(void(WNDCopy^.WND_NAME));
-        kfree(void(WNDCopy));
-    end;
-end;
-
-procedure closeWindow(WND : HWND);
-begin
-    if WindowManager.Windows[WND] <> nil then begin
-        WindowManager.Windows[WND]^.Closed:= True;
-    end;
-end;
 
 procedure closeAllWindows;
 var
@@ -389,16 +260,12 @@ end;
 
 procedure setWNDVisible(WND : uint32; visible : boolean);
 begin
-    if WindowManager.Windows[WND] <> nil then begin
-        WindowManager.Windows[WND]^.visible:= visible;
-    end;
+    WindowManager.Windows[WND].visible:= visible;
 end;
 
 procedure toggleWNDVisible(WND : uint32);
 begin
-    if WindowManager.Windows[DefaultWND] <> nil then begin
-        WindowManager.Windows[WND]^.visible:= not WindowManager.Windows[WND]^.visible;
-    end;
+    WindowManager.Windows[WND].visible:= not WindowManager.Windows[WND].visible;
 end;
 
 procedure drawMouse;
@@ -469,52 +336,46 @@ begin
         end;
     end;
     for w:=0 to MAX_WINDOWS-1 do begin
-        if WindowManager.Windows[w] <> nil then begin
+        If WindowManager.Windows[w].visible then begin
             if w <> 0 then begin
-                if WindowManager.Windows[w]^.Hooks.OnDraw <> nil then WindowManager.Windows[w]^.Hooks.OnDraw();
-            end;
-            If WindowManager.Windows[w]^.visible then begin
-                if w <> 0 then begin
-                    WXL:= WindowManager.Windows[w]^.WND_X - 1;
-                    WYL:= WindowManager.Windows[w]^.WND_Y - 1;
-                    WXR:= WindowManager.Windows[w]^.WND_X + WindowManager.Windows[w]^.WND_W + 1;
-                    WYR:= WindowManager.Windows[w]^.WND_Y + WindowManager.Windows[w]^.WND_H + 1;
-                    for y:=WYL to WYR do begin
-                        Console_Matrix[y][WXL]:= Window_Border;
-                        Console_Matrix[y][WXL-1]:= Window_Border;
-                        Console_Matrix[y][WXR]:= Window_Border;
-                        Console_Matrix[y][WXR+1]:= Window_Border;
-                        Console_Real[y][WXL].Character:= char(3);
-                        Console_Real[y][WXL-1].Character:= char(3);
-                        Console_Real[y][WXR].Character:= char(3);
-                        Console_Real[y][WXR+1].Character:= char(3);
-                    end;
-                    STRC:= 0;
-                    MIDP:= (WXR + WXL) div 2;
-                    STARTP:= MIDP - (StringSize(WindowManager.Windows[w]^.WND_NAME) div 2) - 1;
-                    for x:=WXL to WXR do begin
-                        Console_Matrix[WYL][x]:= Window_Border;
-                        if (x >= STARTP) and (STRC < StringSize(WindowManager.Windows[w]^.WND_NAME)) then begin
-                            Console_Matrix[WYL][x].character:= WindowManager.Windows[w]^.WND_NAME[STRC];
-                            inc(STRC);
-                        end;
-                        if x = WXR then begin
-                            Console_Matrix[WYL][x].character:= 'x';
-                        end;
-                        Console_Matrix[WYR][x]:= Window_Border;
-                        Console_Real[WYL][x].Character:= char(3);
-                        Console_Real[WYR][x].Character:= char(3);
-                    end;
+                WXL:= WindowManager.Windows[w].WND_X - 1;
+                WYL:= WindowManager.Windows[w].WND_Y - 1;
+                WXR:= WindowManager.Windows[w].WND_X + WindowManager.Windows[w].WND_W + 1;
+                WYR:= WindowManager.Windows[w].WND_Y + WindowManager.Windows[w].WND_H + 1;
+                for y:=WYL to WYR do begin
+                    Console_Matrix[y][WXL]:= Window_Border;
+                    Console_Matrix[y][WXL-1]:= Window_Border;
+                    Console_Matrix[y][WXR]:= Window_Border;
+                    Console_Matrix[y][WXR+1]:= Window_Border;
+                    Console_Real[y][WXL].Character:= char(3);
+                    Console_Real[y][WXL-1].Character:= char(3);
+                    Console_Real[y][WXR].Character:= char(3);
+                    Console_Real[y][WXR+1].Character:= char(3);
                 end;
-                for y:=WindowManager.Windows[w]^.WND_Y to WindowManager.Windows[w]^.WND_Y + WindowManager.Windows[w]^.WND_H do begin
-                    if y > 63 then break;
-                    for x:=WindowManager.Windows[w]^.WND_X to WindowManager.Windows[w]^.WND_X + WindowManager.Windows[w]^.WND_W do begin
-                        if x > 159 then break;
-                        Console_Matrix[y][x]:= WindowManager.Windows[w]^.buffer[y - WindowManager.Windows[w]^.WND_Y][x - WindowManager.Windows[w]^.WND_X];
+                STRC:= 0;
+                MIDP:= (WXR + WXL) div 2;
+                STARTP:= MIDP - (StringSize(WindowManager.Windows[w].WND_NAME) div 2) - 1;
+                for x:=WXL to WXR do begin
+                    Console_Matrix[WYL][x]:= Window_Border;
+                    if (x >= STARTP) and (STRC < StringSize(WindowManager.Windows[w].WND_NAME)) then begin
+                        Console_Matrix[WYL][x].character:= WindowManager.Windows[w].WND_NAME[STRC];
+                        inc(STRC);
                     end;
+                    if x = WXR then begin
+                        Console_Matrix[WYL][x].character:= 'x';
+                    end;
+                    Console_Matrix[WYR][x]:= Window_Border;
+                    Console_Real[WYL][x].Character:= char(3);
+                    Console_Real[WYR][x].Character:= char(3);
                 end;
             end;
-            if WindowManager.Windows[w]^.Closed then _closeWindow(w);
+            for y:=WindowManager.Windows[w].WND_Y to WindowManager.Windows[w].WND_Y + WindowManager.Windows[w].WND_H do begin
+                if y > 63 then break;
+                for x:=WindowManager.Windows[w].WND_X to WindowManager.Windows[w].WND_X + WindowManager.Windows[w].WND_W do begin
+                    if x > 159 then break;
+                    Console_Matrix[y][x]:= WindowManager.Windows[w].buffer[y - WindowManager.Windows[w].WND_Y][x - WindowManager.Windows[w].WND_X];
+                end;
+            end;
         end;
     end;
     redrawMatrix;
@@ -523,7 +384,6 @@ end;
 procedure initWindows;
 var
     x, y, w : uint32;
-    WND : PWindow;
 
 begin
     Default_Char.Character:= ' ';
@@ -534,21 +394,28 @@ begin
     Window_Border.Attributes:= $0000FFFF;
     Window_Border.visible:= true;
 
-    For w:=0 to MAX_WINDOWS-1 do begin
-        WindowManager.Windows[w]:= nil;
+    for w:=0 to MAX_WINDOWS-1 do begin
+        WindowManager.Windows[w].visible:= false;
+        for y:=0 to 63 do begin
+            for x:=0 to 159 do begin
+                WindowManager.Windows[w].Buffer[y][x]:= Default_Char;
+                Console_Real[y][x].character:= char(1);
+            end;
+        end;
     end;
 
-    WND:= PWindow(kalloc(sizeof(TWindow)));
-    WND^.WND_NAME:= 'Asuro';
-    WND^.WND_X:= 0;
-    WND^.WND_Y:= 0;
-    WND^.WND_W:= 159;
-    WND^.WND_H:= 63;
-    WND^.Cursor.x:= 0;
-    WND^.Cursor.y:= 0;
-    WND^.visible:= true;
-    WND^.Closed:= false;
-    WindowManager.Windows[0]:= WND;
+    WindowManager.Windows[0].visible:= true;
+    WindowManager.Windows[0].WND_X:= 0;
+    WindowManager.Windows[0].WND_Y:= 0;
+    WindowManager.Windows[0].WND_H:= 63;
+    WindowManager.Windows[0].WND_W:= 159;
+
+    WindowManager.Windows[1].visible:= false;
+    WindowManager.Windows[1].WND_X:= 20;
+    WindowManager.Windows[1].WND_W:= 90;
+    WindowManager.Windows[1].WND_Y:= 10;
+    WindowManager.Windows[1].WND_H:= 20;
+    WindowManager.Windows[1].WND_NAME:= 'ASURO TERMINAL';
 end;
 
 function getPixel(x : uint32; y : uint32) : uint16;
@@ -727,21 +594,19 @@ var
    x,y: Byte;
 
 begin
-     if WindowManager.Windows[DefaultWND] <> nil then begin
-        for y:=0 to 63 do begin
-            for x:=0 to 159 do begin
-                WindowManager.Windows[DefaultWND]^.Buffer[y][x].Character:= ' ';
-                WindowManager.Windows[DefaultWND]^.Buffer[y][x].Attributes:= Console_Properties.Default_Attribute;
-                WindowManager.Windows[DefaultWND]^.row_dirty[y]:= true;
-                //Console_Matrix[y][x].Character:= ' ';
-                //Console_Matrix[y][x].Attributes:= Console_Properties.Default_Attribute;
-                //OutputChar(Console_Matrix[y][x].Character, x, y, Console_Matrix[y][x].Attributes SHR 16, Console_Matrix[y][x].Attributes AND $FFFF);
-            end;
-        end;
-        WindowManager.Windows[DefaultWND]^.Cursor.X:= 0;
-        WindowManager.Windows[DefaultWND]^.Cursor.Y:= 0;
-        //redrawWindows;
+     for y:=0 to 63 do begin
+         for x:=0 to 159 do begin
+	        WindowManager.Windows[DefaultWND].Buffer[y][x].Character:= ' ';
+            WindowManager.Windows[DefaultWND].Buffer[y][x].Attributes:= Console_Properties.Default_Attribute;
+            WindowManager.Windows[DefaultWND].row_dirty[y]:= true;
+            //Console_Matrix[y][x].Character:= ' ';
+	        //Console_Matrix[y][x].Attributes:= Console_Properties.Default_Attribute;
+            //OutputChar(Console_Matrix[y][x].Character, x, y, Console_Matrix[y][x].Attributes SHR 16, Console_Matrix[y][x].Attributes AND $FFFF);
+	    end;
      end;
+     WindowManager.Windows[DefaultWND].Cursor.X:= 0;
+     WindowManager.Windows[DefaultWND].Cursor.Y:= 0;
+     redrawWindows;
      //Console_Cursor.X:= 0;
      //Console_Cursor.Y:= 0;
 end;
@@ -881,15 +746,13 @@ end;
 
 procedure writecharex(character: char; attributes: uint32); [public, alias: 'console_writecharex'];
 begin
-    if WindowManager.Windows[DefaultWND] <> nil then begin
-        WindowManager.Windows[DefaultWND]^.Buffer[WindowManager.Windows[DefaultWND]^.Cursor.Y][WindowManager.Windows[DefaultWND]^.Cursor.X].Character:= character;
-        WindowManager.Windows[DefaultWND]^.Buffer[WindowManager.Windows[DefaultWND]^.Cursor.Y][WindowManager.Windows[DefaultWND]^.Cursor.X].Attributes:= attributes;
-        //outputChar(character, Console_Cursor.X, Console_Cursor.Y, attributes SHR 16, attributes AND $FFFF);
-        //Console_Matrix[Console_Cursor.Y][Console_Cursor.X].Character:= character;
-        //Console_Matrix[Console_Cursor.Y][Console_Cursor.X].Attributes:= attributes;
-        WindowManager.Windows[DefaultWND]^.row_dirty[WindowManager.Windows[DefaultWND]^.Cursor.Y]:= true;
-        console._safeincrement_x();
-    end;
+    WindowManager.Windows[DefaultWND].Buffer[WindowManager.Windows[DefaultWND].Cursor.Y][WindowManager.Windows[DefaultWND].Cursor.X].Character:= character;
+    WindowManager.Windows[DefaultWND].Buffer[WindowManager.Windows[DefaultWND].Cursor.Y][WindowManager.Windows[DefaultWND].Cursor.X].Attributes:= attributes;
+    //outputChar(character, Console_Cursor.X, Console_Cursor.Y, attributes SHR 16, attributes AND $FFFF);
+    //Console_Matrix[Console_Cursor.Y][Console_Cursor.X].Character:= character;
+    //Console_Matrix[Console_Cursor.Y][Console_Cursor.X].Attributes:= attributes;
+    WindowManager.Windows[DefaultWND].row_dirty[WindowManager.Windows[DefaultWND].Cursor.Y]:= true;
+    console._safeincrement_x();
 end;
 
 procedure writehexpair(b : uint8);
@@ -1104,21 +967,17 @@ end;
 
 procedure backspace;
 begin
-     if WindowManager.Windows[DefaultWND] <> nil then begin
-        Dec(WindowManager.Windows[DefaultWND]^.Cursor.X);
-        writechar(' ');
-        Dec(WindowManager.Windows[DefaultWND]^.Cursor.X);
-        _update_cursor();
-     end;
+     Dec(WindowManager.Windows[DefaultWND].Cursor.X);
+     writechar(' ');
+     Dec(WindowManager.Windows[DefaultWND].Cursor.X);
+     _update_cursor();
 end;
 
 procedure _increment_x(); [public, alias: '_console_increment_x'];
 begin
-     if WindowManager.Windows[DefaultWND] <> nil then begin
-        WindowManager.Windows[DefaultWND]^.Cursor.X:= WindowManager.Windows[DefaultWND]^.Cursor.X+1;
-        If WindowManager.Windows[DefaultWND]^.Cursor.X > WindowManager.Windows[DefaultWND]^.WND_W-1 then WindowManager.Windows[DefaultWND]^.Cursor.X:= 0;
-        console._update_cursor;
-     end;
+     WindowManager.Windows[DefaultWND].Cursor.X:= WindowManager.Windows[DefaultWND].Cursor.X+1;
+     If WindowManager.Windows[DefaultWND].Cursor.X > WindowManager.Windows[DefaultWND].WND_W-1 then WindowManager.Windows[DefaultWND].Cursor.X:= 0;
+     console._update_cursor;
      //Console_Cursor.X:= Console_Cursor.X+1;
      //If Console_Cursor.X > 159 then Console_Cursor.X:= 0;
      //console._update_cursor;
@@ -1126,14 +985,12 @@ end;
 
 procedure _increment_y(); [public, alias: '_console_increment_y'];
 begin
-     if WindowManager.Windows[DefaultWND] <> nil then begin
-        WindowManager.Windows[DefaultWND]^.Cursor.Y:= WindowManager.Windows[DefaultWND]^.Cursor.Y+1;
-        If WindowManager.Windows[DefaultWND]^.Cursor.Y > WindowManager.Windows[DefaultWND]^.WND_H-1 then begin
-            console._newline();
-            WindowManager.Windows[DefaultWND]^.Cursor.Y:= WindowManager.Windows[DefaultWND]^.WND_H-1;
-        end;
-        console._update_cursor;
+     WindowManager.Windows[DefaultWND].Cursor.Y:= WindowManager.Windows[DefaultWND].Cursor.Y+1;
+     If WindowManager.Windows[DefaultWND].Cursor.Y > WindowManager.Windows[DefaultWND].WND_H-1 then begin
+        console._newline();
+        WindowManager.Windows[DefaultWND].Cursor.Y:= WindowManager.Windows[DefaultWND].WND_H-1;
      end;
+     console._update_cursor;
      //Console_Cursor.Y:= Console_Cursor.Y+1;
      //If Console_Cursor.Y > 63 then begin
      //        console._newline();
@@ -1144,13 +1001,11 @@ end;
 
 procedure _safeincrement_x(); [public, alias: '_console_safeincrement_x'];
 begin
-     if WindowManager.Windows[DefaultWND] <> nil then begin
-        WindowManager.Windows[DefaultWND]^.Cursor.X:= WindowManager.Windows[DefaultWND]^.Cursor.X+1;
-        if WindowManager.Windows[DefaultWND]^.Cursor.X > WindowManager.Windows[DefaultWND]^.WND_W-1 then begin
-            console._safeincrement_y();
-        end;
-        console._update_cursor;
+     WindowManager.Windows[DefaultWND].Cursor.X:= WindowManager.Windows[DefaultWND].Cursor.X+1;
+     if WindowManager.Windows[DefaultWND].Cursor.X > WindowManager.Windows[DefaultWND].WND_W-1 then begin
+        console._safeincrement_y();
      end;
+     console._update_cursor;
      //Console_Cursor.X:= Console_Cursor.X+1;
      //If Console_Cursor.X > 159 then begin
      //   console._safeincrement_y();
@@ -1160,15 +1015,13 @@ end;
 
 procedure _safeincrement_y(); [public, alias: '_console_safeincrement_y'];
 begin
-     if WindowManager.Windows[DefaultWND] <> nil then begin
-        WindowManager.Windows[DefaultWND]^.Cursor.Y:= WindowManager.Windows[DefaultWND]^.Cursor.Y+1;
-        if WindowManager.Windows[DefaultWND]^.Cursor.Y > WindowManager.Windows[DefaultWND]^.WND_H-1 then begin
-            console._newline();
-            WindowManager.Windows[DefaultWND]^.Cursor.Y:= WindowManager.Windows[DefaultWND]^.WND_H-1;
-        end;
-        WindowManager.Windows[DefaultWND]^.Cursor.X:= 0;
-        console._update_cursor;
+     WindowManager.Windows[DefaultWND].Cursor.Y:= WindowManager.Windows[DefaultWND].Cursor.Y+1;
+     if WindowManager.Windows[DefaultWND].Cursor.Y > WindowManager.Windows[DefaultWND].WND_H-1 then begin
+        console._newline();
+        WindowManager.Windows[DefaultWND].Cursor.Y:= WindowManager.Windows[DefaultWND].WND_H-1;
      end;
+     WindowManager.Windows[DefaultWND].Cursor.X:= 0;
+     console._update_cursor;
      //Console_Cursor.Y:= Console_Cursor.Y+1;
      //If Console_Cursor.Y > 63 then begin
      //        console._newline();
@@ -1183,29 +1036,27 @@ var
    x, y : byte;
 
 begin
-     if WindowManager.Windows[DefaultWND] <> nil then begin
-        if WindowManager.Windows[DefaultWND]^.WND_W = 0 then exit;
-        if WindowManager.Windows[DefaultWND]^.WND_H = 0 then exit;
-        for x:=0 to WindowManager.Windows[DefaultWND]^.WND_W do begin
-            for y:=0 to WindowManager.Windows[DefaultWND]^.WND_H-1 do begin
-                WindowManager.Windows[DefaultWND]^.buffer[y][x]:= WindowManager.Windows[DefaultWND]^.buffer[y+1][x];
-                WindowManager.Windows[DefaultWND]^.row_dirty[y]:= true;
-                //Console_Matrix[y][x]:= Console_Matrix[y+1][x];
-            end;
-        end;
-        for x:=0 to WindowManager.Windows[DefaultWND]^.WND_W do begin
-            WindowManager.Windows[DefaultWND]^.buffer[WindowManager.Windows[DefaultWND]^.WND_H-1][x].Character:= ' ';
-            WindowManager.Windows[DefaultWND]^.buffer[WindowManager.Windows[DefaultWND]^.WND_H-1][x].Attributes:= $FFFF0000;
-            //Console_Matrix[63][x].Character:= ' ';
-            //Console_Matrix[63][x].Attributes:= $FFFF0000;
-        end;
-        //for y:=0 to 63 do begin
-        //   for x:=0 to 159 do begin
-        //       OutputChar(Console_Matrix[y][x].Character, x, y, Console_Matrix[y][x].Attributes SHR 16, Console_Matrix[y][x].Attributes AND $FFFF);
-        //   end;
-        //end;
-        console._update_cursor;
+     if WindowManager.Windows[DefaultWND].WND_W = 0 then exit;
+     if WindowManager.Windows[DefaultWND].WND_H = 0 then exit;
+     for x:=0 to WindowManager.Windows[DefaultWND].WND_W do begin
+         for y:=0 to WindowManager.Windows[DefaultWND].WND_H-1 do begin
+             WindowManager.Windows[DefaultWND].buffer[y][x]:= WindowManager.Windows[DefaultWND].buffer[y+1][x];
+             WindowManager.Windows[DefaultWND].row_dirty[y]:= true;
+             //Console_Matrix[y][x]:= Console_Matrix[y+1][x];
+         end;
      end;
+     for x:=0 to WindowManager.Windows[DefaultWND].WND_W do begin
+         WindowManager.Windows[DefaultWND].buffer[WindowManager.Windows[DefaultWND].WND_H-1][x].Character:= ' ';
+         WindowManager.Windows[DefaultWND].buffer[WindowManager.Windows[DefaultWND].WND_H-1][x].Attributes:= $FFFF0000;
+         //Console_Matrix[63][x].Character:= ' ';
+         //Console_Matrix[63][x].Attributes:= $FFFF0000;
+     end;
+     //for y:=0 to 63 do begin
+     //   for x:=0 to 159 do begin
+     //       OutputChar(Console_Matrix[y][x].Character, x, y, Console_Matrix[y][x].Attributes SHR 16, Console_Matrix[y][x].Attributes AND $FFFF);
+     //   end;
+     //end;
+     console._update_cursor;
 end;
 
 { WND Specific Console Draw Functions }
@@ -1215,21 +1066,19 @@ var
    x,y: Byte;
 
 begin
-     if WindowManager.Windows[WND] <> nil then begin
-        for y:=0 to 63 do begin
-            for x:=0 to 159 do begin
-                WindowManager.Windows[WND]^.Buffer[y][x].Character:= ' ';
-                WindowManager.Windows[WND]^.Buffer[y][x].Attributes:= Console_Properties.Default_Attribute;
-                WindowManager.Windows[WND]^.row_dirty[y]:= true;
-                //Console_Matrix[y][x].Character:= ' ';
-                //Console_Matrix[y][x].Attributes:= Console_Properties.Default_Attribute;
-                //OutputChar(Console_Matrix[y][x].Character, x, y, Console_Matrix[y][x].Attributes SHR 16, Console_Matrix[y][x].Attributes AND $FFFF);
-            end;
-        end;
-        WindowManager.Windows[WND]^.Cursor.X:= 0;
-        WindowManager.Windows[WND]^.Cursor.Y:= 0;
-        //redrawWindows;
+     for y:=0 to 63 do begin
+         for x:=0 to 159 do begin
+	        WindowManager.Windows[WND].Buffer[y][x].Character:= ' ';
+            WindowManager.Windows[WND].Buffer[y][x].Attributes:= Console_Properties.Default_Attribute;
+            WindowManager.Windows[WND].row_dirty[y]:= true;
+            //Console_Matrix[y][x].Character:= ' ';
+	        //Console_Matrix[y][x].Attributes:= Console_Properties.Default_Attribute;
+            //OutputChar(Console_Matrix[y][x].Character, x, y, Console_Matrix[y][x].Attributes SHR 16, Console_Matrix[y][x].Attributes AND $FFFF);
+	    end;
      end;
+     WindowManager.Windows[WND].Cursor.X:= 0;
+     WindowManager.Windows[WND].Cursor.Y:= 0;
+     redrawWindows;
      //Console_Cursor.X:= 0;
      //Console_Cursor.Y:= 0;
 end;
@@ -1369,15 +1218,13 @@ end;
 
 procedure writecharexWND(character: char; attributes: uint32; WND : uint32); 
 begin
-    if WindowManager.Windows[WND] <> nil then begin
-        WindowManager.Windows[WND]^.Buffer[WindowManager.Windows[WND]^.Cursor.Y][WindowManager.Windows[WND]^.Cursor.X].Character:= character;
-        WindowManager.Windows[WND]^.Buffer[WindowManager.Windows[WND]^.Cursor.Y][WindowManager.Windows[WND]^.Cursor.X].Attributes:= attributes;
-        //outputChar(character, Console_Cursor.X, Console_Cursor.Y, attributes SHR 16, attributes AND $FFFF);
-        //Console_Matrix[Console_Cursor.Y][Console_Cursor.X].Character:= character;
-        //Console_Matrix[Console_Cursor.Y][Console_Cursor.X].Attributes:= attributes;
-        WindowManager.Windows[WND]^.row_dirty[WindowManager.Windows[WND]^.Cursor.Y]:= true;
-        console._safeincrement_x_WND(WND);
-    end;
+    WindowManager.Windows[WND].Buffer[WindowManager.Windows[WND].Cursor.Y][WindowManager.Windows[WND].Cursor.X].Character:= character;
+    WindowManager.Windows[WND].Buffer[WindowManager.Windows[WND].Cursor.Y][WindowManager.Windows[WND].Cursor.X].Attributes:= attributes;
+    //outputChar(character, Console_Cursor.X, Console_Cursor.Y, attributes SHR 16, attributes AND $FFFF);
+    //Console_Matrix[Console_Cursor.Y][Console_Cursor.X].Character:= character;
+    //Console_Matrix[Console_Cursor.Y][Console_Cursor.X].Attributes:= attributes;
+    WindowManager.Windows[WND].row_dirty[WindowManager.Windows[WND].Cursor.Y]:= true;
+    console._safeincrement_x_WND(WND);
 end;
 
 procedure writehexpairWND(b : uint8; WND : uint32);
@@ -1570,21 +1417,17 @@ end;
 
 procedure backspaceWND(WND : uint32);
 begin
-     if WindowManager.Windows[WND] <> nil then begin
-        Dec(WindowManager.Windows[WND]^.Cursor.X);
-        writecharWND(' ', WND);
-        Dec(WindowManager.Windows[WND]^.Cursor.X);
-        _update_cursor();
-     end;
+     Dec(WindowManager.Windows[WND].Cursor.X);
+     writecharWND(' ', WND);
+     Dec(WindowManager.Windows[WND].Cursor.X);
+     _update_cursor();
 end;
 
 procedure _increment_x_WND(WND : uint32);
 begin
-     if WindowManager.Windows[WND] <> nil then begin
-        WindowManager.Windows[WND]^.Cursor.X:= WindowManager.Windows[WND]^.Cursor.X+1;
-        If WindowManager.Windows[WND]^.Cursor.X > WindowManager.Windows[WND]^.WND_W-1 then WindowManager.Windows[WND]^.Cursor.X:= 0;
-        console._update_cursor;
-     end;
+     WindowManager.Windows[WND].Cursor.X:= WindowManager.Windows[WND].Cursor.X+1;
+     If WindowManager.Windows[WND].Cursor.X > WindowManager.Windows[WND].WND_W-1 then WindowManager.Windows[WND].Cursor.X:= 0;
+     console._update_cursor;
      //Console_Cursor.X:= Console_Cursor.X+1;
      //If Console_Cursor.X > 159 then Console_Cursor.X:= 0;
      //console._update_cursor;
@@ -1592,14 +1435,12 @@ end;
 
 procedure _increment_y_WND(WND : uint32);
 begin
-     if WindowManager.Windows[WND] <> nil then begin
-        WindowManager.Windows[WND]^.Cursor.Y:= WindowManager.Windows[WND]^.Cursor.Y+1;
-        If WindowManager.Windows[WND]^.Cursor.Y > WindowManager.Windows[WND]^.WND_H-1 then begin
-            console._newlineWND(WND);
-            WindowManager.Windows[WND]^.Cursor.Y:= WindowManager.Windows[WND]^.WND_H-1;
-        end;
-        console._update_cursor;
+     WindowManager.Windows[WND].Cursor.Y:= WindowManager.Windows[WND].Cursor.Y+1;
+     If WindowManager.Windows[WND].Cursor.Y > WindowManager.Windows[WND].WND_H-1 then begin
+        console._newlineWND(WND);
+        WindowManager.Windows[WND].Cursor.Y:= WindowManager.Windows[WND].WND_H-1;
      end;
+     console._update_cursor;
      //Console_Cursor.Y:= Console_Cursor.Y+1;
      //If Console_Cursor.Y > 63 then begin
      //        console._newline();
@@ -1610,13 +1451,11 @@ end;
 
 procedure _safeincrement_x_WND(WND : uint32);
 begin
-     if WindowManager.Windows[WND] <> nil then begin
-        WindowManager.Windows[WND]^.Cursor.X:= WindowManager.Windows[WND]^.Cursor.X+1;
-        if WindowManager.Windows[WND]^.Cursor.X > WindowManager.Windows[WND]^.WND_W-1 then begin
-            console._safeincrement_y_WND(WND);
-        end;
-        console._update_cursor;
+     WindowManager.Windows[WND].Cursor.X:= WindowManager.Windows[WND].Cursor.X+1;
+     if WindowManager.Windows[WND].Cursor.X > WindowManager.Windows[WND].WND_W-1 then begin
+        console._safeincrement_y_WND(WND);
      end;
+     console._update_cursor;
      //Console_Cursor.X:= Console_Cursor.X+1;
      //If Console_Cursor.X > 159 then begin
      //   console._safeincrement_y();
@@ -1626,15 +1465,13 @@ end;
 
 procedure _safeincrement_y_WND(WND : uint32);
 begin
-     if WindowManager.Windows[WND] <> nil then begin
-        WindowManager.Windows[WND]^.Cursor.Y:= WindowManager.Windows[WND]^.Cursor.Y+1;
-        if WindowManager.Windows[WND]^.Cursor.Y > WindowManager.Windows[WND]^.WND_H-1 then begin
-            console._newlineWND(WND);
-            WindowManager.Windows[WND]^.Cursor.Y:= WindowManager.Windows[WND]^.WND_H-1;
-        end;
-        WindowManager.Windows[WND]^.Cursor.X:= 0;
-        console._update_cursor;
+     WindowManager.Windows[WND].Cursor.Y:= WindowManager.Windows[WND].Cursor.Y+1;
+     if WindowManager.Windows[WND].Cursor.Y > WindowManager.Windows[WND].WND_H-1 then begin
+        console._newlineWND(WND);
+        WindowManager.Windows[WND].Cursor.Y:= WindowManager.Windows[WND].WND_H-1;
      end;
+     WindowManager.Windows[WND].Cursor.X:= 0;
+     console._update_cursor;
      //Console_Cursor.Y:= Console_Cursor.Y+1;
      //If Console_Cursor.Y > 63 then begin
      //        console._newline();
@@ -1649,29 +1486,27 @@ var
    x, y : byte;
 
 begin
-     if WindowManager.Windows[WND] <> nil then begin
-        if WindowManager.Windows[WND]^.WND_W = 0 then exit;
-        if WindowManager.Windows[WND]^.WND_H = 0 then exit;
-        for x:=0 to WindowManager.Windows[WND]^.WND_W do begin
-            for y:=0 to WindowManager.Windows[WND]^.WND_H-1 do begin
-                WindowManager.Windows[WND]^.buffer[y][x]:= WindowManager.Windows[WND]^.buffer[y+1][x];
-                WindowManager.Windows[WND]^.row_dirty[y]:= true;
-                //Console_Matrix[y][x]:= Console_Matrix[y+1][x];
-            end;
-        end;
-        for x:=0 to WindowManager.Windows[WND]^.WND_W do begin
-            WindowManager.Windows[WND]^.buffer[WindowManager.Windows[WND]^.WND_H-1][x].Character:= ' ';
-            WindowManager.Windows[WND]^.buffer[WindowManager.Windows[WND]^.WND_H-1][x].Attributes:= $FFFF0000;
-            //Console_Matrix[63][x].Character:= ' ';
-            //Console_Matrix[63][x].Attributes:= $FFFF0000;
-        end;
-        //for y:=0 to 63 do begin
-        //   for x:=0 to 159 do begin
-        //       OutputChar(Console_Matrix[y][x].Character, x, y, Console_Matrix[y][x].Attributes SHR 16, Console_Matrix[y][x].Attributes AND $FFFF);
-        //   end;
-        //end;
-        console._update_cursor;
+     if WindowManager.Windows[WND].WND_W = 0 then exit;
+     if WindowManager.Windows[WND].WND_H = 0 then exit;
+     for x:=0 to WindowManager.Windows[WND].WND_W do begin
+         for y:=0 to WindowManager.Windows[WND].WND_H-1 do begin
+             WindowManager.Windows[WND].buffer[y][x]:= WindowManager.Windows[WND].buffer[y+1][x];
+             WindowManager.Windows[WND].row_dirty[y]:= true;
+             //Console_Matrix[y][x]:= Console_Matrix[y+1][x];
+         end;
      end;
+     for x:=0 to WindowManager.Windows[WND].WND_W do begin
+         WindowManager.Windows[WND].buffer[WindowManager.Windows[WND].WND_H-1][x].Character:= ' ';
+         WindowManager.Windows[WND].buffer[WindowManager.Windows[WND].WND_H-1][x].Attributes:= $FFFF0000;
+         //Console_Matrix[63][x].Character:= ' ';
+         //Console_Matrix[63][x].Attributes:= $FFFF0000;
+     end;
+     //for y:=0 to 63 do begin
+     //   for x:=0 to 159 do begin
+     //       OutputChar(Console_Matrix[y][x].Character, x, y, Console_Matrix[y][x].Attributes SHR 16, Console_Matrix[y][x].Attributes AND $FFFF);
+     //   end;
+     //end;
+     console._update_cursor;
 end;
 
 end.

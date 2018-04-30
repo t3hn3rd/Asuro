@@ -45,7 +45,8 @@ uses
      faults,
      fonts,
      RTC,
-     serial;
+     serial,
+     memview;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
@@ -209,6 +210,9 @@ begin
      console.writestringln('');
      console.writestringln('Press any key to boot in to Asuro Terminal...');
      tracer.pop_trace;
+
+     { Init Progs }
+     memview.init();
 
      tracer.push_trace('kmain.KEYHOOK');
      keyboard.hook(@temphook);
