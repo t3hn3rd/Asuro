@@ -192,25 +192,33 @@ type
 var
     dirs : PLinkedListBase;
     dir : pchar;
+    dirp : PDirectory;
     device : PStorage_Device;
     volume : PStorage_Volume;
     error : uint32;
     i : uint32;
 begin
-    if paramCount(params) > 0 then begin
-        dir := getParam(0, params);
+    push_trace('ls');
+
+    //if paramCount(params) > 0 then begin
+        //dir := getParam(0, params);
+
         device:= PStorage_Device(LL_Get(storageDevices, 0));
+
         volume:= PStorage_Volume(LL_Get(device^.volumes, 0));
 
-        error:= volume^.filesystem^.readDirCallback(volume, dir, dirs);
+        dirs:= LL_New(sizeof(TDirectory));
 
-        if error <> 1 then console.writestringln('ERROR');
+        error:= volume^.filesystem^.readDirCallback(volume, '', dirs);
 
-        for i:=0 to LL_Size(dirs) - 1 do begin
+        //if error <> 1 then console.writestringln('ERROR');
+        for i:=2 to LL_Size(dirs) - 1 do begin
             console.writestring('    ');
-            console.writestringln(pchar( PDirectory(LL_Get(dirs, 0))^.filename ));
+            dirp:= PDirectory(LL_Get(dirs, i));
+            console.writestringlnWND(pchar(dirp^.fileName), getTerminalHWND);
         end;
-    end;
+        pop_trace();
+    //end;
 end;
 
 procedure volume_command(params : PParamList);
