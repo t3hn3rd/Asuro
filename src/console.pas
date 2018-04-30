@@ -210,6 +210,8 @@ type
     TVideoMemory = Array[0..1999] of TCharacter;
     PVideoMemory = ^TVideoMemory;
 
+    TMask = Array[0..63] of Array[0..159] of uint32;
+
     T2DVideoMemory = Array[0..63] of Array[0..159] of TCharacter;
     P2DVideoMemory = ^T2DVideoMemory;
 
@@ -283,6 +285,7 @@ var
    mouse_dirt         : TMouseDirt;         //Character Cell(s) the mouse occupies, these need to be rewritten on mouse move.
    Window_Border      : TCharacter;
    Default_Char       : TCharacter;
+   WindowTitleMask    : TMask;
 
 function registerEventHandler(WND : HWND; Event : TEventType; Handler : void) : boolean;
 begin
@@ -403,6 +406,16 @@ begin
     end;
 end;
 
+function MouseYToTile(Y : uint32) : uint32;
+begin
+    MouseYToTile:= Y div 16;
+end;
+
+function MouseXToTile(X : uint32) : uint32;
+begin
+    MouseXToTile:= X div 8;
+end;
+
 procedure drawMouse;
 var
     x, y       : uint32;
@@ -496,6 +509,7 @@ begin
                     STARTP:= MIDP - (StringSize(WindowManager.Windows[w]^.WND_NAME) div 2) - 1;
                     for x:=WXL to WXR do begin
                         Console_Matrix[WYL][x]:= Window_Border;
+                        WindowTitleMask[WYL][x]:= w;
                         if (x >= STARTP) and (STRC < StringSize(WindowManager.Windows[w]^.WND_NAME)) then begin
                             Console_Matrix[WYL][x].character:= WindowManager.Windows[w]^.WND_NAME[STRC];
                             inc(STRC);
@@ -513,10 +527,15 @@ begin
                     for x:=WindowManager.Windows[w]^.WND_X to WindowManager.Windows[w]^.WND_X + WindowManager.Windows[w]^.WND_W do begin
                         if x > 159 then break;
                         Console_Matrix[y][x]:= WindowManager.Windows[w]^.buffer[y - WindowManager.Windows[w]^.WND_Y][x - WindowManager.Windows[w]^.WND_X];
+                        WindowTitleMask[y][x]:= 0;
                     end;
                 end;
             end;
             if WindowManager.Windows[w]^.Closed then _closeWindow(w);
+            if WindowTitleMask[MouseYToTile(WindowManager.MousePrev.Y)][MouseXToTile(WindowManager.MousePrev.X)] <> 0 then begin
+                writestring('Mouse Window: ');
+                writeintln(WindowTitleMask[MouseYToTile(WindowManager.MousePrev.Y)][MouseXToTile(WindowManager.MousePrev.X)]);
+            end;
         end;
     end;
     redrawMatrix;
