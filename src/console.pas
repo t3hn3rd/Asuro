@@ -189,7 +189,7 @@ procedure closeWindow(WND : HWND);
 implementation
 
 uses
-    lmemorymanager, strings, keyboard, serial;
+    lmemorymanager, strings, keyboard, serial, terminal;
 
 const
     MAX_WINDOWS = 255;
@@ -255,6 +255,7 @@ type
         WND_NAME    : PChar;
         Hooks       : THooks;
         Closed      : boolean;
+        Border      : boolean;
     end;
     PWindow = ^TWindow;
 
@@ -327,6 +328,7 @@ begin
         WND^.Cursor.y:= 0;
         WND^.visible:= true;
         WND^.Closed:= false;
+        WND^.Border:= true;
         WND^.Hooks.OnDraw       := nil;
         WND^.Hooks.OnMouseClick := nil;
         WND^.Hooks.OnMouseMove  := nil;
@@ -474,7 +476,7 @@ begin
                 if WindowManager.Windows[w]^.Hooks.OnDraw <> nil then WindowManager.Windows[w]^.Hooks.OnDraw();
             end;
             If WindowManager.Windows[w]^.visible then begin
-                if w <> 0 then begin
+                if WindowManager.Windows[w]^.Border then begin
                     WXL:= WindowManager.Windows[w]^.WND_X - 1;
                     WYL:= WindowManager.Windows[w]^.WND_Y - 1;
                     WXR:= WindowManager.Windows[w]^.WND_X + WindowManager.Windows[w]^.WND_W + 1;
@@ -548,6 +550,7 @@ begin
     WND^.Cursor.y:= 0;
     WND^.visible:= true;
     WND^.Closed:= false;
+    WND^.Border:= false;
     WindowManager.Windows[0]:= WND;
 end;
 

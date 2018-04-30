@@ -77,6 +77,9 @@ begin
             tracer.push_trace('memview.close');
             if Handle <> 0 then begin
                 closeWindow(Handle);
+                writestringlnWND('Memview closed.', getTerminalHWND);
+            end else begin
+                writestringlnWND('Memview not open.', getTerminalHWND);   
             end;
         end else begin
             MEM_LOC:= stringToInt(loc);
