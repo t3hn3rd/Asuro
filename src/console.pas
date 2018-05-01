@@ -736,6 +736,10 @@ begin
                     for x:=WXL to WXR do begin
                         Console_Matrix[WYL][x]:= Window_Border;
                         WindowTitleMask[WYL][x]:= WindowManager.Z_Order[w];
+                        if (STRC = StringSize(WindowManager.Windows[WindowManager.Z_Order[w]]^.WND_NAME)) and (w = 0) then begin
+                            console_Matrix[WYL][x].character:= '*';
+                            inc(STRC);
+                        end;
                         if (x >= STARTP) and (STRC < StringSize(WindowManager.Windows[WindowManager.Z_Order[w]]^.WND_NAME)) then begin
                             Console_Matrix[WYL][x].character:= WindowManager.Windows[WindowManager.Z_Order[w]]^.WND_NAME[STRC];
                             inc(STRC);
