@@ -760,15 +760,15 @@ begin
     if UnhandledClick then begin
         if UnhandledClickLeft then begin
             
-            SelectedWindow:= WindowTitleMask[MouseYToTile(WindowManager.MousePrev.Y)][MouseXToTile(WindowManager.MousePrev.X)];
+            SelectedWindow:= ExitMask[MouseYToTile(WindowManager.MousePrev.Y)][MouseXToTile(WindowManager.MousePrev.X)];
             if SelectedWindow <> 0 then begin
-                if WindowManager.Windows[SelectedWindow] <> nil then begin
-                    if WindowManager.Windows[SelectedWindow]^.ShellWND then FocusZOrder(SelectedWindow);
-                end;
+                closeWindow(SelectedWindow);
             end else begin
-                SelectedWindow:= ExitMask[MouseYToTile(WindowManager.MousePrev.Y)][MouseXToTile(WindowManager.MousePrev.X)];
+                SelectedWindow:= WindowTitleMask[MouseYToTile(WindowManager.MousePrev.Y)][MouseXToTile(WindowManager.MousePrev.X)];
                 if SelectedWindow <> 0 then begin
-                    closeWindow(SelectedWindow);
+                    if WindowManager.Windows[SelectedWindow] <> nil then begin
+                        if WindowManager.Windows[SelectedWindow]^.ShellWND then FocusZOrder(SelectedWindow);
+                    end;
                 end else begin
                     SelectedWindow:= WindowMask[MouseYToTile(WindowManager.MousePrev.Y)][MouseXToTile(WindowManager.MousePrev.X)];
                     if (SelectedWindow <> 0) and (WindowManager.Windows[SelectedWindow] <> nil) then begin
