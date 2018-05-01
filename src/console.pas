@@ -193,6 +193,8 @@ procedure bordersEnabled(WND : HWND; enabled : boolean);
 procedure SetShellWindow(WND : HWND; b : boolean);
 function  getWindowName(WND : HWND) : pchar;
 
+procedure mouseEnabled(b : boolean);
+
 procedure _MouseDown();
 procedure _MouseUp();
 procedure _MouseClick(left : boolean);
@@ -311,7 +313,12 @@ var
    MovingWindow       : uint32;
    UnhandledClick     : Boolean = false;
    UnhandledClickLeft : Boolean = false;
+   MouseCursorEnabled : Boolean = true;
 
+procedure mouseEnabled(b : boolean);
+begin
+    MouseCursorEnabled:= b;
+end;
 
 procedure _MouseDown();
 begin
@@ -674,7 +681,7 @@ begin
             end;
         end;
     end;
-    outputCharToScreenSpace(char(0), WindowManager.MousePrev.x, WindowManager.MousePrev.y, $FFFF);
+    if MouseCursorEnabled then outputCharToScreenSpace(char(0), WindowManager.MousePrev.x, WindowManager.MousePrev.y, $FFFF);
 end;
 
 procedure setMousePosition(x : uint32; y : uint32);

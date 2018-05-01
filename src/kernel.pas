@@ -47,7 +47,8 @@ uses
      RTC,
      serial,
      shell,
-     memview;
+     memview,
+     splash;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
@@ -215,6 +216,9 @@ begin
      { Init Progs }
      shell.init();
      memview.init();
+
+     { Init Splash }
+     splash.init();
 
      //console.writehexln(uint32(multibootinfo^.framebuffer_addr));
      //tracer.push_trace('kmain.KEYHOOK');
