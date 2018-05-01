@@ -724,20 +724,27 @@ begin
     end;
     if UnhandledClick then begin
         if UnhandledClickLeft then begin
-            SelectedWindow:= WindowTitleMask[MouseYToTile(WindowManager.MousePrev.Y)][MouseXToTile(WindowManager.MousePrev.X)];
-            if SelectedWindow = 0 then SelectedWindow:= WindowMask[MouseYToTile(WindowManager.MousePrev.Y)][MouseXToTile(WindowManager.MousePrev.X)];
-            if SelectedWindow <> 0 then begin
-                if WindowManager.Windows[SelectedWindow] <> nil then begin
-                    if WindowManager.Windows[SelectedWindow]^.ShellWND then FocusZOrder(SelectedWindow);
+            SelectedWindow:= WindowMask[MouseYToTile(WindowManager.MousePrev.Y)][MouseXToTile(WindowManager.MousePrev.X)];
+            if (SelectedWindow <> 0) and (WindowManager.Windows[SelectedWindow] <> nil) and (WindowManager.Z_Order[0] = SelectedWindow) then begin
+                //OnClickHandler(Left)
+            end else begin
+                if SelectedWindow = 0 then SelectedWindow:= WindowTitleMask[MouseYToTile(WindowManager.MousePrev.Y)][MouseXToTile(WindowManager.MousePrev.X)];
+                if SelectedWindow <> 0 then begin
+                    if WindowManager.Windows[SelectedWindow] <> nil then begin
+                        if WindowManager.Windows[SelectedWindow]^.ShellWND then FocusZOrder(SelectedWindow);
+                    end;
                 end;
-            end;
-            SelectedWindow:= ExitMask[MouseYToTile(WindowManager.MousePrev.Y)][MouseXToTile(WindowManager.MousePrev.X)];
-            if SelectedWindow <> 0 then begin
-                closeWindow(SelectedWindow);
+                SelectedWindow:= ExitMask[MouseYToTile(WindowManager.MousePrev.Y)][MouseXToTile(WindowManager.MousePrev.X)];
+                if SelectedWindow <> 0 then begin
+                    closeWindow(SelectedWindow);
+                end;
             end;
         end;
         if not UnhandledClickLeft then begin
-
+            SelectedWindow:= WindowMask[MouseYToTile(WindowManager.MousePrev.Y)][MouseXToTile(WindowManager.MousePrev.X)];
+            if (SelectedWindow <> 0) and (WindowManager.Windows[SelectedWindow] <> nil) and (WindowManager.Z_Order[0] = SelectedWindow) then begin
+                //OnClickHandler(Right)
+            end;
         end;
         UnhandledClick:= false;
     end;
