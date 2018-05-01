@@ -248,16 +248,16 @@ type
     TLoseFocusHook  = procedure();
 
     THooks = record
-        OnDraw       : TDrawHook;
-        OnMouseClick : TMouseClickHook;
-        OnMouseMove  : TMouseMoveHook;
-        OnMouseDown  : TMouseDownHook;
-        OnMouseUp    : TMouseUpHook;
-        OnKeyPressed : TKeyPressedHook;
-        OnClose      : TCloseHook;
-        OnMinimize   : TMinimizeHook;
-        OnFocus      : TFocusHook;
-        OnLoseFocus  : TLoseFocusHook;
+        OnDraw       : TDrawHook;       //Implemented
+        OnMouseClick : TMouseClickHook; 
+        OnMouseMove  : TMouseMoveHook;  
+        OnMouseDown  : TMouseDownHook;  
+        OnMouseUp    : TMouseUpHook;    
+        OnKeyPressed : TKeyPressedHook; 
+        OnClose      : TCloseHook;     //Implemented
+        OnMinimize   : TMinimizeHook;  
+        OnFocus      : TFocusHook;     //Implemented
+        OnLoseFocus  : TLoseFocusHook; //Implemented
     end;
 
     TWindow = record
@@ -278,9 +278,11 @@ type
     PWindow = ^TWindow;
 
     TWindows = Array[0..MAX_WINDOWS-1] of PWindow;
+    TZOrder  = Array[0..MAX_WINDOWS-1] of uint32;
 
     TWindowManager = record
         Windows     : TWindows;
+        Z_Order     : TZOrder;
         MousePos    : TMouseCoord;
         MousePrev   : TMouseCoord;
     end;
@@ -303,9 +305,12 @@ var
    Default_Char       : TCharacter;
    WindowTitleMask    : TMask;
    WindowMask         : TMask;
+   ExitMask           : TMask;
    MouseDown          : Boolean;
    WindowMovePos      : TMouseCoord;
    MovingWindow       : uint32;
+   UnhandledClick     : Boolean = false;
+   UnhandledClickLeft : Boolean = false;
 
 
 procedure _MouseDown();
@@ -320,7 +325,80 @@ end;
 
 procedure _MouseClick(left : boolean);
 begin
+    if not UnhandledClick then begin
+        UnhandledClick:= true;
+        UnhandledClickLeft:= left;
+    end;
+end;
 
+procedure AddToZOrder(WND : HWND);
+var
+    idx : uint32;
+    i : uint32;
+    Window : PWindow;
+
+begin
+    idx:= MAX_WINDOWS;
+    for i:=0 to MAX_WINDOWS-1 do begin
+        if WindowManager.Z_Order[i] = WND then begin
+            break;
+        end;
+        if WindowManager.Z_Order[i] = MAX_WINDOWS then begin
+            idx:= i;
+            break;
+        end;
+    end;
+    if idx <> MAX_WINDOWS then begin
+        WindowManager.Z_Order[idx]:= WND;
+    end;
+end;
+
+procedure RemoveFromZOrder(WND : HWND);
+var
+    i : uint32;
+
+begin
+    for i:=0 to MAX_WINDOWS-1 do begin
+        if WindowManager.Z_Order[i] = WND then begin
+            WindowManager.Z_Order[i]:= MAX_WINDOWS;
+            break;
+        end;
+    end;
+end;
+
+procedure FocusZOrder(WND : HWND);
+var
+    i : uint32;
+    idx : uint32;
+    old, new : HWND;
+    wold, wnew : PWindow;
+
+begin
+    idx:= MAX_WINDOWS;
+    for i:=0 to MAX_WINDOWS-1 do begin
+        if WindowManager.Z_Order[i] = WND then begin
+            idx:= i;
+            break;
+        end;
+    end;
+    if idx <> MAX_WINDOWS then begin
+        old:= WindowManager.Z_Order[0];
+        new:= WND;
+        for i:=idx downto 1 do begin
+            WindowManager.Z_Order[i]:= WindowManager.Z_Order[i-1];
+        end;
+        WindowManager.Z_Order[0]:= WND;
+        if old <> new then begin
+            wold:= WindowManager.Windows[old];
+            wnew:= WindowManager.Windows[new];
+            if wold <> nil then begin
+                if wold^.Hooks.OnLoseFocus <> nil then wold^.Hooks.OnLoseFocus();
+            end;
+            if wnew <> nil then begin
+                if wnew^.Hooks.OnFocus <> nil then wnew^.Hooks.OnFocus();
+            end;
+        end;
+    end;
 end;
 
 function getWindowName(WND : HWND) : pchar;
@@ -466,6 +544,8 @@ begin
         WND^.Hooks.OnFocus      := nil;
         WND^.Hooks.OnLoseFocus  := nil;
         WindowManager.Windows[newWindow]:= WND;
+        AddToZOrder(newWindow);
+        FocusZOrder(newWindow);
     end;
 end;
 
@@ -494,6 +574,7 @@ begin
     if WindowManager.Windows[WND] <> nil then begin
         WNDCopy:= WindowManager.Windows[WND];
         WindowManager.Windows[WND]:= nil;
+        RemoveFromZOrder(WND);
         if WNDCopy^.Hooks.OnClose <> nil then WNDCopy^.Hooks.OnClose();
         kfree(void(WNDCopy^.WND_NAME));
         kfree(void(WNDCopy));
@@ -602,6 +683,7 @@ var
     STRC : uint32;
     MIDP, STARTP : uint32;
     deltax, deltay : sint32;
+    SelectedWindow : uint32;
 
 begin
     for y:=0 to 63 do begin
@@ -615,33 +697,52 @@ begin
             if MovingWindow <> 0 then begin
                 WindowMovePos.x:= MouseXToTile(WindowManager.MousePrev.X);
                 WindowMovePos.y:= MouseYToTile(WindowManager.MousePrev.Y);
+            end else begin
+                MovingWindow:= MAX_WINDOWS;
             end;
         end;
-        if MovingWindow <> 0 then begin
+        if MovingWindow <> MAX_WINDOWS then begin
             if WindowManager.Windows[MovingWindow] <> nil then begin
                 deltax:= WindowMovePos.x - MouseXToTile(WindowManager.MousePrev.X);
                 deltay:= WindowMovePos.y - MouseYToTile(WindowManager.MousePrev.Y);
                 WindowMovePos.x:= MouseXToTile(WindowManager.MousePrev.X);
                 WindowMovePos.y:= MouseYToTile(WindowManager.MousePrev.Y);
                 setWindowPosition(MovingWindow, WindowManager.Windows[MovingWindow]^.WND_X - deltax, WindowManager.Windows[MovingWindow]^.WND_Y - deltay);
-                //WindowManager.Windows[MovingWindow]^.WND_X:= WindowManager.Windows[MovingWindow]^.WND_X - deltax;
-                //WindowManager.Windows[MovingWindow]^.WND_Y:= WindowManager.Windows[MovingWindow]^.WND_Y - deltay;
+                FocusZOrder(MovingWindow);
             end;
         end;
     end else begin
         MovingWindow:= 0;
     end;
-    for w:=0 to MAX_WINDOWS-1 do begin
-        if WindowManager.Windows[w] <> nil then begin
-            if w <> 0 then begin
-                if WindowManager.Windows[w]^.Hooks.OnDraw <> nil then WindowManager.Windows[w]^.Hooks.OnDraw();
+    if UnhandledClick then begin
+        if UnhandledClickLeft then begin
+            SelectedWindow:= WindowTitleMask[MouseYToTile(WindowManager.MousePrev.Y)][MouseXToTile(WindowManager.MousePrev.X)];
+            if SelectedWindow = 0 then SelectedWindow:= WindowMask[MouseYToTile(WindowManager.MousePrev.Y)][MouseXToTile(WindowManager.MousePrev.X)];
+            if SelectedWindow <> 0 then begin
+                if WindowManager.Windows[SelectedWindow] <> nil then begin
+                    if WindowManager.Windows[SelectedWindow]^.ShellWND then FocusZOrder(SelectedWindow);
+                end;
             end;
-            If WindowManager.Windows[w]^.visible then begin
-                if WindowManager.Windows[w]^.Border then begin
-                    WXL:= WindowManager.Windows[w]^.WND_X - 1;
-                    WYL:= WindowManager.Windows[w]^.WND_Y - 1;
-                    WXR:= WindowManager.Windows[w]^.WND_X + WindowManager.Windows[w]^.WND_W + 1;
-                    WYR:= WindowManager.Windows[w]^.WND_Y + WindowManager.Windows[w]^.WND_H + 1;
+            SelectedWindow:= ExitMask[MouseYToTile(WindowManager.MousePrev.Y)][MouseXToTile(WindowManager.MousePrev.X)];
+            if SelectedWindow <> 0 then begin
+                closeWindow(SelectedWindow);
+            end;
+        end;
+        if not UnhandledClickLeft then begin
+
+        end;
+        UnhandledClick:= false;
+    end;
+    for w:=MAX_WINDOWS-1 downto 0 do begin
+        if WindowManager.Z_Order[w] = MAX_WINDOWS then continue;
+        if WindowManager.Windows[WindowManager.Z_Order[w]] <> nil then begin
+            if WindowManager.Windows[WindowManager.Z_Order[w]]^.Hooks.OnDraw <> nil then WindowManager.Windows[WindowManager.Z_Order[w]]^.Hooks.OnDraw();
+            If WindowManager.Windows[WindowManager.Z_Order[w]]^.visible then begin
+                if WindowManager.Windows[WindowManager.Z_Order[w]]^.Border then begin
+                    WXL:= WindowManager.Windows[WindowManager.Z_Order[w]]^.WND_X - 1;
+                    WYL:= WindowManager.Windows[WindowManager.Z_Order[w]]^.WND_Y - 1;
+                    WXR:= WindowManager.Windows[WindowManager.Z_Order[w]]^.WND_X + WindowManager.Windows[WindowManager.Z_Order[w]]^.WND_W + 1;
+                    WYR:= WindowManager.Windows[WindowManager.Z_Order[w]]^.WND_Y + WindowManager.Windows[WindowManager.Z_Order[w]]^.WND_H + 1;
                     for y:=WYL to WYR do begin
                         Console_Matrix[y][WXL]:= Window_Border;
                         Console_Matrix[y][WXL-1]:= Window_Border;
@@ -654,33 +755,35 @@ begin
                     end;
                     STRC:= 0;
                     MIDP:= (WXR + WXL) div 2;
-                    STARTP:= MIDP - (StringSize(WindowManager.Windows[w]^.WND_NAME) div 2) - 1;
+                    STARTP:= MIDP - (StringSize(WindowManager.Windows[WindowManager.Z_Order[w]]^.WND_NAME) div 2) - 1;
                     for x:=WXL to WXR do begin
                         Console_Matrix[WYL][x]:= Window_Border;
-                        WindowTitleMask[WYL][x]:= w;
-                        if (x >= STARTP) and (STRC < StringSize(WindowManager.Windows[w]^.WND_NAME)) then begin
-                            Console_Matrix[WYL][x].character:= WindowManager.Windows[w]^.WND_NAME[STRC];
+                        WindowTitleMask[WYL][x]:= WindowManager.Z_Order[w];
+                        if (x >= STARTP) and (STRC < StringSize(WindowManager.Windows[WindowManager.Z_Order[w]]^.WND_NAME)) then begin
+                            Console_Matrix[WYL][x].character:= WindowManager.Windows[WindowManager.Z_Order[w]]^.WND_NAME[STRC];
                             inc(STRC);
                         end;
                         if x = WXR then begin
                             Console_Matrix[WYL][x].character:= 'x';
+                            ExitMask[WYL][x]:= WindowManager.Z_Order[w];
                         end;
                         Console_Matrix[WYR][x]:= Window_Border;
                         Console_Real[WYL][x].Character:= char(3);
                         Console_Real[WYR][x].Character:= char(3);
                     end;
                 end;
-                for y:=WindowManager.Windows[w]^.WND_Y to WindowManager.Windows[w]^.WND_Y + WindowManager.Windows[w]^.WND_H do begin
+                for y:=WindowManager.Windows[WindowManager.Z_Order[w]]^.WND_Y to WindowManager.Windows[WindowManager.Z_Order[w]]^.WND_Y + WindowManager.Windows[WindowManager.Z_Order[w]]^.WND_H do begin
                     if y > 63 then break;
-                    for x:=WindowManager.Windows[w]^.WND_X to WindowManager.Windows[w]^.WND_X + WindowManager.Windows[w]^.WND_W do begin
+                    for x:=WindowManager.Windows[WindowManager.Z_Order[w]]^.WND_X to WindowManager.Windows[WindowManager.Z_Order[w]]^.WND_X + WindowManager.Windows[WindowManager.Z_Order[w]]^.WND_W do begin
                         if x > 159 then break;
-                        Console_Matrix[y][x]:= WindowManager.Windows[w]^.buffer[y - WindowManager.Windows[w]^.WND_Y][x - WindowManager.Windows[w]^.WND_X];
+                        Console_Matrix[y][x]:= WindowManager.Windows[WindowManager.Z_Order[w]]^.buffer[y - WindowManager.Windows[WindowManager.Z_Order[w]]^.WND_Y][x - WindowManager.Windows[WindowManager.Z_Order[w]]^.WND_X];
                         WindowTitleMask[y][x]:= 0;
-                        WindowMask[y][x]:= w;
+                        WindowMask[y][x]:= WindowManager.Z_Order[w];
+                        ExitMask[y][x]:= 0;
                     end;
                 end;
             end;
-            if WindowManager.Windows[w]^.Closed then _closeWindow(w);
+            if WindowManager.Windows[WindowManager.Z_Order[w]]^.Closed then _closeWindow(WindowManager.Z_Order[w]);
         end;
     end;
     redrawMatrix;
@@ -702,6 +805,7 @@ begin
 
     For w:=0 to MAX_WINDOWS-1 do begin
         WindowManager.Windows[w]:= nil;
+        WindowManager.Z_Order[w]:= MAX_WINDOWS;
     end;
 
     WND:= PWindow(kalloc(sizeof(TWindow)));
@@ -717,6 +821,8 @@ begin
     WND^.Border:= false;
     WND^.ShellWND:= false;
     WindowManager.Windows[0]:= WND;
+    AddToZOrder(0);
+    FocusZOrder(0);
 end;
 
 function getPixel(x : uint32; y : uint32) : uint16;
