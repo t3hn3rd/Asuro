@@ -3,7 +3,7 @@ unit shell;
 interface
 
 uses
-    Console, RTC;
+    Console, RTC, terminal;
 
 procedure init();
 
@@ -49,6 +49,17 @@ begin
      writeIntExWND(DateTime.Seconds, Colors, Handle);
 end;
 
+procedure OnMouseClick(x : uint32; y : uint32; left : boolean);
+begin
+    //WriteIntLn(x);
+    //WriteIntLn(y);
+    if left then begin
+        if (y = 0) and (x < 10) then begin
+            terminal.run;
+        end;
+    end;
+end;
+
 procedure init();
 begin
     colors:= console.combinecolors($0000, $FFFF);
@@ -58,6 +69,7 @@ begin
     //console.clearWNDEx(Handle, colors);
     console.setShellWindow(Handle, false);
     console.registerEventHandler(Handle, EVENT_DRAW, void(@Draw));
+    console.registerEventHandler(Handle, EVENT_MOUSE_CLICK, void(@OnMouseClick));
 end;
 
 end.

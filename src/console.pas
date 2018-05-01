@@ -368,9 +368,10 @@ begin
         end;
     end;
     if idx <> MAX_WINDOWS then begin
-        for i:=idx to MAX_WINDOWS-1 do begin
+        for i:=idx to MAX_WINDOWS-2 do begin
             WindowManager.Z_Order[i]:= WindowManager.Z_Order[i+1];
         end;
+        WindowManager.Z_Order[MAX_WINDOWS-1]:= MAX_WINDOWS;
     end;
 end;
 
@@ -580,9 +581,9 @@ var
 
 begin
     if WindowManager.Windows[WND] <> nil then begin
+        RemoveFromZOrder(WND);
         WNDCopy:= WindowManager.Windows[WND];
         WindowManager.Windows[WND]:= nil;
-        RemoveFromZOrder(WND);
         if WNDCopy^.Hooks.OnClose <> nil then WNDCopy^.Hooks.OnClose();
         kfree(void(WNDCopy^.WND_NAME));
         kfree(void(WNDCopy));
@@ -694,60 +695,14 @@ var
     SelectedWindow : uint32;
 
 begin
+    { Clear the Console_Matrix }
     for y:=0 to 63 do begin
         for x:=0 to 159 do begin
             Console_Matrix[y][x]:= Default_Char;
         end;
     end;
-    if MouseDown then begin
-        if MovingWindow = 0 then begin
-            MovingWindow:= WindowTitleMask[MouseYToTile(WindowManager.MousePrev.Y)][MouseXToTile(WindowManager.MousePrev.X)];
-            if MovingWindow <> 0 then begin
-                WindowMovePos.x:= MouseXToTile(WindowManager.MousePrev.X);
-                WindowMovePos.y:= MouseYToTile(WindowManager.MousePrev.Y);
-            end else begin
-                MovingWindow:= MAX_WINDOWS;
-            end;
-        end;
-        if MovingWindow <> MAX_WINDOWS then begin
-            if WindowManager.Windows[MovingWindow] <> nil then begin
-                deltax:= WindowMovePos.x - MouseXToTile(WindowManager.MousePrev.X);
-                deltay:= WindowMovePos.y - MouseYToTile(WindowManager.MousePrev.Y);
-                WindowMovePos.x:= MouseXToTile(WindowManager.MousePrev.X);
-                WindowMovePos.y:= MouseYToTile(WindowManager.MousePrev.Y);
-                setWindowPosition(MovingWindow, WindowManager.Windows[MovingWindow]^.WND_X - deltax, WindowManager.Windows[MovingWindow]^.WND_Y - deltay);
-                FocusZOrder(MovingWindow);
-            end;
-        end;
-    end else begin
-        MovingWindow:= 0;
-    end;
-    if UnhandledClick then begin
-        if UnhandledClickLeft then begin
-            SelectedWindow:= WindowMask[MouseYToTile(WindowManager.MousePrev.Y)][MouseXToTile(WindowManager.MousePrev.X)];
-            if (SelectedWindow <> 0) and (WindowManager.Windows[SelectedWindow] <> nil) and (WindowManager.Z_Order[0] = SelectedWindow) then begin
-                //OnClickHandler(Left)
-            end else begin
-                if SelectedWindow = 0 then SelectedWindow:= WindowTitleMask[MouseYToTile(WindowManager.MousePrev.Y)][MouseXToTile(WindowManager.MousePrev.X)];
-                if SelectedWindow <> 0 then begin
-                    if WindowManager.Windows[SelectedWindow] <> nil then begin
-                        if WindowManager.Windows[SelectedWindow]^.ShellWND then FocusZOrder(SelectedWindow);
-                    end;
-                end;
-                SelectedWindow:= ExitMask[MouseYToTile(WindowManager.MousePrev.Y)][MouseXToTile(WindowManager.MousePrev.X)];
-                if SelectedWindow <> 0 then begin
-                    closeWindow(SelectedWindow);
-                end;
-            end;
-        end;
-        if not UnhandledClickLeft then begin
-            SelectedWindow:= WindowMask[MouseYToTile(WindowManager.MousePrev.Y)][MouseXToTile(WindowManager.MousePrev.X)];
-            if (SelectedWindow <> 0) and (WindowManager.Windows[SelectedWindow] <> nil) and (WindowManager.Z_Order[0] = SelectedWindow) then begin
-                //OnClickHandler(Right)
-            end;
-        end;
-        UnhandledClick:= false;
-    end;
+
+    { Redraw all of the Windows to the Matrix taking into account Z_Order and borders }
     for w:=MAX_WINDOWS-1 downto 0 do begin
         if WindowManager.Z_Order[w] = MAX_WINDOWS then continue;
         if WindowManager.Windows[WindowManager.Z_Order[w]] <> nil then begin
@@ -798,10 +753,88 @@ begin
                     end;
                 end;
             end;
-            if WindowManager.Windows[WindowManager.Z_Order[w]]^.Closed then _closeWindow(WindowManager.Z_Order[w]);
         end;
     end;
+
+    { Handle any Clicks that have happened since last redraw }
+    if UnhandledClick then begin
+        if UnhandledClickLeft then begin
+            SelectedWindow:= WindowMask[MouseYToTile(WindowManager.MousePrev.Y)][MouseXToTile(WindowManager.MousePrev.X)];
+            if (SelectedWindow <> 0) and (WindowManager.Windows[SelectedWindow] <> nil) then begin
+                //OnClickHandler(Left)
+                if (WindowManager.Z_Order[0] = SelectedWindow) or (WindowManager.Windows[SelectedWindow]^.ShellWND = false) then begin
+                    if WindowManager.Windows[SelectedWindow]^.Hooks.OnMouseClick <> nil then begin
+                        deltax:= MouseXToTile(WindowManager.MousePrev.X) - WindowManager.Windows[SelectedWindow]^.WND_X;
+                        deltay:= MouseYToTile(WindowManager.MousePrev.Y) - WindowManager.Windows[SelectedWindow]^.WND_Y;
+                        WindowManager.Windows[SelectedWindow]^.Hooks.OnMouseClick(deltax, deltay, true);
+                    end;
+                end;
+                if (WindowManager.Z_Order[0] <> SelectedWindow) and (WindowManager.Windows[SelectedWindow]^.ShellWND) then begin
+                    FocusZOrder(SelectedWindow);
+                end;
+            end else begin
+                if SelectedWindow = 0 then SelectedWindow:= WindowTitleMask[MouseYToTile(WindowManager.MousePrev.Y)][MouseXToTile(WindowManager.MousePrev.X)];
+                if SelectedWindow <> 0 then begin
+                    if WindowManager.Windows[SelectedWindow] <> nil then begin
+                        if WindowManager.Windows[SelectedWindow]^.ShellWND then FocusZOrder(SelectedWindow);
+                    end;
+                end;
+                SelectedWindow:= ExitMask[MouseYToTile(WindowManager.MousePrev.Y)][MouseXToTile(WindowManager.MousePrev.X)];
+                if SelectedWindow <> 0 then begin
+                    closeWindow(SelectedWindow);
+                end;
+            end;
+        end;
+        if not UnhandledClickLeft then begin
+            SelectedWindow:= WindowMask[MouseYToTile(WindowManager.MousePrev.Y)][MouseXToTile(WindowManager.MousePrev.X)];
+            if (SelectedWindow <> 0) and (WindowManager.Windows[SelectedWindow] <> nil) then begin
+                //OnClickHandler(Right)
+                if (WindowManager.Z_Order[0] = SelectedWindow) or (WindowManager.Windows[SelectedWindow]^.ShellWND = false) then begin
+                    if WindowManager.Windows[SelectedWindow]^.Hooks.OnMouseClick <> nil then begin
+                        deltax:= MouseXToTile(WindowManager.MousePrev.X) - WindowManager.Windows[SelectedWindow]^.WND_X;
+                        deltay:= MouseYToTile(WindowManager.MousePrev.Y) - WindowManager.Windows[SelectedWindow]^.WND_Y;
+                        WindowManager.Windows[SelectedWindow]^.Hooks.OnMouseClick(deltax, deltay, false);
+                    end;
+                end;
+            end;
+        end;
+        UnhandledClick:= false;
+    end;
+
+    { Handle Moving Windows using MouseDown and Delta positions }
+    if MouseDown then begin
+        if MovingWindow = 0 then begin
+            MovingWindow:= WindowTitleMask[MouseYToTile(WindowManager.MousePrev.Y)][MouseXToTile(WindowManager.MousePrev.X)];
+            if MovingWindow <> 0 then begin
+                WindowMovePos.x:= MouseXToTile(WindowManager.MousePrev.X);
+                WindowMovePos.y:= MouseYToTile(WindowManager.MousePrev.Y);
+            end else begin
+                MovingWindow:= MAX_WINDOWS;
+            end;
+        end;
+        if MovingWindow <> MAX_WINDOWS then begin
+            if WindowManager.Windows[MovingWindow] <> nil then begin
+                deltax:= WindowMovePos.x - MouseXToTile(WindowManager.MousePrev.X);
+                deltay:= WindowMovePos.y - MouseYToTile(WindowManager.MousePrev.Y);
+                WindowMovePos.x:= MouseXToTile(WindowManager.MousePrev.X);
+                WindowMovePos.y:= MouseYToTile(WindowManager.MousePrev.Y);
+                setWindowPosition(MovingWindow, WindowManager.Windows[MovingWindow]^.WND_X - deltax, WindowManager.Windows[MovingWindow]^.WND_Y - deltay);
+                FocusZOrder(MovingWindow);
+            end;
+        end;
+    end else begin
+        MovingWindow:= 0;
+    end;
+    
+    { Console_Matrix -> Actual Screen Buffer }
     redrawMatrix;
+
+    { Handle any closed Windows ready for next redraw }
+    for w:=0 to MAX_WINDOWS-1 do begin
+        if WindowManager.Windows[w] <> nil then begin
+            if WindowManager.Windows[w]^.Closed then _closeWindow(w);
+        end;
+    end;
 end;
 
 procedure initWindows;
@@ -996,6 +1029,15 @@ begin
      outb($3D5, $20);
 end;
 
+procedure keyhook(key_info : TKeyInfo);
+begin
+    if WindowManager.Z_Order[0] <> MAX_WINDOWS then begin
+        if WindowManager.Windows[WindowManager.Z_Order[0]] <> nil then begin
+            if WindowManager.Windows[WindowManager.Z_Order[0]]^.Hooks.OnKeyPressed <> nil then WindowManager.Windows[WindowManager.Z_Order[0]]^.Hooks.OnKeyPressed(key_info);
+        end;
+    end;
+end;
+
 procedure init(); [public, alias: 'console_init'];
 var
    fb: puint32;
@@ -1003,6 +1045,7 @@ var
 Begin
      fb:= puint32(uint32(multibootinfo^.framebuffer_addr));
      kpalloc(uint32(fb));
+     keyboard.hook(@keyhook);
      initWindows;
      Console_Properties.Default_Attribute:= console.combinecolors($FFFF, $0000);
      console.clear();

@@ -208,19 +208,18 @@ begin
      console.setdefaultattribute(console.combinecolors($17E0, $0000));
      console.writestringln('Asuro Booted Correctly!');
      console.setdefaultattribute(console.combinecolors($FFFF, $0000));
-     console.writestringln('');
-     console.writestringln('Press any key to boot in to Asuro Terminal...');
-     tracer.pop_trace;
+     //console.writestringln('');
+     //console.writestringln('Press any key to boot in to Asuro Terminal...');
+     //tracer.pop_trace;
 
      { Init Progs }
      shell.init();
      memview.init();
 
-     console.writehexln(uint32(multibootinfo^.framebuffer_addr));
-
-     tracer.push_trace('kmain.KEYHOOK');
-     keyboard.hook(@temphook);
-     tracer.pop_trace;
+     //console.writehexln(uint32(multibootinfo^.framebuffer_addr));
+     //tracer.push_trace('kmain.KEYHOOK');
+     //keyboard.hook(@temphook);
+     //tracer.pop_trace;
 
      tracer.push_trace('kmain.END');
 

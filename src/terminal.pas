@@ -65,7 +65,7 @@ uses
     RTC;
 
 var
-    TERMINAL_HWND : HWND = 1;
+    TERMINAL_HWND : HWND = 0;
 
 function getTerminalHWND : uint32;
 begin
@@ -340,22 +340,24 @@ end;
 
 procedure key_event(info : TKeyInfo);
 begin
-    if (info.key_code >= 32) and (info.key_code <= 126) then begin
-        if bIndex < 1024 then begin
-            buffer[bIndex]:= info.key_code;
-            inc(bIndex);
-            console.writecharWND(char(info.key_code), TERMINAL_HWND);
+    if TERMINAL_HWND <> 0 then begin
+        if (info.key_code >= 32) and (info.key_code <= 126) then begin
+            if bIndex < 1024 then begin
+                buffer[bIndex]:= info.key_code;
+                inc(bIndex);
+                console.writecharWND(char(info.key_code), TERMINAL_HWND);
+            end;
+        end; 
+        if info.key_code = 8 then begin //backspace
+            if bIndex > 0 then begin
+                console.backspaceWND(TERMINAL_HWND);
+                dec(bIndex);
+                buffer[bIndex]:= 0;
+            end;
         end;
-    end; 
-    if info.key_code = 8 then begin //backspace
-        if bIndex > 0 then begin
-            console.backspaceWND(TERMINAL_HWND);
-            dec(bIndex);
-            buffer[bIndex]:= 0;
+        if info.key_code = 13 then begin //return
+            process_command;
         end;
-    end;
-    if info.key_code = 13 then begin //return
-        process_command;
     end;
 end;
 
@@ -364,11 +366,6 @@ begin
     if paramCount(Params) > 0 then begin
         setWorkingDirectory(getParam(0, Params));
     end;
-end;
-
-procedure ToggleWND1(Params : PParamList);
-begin
-    console.toggleWNDVisible(1);
 end;
 
 procedure SendSerial(Params : PParamList);
@@ -409,22 +406,27 @@ begin
     registerCommand('TEST', @test, 'Command for testing.');
     registerCommand('CD', @change_dir, 'Change Directory test.');
     registerCommand('PATTERN', @cockwomble, 'Print an animated pattern to the screen.');
-    registerCommand('TOGGLEWND1', @ToggleWND1, 'Toggle WND 1 Visibility.');
     registerCommand('TIME', @printTime, 'Print the current time.');
     registerCommand('SERIAL', @SendSerial, 'Send ''helloworld'' through COM1.');
     console.writestringln('TERMINAL: INIT END.');
 end;
 
+procedure OnClose();
+begin
+    TERMINAL_HWND:= 0;
+end;
+
 procedure run;
 begin
-    TERMINAL_HWND:= newWindow(20, 10, 90, 20, 'ASURO TERMINAL');
-    //newWindow(10, 10, 32, 32, 'MEMVIEW');
-    keyboard.hook(@key_event);
-    console.clearWND(TERMINAL_HWND);
-    console.writestringWND('Asuro#', TERMINAL_HWND);
-    console.writestringWND(Working_Directory, TERMINAL_HWND);
-    console.writestringWND('> ', TERMINAL_HWND);
-    console.setWNDVisible(TERMINAL_HWND, true);
+    if TERMINAL_HWND = 0 then begin
+        TERMINAL_HWND:= newWindow(20, 10, 90, 20, 'ASURO TERMINAL');
+        console.registerEventHandler(TERMINAL_HWND, EVENT_KEY_PRESSED, void(@key_event));
+        console.registerEventHandler(TERMINAL_HWND, EVENT_CLOSE, void(@OnClose));
+        console.clearWND(TERMINAL_HWND);
+        console.writestringWND('Asuro#', TERMINAL_HWND);
+        console.writestringWND(Working_Directory, TERMINAL_HWND);
+        console.writestringWND('> ', TERMINAL_HWND);
+    end;
 end;
 
 end.
