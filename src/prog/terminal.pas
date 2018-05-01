@@ -394,6 +394,11 @@ begin
     end;
 end;
 
+procedure Reboot(Params : PParamList);
+begin
+    resetSystem;
+end;
+
 procedure init;
 begin
     console.writestringln('TERMINAL: INIT BEGIN.');
@@ -409,6 +414,7 @@ begin
     registerCommand('PATTERN', @cockwomble, 'Print an animated pattern to the screen.');
     registerCommand('TIME', @printTime, 'Print the current time.');
     registerCommand('SERIAL', @SendSerial, 'Send ''helloworld'' through COM1.');
+    registerCommand('REBOOT', @Reboot, 'Reboot the system.');
     console.writestringln('TERMINAL: INIT END.');
 end;
 

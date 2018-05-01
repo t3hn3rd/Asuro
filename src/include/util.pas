@@ -48,6 +48,8 @@ procedure sleep(seconds : uint32);
 
 function BCDToUint8(bcd : uint8) : uint8;
 
+procedure resetSystem();
+
 var
     endptr : uint32; external name '__end';
     stack  : uint32; external name 'KERNEL_STACK';
@@ -323,6 +325,18 @@ end;
 function BCDToUint8(bcd : uint8) : uint8;
 begin
     BCDToUint8:= ((bcd SHR 4) * 10) + (bcd AND $0F);
+end;
+
+procedure resetSystem();
+var
+    good : uint8;
+
+begin
+    CLI;
+    good:= $02;
+    while (good AND $02) > 0 do good:= inb($64);
+    outb($64, $FE);
+    halt_and_catch_fire;
 end;
 
 procedure BSOD(fault : pchar; info : pchar);
