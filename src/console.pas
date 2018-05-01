@@ -697,7 +697,7 @@ begin
     Default_Char.visible:= true;
 
     Window_Border.Character:= ' ';
-    Window_Border.Attributes:= $0000FFFF;
+    Window_Border.Attributes:= console.combinecolors($01C3, $07EE);//$0000FFFF;
     Window_Border.visible:= true;
 
     For w:=0 to MAX_WINDOWS-1 do begin
