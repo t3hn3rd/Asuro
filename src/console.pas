@@ -759,7 +759,34 @@ begin
     { Handle any Clicks that have happened since last redraw }
     if UnhandledClick then begin
         if UnhandledClickLeft then begin
-            SelectedWindow:= WindowMask[MouseYToTile(WindowManager.MousePrev.Y)][MouseXToTile(WindowManager.MousePrev.X)];
+            
+            SelectedWindow:= WindowTitleMask[MouseYToTile(WindowManager.MousePrev.Y)][MouseXToTile(WindowManager.MousePrev.X)];
+            if SelectedWindow <> 0 then begin
+                if WindowManager.Windows[SelectedWindow] <> nil then begin
+                    if WindowManager.Windows[SelectedWindow]^.ShellWND then FocusZOrder(SelectedWindow);
+                end;
+            end else begin
+                SelectedWindow:= ExitMask[MouseYToTile(WindowManager.MousePrev.Y)][MouseXToTile(WindowManager.MousePrev.X)];
+                if SelectedWindow <> 0 then begin
+                    closeWindow(SelectedWindow);
+                end else begin
+                    SelectedWindow:= WindowMask[MouseYToTile(WindowManager.MousePrev.Y)][MouseXToTile(WindowManager.MousePrev.X)];
+                    if (SelectedWindow <> 0) and (WindowManager.Windows[SelectedWindow] <> nil) then begin
+                        if (WindowManager.Z_Order[0] = SelectedWindow) or (WindowManager.Windows[SelectedWindow]^.ShellWND = false) then begin
+                            if WindowManager.Windows[SelectedWindow]^.Hooks.OnMouseClick <> nil then begin
+                                deltax:= MouseXToTile(WindowManager.MousePrev.X) - WindowManager.Windows[SelectedWindow]^.WND_X;
+                                deltay:= MouseYToTile(WindowManager.MousePrev.Y) - WindowManager.Windows[SelectedWindow]^.WND_Y;
+                                WindowManager.Windows[SelectedWindow]^.Hooks.OnMouseClick(deltax, deltay, true);
+                            end;
+                        end;
+                        if (WindowManager.Z_Order[0] <> SelectedWindow) and (WindowManager.Windows[SelectedWindow]^.ShellWND) then begin
+                            FocusZOrder(SelectedWindow);
+                        end;
+                    end;
+                end;
+            end;
+
+            {SelectedWindow:= WindowMask[MouseYToTile(WindowManager.MousePrev.Y)][MouseXToTile(WindowManager.MousePrev.X)];
             if (SelectedWindow <> 0) and (WindowManager.Windows[SelectedWindow] <> nil) then begin
                 //OnClickHandler(Left)
                 if (WindowManager.Z_Order[0] = SelectedWindow) or (WindowManager.Windows[SelectedWindow]^.ShellWND = false) then begin
@@ -773,7 +800,7 @@ begin
                     FocusZOrder(SelectedWindow);
                 end;
             end else begin
-                if SelectedWindow = 0 then SelectedWindow:= WindowTitleMask[MouseYToTile(WindowManager.MousePrev.Y)][MouseXToTile(WindowManager.MousePrev.X)];
+                SelectedWindow:= WindowTitleMask[MouseYToTile(WindowManager.MousePrev.Y)][MouseXToTile(WindowManager.MousePrev.X)];
                 if SelectedWindow <> 0 then begin
                     if WindowManager.Windows[SelectedWindow] <> nil then begin
                         if WindowManager.Windows[SelectedWindow]^.ShellWND then FocusZOrder(SelectedWindow);
@@ -783,7 +810,9 @@ begin
                 if SelectedWindow <> 0 then begin
                     closeWindow(SelectedWindow);
                 end;
-            end;
+            end;}
+
+
         end;
         if not UnhandledClickLeft then begin
             SelectedWindow:= WindowMask[MouseYToTile(WindowManager.MousePrev.Y)][MouseXToTile(WindowManager.MousePrev.X)];
