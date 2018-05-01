@@ -60,6 +60,11 @@ begin
     end;
 end;
 
+procedure onBaseDraw();
+begin
+    clearWNDEx(0, console.combinecolors($01C3, $A55F));
+end;
+
 procedure init();
 begin
     colors:= console.combinecolors($0000, $FFFF);
@@ -70,6 +75,7 @@ begin
     console.setShellWindow(Handle, false);
     console.registerEventHandler(Handle, EVENT_DRAW, void(@Draw));
     console.registerEventHandler(Handle, EVENT_MOUSE_CLICK, void(@OnMouseClick));
+    console.registerEventHandler(0, EVENT_DRAW, void(@onBaseDraw));
 end;
 
 end.

@@ -249,15 +249,15 @@ type
 
     THooks = record
         OnDraw       : TDrawHook;       //Implemented
-        OnMouseClick : TMouseClickHook; 
+        OnMouseClick : TMouseClickHook; //Implemented
         OnMouseMove  : TMouseMoveHook;  
         OnMouseDown  : TMouseDownHook;  
         OnMouseUp    : TMouseUpHook;    
-        OnKeyPressed : TKeyPressedHook; 
-        OnClose      : TCloseHook;     //Implemented
-        OnMinimize   : TMinimizeHook;  
-        OnFocus      : TFocusHook;     //Implemented
-        OnLoseFocus  : TLoseFocusHook; //Implemented
+        OnKeyPressed : TKeyPressedHook; //Implemented
+        OnClose      : TCloseHook;      //Implemented
+        OnMinimize   : TMinimizeHook;   
+        OnFocus      : TFocusHook;      //Implemented
+        OnLoseFocus  : TLoseFocusHook;  //Implemented
     end;
 
     TWindow = record
