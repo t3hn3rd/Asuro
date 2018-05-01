@@ -3,7 +3,7 @@ unit splash;
 interface
 
 uses
-    console, keyboard;
+    console, keyboard, RTC;
 
 procedure init();
 
@@ -11,8 +11,9 @@ implementation
 
 var
     Splash_Handle : HWND;
-    Tick : uint32;
+    Seconds : uint32 = 0;
     Colors : uint32;
+    Delta  : uint32 = 0;
     Loops  : uint32 = 0;
 
 procedure quit();
@@ -28,12 +29,14 @@ end;
 
 procedure animate();
 var
-    Delta : uint32;
+    DateTime : TDateTime;
 
 begin
-    inc(Tick);
-    Delta:= Tick div 100;
-    Delta:= Delta mod 15;
+    DateTime:= getDateTime;
+    if DateTime.Seconds <> Seconds then begin
+        inc(Delta);
+        Seconds:= DateTime.Seconds;
+    end;
     ClearWNDEx(Splash_Handle, Colors);
     if Delta > 1 then begin
         setCursorPosWND(45, 27, Splash_Handle);
@@ -67,7 +70,11 @@ begin
         setCursorPosWND(45, 34, Splash_Handle);
         writestringExWND('d8''          `8b  `"YbbdP"''   `"YbbdP''Y8  88           `"YbbdP"''', Colors, Splash_Handle);
     end;
-    if Tick > 2100 then begin 
+    if Delta > 9 then begin
+        Inc(Loops);
+        Delta:= 1;
+    end;
+    if Loops > 2 then begin 
         quit();
     end;
 end;
