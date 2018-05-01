@@ -341,6 +341,7 @@ end;
 procedure key_event(info : TKeyInfo);
 begin
     if TERMINAL_HWND <> 0 then begin
+        //writeintlnWND(info.key_code, TERMINAL_HWND);
         if (info.key_code >= 32) and (info.key_code <= 126) then begin
             if bIndex < 1024 then begin
                 buffer[bIndex]:= info.key_code;

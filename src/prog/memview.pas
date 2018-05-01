@@ -3,7 +3,7 @@ unit memview;
 interface
 
 uses
-    console, terminal;
+    console, terminal, keyboard;
 
 procedure init();
 
@@ -63,6 +63,16 @@ begin
     end;
 end;
 
+procedure OnKeyPressed(info : TKeyInfo);
+begin
+    if info.key_code = 16 then begin
+        dec(MEM_LOC, 16);
+    end;
+    if info.key_code = 18 then begin
+        inc(MEM_LOC, 16);
+    end;
+end;
+
 procedure run(Params : PParamList);
 var
     loc : PChar;
@@ -87,6 +97,7 @@ begin
                 Handle:= newWindow(20, 40, 63, 14, 'MEMVIEW');
                 registerEventHandler(Handle, EVENT_DRAW, void(@Draw));
                 registerEventHandler(Handle, EVENT_CLOSE, void(@OnClose));
+                registerEventHandler(Handle, EVENT_KEY_PRESSED, void(@OnKeyPressed));
                 writestringWND('Memview started at location: ', getTerminalHWND);
             end else begin
                 writestringWND('Memview location changed to: ', getTerminalHWND);
