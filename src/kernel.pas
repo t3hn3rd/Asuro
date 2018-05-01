@@ -46,6 +46,7 @@ uses
      fonts,
      RTC,
      serial,
+     shell,
      memview;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
@@ -212,7 +213,10 @@ begin
      tracer.pop_trace;
 
      { Init Progs }
+     shell.init();
      memview.init();
+
+     console.writehexln(uint32(multibootinfo^.framebuffer_addr));
 
      tracer.push_trace('kmain.KEYHOOK');
      keyboard.hook(@temphook);

@@ -53,6 +53,10 @@ var
     Packet : uint32;
     Registered : Boolean = false;
     NeedsRedraw : Boolean = false;
+    RMouseDownPos : TMousePos;
+    LMouseDownPos : TMousePos;
+    LMouseDown : Boolean;
+    RMouseDown : Boolean;
 
 procedure DrawCursor;
 var
@@ -142,6 +146,9 @@ begin
             f:= Mouse_Byte[0];
             Packet.x_sign:= (f AND %00010000) = %00010000;
             Packet.y_sign:= (f AND %00100000) = %00100000;
+            Packet.MMB_Down:= (f AND %00000100) = %00000100;
+            Packet.RMB_Down:= (f AND %00000010) = %00000010;
+            Packet.LMB_Down:= (f AND %00000001) = %00000001;
             Packet.x_overflow:= (f AND $40) = $40;
             Packet.y_overflow:= (f AND $80) = $80;
             Packet.x_movement:= Mouse_Byte[1] - ((f SHL 4) AND $100);
@@ -155,6 +162,42 @@ begin
                 if Current.y > 1015 then Current.y:= 1015;
             end;
             Cycle:= 0;
+            if Packet.LMB_Down then begin
+                if not LMouseDown then begin
+                    LMouseDown:= true;
+                    LMouseDownPos.x:= Current.x;
+                    LMouseDownPos.y:= Current.y;
+                    //MouseDownEvent
+                    console._mouseDown();
+                end;
+            end;
+            if not Packet.LMB_Down then begin
+                if LMouseDown then begin
+                    If (Current.x = LMouseDownPos.x) and (Current.y = LMouseDownPos.y) then begin
+                        Console._MouseClick(true);
+                    end;
+                    //MouseUpEvent
+                    Console._MouseUp();
+                    LMouseDown:= false;
+                end;
+            end;
+            if Packet.RMB_Down then begin
+                if not RMouseDown then begin
+                    RMouseDown:= true;
+                    RMouseDownPos.x:= Current.x;
+                    RMouseDownPos.y:= Current.y;
+                end;
+            end;
+            
+            if not Packet.RMB_Down then begin
+                if RMouseDown then begin
+                    if (Current.x = RMouseDownPos.x) and (Current.y = RMouseDownPos.y) then begin
+                        Console._MouseClick(false);
+                    end;
+                end;
+                RMouseDown:= false;
+            end;
+            
             console.setMousePosition(Current.x, Current.y);
         end;
     end;

@@ -108,6 +108,7 @@ procedure _newline();
 { WND Specific }
 
 procedure clearWND(WND : uint32);
+procedure clearWNDEx(WND : uint32; attributes : uint32);
 
 procedure writecharWND(character : char; WND : uint32);
 procedure writecharlnWND(character : char; WND : uint32);
@@ -154,6 +155,7 @@ procedure writebin32exWND(b : uint32; attributes: uint32; WND : uint32);
 procedure writebin32lnexWND(b : uint32; attributes: uint32; WND : uint32);
 
 procedure backspaceWND(WND : uint32);
+procedure setCursorPosWND(x : uint32; y : uint32; WND : HWND);
 
 procedure _increment_x_WND(WND : uint32);
 procedure _increment_y_WND(WND : uint32);
@@ -185,6 +187,13 @@ function  newWindow(x : uint32; y : uint32; Width : uint32; Height : uint32; Tit
 function  registerEventHandler(WND : HWND; Event : TEventType; Handler : void) : boolean;
 procedure forceQuitAll;
 procedure closeWindow(WND : HWND);
+procedure bordersEnabled(WND : HWND; enabled : boolean);
+procedure SetShellWindow(WND : HWND; b : boolean);
+function  getWindowName(WND : HWND) : pchar;
+
+procedure _MouseDown();
+procedure _MouseUp();
+procedure _MouseClick(left : boolean);
 
 implementation
 
@@ -258,6 +267,7 @@ type
         Hooks       : THooks;
         Closed      : boolean;
         Border      : boolean;
+        ShellWND    : boolean;
     end;
     PWindow = ^TWindow;
 
@@ -286,6 +296,110 @@ var
    Window_Border      : TCharacter;
    Default_Char       : TCharacter;
    WindowTitleMask    : TMask;
+   WindowMask         : TMask;
+   MouseDown          : Boolean;
+   WindowMovePos      : TMouseCoord;
+   MovingWindow       : uint32;
+
+
+procedure _MouseDown();
+begin
+    MouseDown:= true;
+end;
+
+procedure _MouseUp();
+begin
+    MouseDown:= false;
+end;
+
+procedure _MouseClick(left : boolean);
+begin
+
+end;
+
+function getWindowName(WND : HWND) : pchar;
+var
+    Window : PWindow;
+
+begin
+    getWindowName:= nil;
+    Window:= WindowManager.Windows[WND];
+    if Window <> nil then begin
+        if Window^.ShellWND then begin
+            getWindowName:= Window^.WND_NAME;
+        end;
+    end;
+end;
+
+procedure SetShellWindow(WND : HWND; b : boolean);
+var
+    Window : PWindow;
+
+begin
+    Window:= WindowManager.Windows[WND];
+    if Window <> nil then begin
+        Window^.ShellWND:= b;
+    end;
+end;
+
+procedure bordersEnabled(WND : HWND; enabled : boolean);
+var
+    Window : PWindow;
+
+begin
+    Window:= WindowManager.Windows[WND];
+    if Window <> nil then begin
+        Window^.Border:= enabled;
+    end;
+end;
+
+procedure setCursorPosWND(x : uint32; y : uint32; WND : HWND);
+var
+    Window : PWindow;
+
+begin
+     Window:= WindowManager.Windows[WND];
+     if Window <> nil then begin
+        while x > 159 do dec(x);
+        while y > 63 do dec(y);
+        Window^.Cursor.x:= x;
+        Window^.Cursor.y:= y;
+     end;
+end;
+
+procedure setWindowPosition(WND : HWND; x, y : sint32);
+var
+    Window : PWindow;
+    nx, ny : sint32;
+
+begin
+    Window:= WindowManager.Windows[WND];
+    If Window <> nil then begin
+        nx:= x;
+        ny:= y;
+        if Window^.Border then begin
+            if nx < 2 then nx:= 2;
+            if ny < 1 then ny:= 1;
+            while (nx + Window^.WND_W + 2) > 159 do begin
+                dec(nx);
+            end;
+            while (ny + Window^.WND_H + 1) > 63 do begin
+                dec(ny);
+            end;
+        end else begin
+            if nx < 0 then nx:= 0;
+            if ny < 0 then ny:= 0;
+            while (nx + Window^.WND_W) > 159 do begin
+                dec(nx);
+            end;
+            while (ny + Window^.WND_H) > 63 do begin
+                dec(ny);
+            end;
+        end;
+        Window^.WND_X:= nx;
+        Window^.WND_Y:= ny;
+    end;
+end;
 
 function registerEventHandler(WND : HWND; Event : TEventType; Handler : void) : boolean;
 begin
@@ -332,6 +446,7 @@ begin
         WND^.visible:= true;
         WND^.Closed:= false;
         WND^.Border:= true;
+        WND^.ShellWND:= true;
         WND^.Hooks.OnDraw       := nil;
         WND^.Hooks.OnMouseClick := nil;
         WND^.Hooks.OnMouseMove  := nil;
@@ -476,12 +591,35 @@ var
     WXR, WYR : sint32;
     STRC : uint32;
     MIDP, STARTP : uint32;
+    deltax, deltay : sint32;
 
 begin
     for y:=0 to 63 do begin
         for x:=0 to 159 do begin
             Console_Matrix[y][x]:= Default_Char;
         end;
+    end;
+    if MouseDown then begin
+        if MovingWindow = 0 then begin
+            MovingWindow:= WindowTitleMask[MouseYToTile(WindowManager.MousePrev.Y)][MouseXToTile(WindowManager.MousePrev.X)];
+            if MovingWindow <> 0 then begin
+                WindowMovePos.x:= MouseXToTile(WindowManager.MousePrev.X);
+                WindowMovePos.y:= MouseYToTile(WindowManager.MousePrev.Y);
+            end;
+        end;
+        if MovingWindow <> 0 then begin
+            if WindowManager.Windows[MovingWindow] <> nil then begin
+                deltax:= WindowMovePos.x - MouseXToTile(WindowManager.MousePrev.X);
+                deltay:= WindowMovePos.y - MouseYToTile(WindowManager.MousePrev.Y);
+                WindowMovePos.x:= MouseXToTile(WindowManager.MousePrev.X);
+                WindowMovePos.y:= MouseYToTile(WindowManager.MousePrev.Y);
+                setWindowPosition(MovingWindow, WindowManager.Windows[MovingWindow]^.WND_X - deltax, WindowManager.Windows[MovingWindow]^.WND_Y - deltay);
+                //WindowManager.Windows[MovingWindow]^.WND_X:= WindowManager.Windows[MovingWindow]^.WND_X - deltax;
+                //WindowManager.Windows[MovingWindow]^.WND_Y:= WindowManager.Windows[MovingWindow]^.WND_Y - deltay;
+            end;
+        end;
+    end else begin
+        MovingWindow:= 0;
     end;
     for w:=0 to MAX_WINDOWS-1 do begin
         if WindowManager.Windows[w] <> nil then begin
@@ -528,14 +666,11 @@ begin
                         if x > 159 then break;
                         Console_Matrix[y][x]:= WindowManager.Windows[w]^.buffer[y - WindowManager.Windows[w]^.WND_Y][x - WindowManager.Windows[w]^.WND_X];
                         WindowTitleMask[y][x]:= 0;
+                        WindowMask[y][x]:= w;
                     end;
                 end;
             end;
             if WindowManager.Windows[w]^.Closed then _closeWindow(w);
-            if WindowTitleMask[MouseYToTile(WindowManager.MousePrev.Y)][MouseXToTile(WindowManager.MousePrev.X)] <> 0 then begin
-                writestring('Mouse Window: ');
-                writeintln(WindowTitleMask[MouseYToTile(WindowManager.MousePrev.Y)][MouseXToTile(WindowManager.MousePrev.X)]);
-            end;
         end;
     end;
     redrawMatrix;
@@ -570,6 +705,7 @@ begin
     WND^.visible:= true;
     WND^.Closed:= false;
     WND^.Border:= false;
+    WND^.ShellWND:= false;
     WindowManager.Windows[0]:= WND;
 end;
 
@@ -1254,6 +1390,24 @@ begin
      end;
      //Console_Cursor.X:= 0;
      //Console_Cursor.Y:= 0;
+end;
+
+procedure clearWNDEx(WND : uint32; attributes : uint32);
+var
+   x,y: Byte;
+
+begin
+     if WindowManager.Windows[WND] <> nil then begin
+        for y:=0 to 63 do begin
+            for x:=0 to 159 do begin
+                WindowManager.Windows[WND]^.Buffer[y][x].Character:= ' ';
+                WindowManager.Windows[WND]^.Buffer[y][x].Attributes:= attributes;
+                WindowManager.Windows[WND]^.row_dirty[y]:= true;
+            end;
+        end;
+        WindowManager.Windows[WND]^.Cursor.X:= 0;
+        WindowManager.Windows[WND]^.Cursor.Y:= 0;
+     end;
 end;
 
 procedure writebin8exWND(b : uint8; attributes: uint32; WND : uint32);
