@@ -356,12 +356,20 @@ end;
 procedure RemoveFromZOrder(WND : HWND);
 var
     i : uint32;
+    idx : uint32;
 
 begin
+    idx:= MAX_WINDOWS;
     for i:=0 to MAX_WINDOWS-1 do begin
         if WindowManager.Z_Order[i] = WND then begin
             WindowManager.Z_Order[i]:= MAX_WINDOWS;
+            idx:= i;
             break;
+        end;
+    end;
+    if idx <> MAX_WINDOWS then begin
+        for i:=idx to MAX_WINDOWS-1 do begin
+            WindowManager.Z_Order[i]:= WindowManager.Z_Order[i+1];
         end;
     end;
 end;
