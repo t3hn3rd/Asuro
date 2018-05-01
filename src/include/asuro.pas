@@ -3,11 +3,11 @@ unit asuro;
 interface
  
 const
-     VERSION       = '1.0.0-620a';
+     VERSION       = '1.0.0-622a';
      VERSION_MAJOR = '1';
      VERSION_MINOR = '0';
      VERSION_SUB   = '0';
-     REVISION      = '620';
+     REVISION      = '622';
      RELEASE       = 'a';
  
 implementation
