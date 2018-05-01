@@ -19,11 +19,26 @@ type
 
 procedure init;
 function getDateTime : TDateTime;
+function weekdayToString(Weekday : uint8) : pchar;
 
 implementation
 
 var
     DateTime : TDateTime;
+
+function weekdayToString(Weekday : uint8) : pchar;
+begin
+    case Weekday of
+        0:weekdayToString:= 'Saturday';
+        1:weekdayToString:= 'Sunday';
+        2:weekdayToString:= 'Monday';
+        3:weekdayToString:= 'Tuesday';
+        4:weekdayToString:= 'Wednesday';
+        5:weekdayToString:= 'Thursday';
+        6:weekdayToString:= 'Friday';
+        else weekdayToString:= 'Unknown';
+    end;
+end;
 
 function is_update_in_progress : boolean;
 var

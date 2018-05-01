@@ -14,7 +14,7 @@ interface
 const
      KERNEL_VIRTUAL_BASE = $C0000000;
      KERNEL_PAGE_NUMBER = KERNEL_VIRTUAL_BASE SHR 22;
-     BSOD_ENABLE = false;
+     BSOD_ENABLE = true;
      TRACER_ENABLE = true;
      CONSOLE_SLOW_REDRAW = false; //Redraws the Window manager after every character, but slows performance.
 

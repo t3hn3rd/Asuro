@@ -269,8 +269,8 @@ begin
      writeIntWND(DateTime.Minutes, TERMINAL_HWND);
      writeStringWND(':', TERMINAL_HWND);
      writeIntlnWND(DateTime.Seconds, TERMINAL_HWND);
-     //writeStringWND('Weekday: ', TERMINAL_HWND);
-     //writeIntlnWND(DateTime.Weekday, TERMINAL_HWND); 
+     writeStringWND('Weekday: ', TERMINAL_HWND);
+     writeStringlnWND(WeekdayToString(DateTime.Weekday), TERMINAL_HWND); 
 end;
 
 procedure registerCommand(command : pchar; method : TCommandMethod; description : pchar);

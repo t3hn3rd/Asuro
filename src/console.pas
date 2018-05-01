@@ -43,7 +43,9 @@ type
                    EVENT_MOUSE_UP,
                    EVENT_KEY_PRESSED,
                    EVENT_CLOSE,
-                   EVENT_MINIMIZE );
+                   EVENT_MINIMIZE,
+                   EVENT_FOCUS,
+                   EVENT_LOSE_FOCUS );
 
 procedure init();
 procedure clear();
@@ -242,6 +244,8 @@ type
     TKeyPressedHook = procedure(info : TKeyInfo);
     TCloseHook      = procedure();
     TMinimizeHook   = procedure();
+    TFocusHook      = procedure();
+    TLoseFocusHook  = procedure();
 
     THooks = record
         OnDraw       : TDrawHook;
@@ -252,6 +256,8 @@ type
         OnKeyPressed : TKeyPressedHook;
         OnClose      : TCloseHook;
         OnMinimize   : TMinimizeHook;
+        OnFocus      : TFocusHook;
+        OnLoseFocus  : TLoseFocusHook;
     end;
 
     TWindow = record
@@ -414,6 +420,8 @@ begin
             EVENT_KEY_PRESSED : WindowManager.Windows[WND]^.Hooks.OnKeyPressed:= TKeyPressedHook(Handler);
             EVENT_CLOSE       : WindowManager.Windows[WND]^.Hooks.OnClose:=      TCloseHook(Handler);
             EVENT_MINIMIZE    : WindowManager.Windows[WND]^.Hooks.OnMinimize:=   TMinimizeHook(Handler);
+            EVENT_FOCUS       : WindowManager.Windows[WND]^.Hooks.OnFocus:=      TFocusHook(Handler);
+            EVENT_LOSE_FOCUS  : WindowManager.Windows[WND]^.Hooks.OnLoseFocus:=  TLoseFocusHook(Handler);
             else registerEventHandler:= false;
         end;
     end else begin
@@ -455,6 +463,8 @@ begin
         WND^.Hooks.OnKeyPressed := nil;
         WND^.Hooks.OnClose      := nil;
         WND^.Hooks.OnMinimize   := nil;
+        WND^.Hooks.OnFocus      := nil;
+        WND^.Hooks.OnLoseFocus  := nil;
         WindowManager.Windows[newWindow]:= WND;
     end;
 end;
