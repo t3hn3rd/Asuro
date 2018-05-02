@@ -37,6 +37,7 @@ type
     TCommandMethod = procedure(params : PParamList);
     TCommand = record
         registered  : boolean;
+        hidden      : boolean;
         command     : pchar;
         method      : TCommandMethod;
         description : pchar;
@@ -52,6 +53,7 @@ var
 procedure run;
 procedure init;
 procedure registerCommand(command : pchar; method : TCommandMethod; description : pchar);
+procedure registerCommandEx(command : pchar; method : TCommandMethod; description : pchar; hide : boolean);
 function getParams(buf : TCommandBuffer) : PParamList;
 function paramCount(params : PParamList) : uint32;
 function getParam(index : uint32; params : PParamList) : pchar;
@@ -209,15 +211,27 @@ end;
 
 procedure help(params : PParamList);
 var
+    i, j : uint32;
+    longestCommand : uint32;
+    len : uint32;
 
-    i : uint32;
 begin
+    longestCommand:= 0;
+    for i:=0 to 65534 do begin
+        if (Commands[i].Registered) and not(Commands[i].hidden) then begin
+            if stringSize(Commands[i].command) > longestCommand then longestCommand:= stringSize(Commands[i].command);
+        end;
+    end;
     console.writestringlnWND('Registered Commands: ', TERMINAL_HWND);
     for i:=0 to 65534 do begin
-        if Commands[i].Registered then begin
+        if (Commands[i].Registered) and not(Commands[i].hidden) then begin
             console.writestringWND('  ', TERMINAL_HWND);
             console.writestringWND(Commands[i].command, TERMINAL_HWND);
-            console.writestringWND(' - ', TERMINAL_HWND);
+            len:= longestCommand - StringSize(Commands[i].command);
+            for j:=0 to len do begin
+                writeStringWND(' ', TERMINAL_HWND);
+            end;
+            console.writestringWND('- ', TERMINAL_HWND);
             console.writestringlnWND(Commands[i].description, TERMINAL_HWND);
         end;
     end;
@@ -282,6 +296,21 @@ begin
     while Commands[index].registered = true do inc(index);
     Commands[index].registered:= true;
     Commands[index].Command:= command;
+    Commands[index].hidden:= false;
+    Commands[index].method:= method;
+    Commands[index].description:= description;
+end;
+
+procedure registerCommandEx(command : pchar; method : TCommandMethod; description : pchar; hide : boolean);
+var
+    index : uint32;
+
+begin
+    index:= 0;
+    while Commands[index].registered = true do inc(index);
+    Commands[index].registered:= true;
+    Commands[index].Command:= command;
+    Commands[index].hidden:= hide;
     Commands[index].method:= method;
     Commands[index].description:= description;
 end;
@@ -408,12 +437,8 @@ begin
     registerCommand('CLEAR', @clear, 'Clear the Screen.');
     registerCommand('HELP', @help, 'Lists all registered commands and their description.');
     registerCommand('ECHO', @echo, 'Echo''s text to the terminal.');
-    registerCommand('TESTPARAMS', @testParams, 'Tests param parsing.');
-    registerCommand('TEST', @test, 'Command for testing.');
-    registerCommand('CD', @change_dir, 'Change Directory test.');
-    registerCommand('PATTERN', @cockwomble, 'Print an animated pattern to the screen.');
     registerCommand('TIME', @printTime, 'Print the current time.');
-    registerCommand('SERIAL', @SendSerial, 'Send ''helloworld'' through COM1.');
+    registerCommandEx('SERIAL', @SendSerial, 'Send ''helloworld'' through COM1.', true);
     registerCommand('REBOOT', @Reboot, 'Reboot the system.');
     console.writestringln('TERMINAL: INIT END.');
 end;
@@ -426,7 +451,7 @@ end;
 procedure run;
 begin
     if TERMINAL_HWND = 0 then begin
-        TERMINAL_HWND:= newWindow(20, 10, 90, 20, 'ASURO TERMINAL');
+        TERMINAL_HWND:= newWindow(20, 10, 90, 30, 'ASURO TERMINAL');
         console.registerEventHandler(TERMINAL_HWND, EVENT_KEY_PRESSED, void(@key_event));
         console.registerEventHandler(TERMINAL_HWND, EVENT_CLOSE, void(@OnClose));
         console.clearWND(TERMINAL_HWND);

@@ -13,7 +13,7 @@ function  get_trace_N(idx : uint32) : pchar;
 implementation
 
 uses
-    console, lmemorymanager, util, strings, serial;
+    console, lmemorymanager, util, strings, serial, terminal;
 
 const
     MAX_TRACE = 40;
@@ -22,6 +22,60 @@ var
     t_ready     : Boolean;
     Locked      : Boolean;
     Traces      : Array[0..MAX_TRACE-1] of PChar;
+    c_lock      : Boolean = false;
+
+
+procedure terminal_command_tracer(Params : PParamList);
+var
+    p1, p2 : PChar;
+    count : uint32;
+    i : uint32; 
+    t : PChar;
+
+begin
+    if ParamCount(Params) > 0 then begin
+        p1:= getParam(0, Params);
+        if StringEquals(p1, 'list') then begin
+            count:= 5;
+            if ParamCount(Params) > 1 then begin
+                count:= stringToInt(getParam(1, Params));
+                if count > MAX_TRACE-1 then count:= MAX_TRACE-1;
+            end;
+            for i:=0 to count do begin
+                writeStringWND('[-', getTerminalHWND);
+                writeintWND(i, getTerminalHWND);
+                writeStringWND('] ', getTerminalHWND);
+                t:= get_trace_N(i);
+                if t <> nil then writeStringWND(t, getTerminalHWND);
+                writeStringLnWND(' ', getTerminalHWND);
+            end;
+        end;
+        if StringEquals(p1, 'disable') then begin
+            if TRACER_ENABLE then begin
+                t_ready:= false;
+                writeStringLnWND('Tracer disabled.', getTerminalHWND);
+            end else begin
+                writeStringLnWND('Tracer is disabled by the system and it''s status cannot be changed.', getTerminalHWND);
+            end;
+        end;
+        if StringEquals(p1, 'enable') then begin
+            if TRACER_ENABLE then begin
+                t_ready:= true;
+                writeStringLnWND('Tracer enabled.', getTerminalHWND);
+            end else begin
+                writeStringLnWND('Tracer is disabled by the system and it''s status cannot be changed.', getTerminalHWND);
+            end;
+        end;
+    end else begin
+        writeStringLnWND('System Trace Utility', getTerminalHWND);
+        writeStringLnWND(' ', getTerminalHWND);
+        writeStringLnWND('Usage: ', getTerminalHWND);
+        writeStringLnWND('       tracer list <Count> - Print the last <count> traces.', getTerminalHWND);
+        writeStringLnWND('       tracer disable      - Disable Tracer.', getTerminalHWND);
+        writeStringLnWND('       tracer enable       - Enable Tracer.', getTerminalHWND);
+        writeStringLnWND(' ', getTerminalHWND);
+    end;
+end;
 
 procedure freeze;
 begin
@@ -36,13 +90,15 @@ begin
     if TRACER_ENABLE then begin
         if t_ready then begin
             if not Locked then begin
-                Locked:= true;
-                if Traces[MAX_TRACE-1] <> nil then kfree(void(Traces[MAX_TRACE-1]));
-                for i:=MAX_TRACE-1 downto 1 do begin
-                    Traces[i]:= Traces[i-1];
+                if not c_lock then begin
+                    Locked:= true;
+                    if Traces[MAX_TRACE-1] <> nil then kfree(void(Traces[MAX_TRACE-1]));
+                    for i:=MAX_TRACE-1 downto 1 do begin
+                        Traces[i]:= Traces[i-1];
+                    end;
+                    Traces[0]:= StringCopy(t_name);
+                    Locked:= false;
                 end;
-                Traces[0]:= StringCopy(t_name);
-                Locked:= false;
             end;
         end;
     end;
@@ -70,6 +126,7 @@ begin
         t_ready:= true;
         push_trace('kmain');
     end;
+    terminal.registerCommand('TRACER', @terminal_command_tracer, 'System.Tracer Interface.');
 end;
 
 function get_trace_count : uint32;

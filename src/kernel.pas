@@ -12,23 +12,15 @@ unit kernel;
 interface
  
 uses
-     multiboot,
+     multiboot, bios_data_area,
      util,
-     gdt,
-     idt,
-     isr,
-     irq,
+     gdt, idt, isr, irq, tss,
      TMR_0_ISR,
      console,
-     bios_data_area,
-     keyboard,
-     mouse,
-     vmemorymanager,
-     pmemorymanager,
-     lmemorymanager,
+     keyboard, mouse,
+     vmemorymanager, pmemorymanager, lmemorymanager,
      tracer,
      drivermanagement,
-     tss,
      scheduler,
      PCI,
      Terminal,
@@ -54,24 +46,19 @@ procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
 implementation
 
-procedure temphook(ignored : TKeyInfo);
-begin
-   Terminal.run;
-end;
-
 procedure terminal_command_meminfo(params : PParamList);
 begin
     push_trace('kernel.terminal_command_meminfo');
 
-    console.writestring('Lower Memory = ');
-    console.writeint(multibootinfo^.mem_lower);
-    console.writestringln('KB');
-    console.writestring('Higher Memory = ');
-    console.writeint(multibootinfo^.mem_upper);
-    console.writestringln('KB');
-    console.writestring('Total Memory = ');
-    console.writeint(((multibootinfo^.mem_upper + 1000) div 1024) + 1);
-    console.writestringln('MB');
+    console.writestringWND('Lower Memory = ', getTerminalHWND);
+    console.writeintWND(multibootinfo^.mem_lower, getTerminalHWND);
+    console.writestringlnWND('KB', getTerminalHWND);
+    console.writestringWND('Higher Memory = ', getTerminalHWND);
+    console.writeintWND(multibootinfo^.mem_upper, getTerminalHWND);
+    console.writestringlnWND('KB', getTerminalHWND);
+    console.writestringWND('Total Memory = ', getTerminalHWND);
+    console.writeintWND(((multibootinfo^.mem_upper + 1000) div 1024) + 1, getTerminalHWND);
+    console.writestringlnWND('MB', getTerminalHWND);
 
     pop_trace;
 end;
@@ -83,8 +70,8 @@ begin
     if ParamCount(params) > 1 then begin
       bsod(getparam(0, params), getparam(1, params));
     end else begin
-        console.writestringln('Invalid number of params.');
-        console.writestringln('Usage: bsod <error> <info>');
+        console.writestringlnWND('Invalid number of params.', getTerminalHWND);
+        console.writestringlnWND('Usage: bsod <error> <info>', getTerminalHWND);
     end;  
 
     pop_trace; 
@@ -157,7 +144,8 @@ begin
      { Console Init }
      console.init();
 
-     //serial.init();
+     { Serial Init }
+     serial.init();
 
      { Call Tracer }
      tracer.init();
@@ -209,9 +197,6 @@ begin
      console.setdefaultattribute(console.combinecolors($17E0, $0000));
      console.writestringln('Asuro Booted Correctly!');
      console.setdefaultattribute(console.combinecolors($FFFF, $0000));
-     //console.writestringln('');
-     //console.writestringln('Press any key to boot in to Asuro Terminal...');
-     //tracer.pop_trace;
 
      { Init Progs }
      shell.init();
@@ -219,11 +204,6 @@ begin
 
      { Init Splash }
      splash.init();
-
-     //console.writehexln(uint32(multibootinfo^.framebuffer_addr));
-     //tracer.push_trace('kmain.KEYHOOK');
-     //keyboard.hook(@temphook);
-     //tracer.pop_trace;
 
      tracer.push_trace('kmain.END');
 

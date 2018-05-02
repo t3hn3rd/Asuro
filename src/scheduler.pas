@@ -85,20 +85,20 @@ var
     list : PScheduler_Entry;
 
 begin
-    console.writestringln('ThreadID - Priority - Delta');
+    console.writestringlnWND('ThreadID - Priority - Delta', getTerminalHWND);
     list:= Root_Task;
-    console.writeint(list^.ThreadID);
-    console.writestring('        - ');
-    console.writeint(list^.Priority);
-    console.writestring('        - ');
-    console.writeintln(list^.Delta);
+    console.writeintWND(list^.ThreadID, getTerminalHWND);
+    console.writestringWND('        - ', getTerminalHWND);
+    console.writeintWND(list^.Priority, getTerminalHWND);
+    console.writestringWND('        - ', getTerminalHWND);
+    console.writeintlnWND(list^.Delta, getTerminalHWND);
     list:= PScheduler_Entry(list^.Next);
     while list <> Root_Task do begin
-        console.writeint(list^.ThreadID);
-        console.writestring('        - ');
-        console.writeint(list^.Priority);
-        console.writestring('        - ');
-        console.writeintln(list^.Delta);
+        console.writeintWND(list^.ThreadID, getTerminalHWND);
+        console.writestringWND('        - ', getTerminalHWND);
+        console.writeintWND(list^.Priority, getTerminalHWND);
+        console.writestringWND('        - ', getTerminalHWND);
+        console.writeintlnWND(list^.Delta, getTerminalHWND);
         list:= PScheduler_Entry(list^.Next);
     end;
 end;
@@ -115,7 +115,7 @@ begin
     Tick:= 0;
     Active:= False;
     TMR_0_ISR.hook(uint32(@delta));
-    terminal.registerCommand('TASKS', @terminal_command_tasks, 'List Active Processes.');
+    //terminal.registerCommand('TASKS', @terminal_command_tasks, 'List Active Processes.');
     console.outputln('SCHEDULER','INIT END.');
 end;
 

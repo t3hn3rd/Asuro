@@ -438,7 +438,7 @@ end;
 procedure console_command_mac(params : PParamList);
 begin
     push_trace('E1000.console_command_mac');
-    writeMACAddress(@mac[0]);
+    writeMACAddress(@mac[0], getTerminalHWND);
     pop_trace;
 end;
 
@@ -474,6 +474,7 @@ begin
     TestPacket[26]:= mac[4];
     TestPacket[27]:= mac[5];
     sendPacket(void(@TestPacket[0]), 42);
+    writeStringlnWND('E1000 ARP Testpacket Sent.', getTerminalHWND);
     pop_trace;
 end;
 
@@ -513,7 +514,7 @@ begin
         load:= false;
     end else begin
         console.output('E1000 Driver', 'MAC Address: ');
-        writeMACAddress(@mac[0]);
+        writeMACAddress(@mac[0], 0);
 
         startLink();
 

@@ -80,7 +80,14 @@ var
 begin
     tracer.push_trace('memview.run');
     if ParamCount(Params) < 1 then begin
-        writestringlnWND('No memory location specified!', getTerminalHWND);
+        writestringlnWND('Memview Utility', getTerminalHWND);
+        writestringlnWND(' ', getTerminalHWND);
+        writestringlnWND('A tool to display the bytes stored at a memory location for debugging.', getTerminalHWND);
+        writestringlnWND('UP/DOWN on the keyboard can be used to decrement/increment the view location by 16-bytes.', getTerminalHWND);
+        writestringlnWND(' ', getTerminalHWND);
+        writestringlnWND('Usage: ', getTerminalHWND);
+        writestringlnWND('      memview <dLocation> - Display 176 bytes @ <dLocation>', getTerminalHWND);
+        writestringlnWND(' ', getTerminalHWND);
     end else begin
         loc:= GetParam(0, Params);
         if StringEquals(loc, 'close') then begin

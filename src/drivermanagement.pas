@@ -67,15 +67,15 @@ var
 
 implementation
 
-procedure writeBusType(Bus : TBusIdentifier);
+procedure writeBusType(Bus : TBusIdentifier; WND : HWND);
 begin
     case Bus of
-        biUnknown : console.writestring('Unknown');
-        biANY     : console.writestring('ANY');
-        bii2c     : console.writestring('i2c');
-        biPCI     : console.writestring('PCI');
-        biPCIe    : console.writestring('PCIe');
-        biUSB     : console.writestring('USB');
+        biUnknown : console.writestringWND('Unknown', WND);
+        biANY     : console.writestringWND('ANY', WND);
+        bii2c     : console.writestringWND('i2c', WND);
+        biPCI     : console.writestringWND('PCI', WND);
+        biPCIe    : console.writestringWND('PCIe', WND);
+        biUSB     : console.writestringWND('USB', WND);
     end;
 end;
 
@@ -93,29 +93,29 @@ begin
     i:= 1;
     while Drv <> nil do begin
         if Drv^.Loaded then begin
-            console.writeint(i);
-            console.writestring(') ');
-            console.writestring(Drv^.Driver_Name);
-            console.writestring(' - Bus: ');
-            writeBusType(Drv^.Identifier^.Bus);
-            console.writestringln(' ');
-            console.writestring('   [');
-            console.writeHex(Drv^.Identifier^.id0);
-            console.writestring('-');
-            console.writeHex(Drv^.Identifier^.id1);
-            console.writestring('-');
-            console.writeHex(Drv^.Identifier^.id2);
-            console.writestring('-');
-            console.writeHex(Drv^.Identifier^.id3);
-            console.writestring('-');
-            console.writeHex(Drv^.Identifier^.id4);
+            console.writeintWND(i, getTerminalHWND);
+            console.writestringWND(') ', getTerminalHWND);
+            console.writestringWND(Drv^.Driver_Name, getTerminalHWND);
+            console.writestringWND(' - Bus: ', getTerminalHWND);
+            writeBusType(Drv^.Identifier^.Bus, getTerminalHWND);
+            console.writestringlnWND(' ', getTerminalHWND);
+            console.writestringWND('   [', getTerminalHWND);
+            console.writeHexWND(Drv^.Identifier^.id0, getTerminalHWND);
+            console.writestringWND('-', getTerminalHWND);
+            console.writeHexWND(Drv^.Identifier^.id1, getTerminalHWND);
+            console.writestringWND('-', getTerminalHWND);
+            console.writeHexWND(Drv^.Identifier^.id2, getTerminalHWND);
+            console.writestringWND('-', getTerminalHWND);
+            console.writeHexWND(Drv^.Identifier^.id3, getTerminalHWND);
+            console.writestringWND('-', getTerminalHWND);
+            console.writeHexWND(Drv^.Identifier^.id4, getTerminalHWND);
             ex:= Drv^.Identifier^.ex;
             while ex <> nil do begin
-                console.writestring('-');
-                console.writeHex(ex^.idN);
+                console.writestringWND('-', getTerminalHWND);
+                console.writeHexWND(ex^.idN, getTerminalHWND);
                 ex:= ex^.ex;   
             end;
-            console.writestringln(']');
+            console.writestringlnWND(']', getTerminalHWND);
             i:= i + 1;
         end;
         Drv:= Drv^.Next;
@@ -134,30 +134,30 @@ begin
     Drv:= Root;
     i:= 1;
     while Drv <> nil do begin
-        console.writeint(i);
-        console.writestring(') ');
-        console.writestring(Drv^.Driver_Name);
-        console.writestring(' - Bus: ');
-        writeBusType(Drv^.Identifier^.Bus);
-        console.writestring(' - Loaded: ');
-        if Drv^.Loaded then console.writestringln('true') else console.writestringln('false');
-        console.writestring('   [');
-        console.writeHex(Drv^.Identifier^.id0);
-        console.writestring('-');
-        console.writeHex(Drv^.Identifier^.id1);
-        console.writestring('-');
-        console.writeHex(Drv^.Identifier^.id2);
-        console.writestring('-');
-        console.writeHex(Drv^.Identifier^.id3);
-        console.writestring('-');
-        console.writeHex(Drv^.Identifier^.id4);
+        console.writeintWND(i, getTerminalHWND);
+        console.writestringWND(') ', getTerminalHWND);
+        console.writestringWND(Drv^.Driver_Name, getTerminalHWND);
+        console.writestringWND(' - Bus: ', getTerminalHWND);
+        writeBusType(Drv^.Identifier^.Bus, getTerminalHWND);
+        console.writestringWND(' - Loaded: ', getTerminalHWND);
+        if Drv^.Loaded then console.writestringlnWND('true', getTerminalHWND) else console.writestringlnWND('false', getTerminalHWND);
+        console.writestringWND('   [', getTerminalHWND);
+        console.writeHexWND(Drv^.Identifier^.id0, getTerminalHWND);
+        console.writestringWND('-', getTerminalHWND);
+        console.writeHexWND(Drv^.Identifier^.id1, getTerminalHWND);
+        console.writestringWND('-', getTerminalHWND);
+        console.writeHexWND(Drv^.Identifier^.id2, getTerminalHWND);
+        console.writestringWND('-', getTerminalHWND);
+        console.writeHexWND(Drv^.Identifier^.id3, getTerminalHWND);
+        console.writestringWND('-', getTerminalHWND);
+        console.writeHexWND(Drv^.Identifier^.id4, getTerminalHWND);
         ex:= Drv^.Identifier^.ex;
         while ex <> nil do begin
-            console.writestring('-');
-            console.writeHex(ex^.idN);
+            console.writestringWND('-', getTerminalHWND);
+            console.writeHexWND(ex^.idN, getTerminalHWND);
             ex:= ex^.ex;   
         end;
-        console.writestringln(']');
+        console.writestringlnWND(']', getTerminalHWND);
         i:= i + 1;
         Drv:= Drv^.Next;
     end;
@@ -175,41 +175,70 @@ begin
     Dv:= Dev;
     i:= 1;
     while Dv <> nil do begin
-        console.writeint(i);
-        console.writestring(') ');
-        console.writestring(Dv^.Device_Name);
-        console.writestring(' - Bus: ');
-        writeBusType(Dv^.Identifier^.Bus);
-        console.writestringln(' ');
-        console.writestring('   [');
-        console.writeHex(Dv^.Identifier^.id0);
-        console.writestring('-');
-        console.writeHex(Dv^.Identifier^.id1);
-        console.writestring('-');
-        console.writeHex(Dv^.Identifier^.id2);
-        console.writestring('-');
-        console.writeHex(Dv^.Identifier^.id3);
-        console.writestring('-');
-        console.writeHex(Dv^.Identifier^.id4);
+        console.writeintWND(i, getTerminalHWND);
+        console.writestringWND(') ', getTerminalHWND);
+        console.writestringWND(Dv^.Device_Name, getTerminalHWND);
+        console.writestringWND(' - Bus: ', getTerminalHWND);
+        writeBusType(Dv^.Identifier^.Bus, getTerminalHWND);
+        console.writestringlnWND(' ', getTerminalHWND);
+        console.writestringWND('   [', getTerminalHWND);
+        console.writeHexWND(Dv^.Identifier^.id0, getTerminalHWND);
+        console.writestringWND('-', getTerminalHWND);
+        console.writeHexWND(Dv^.Identifier^.id1, getTerminalHWND);
+        console.writestringWND('-', getTerminalHWND);
+        console.writeHexWND(Dv^.Identifier^.id2, getTerminalHWND);
+        console.writestringWND('-', getTerminalHWND);
+        console.writeHexWND(Dv^.Identifier^.id3, getTerminalHWND);
+        console.writestringWND('-', getTerminalHWND);
+        console.writeHexWND(Dv^.Identifier^.id4, getTerminalHWND);
         ex:= Dv^.Identifier^.ex;
         while ex <> nil do begin
-            console.writestring('-');
-            console.writeHex(ex^.idN);
+            console.writestringWND('-', getTerminalHWND);
+            console.writeHexWND(ex^.idN, getTerminalHWND);
             ex:= ex^.ex;   
         end;
-        console.writestringln(']');
+        console.writestringlnWND(']', getTerminalHWND);
         if Dv^.Driver_Loaded then begin
-            console.writestring('   Driver Loaded: ');
+            console.writestringWND('   Driver Loaded: ', getTerminalHWND);
             if Dv^.Driver <> nil then begin
-                console.writestringln(Dv^.Driver^.Driver_Name);
+                console.writestringlnWND(Dv^.Driver^.Driver_Name, getTerminalHWND);
             end else begin
-                console.writestringln('Unknown')
+                console.writestringlnWND('Unknown', getTerminalHWND)
             end;
         end;
         i:= i + 1;
         Dv:= Dv^.Next; 
     end;
     pop_trace;
+end;
+
+procedure terminal_command_dev(Params : PParamList);
+var
+    p1 : pchar;
+
+begin
+    if paramCount(Params) > 0 then begin
+        p1:= getParam(0, Params);
+        if StringEquals(p1, 'drivers') then begin
+            terminal_command_drivers(Params);
+        end;
+        if StringEquals(p1, 'devices') then begin
+            terminal_command_devices(Params);
+        end;
+        if StringEquals(p1, 'driverex') then begin
+            terminal_command_driversex(Params);
+        end;    
+    end else begin
+        writeStringlnWND('Driver Management Interface', getTerminalHWND);
+        writeStringlnWND(' ', getTerminalHWND);
+        writeStringlnWND('An interface to the drivermanagement portion of the kernel.', getTerminalHWND);
+        writeStringlnWND(' ', getTerminalHWND);
+        writeStringlnWND('Usage: ', getTerminalHWND);
+        writeStringlnWND('      dev drivers  - Print a list of loaded drivers.', getTerminalHWND);
+        writeStringlnWND('      dev devices  - Print a list of registered devices.', getTerminalHWND);
+        writeStringlnWND('      dev driverex - Print a list of all available drivers.', getTerminalHWND);
+        writeStringlnWND(' ', getTerminalHWND)
+    end;
 end;
 
 { Main Functions }
@@ -288,9 +317,10 @@ end;
 procedure init;
 begin
     push_trace('driver_management.init');
-    terminal.registerCommand('DRIVERSEX', @terminal_command_driversex, 'List all available drivers.');
-    terminal.registerCommand('DRIVERS', @terminal_command_drivers, 'List loaded drivers.');
-    terminal.registerCommand('DEVICES', @terminal_command_devices, 'List devices.');
+    terminal.registerCommand('DEV', @terminal_command_dev, 'Driver Management Interface.');
+    //terminal.registerCommand('DRIVERSEX', @terminal_command_driversex, 'List all available drivers.');
+    //terminal.registerCommand('DRIVERS', @terminal_command_drivers, 'List loaded drivers.');
+    //terminal.registerCommand('DEVICES', @terminal_command_devices, 'List devices.');
     pop_trace;
 end;
 

@@ -71,18 +71,18 @@ begin
     push_trace('ipv4.terminal_command_ifconfig');
     if paramCount(params) > 2 then begin
     end else begin
-        writestring('   MAC:     ');
-        writeMACAddress(net.GetMAC);
-        writestring('   IPv4:    ');
-        writeIPv4Address(@Config.Address[0]);
-        writestring('   Gateway: ');
-        writeIPv4Address(@Config.Gateway[0]);
-        writestring('   Netmask: ');
-        writeIPv4Address(@Config.Netmask[0]);
+        writestringWND('   MAC:     ', getTerminalHWND);
+        writeMACAddress(net.GetMAC, getTerminalHWND);
+        writestringWND('   IPv4:    ', getTerminalHWND);
+        writeIPv4Address(@Config.Address[0], getTerminalHWND);
+        writestringWND('   Gateway: ', getTerminalHWND);
+        writeIPv4Address(@Config.Gateway[0], getTerminalHWND);
+        writestringWND('   Netmask: ', getTerminalHWND);
+        writeIPv4Address(@Config.Netmask[0], getTerminalHWND);
         if Config.UP then 
-        writestringln('   NetUP:   true') 
+        writestringlnWND('   NetUP:   true', getTerminalHWND) 
         else 
-        writestringln('   NetUP:   false');
+        writestringlnWND('   NetUP:   false', getTerminalHWND);
     end;
     pop_trace;
 end;

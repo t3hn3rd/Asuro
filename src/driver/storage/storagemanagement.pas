@@ -255,8 +255,8 @@ begin
     fileSystems:= ll_New(sizeof(TFilesystem));
     terminal.registerCommand('DISK', @disk_command, 'Disk utility');
     terminal.registerCommand('VOLUME', @volume_command, 'Volume utility');
-    terminal.registerCommand('mkdir', @mkdir_command, 'Volume utility');
-    terminal.registerCommand('ls', @ls_command, 'Volume utility');
+    terminal.registerCommandEx('mkdir', @mkdir_command, 'Volume utility', true);
+    terminal.registerCommandEx('ls', @ls_command, 'Volume utility', true);
     pop_trace();
 end;
 

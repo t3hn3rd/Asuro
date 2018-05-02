@@ -7,8 +7,8 @@ uses
 
 procedure copyMAC(src : puint8; dst : puint8);
 procedure copyIPv4(src : puint8; dst : puint8);
-procedure writeMACAddress(mac : puint8);
-procedure writeIPv4Address(ip : puint8);
+procedure writeMACAddress(mac : puint8; WND : HWND);
+procedure writeIPv4Address(ip : puint8; WND : HWND);
 function MACEqual(mac1 : puint8; mac2 : puint8) : boolean;
 function IPEqual(ip1 : puint8; ip2 : puint8) : boolean;
 function newPacketContext : PPacketContext;
@@ -48,33 +48,33 @@ begin
     pop_trace;
 end;
 
-procedure writeIPv4Address(ip : puint8);
+procedure writeIPv4Address(ip : puint8; WND : HWND);
 var
     i : integer;
 
 begin
     push_trace('netutils.writeIPv4Address');
-    console.writeint(ip[0]);
+    console.writeintWND(ip[0], WND);
     for i:=1 to 3 do begin
-        console.writestring('.');
-        console.writeint(ip[i]);
+        console.writestringWND('.', WND);
+        console.writeintWND(ip[i], WND);
     end;
-    console.writestringln(' ');   
+    console.writestringlnWND(' ', WND);   
     pop_trace;
 end;
 
-procedure writeMACAddress(mac : puint8);
+procedure writeMACAddress(mac : puint8; WND : HWND);
 var
     i : integer;
 
 begin
     push_trace('netutils.writeMACAddress');
-    console.writehexpair(mac[0]);
+    console.writehexpairWND(mac[0], WND);
     for i:=1 to 5 do begin
-        console.writestring(':');
-        console.writehexpair(mac[i]);
+        console.writestringWND(':', WND);
+        console.writehexpairWND(mac[i], WND);
     end;
-    console.writestringln(' ');
+    console.writestringlnWND(' ', WND);
     pop_trace;
 end;
 
