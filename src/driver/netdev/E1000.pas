@@ -533,7 +533,7 @@ begin
 
         load:= true;   
 
-        if load then registercommand('E1000', @console_command_sendtest, 'Test sending a ARP Request.');
+        if load then registercommandEx('E1000', @console_command_sendtest, 'Test sending a ARP Request.', true);
         if load then registercommand('MAC', @console_command_mac, 'Print MAC Address.');
     end;
 
