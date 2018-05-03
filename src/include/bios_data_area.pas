@@ -49,8 +49,17 @@ type
      end;
      PMCFG = ^TMCFG;
 
+     TCounters = record
+        c16 : uint16;
+        c32 : uint32;
+        c64 : uint64;
+     end;
+
 const
      BDA : PBDA = PBDA($C0000400);
+
+var
+    Counters : TCounters;
 
 procedure tick_update(data : void);
 
@@ -61,7 +70,11 @@ uses
 
 procedure tick_update(data : void);
 begin
-    BDA^.Ticks:= BDA^.Ticks + 1;
+    //BDA^.Ticks:= BDA^.Ticks + 1;
+    inc(BDA^.Ticks);
+    inc(Counters.c16);
+    inc(Counters.c32);
+    inc(Counters.c64);
 end;
 
 end.

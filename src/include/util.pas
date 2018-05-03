@@ -46,6 +46,10 @@ procedure BSOD(fault : pchar; info : pchar);
 procedure psleep(t : uint16);
 procedure sleep(seconds : uint32);
 
+function get16bitcounter : uint16;
+function get32bitcounter : uint32;
+function get64bitcounter : uint64;
+
 function BCDToUint8(bcd : uint8) : uint8;
 
 procedure resetSystem();
@@ -337,6 +341,21 @@ begin
     while (good AND $02) > 0 do good:= inb($64);
     outb($64, $FE);
     halt_and_catch_fire;
+end;
+
+function get16bitcounter : uint16;
+begin
+    get16bitcounter:= bios_data_area.Counters.c16;
+end;
+
+function get32bitcounter : uint32;
+begin
+    get32bitcounter:= bios_data_area.Counters.c32;
+end;
+
+function get64bitcounter : uint64;
+begin
+    get64bitcounter:= bios_data_area.Counters.c64;
 end;
 
 procedure BSOD(fault : pchar; info : pchar);

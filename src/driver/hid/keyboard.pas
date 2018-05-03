@@ -21,6 +21,9 @@ type
     TKeyInfo = packed record 
         key_code     : byte;
         is_down_code : boolean; //true when pressing down, false when releasing
+        SHIFT_DOWN   : boolean;
+        CTRL_DOWN    : boolean;
+        ALT_DOWN     : boolean;
     end;
 
     PKeyInfo       = ^TKeyInfo;
@@ -31,7 +34,9 @@ var
     key_matrix       : array [1..256] of TKeyInfo;
     key_matrix_shift : array [1..256] of TKeyInfo;
     captin_hook      : pp_hook_method = nil;
-    is_shift         : boolean = false;      
+    is_shift         : boolean = false;
+    is_ctrl          : boolean = false;
+    is_alt           : boolean = false;      
 
 procedure init(keyboard_layout : array of TKeyInfo);
 procedure hook(proc : pp_hook_method);
@@ -43,20 +48,36 @@ uses
     drivermanagement;
 
 procedure callback(scan_code : void);
+var
+    info : TKeyInfo;
+
 begin
-    //console.writehex(uint8(scan_code));
+    //console.writestring('[Keyboard] Scancode: ');
+    //console.writeintln(uint32(scan_code));
+    info.SHIFT_DOWN:= is_shift;
+    info.CTRL_DOWN:= is_ctrl;
+    info.ALT_DOWN:= is_alt;
     if is_shift then begin
         if key_matrix_shift[uint8(scan_code)].key_code <> 0 then begin
-            if captin_hook <> nil then captin_hook(key_matrix_shift[uint8(scan_code)]);
+            if captin_hook <> nil then begin
+                info.key_code:= key_matrix_shift[uint8(scan_code)].key_code;
+                captin_hook(info);
+            end;
         end;
     end else begin
         if key_matrix[uint8(scan_code)].key_code <> 0 then begin
-            if captin_hook <> nil then captin_hook(key_matrix[uint8(scan_code)]);
+            if captin_hook <> nil then begin
+                info.key_code:= key_matrix[uint8(scan_code)].key_code;
+                captin_hook(info);                
+            end;
         end;
     end;
-
     if uint8(scan_code) = 42 then is_shift := true;
     if uint8(scan_code) = 170 then is_shift := false;
+    if uint8(scan_code) = 29 then is_ctrl := true;
+    if uint8(scan_code) = 157 then is_ctrl := false;
+    if uint8(scan_code) = 56 then is_alt := true;
+    if uint8(scan_code) = 184 then is_alt := false;
 end;
 
 function load(ptr : void) : boolean;

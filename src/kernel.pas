@@ -40,7 +40,8 @@ uses
      serial,
      shell,
      memview,
-     splash;
+     splash,
+     cpu;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
@@ -143,6 +144,9 @@ begin
 
      { Console Init }
      console.init();
+
+     { CPUID }
+     cpu.init();
 
      { Serial Init }
      serial.init();

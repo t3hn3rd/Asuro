@@ -117,19 +117,29 @@ begin
             tmHex:printmemoryashex(MEM_LOC, 176, 16, ' ', true);
             tmChar:printmemoryaschar(MEM_LOC, 176, 16, ' ', true);
         end;
-        
     end;
 end;
 
 procedure OnKeyPressed(info : TKeyInfo);
 begin
-    if info.key_code = 16 then begin
-        dec(MEM_LOC, 16);
-        NEW_LOC:= true;
-    end;
-    if info.key_code = 18 then begin
-        inc(MEM_LOC, 16);
-        NEW_LOC:= true;
+    if info.CTRL_DOWN then begin
+        if info.key_code = 16 then begin
+            dec(MEM_LOC, 176);
+            NEW_LOC:= true;
+        end;
+        if info.key_code = 18 then begin
+            inc(MEM_LOC, 176);
+            NEW_LOC:= true;
+        end;
+    end else begin
+        if info.key_code = 16 then begin
+            dec(MEM_LOC, 16);
+            NEW_LOC:= true;
+        end;
+        if info.key_code = 18 then begin
+            inc(MEM_LOC, 16);
+            NEW_LOC:= true;
+        end;
     end;
     if info.key_code = uint8('c') then begin
         Mode:= tmChar;
