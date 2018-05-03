@@ -12,41 +12,95 @@ implementation
 uses
     strings, tracer;
 
+type
+    TMode = (tmHex, tmChar);
+
 var
     Handle  : HWND = 0;
     MEM_LOC : uint32;
+    NEW_LOC : Boolean;
+    Colors  : uint32;
+    Changed : uint32;
+    Data    : Array[0..176] of byte;
+    Mode    : TMode;
 
-procedure mvprintmemory(source : uint32; length : uint32; col : uint32; delim : PChar; offset_row : boolean);
+procedure printmemoryaschar(source : uint32; length : uint32; col : uint32; delim : PChar; offset_row : boolean);
 var
     buf : puint8;
     i   : uint32;
 
-begin   
+begin
     tracer.push_trace('memview.printmemory');
     buf:= puint8(source);
-    console.writestringlnWND(' ', Handle);
-    console.writestringlnWND(' ', Handle);
+    if NEW_LOC then begin
+        NEW_LOC:= false;
+        for i:=0 to length-1 do begin
+            Data[i]:= buf[i];
+        end;
+    end;
+    console.writestringlnExWND(' ', Colors, Handle);
+    console.writestringlnExWND(' ', Colors, Handle);
     for i:=0 to length-1 do begin
         if offset_row and (i = 0) then begin
-            console.writestringWND('  ', Handle);
-            console.writehexWND(source + (i), Handle);
-            console.writestringWND(': ', Handle);
+            console.writestringExWND('  ', Colors, Handle);
+            console.writehexExWND(source + (i), Colors, Handle);
+            console.writestringExWND(': ', Colors, Handle);
         end; 
-        console.writehexpairWND(buf[i], Handle);
+        if buf[i] = Data[i] then console.writecharExWND(char(buf[i]), Colors, Handle) else console.writecharExWND(char(buf[i]), Changed, Handle);
+        console.writecharExWND(' ', Colors, Handle);
         if i<>length-1 then begin
             if ((i+1) MOD col) = 0 then begin
-                console.writestringlnWND(' ', Handle);  
+                console.writestringlnExWND(' ', Colors, Handle);  
                 if offset_row then begin
-                    console.writestringWND('  ', Handle);
-                    console.writehexWND(source + (i + 1), Handle);
-                    console.writestringWND(': ', Handle);
+                    console.writestringExWND('  ', Colors, Handle);
+                    console.writehexExWND(source + (i + 1), Colors, Handle);
+                    console.writestringExWND(': ', Colors, Handle);
                 end;  
             end else begin
-                console.writestringWND(delim, Handle);
+                console.writestringExWND(delim, Colors, Handle);
             end;
         end;
     end;
-    console.writestringlnWND(' ', Handle);   
+    console.writestringlnExWND(' ', Colors, Handle);   
+end;
+
+procedure printmemoryashex(source : uint32; length : uint32; col : uint32; delim : PChar; offset_row : boolean);
+var
+    buf : puint8;
+    i   : uint32;
+
+begin
+    tracer.push_trace('memview.printmemory');
+    buf:= puint8(source);
+    if NEW_LOC then begin
+        NEW_LOC:= false;
+        for i:=0 to length-1 do begin
+            Data[i]:= buf[i];
+        end;
+    end;
+    console.writestringlnExWND(' ', Colors, Handle);
+    console.writestringlnExWND(' ', Colors, Handle);
+    for i:=0 to length-1 do begin
+        if offset_row and (i = 0) then begin
+            console.writestringExWND('  ', Colors, Handle);
+            console.writehexExWND(source + (i), Colors, Handle);
+            console.writestringExWND(': ', Colors, Handle);
+        end; 
+        if buf[i] = Data[i] then console.writehexpairExWND(buf[i], Colors, Handle) else console.writehexpairExWND(buf[i], Changed, Handle);
+        if i<>length-1 then begin
+            if ((i+1) MOD col) = 0 then begin
+                console.writestringlnExWND(' ', Colors, Handle);  
+                if offset_row then begin
+                    console.writestringExWND('  ', Colors, Handle);
+                    console.writehexExWND(source + (i + 1), Colors, Handle);
+                    console.writestringExWND(': ', Colors, Handle);
+                end;  
+            end else begin
+                console.writestringExWND(delim, Colors, Handle);
+            end;
+        end;
+    end;
+    console.writestringlnExWND(' ', Colors, Handle);   
 end;
 
 procedure OnClose();
@@ -58,8 +112,12 @@ procedure Draw();
 begin
     tracer.push_trace('memview.draw');
     if Handle <> 0 then begin
-        clearWND(Handle);
-        mvprintmemory(MEM_LOC, 176, 16, ' ', true);
+        clearWNDEx(Handle, Colors);
+        case mode of
+            tmHex:printmemoryashex(MEM_LOC, 176, 16, ' ', true);
+            tmChar:printmemoryaschar(MEM_LOC, 176, 16, ' ', true);
+        end;
+        
     end;
 end;
 
@@ -67,9 +125,17 @@ procedure OnKeyPressed(info : TKeyInfo);
 begin
     if info.key_code = 16 then begin
         dec(MEM_LOC, 16);
+        NEW_LOC:= true;
     end;
     if info.key_code = 18 then begin
         inc(MEM_LOC, 16);
+        NEW_LOC:= true;
+    end;
+    if info.key_code = uint8('c') then begin
+        Mode:= tmChar;
+    end;
+    if info.key_code = uint8('h') then begin
+        Mode:= tmHex;
     end;
 end;
 
@@ -100,6 +166,7 @@ begin
             end;
         end else begin
             MEM_LOC:= stringToInt(loc);
+            NEW_LOC:= true;
             if Handle = 0 then begin
                 Handle:= newWindow(20, 40, 63, 14, 'MEMVIEW');
                 registerEventHandler(Handle, EVENT_DRAW, void(@Draw));
@@ -118,6 +185,9 @@ procedure init();
 begin
     tracer.push_trace('memview.init');
     terminal.registerCommand('MEMVIEW', @Run, 'View a location in memory [MEMVIEW <Location>]');
+    Colors:= combineColors($0000, $FFFF);
+    Changed:= combineColors($F800, $FFFF);
+    Mode:= tmHex;
 end;
 
 end.

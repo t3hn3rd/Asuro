@@ -97,6 +97,19 @@ type
     TMask = bitpacked array[0..7] of Boolean;
     PMask = ^TMask;
 
+    TRGB565 = bitpacked record
+      B : UBit5;
+      G : UBit6;
+      R : UBit5
+    end;
+    PRGB565 = ^TRGB565;
+
+    TRGB565Pair = bitpacked record
+      Background : TRGB565;
+      Foreground : TRGB565;
+    end;
+    PRGB565Pair = ^TRGB565Pair;
+
 implementation
 
 end.

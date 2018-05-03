@@ -428,6 +428,11 @@ begin
     resetSystem;
 end;
 
+procedure teapot(Params : PParamList);
+begin
+    console.writestringlnWND('Teapot?', getTerminalHWND);
+end;
+
 procedure init;
 begin
     console.writestringln('TERMINAL: INIT BEGIN.');
@@ -440,6 +445,7 @@ begin
     registerCommand('TIME', @printTime, 'Print the current time.');
     registerCommandEx('SERIAL', @SendSerial, 'Send ''helloworld'' through COM1.', true);
     registerCommand('REBOOT', @Reboot, 'Reboot the system.');
+    registerCommandEx('LOLWUT', @teapot, '?', true);
     console.writestringln('TERMINAL: INIT END.');
 end;
 

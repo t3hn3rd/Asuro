@@ -346,7 +346,8 @@ var
     z     : uint32;
 
 begin
-    disable_cursor;
+    console.disable_cursor;
+    console.mouseEnabled(false);
     console.forceQuitAll;
     if not BSOD_ENABLE then exit;
     console.setdefaultattribute(console.combinecolors($FFFF, $F800));

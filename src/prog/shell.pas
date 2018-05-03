@@ -92,7 +92,7 @@ procedure init();
 begin
     Takbar_Colors:= console.combinecolors($0000, $FFFF);
     Explore_Colors:= console.combinecolors($01C3, $07EE);
-    Desktop_Colors:= console.combinecolors($01C3, $A55F);
+    Desktop_Colors:= console.combinecolors($01C3, $34DB);
 
     DesktopHandle:= Console.newWindow(0, 0, 159, 63, 'DESKTOP');
     TaskBarHandle:= Console.newWindow(0, 63, 159, 1, 'SHELL');

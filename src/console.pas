@@ -136,6 +136,7 @@ procedure writewordexWND(i: DWORD; attributes: uint32; WND : uint32);
 procedure writewordlnexWND(i: DWORD; attributes: uint32; WND : uint32);
 
 procedure writehexpairWND(b : uint8; WND : uint32);
+procedure writehexpairExWND(b : uint8; Attributes : uint32; WND : uint32);
 procedure writehexWND(i: DWORD; WND : uint32);
 procedure writehexlnWND(i: DWORD; WND : uint32);
 procedure writehexexWND(i : DWORD; attributes: uint32; WND : uint32);
@@ -888,7 +889,7 @@ begin
     Default_Char.visible:= true;
 
     Window_Border.Character:= ' ';
-    Window_Border.Attributes:= console.combinecolors($01C3, $07EE);//$0000FFFF;
+    Window_Border.Attributes:= console.combinecolors($01C3, $07EE);
     Window_Border.visible:= true;
 
     For w:=0 to MAX_WINDOWS-1 do begin
@@ -1771,6 +1772,11 @@ begin
 end;
 
 procedure writehexpairWND(b : uint8; WND : uint32);
+begin
+    writehexpairExWND(b, Console_Properties.Default_Attribute, WND);
+end;
+
+procedure writehexpairExWND(b : uint8; Attributes : uint32; WND : uint32);
 var
     bn : Array[0..1] of uint8;
     i  : uint8;
@@ -1780,22 +1786,22 @@ begin
     bn[1]:= b AND $0F;
     for i:=0 to 1 do begin
         case bn[i] of
-            0 :writestringWND('0', WND);
-            1 :writestringWND('1', WND);
-            2 :writestringWND('2', WND);
-            3 :writestringWND('3', WND);
-            4 :writestringWND('4', WND);
-            5 :writestringWND('5', WND);
-            6 :writestringWND('6', WND);
-            7 :writestringWND('7', WND);
-            8 :writestringWND('8', WND);
-            9 :writestringWND('9', WND);
-            10:writestringWND('A', WND);
-            11:writestringWND('B', WND);
-            12:writestringWND('C', WND);
-            13:writestringWND('D', WND);
-            14:writestringWND('E', WND);
-            15:writestringWND('F', WND);
+            0 :writestringExWND('0', Attributes, WND);
+            1 :writestringExWND('1', Attributes, WND);
+            2 :writestringExWND('2', Attributes, WND);
+            3 :writestringExWND('3', Attributes, WND);
+            4 :writestringExWND('4', Attributes, WND);
+            5 :writestringExWND('5', Attributes, WND);
+            6 :writestringExWND('6', Attributes, WND);
+            7 :writestringExWND('7', Attributes, WND);
+            8 :writestringExWND('8', Attributes, WND);
+            9 :writestringExWND('9', Attributes, WND);
+            10:writestringExWND('A', Attributes, WND);
+            11:writestringExWND('B', Attributes, WND);
+            12:writestringExWND('C', Attributes, WND);
+            13:writestringExWND('D', Attributes, WND);
+            14:writestringExWND('E', Attributes, WND);
+            15:writestringExWND('F', Attributes, WND);
         end;
     end;
 end;
