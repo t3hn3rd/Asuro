@@ -49,6 +49,7 @@ procedure sleep(seconds : uint32);
 function get16bitcounter : uint16;
 function get32bitcounter : uint32;
 function get64bitcounter : uint64;
+function getTSC : uint64;
 
 function BCDToUint8(bcd : uint8) : uint8;
 
@@ -356,6 +357,23 @@ end;
 function get64bitcounter : uint64;
 begin
     get64bitcounter:= bios_data_area.Counters.c64;
+end;
+
+function getTSC : uint64;
+var
+    hi, lo : uint32;
+
+begin
+    asm
+        PUSH EAX
+        PUSH EDX
+        RDTSC
+        MOV hi, EDX
+        MOV lo, EAX
+        POP EDX
+        POP EAX
+    end;
+    getTSC:= (hi SHL 32) OR lo;
 end;
 
 procedure BSOD(fault : pchar; info : pchar);

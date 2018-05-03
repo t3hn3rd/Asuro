@@ -78,6 +78,7 @@ type
     end;
     TClockSpeed = record
         Hz  : uint32;
+        KHz : uint32;
         MHz : uint32;
         GHz : uint32;
     end;
@@ -154,19 +155,24 @@ end;
 procedure getCPUClockSpeed;
 var
     t1, t2 : TDateTime;
+    c1, c2 : uint64;
     c : uint32;
     
-
 begin
     c:= 0;
-    t1:= getDateTime;
-    t2:= getDateTime;
-    while (t1.Seconds = t2.Seconds) do begin
-        inc(c);
+    if CPUID.Capabilities0^.TSC then begin
+        t1:= getDateTime;
         t2:= getDateTime;
+        c1:= getTSC;
+        while (t1.Seconds = t2.Seconds) do begin
+            t2:= getDateTime;
+        end;
+        c2:= getTSC;
+        c:= c2 - c1;
     end;
     CPUID.ClockSpeed.Hz:= c;
-    CPUID.ClockSpeed.MHz:= CPUID.ClockSpeed.Hz div 1000;
+    CPUID.ClockSpeed.KHz:= CPUID.ClockSpeed.Hz div 1000;
+    CPUID.ClockSpeed.MHz:= CPUID.ClockSpeed.KHz div 1000;
     CPUID.ClockSpeed.GHz:= CPUID.ClockSpeed.MHz div 1000;
 end;
 
