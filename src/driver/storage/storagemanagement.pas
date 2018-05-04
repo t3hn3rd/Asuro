@@ -34,7 +34,7 @@ type
     PPCreateHook = procedure(disk : PStorage_Device; sectors : uint32; start : uint32; config : puint32);
     PPDetectHook = procedure(disk : PStorage_Device);
     PPCreateDirHook = function(volume : PStorage_volume; directory : pchar; dirname : pchar; attributes : uint32) : uint8;
-    PPReadDirHook = function(volume : PStorage_volume; directory : pchar; listPtr : PLinkedListBase) : uint8; //returns: 0 = success, 1 = dir not exsist, 2 = not directory, 3 = error
+    PPReadDirHook = function(volume : PStorage_volume; directory : pchar; status : puint32) : PLinkedListBase; //returns: 0 = success, 1 = dir not exsist, 2 = not directory, 3 = error //returns: 0 = success, 1 = dir not exsist, 2 = not directory, 3 = error
 
 
     PPHIOHook_ = procedure;
@@ -200,16 +200,12 @@ var
 begin
     push_trace('ls');
 
-    //if paramCount(params) > 0 then begin
-        //dir := getParam(0, params);
+    if paramCount(params) > 0 then begin
+        dir := getParam(0, params);
 
         device:= PStorage_Device(LL_Get(storageDevices, 0));
-
         volume:= PStorage_Volume(LL_Get(device^.volumes, 0));
-
-        dirs:= LL_New(sizeof(TDirectory));
-
-        error:= volume^.filesystem^.readDirCallback(volume, '', dirs);
+        dirs:= volume^.filesystem^.readDirCallback(volume, '', @error);
 
         //if error <> 1 then console.writestringln('ERROR');
         for i:=2 to LL_Size(dirs) - 1 do begin
@@ -218,7 +214,7 @@ begin
             console.writestringlnWND(pchar(dirp^.fileName), getTerminalHWND);
         end;
         pop_trace();
-    //end;
+    end;
 end;
 
 procedure volume_command(params : PParamList);
@@ -265,7 +261,7 @@ var
     i   : uint8;
     elm : void;
 begin
-
+    push_trace('storagemanagement.register_device()');
     elm:= LL_Add(storageDevices);
     PStorage_device(elm)^ := device^;
 
@@ -294,6 +290,7 @@ procedure register_volume(device : PStorage_Device; volume : PStorage_Volume);
 var
     elm : void;
 begin
+    push_trace('storagemanagement.register_volume');
     elm := LL_Add(device^.volumes);
     PStorage_volume(elm)^:= volume^;
 end;
