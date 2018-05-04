@@ -28,14 +28,15 @@ type
     PStorage_volume = ^TStorage_Volume;
     PStorage_device = ^TStorage_Device;
     APStorage_Volume = array[0..10] of PStorage_volume;
+    byteArray8 = array[0..7] of char;
+    PByteArray8 = ^byteArray8;
 
     PPIOHook = procedure(volume : PStorage_volume; directory : pchar; byteCount : uint32; buffer : puint32);
     PPHIOHook = procedure(volume : PStorage_device; addr : uint32; sectors : uint32; buffer : puint32);
     PPCreateHook = procedure(disk : PStorage_Device; sectors : uint32; start : uint32; config : puint32);
     PPDetectHook = procedure(disk : PStorage_Device);
-    PPCreateDirHook = function(volume : PStorage_volume; directory : pchar; dirname : pchar; attributes : uint32) : uint8;
+    PPCreateDirHook = procedure(volume : PStorage_volume; directory : pchar; dirname : pchar; attributes : uint32; status : puint32);
     PPReadDirHook = function(volume : PStorage_volume; directory : pchar; status : puint32) : PLinkedListBase; //returns: 0 = success, 1 = dir not exsist, 2 = not directory, 3 = error //returns: 0 = success, 1 = dir not exsist, 2 = not directory, 3 = error
-
 
     PPHIOHook_ = procedure;
 
@@ -157,17 +158,29 @@ end;
 procedure mkdir_command(params : PParamList);
 var
     dir : pchar;
+    temp : pchar;
+    dirName : pbyteArray8;
     device : PStorage_Device;
     volume : PStorage_Volume;
     error : uint32;
+    i : uint32;
 begin
+    push_trace('mkdir');
     if paramCount(params) > 0 then begin
         dir := getParam(0, params);
+        temp:= getParam(1, params);
+
+        //for i:=0 to 7 do begin
+        //    dirname[i]:= pbyteArray8(temp)[i];
+        //end;
+
+        //console.writestringlnWND(pchar(dirname), getTerminalHWND());
+
         device:= PStorage_Device(LL_Get(storageDevices, 0));
         volume:= PStorage_Volume(LL_Get(device^.volumes, 0));
 
-        //error:= volume^.filesystem^.createDirCallback(volume, dir, $10);
-        if error <> 1 then console.writestringln('ERROR');
+        volume^.filesystem^.createDirCallback(volume, dir, temp, $10, @error);
+        //if error <> 1 then console.writestringln('ERROR');
     end;
 end;
 
@@ -205,15 +218,17 @@ begin
 
         device:= PStorage_Device(LL_Get(storageDevices, 0));
         volume:= PStorage_Volume(LL_Get(device^.volumes, 0));
-        dirs:= volume^.filesystem^.readDirCallback(volume, '', @error);
+        dirs:= volume^.filesystem^.readDirCallback(volume, dir, @error);
 
         //if error <> 1 then console.writestringln('ERROR');
         for i:=2 to LL_Size(dirs) - 1 do begin
-            console.writestring('    ');
+            console.writestringWND('    /', getTerminalHWND);
             dirp:= PDirectory(LL_Get(dirs, i));
             console.writestringlnWND(pchar(dirp^.fileName), getTerminalHWND);
         end;
         pop_trace();
+    end else begin
+        console.writestringlnWND('Specifiy a folder', getTerminalHWND);
     end;
 end;
 
