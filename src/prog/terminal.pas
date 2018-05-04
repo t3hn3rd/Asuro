@@ -207,6 +207,8 @@ end;
 procedure version(params : PParamList);
 begin
     console.writestringlnWND(asuro.VERSION, TERMINAL_HWND);
+    console.writestringWND('Line Count: ', TERMINAL_HWND);
+    console.writeintlnWND(LINE_COUNT, TERMINAL_HWND);
 end;
 
 procedure help(params : PParamList);

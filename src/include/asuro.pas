@@ -9,6 +9,7 @@ const
      VERSION_SUB   = '0';
      REVISION      = '653';
      RELEASE       = 'a';
+     LINE_COUNT    = 26780;
  
 implementation
  

@@ -163,7 +163,7 @@ begin
     if CPUID.Capabilities0^.TSC then begin
         t1:= getDateTime;
         t2:= getDateTime;
-        c2:= 0;
+        c1:= getTSC;
         while (t1.Seconds = t2.Seconds) do begin
             t2:= getDateTime;
             c1:= getTSC;

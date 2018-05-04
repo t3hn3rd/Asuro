@@ -6,6 +6,7 @@ while IFS=: read -r line;do
 	minor=$(echo $line | awk '{print $2}')
 	sub=$(echo $line | awk '{print $3}')
 	release=$(echo $line | awk '{print $4}')
+	linecount=$(./loc.sh | awk '{print $1}')
 done <"$file"
 revision=$(svn info | grep Revision | awk '{print $2}')
 echo $major"."$minor"."$sub"-r"$revision$release
@@ -20,6 +21,7 @@ echo "     VERSION_MINOR = '$minor';" >> $outfile
 echo "     VERSION_SUB   = '$sub';" >> $outfile
 echo "     REVISION      = '$revision';" >> $outfile
 echo "     RELEASE       = '$release';" >> $outfile
+echo "     LINE_COUNT    = $linecount;" >> $outfile
 echo " " >> $outfile
 echo "implementation" >> $outfile
 echo " " >> $outfile
