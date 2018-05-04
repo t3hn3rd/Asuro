@@ -206,8 +206,9 @@ end;
 
 procedure version(params : PParamList);
 begin
+    console.writestringWND('Asuro Version: ', TERMINAL_HWND);
     console.writestringlnWND(asuro.VERSION, TERMINAL_HWND);
-    console.writestringWND('Line Count: ', TERMINAL_HWND);
+    console.writestringWND('Source Line-Count: ', TERMINAL_HWND);
     console.writeintlnWND(LINE_COUNT, TERMINAL_HWND);
 end;
 
