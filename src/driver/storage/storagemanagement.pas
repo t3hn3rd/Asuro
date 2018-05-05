@@ -101,7 +101,7 @@ var
 begin
     str := getParam(0, params);
 
-    list := stringToLL(str, '/');
+    list := LL_fromString(str, '/');
 
     for i:=0 to LL_Size(list) - 1 do begin
         elm:= puint32(LL_Get(list, i));

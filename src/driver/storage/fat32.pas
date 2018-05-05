@@ -198,9 +198,16 @@ begin
     currentCluster:= cluster;
     currentClusterValue:= cluster;
 
+    console.writestringlnWND('cluster-get', getTerminalHWND());
+    console.writeintlnWND(cluster, getTerminalHWND()); //cluster is 20 and shouldn't be..
+
+
     while true do begin
         currentClusterValue:= readFat(volume, currentClusterValue, bootRecord);
         //while true do begin end;
+        console.writestringlnWND('getfatchain: ', getTerminalHWND());
+        console.writeintlnWND(currentClusterValue, getTerminalHWND());
+        console.writeintlnWND(currentCluster, getTerminalHWND());
 
         if currentClusterValue = $FFFFFFF7 then begin
             break;
@@ -214,17 +221,18 @@ begin
             dirElm:= LL_add(clusters);
             dirElm^:= currentCluster;
         end;
-        currentCluster+=1;
 
+        currentCluster+=1;
         console.redrawWindows();
     end;
 
     redrawWindows();
-    console.writestringln('------------------');
-    console.writehexln(uint32(clusters));
-    console.writeintln(LL_size(clusters));
+    console.writestringlnWND('------------------', getTerminalHWND());
+    console.writehexlnWND(uint32(clusters), getTerminalHWND());
+    console.writeintlnWND(LL_size(clusters), getTerminalHWND()); //size of 0
+    redrawWindows();
+
     getFatChain:= clusters;
-    exit;
 end;
 
 //TODO improve with FSINFO
@@ -271,21 +279,33 @@ var
 begin
     directories:= LL_New(sizeof(TDirectory));
 
+    console.writeintlnWND(cluster, getTerminalHWND());
+
     clusters:= PLinkedListBase(getFatChain(volume, cluster, bootRecord));
 
         console.writehexln(uint32(clusters));
         console.writehexln(uint32(LL_Get(clusters, 0)^));
         console.redrawWindows();
 
+        console.writeintlnWND(1, getTerminalHWND());
+        console.writeintlnWND(LL_size(clusters), getTerminalHWND());
+        console.writeintlnWND(21, getTerminalHWND());
+        console.redrawWindows();
+
         //while true do begin end;
 
+    //kalloc-ing 0, this is why it is not going anywhere
     buffer:= puint32(kalloc( (bootRecord^.sectorSize * bootRecord^.spc) * LL_size(clusters) ));
     memset(uint32(buffer), 0, (bootRecord^.sectorSize * bootRecord^.spc) * LL_size(clusters) );
 
     dataStart:= volume^.sectorStart + 1 + bootRecord^.rsvSectors + bootRecord^.FATSize;
 
+        console.writeintlnWND(2, getTerminalHWND());
+        console.redrawWindows();
+
     for i:=0 to LL_size(clusters) - 1 do begin
         console.writestringln('LOOP');
+        redrawWindows();
         sectorLocation:= bootRecord^.spc * (i + cluster);
         bufferI:= @buffer[i * (bootRecord^.spc * bootRecord^.sectorSize)];
         volume^.device^.readcallback(volume^.device, datastart + sectorLocation, bootRecord^.spc, bufferI); //datastart + spc(i + cluster)
@@ -305,6 +325,19 @@ begin
     kfree(buffer);
 end;
 
+function compareByteArray8(str1 : byteArray8; str2 : byteArray8) : boolean;
+var
+    i : uint32;
+begin
+    compareByteArray8:= true;
+    for i:=0 to 7 do begin
+        if str1[i] <> str2[i] then begin
+            compareByteArray8:= false;
+            break;
+        end;
+    end
+end;
+
 //need to find out why having multiple dir stings isn't working, maybe the ls command?
 function readDirectory(volume : PStorage_volume; directory : pchar; status : puint32) : PLinkedListBase; //returns: 0 = success, 1 = dir not exsist, 2 = not directory, 3 = error
 var
@@ -317,20 +350,33 @@ var
     dirEntry         : PDirectory;
 begin
     bootRecord:= readBootRecord(volume);
-    directoryStrings:= stringToLL(directory, '/');
+    directoryStrings:= LL_fromString(directory, '/');
+        console.writestringWND('cluster: ', getTerminalHWND());
+                redrawWindows();
 
     directories:= getDirEntries(volume, bootRecord^.rootCluster, bootRecord);
+
+
+
+
+
 
     if LL_size(directoryStrings) > 0 then begin
         for i:=0 to LL_Size(directoryStrings) - 1 do begin
             ii:=0;
+
             while true do begin
                 if ii > LL_Size(directories) - 1 then break;
                 dirEntry:= PDirectory(LL_Get(directories, ii));
-
-                if stringEquals( @dirEntry^.fileName, pchar(LL_Get(directoryStrings, i)) ) then begin
-                    cluster:= dirEntry^.clusterLow;
-                    cluster:= cluster and (dirEntry^.clusterHigh shl 16);
+                //console.writestringlnWND(pchar(@dirEntry^.fileName), getTerminalHWND());
+                //console.writestringlnWND(pchar(LL_Get(directoryStrings, i)), getTerminalHWND());
+                if stringEquals( @dirEntry^.fileName, pchar(puint32(LL_Get(directoryStrings, i))^ ) ) then begin
+                //if compareByteArray8( dirEntry^.fileName, pbyteArray8(LL_Get(directoryStrings, i))^ ) then begin
+                    cluster:= uint32(dirEntry^.clusterLow);
+                    cluster:= uint32(cluster) and uint32(dirEntry^.clusterHigh shl 16);
+                                console.writestringWND('cluster: ', getTerminalHWND());
+                                console.writeintlnWND(cluster, getTerminalHWND()); ////////////////
+                                redrawWindows();
                     break;
                 end;
                 ii+=1;
@@ -375,7 +421,12 @@ var
     parentArray   : byteArray8 = ('.','.',' ',' ',' ',' ',' ',' ');
 begin
     push_trace('fat32.writeDirectory');
+    console.writestringlnWND('start write', getTerminalHWND());
+    console.writestringlnWND(directory, getTerminalHWND());
+    redrawWindows();
     directories:= readDirectory(volume, directory, status); //TODO error check first
+        console.writestringlnWND('after read', getTerminalHWND());
+    redrawWindows();
     bootRecord:= readBootRecord(volume);
     datastart:= volume^.sectorStart + 1 + bootRecord^.FATSize + bootRecord^.rsvSectors;
 
@@ -469,6 +520,17 @@ var
     rootCluster   : uint32 = 1;
 begin
     push_trace('fat32.create_volume()');
+
+    zeroBuffer:= puint32(kalloc( disk^.sectorSize * 4 ));
+    memset(uint32(zeroBuffer), 0, disk^.sectorSize * 4);
+
+    while true do begin
+        if i > sectors then break;
+        disk^.writecallback(disk, 1 + i, 1, zeroBuffer);
+        i+=1;
+    end;
+    kfree(zeroBuffer);
+
     //fat32 structure
     (* BootRecord            *)
     (* reserved sectors      *)
@@ -508,11 +570,11 @@ begin
     zeroBuffer:= puint32(kalloc( disk^.sectorSize * 4 ));
     memset(uint32(zeroBuffer), 0, disk^.sectorSize * 4);
 
-    while true do begin
-        if i > FATSize - 4 then break;
-        disk^.writecallback(disk, fatStart + i, 4, zeroBuffer);
-        i+=4;
-    end;
+    // while true do begin
+    //     if i > FATSize then break;
+    //     disk^.writecallback(disk, fatStart + i, 1, zeroBuffer);
+    //     i+=4;
+    // end;
 
     kfree(buffer);
     kfree(zeroBuffer);
