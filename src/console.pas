@@ -315,6 +315,7 @@ var
    UnhandledClick     : Boolean = false;
    UnhandledClickLeft : Boolean = false;
    MouseCursorEnabled : Boolean = true;
+   OpenTerminal       : Boolean = false;
 
 procedure mouseEnabled(b : boolean);
 begin
@@ -703,6 +704,11 @@ var
     SelectedWindow : uint32;
 
 begin
+    if OpenTerminal then begin
+        terminal.run;
+        OpenTerminal:= false;
+    end;
+
     { Clear the Console_Matrix }
     for y:=0 to 63 do begin
         for x:=0 to 159 do begin
@@ -1072,9 +1078,15 @@ end;
 
 procedure keyhook(key_info : TKeyInfo);
 begin
-    if WindowManager.Z_Order[0] <> MAX_WINDOWS then begin
-        if WindowManager.Windows[WindowManager.Z_Order[0]] <> nil then begin
-            if WindowManager.Windows[WindowManager.Z_Order[0]]^.Hooks.OnKeyPressed <> nil then WindowManager.Windows[WindowManager.Z_Order[0]]^.Hooks.OnKeyPressed(key_info);
+    if (key_info.CTRL_DOWN) and (key_info.ALT_DOWN) then begin
+        case key_info.key_code of
+            uint8('c'):OpenTerminal:=true;
+        end;
+    end else begin
+        if WindowManager.Z_Order[0] <> MAX_WINDOWS then begin
+            if WindowManager.Windows[WindowManager.Z_Order[0]] <> nil then begin
+                if WindowManager.Windows[WindowManager.Z_Order[0]]^.Hooks.OnKeyPressed <> nil then WindowManager.Windows[WindowManager.Z_Order[0]]^.Hooks.OnKeyPressed(key_info);
+            end;
         end;
     end;
 end;
