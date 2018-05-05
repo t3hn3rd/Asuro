@@ -175,7 +175,7 @@ begin
                 writestringlnWND('Memview not open.', getTerminalHWND);   
             end;
         end else begin
-            MEM_LOC:= stringToInt(loc);
+            if (loc[0] = 'x') or (loc[0] = 'X') then MEM_LOC:= HexStringToInt(@loc[1]) else MEM_LOC:= stringToInt(loc);
             NEW_LOC:= true;
             if Handle = 0 then begin
                 Handle:= newWindow(20, 40, 63, 14, 'MEMVIEW');

@@ -200,6 +200,8 @@ procedure _MouseDown();
 procedure _MouseUp();
 procedure _MouseClick(left : boolean);
 
+procedure setWindowColors(colors : uint32);
+
 implementation
 
 uses
@@ -316,6 +318,11 @@ var
    UnhandledClickLeft : Boolean = false;
    MouseCursorEnabled : Boolean = true;
    OpenTerminal       : Boolean = false;
+
+procedure setWindowColors(colors : uint32);
+begin
+    Window_Border.Attributes:= colors;
+end;
 
 procedure mouseEnabled(b : boolean);
 begin

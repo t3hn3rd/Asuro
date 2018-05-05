@@ -24,6 +24,7 @@ function stringSize(str : pchar) : uint32;
 function stringConcat(str1, str2 : pchar) : pchar;
 function stringContains(str : pchar; sub : pchar) : boolean;
 function stringToInt(str : pchar) : uint32;
+function hexStringToInt(str : pchar) : uint32;
 function intToString(i : uint32) : pchar;
 function boolToString(b : boolean; ext : boolean) : pchar;
 
@@ -31,6 +32,22 @@ implementation
 
 uses
     console;
+
+function hexStringToInt(str : pchar) : uint32;
+var
+    result : uint32;
+    i      : uint32;
+    Shift  : uint32;
+
+begin
+    result:= 0;
+    Shift:= (stringSize(str)-1) * 4;
+    for i:=0 to stringSize(str)-1 do begin
+        result:= result OR (HexCharToDecimal(str[i]) SHL Shift);
+        Shift:= Shift - 4;
+    end;
+    hexStringToInt:= result;
+end;
 
 function stringToUpper(str : pchar) : pchar;
 var

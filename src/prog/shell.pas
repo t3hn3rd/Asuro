@@ -104,6 +104,58 @@ begin
     end;
 end;
 
+procedure Command_Colors(Params : PParamList);
+var
+    Command  : pchar;
+    Fgs, Bgs : pchar;
+    Fg, Bg   : uint32;
+    exists   : boolean;
+
+begin
+    if ParamCount(Params) >= 3 then begin
+        Command:= GetParam(0, Params);
+        Fgs:= GetParam(1, Params);
+        if (Fgs[0] = 'x') or (Fgs[0] = 'X') then Fg:= HexStringToInt(@Fgs[1]) else Fg:= StringToInt(Fgs);
+        Bgs:= GetParam(2, Params);
+        if (Bgs[0] = 'x') or (Bgs[0] = 'X') then Bg:= HexStringToInt(@Bgs[1]) else Bg:= StringToint(Bgs);
+        exists:= false;
+        if StringEquals(Command, 'background') then begin
+            exists:= true;
+            Desktop_Colors:= combinecolors(Fg, Bg);
+        end;
+        if StringEquals(Command, 'taskbar') then begin
+            exists:= true;
+            Takbar_Colors:= combinecolors(Fg, Bg);
+        end;
+        if StringEquals(Command, 'window') then begin
+            exists:= true;
+            setWindowColors(combinecolors(Fg, Bg));
+        end;
+        if StringEquals(Command, 'button') then begin
+            exists:= true;
+            Explore_Colors:= combinecolors(Fg, Bg);
+        end;
+        if exists then begin
+            console.writestringWND('Component:', getTerminalHWND);
+            console.writestringWND(Command, getTerminalHWND);
+            console.writestringWND(' set to FG:', getTerminalHWND);
+            console.writeHexWND(Fg, getTerminalHWND);
+            console.writestringWND(' BG: ', getTerminalHWND);
+            console.writehexlnWND(Bg, getTerminalHWND);
+        end else begin
+            console.writestringWND('Component: ', getTerminalHWND);
+            console.writestringWND(Command, getTerminalHWND);
+            console.writestringlnWND(' not found.', getTerminalHWND);
+        end;
+    end else begin
+        console.writestringlnWND('Usage (Append "x" to a value to treat as Hex): ', getTerminalHWND);
+        console.writestringlnWND('  colors background <foreground> <background>', getTerminalHWND);
+        console.writestringlnWND('  colors taskbar <foreground> <background>', getTerminalHWND);
+        console.writestringlnWND('  colors window <foreground> <background>', getTerminalHWND);
+        console.writestringlnWND('  colors button  <foreground> <background>', getTerminalHWND);
+    end;
+end;
+
 procedure Command_Background(Params : PParamList);
 var
     p1 : PChar;
@@ -145,6 +197,7 @@ begin
     console.registerEventHandler(DesktopHandle, EVENT_DRAW, void(@onBaseDraw));
 
     terminal.registerCommand('BACKGROUND', @Command_Background, 'Hide/Show background - usage: BACKGROUND <hide/show>');
+    terminal.registerCommand('COLORS', @Command_Colors, 'Set the desktop colors');
 end;
 
 end.

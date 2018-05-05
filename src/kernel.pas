@@ -158,16 +158,13 @@ begin
      { Management Interfaces }
      tracer.push_trace('kmain.DRVMGMT');
      drivermanagement.init();
-     tracer.pop_trace;
      tracer.push_trace('kmain.STRMGMT');
      storagemanagement.init();
-     tracer.pop_trace;
 
      { Hook Timer for Ticks }
      tracer.push_trace('kmain.TMR');
      STI;
      TMR_0_ISR.hook(uint32(@bios_data_area.tick_update));
-     tracer.pop_trace;
 
      { Filsystems }
      fat32.init();
@@ -181,7 +178,6 @@ begin
      E1000.init();
      IDE.init();
      console.outputln('KERNEL', 'DEVICE DRIVERS: INIT END.');
-     tracer.pop_trace;
 
      { Bus Drivers }
      tracer.push_trace('kmain.BUSDRV');
@@ -189,12 +185,10 @@ begin
      USB.init();
      pci.init();
      console.outputln('KERNEL', 'BUS DRIVERS: INIT END.');
-     tracer.pop_trace;
 
      { Network Stack }
      tracer.push_trace('kmain.NETDRV');
      net.init;
-     tracer.pop_trace;
 
      { End of Boot }
      tracer.push_trace('kmain.EOB');
@@ -211,10 +205,6 @@ begin
      splash.init();
 
      tracer.push_trace('kmain.END');
-
-     l:= LL_FromString('/./hhhhhhh/', '/');
-     writestringln(pchar(puint32(LL_Get(l, 0)^)));
-     writestringln(pchar(puint32(LL_Get(l, 1)^)));
 
      while true do begin
         console.redrawWindows;

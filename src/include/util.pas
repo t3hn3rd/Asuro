@@ -54,6 +54,8 @@ function getTSC : uint64;
 
 function BCDToUint8(bcd : uint8) : uint8;
 
+function HexCharToDecimal(hex : char) : uint8;
+
 procedure resetSystem();
 
 var
@@ -64,6 +66,35 @@ implementation
 
 uses
     console, RTC, cpu;
+
+function HexCharToDecimal(hex : char) : uint8;
+begin
+    case hex of
+        '0':HexCharToDecimal:=0;
+        '1':HexCharToDecimal:=1;
+        '2':HexCharToDecimal:=2;
+        '3':HexCharToDecimal:=3;
+        '4':HexCharToDecimal:=4;
+        '5':HexCharToDecimal:=5;
+        '6':HexCharToDecimal:=6;
+        '7':HexCharToDecimal:=7;
+        '8':HexCharToDecimal:=8;
+        '9':HexCharToDecimal:=9;
+        'a':HexCharToDecimal:=10;
+        'A':HexCharToDecimal:=10;
+        'b':HexCharToDecimal:=11;
+        'B':HexCharToDecimal:=11;
+        'c':HexCharToDecimal:=12;
+        'C':HexCharToDecimal:=12;
+        'd':HexCharToDecimal:=13;
+        'D':HexCharToDecimal:=13;
+        'e':HexCharToDecimal:=14;
+        'E':HexCharToDecimal:=14;
+        'f':HexCharToDecimal:=15;
+        'F':HexCharToDecimal:=15;
+        else HexCharToDecimal:= 0;
+    end;
+end;
 
 procedure sleep1;
 var
