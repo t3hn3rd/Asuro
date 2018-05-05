@@ -206,19 +206,26 @@ end;
 
 procedure version(params : PParamList);
 begin
-    console.writestringWND('Asuro Version: ', TERMINAL_HWND);
+    console.writestringWND('  Asuro Version: ', TERMINAL_HWND);
     console.writestringlnWND(asuro.VERSION, TERMINAL_HWND);
     console.writestringWND('  Compiled on: ', TERMINAL_HWND);
     console.writestringWND(asuro.COMPILE_DATE, TERMINAL_HWND);
     console.writestringWND(' ', TERMINAL_HWND);
     console.writestringlnWND(asuro.COMPILE_TIME, TERMINAL_HWND);
     console.writestringlnWND('  Compiled With: ', TERMINAL_HWND);
-    console.writestringWND('    FPC Version: ', TERMINAL_HWND);
-    console.writestringlnWND(asuro.FPC_VERSION, TERMINAL_HWND);
-    console.writestringWND('    NASM Version: ', TERMINAL_HWND);
+    console.writestringWND('    NASM - Version: ', TERMINAL_HWND);
     console.writestringlnWND(asuro.NASM_VERSION, TERMINAL_HWND);
-    console.writestringWND('  Source Line-Count: ', TERMINAL_HWND);
-    console.writeintlnWND(asuro.LINE_COUNT, TERMINAL_HWND);
+    console.writestringWND('    FPC  - Version: ', TERMINAL_HWND);
+    console.writestringlnWND(asuro.FPC_VERSION, TERMINAL_HWND);
+    console.writestringWND('    MAKE - Version: ', TERMINAL_HWND);
+    console.writestringlnWND(asuro.MAKE_VERSION, TERMINAL_HWND);
+    console.writestringWND('  ', TERMINAL_HWND);
+    console.writeintWND(asuro.LINE_COUNT, TERMINAL_HWND);
+    console.writestringWND(' lines, across ', TERMINAL_HWND);
+    console.writeintWND(asuro.FILE_COUNT, TERMINAL_HWND);
+    console.writestringlnWND(' files.', TERMINAL_HWND);
+    console.writestringWND('  Baked Drivers: ', TERMINAL_HWND);
+    console.writeintlnWND(asuro.DRIVER_COUNT, TERMINAL_HWND);
 end;
 
 procedure help(params : PParamList);

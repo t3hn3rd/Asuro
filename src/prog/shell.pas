@@ -3,7 +3,7 @@ unit shell;
 interface
 
 uses
-    Console, RTC, terminal, strings;
+    Console, RTC, terminal, strings, asuro;
 
 procedure init();
 
@@ -63,8 +63,45 @@ begin
 end;
 
 procedure onBaseDraw();
+var
+    versionSize  : uint32;
+    versionDrawX : uint32;
+    releaseSize  : uint32;
+    releaseDrawX : uint32;
+
 begin
     clearWNDEx(DesktopHandle, Desktop_Colors);
+    if not(StringEquals(asuro.RELEASE, 'r')) then begin
+        versionSize:= StringSize(asuro.VERSION) + StringSize('Asuro v');
+        versionDrawX:= 157 - versionSize;
+        setCursorPosWND(versionDrawX, 60, DesktopHandle);
+        writestringExWND('ASURO v', Desktop_Colors, DesktopHandle);
+        writestringExWND(asuro.VERSION, Desktop_Colors, DesktopHandle);
+        if StringEquals(asuro.RELEASE, 'rc') then begin
+            releaseSize:= StringSize('RELEASE CANDIDATE');
+            releaseDrawX:= 157 - (versionSize div 2) - (releaseSize div 2);
+            setCursorPosWND(releaseDrawX, 61, DesktopHandle);
+            writeStringExWND('RELEASE CANDIDATE', Desktop_Colors, DesktopHandle);
+        end;
+        if StringEquals(asuro.RELEASE, 'ia') then begin
+            releaseSize:= StringSize('INTERNAL ALPHA');
+            releaseDrawX:= 157 - (versionSize div 2) - (releaseSize div 2);
+            setCursorPosWND(releaseDrawX, 61, DesktopHandle);
+            writeStringExWND('INTERNAL ALPHA', Desktop_Colors, DesktopHandle);
+        end;
+        if StringEquals(asuro.RELEASE, 'a') then begin
+            releaseSize:= StringSize('ALPHA');
+            releaseDrawX:= 157 - (versionSize div 2) - (releaseSize div 2);
+            setCursorPosWND(releaseDrawX, 61, DesktopHandle);
+            writeStringExWND('ALPHA', Desktop_Colors, DesktopHandle);
+        end;
+        if StringEquals(asuro.RELEASE, 'b') then begin
+            releaseSize:= StringSize('BETA');
+            releaseDrawX:= 157 - (versionSize div 2) - (releaseSize div 2);
+            setCursorPosWND(releaseDrawX, 61, DesktopHandle);
+            writeStringExWND('BETA', Desktop_Colors, DesktopHandle);
+        end;
+    end;
 end;
 
 procedure Command_Background(Params : PParamList);
@@ -92,7 +129,7 @@ procedure init();
 begin
     Takbar_Colors:= console.combinecolors($0000, $FFFF);
     Explore_Colors:= console.combinecolors($01C3, $07EE);
-    Desktop_Colors:= console.combinecolors($01C3, $34DB);
+    Desktop_Colors:= console.combinecolors($FFFF, $34DB);
 
     DesktopHandle:= Console.newWindow(0, 0, 159, 63, 'DESKTOP');
     TaskBarHandle:= Console.newWindow(0, 63, 159, 1, 'SHELL');
