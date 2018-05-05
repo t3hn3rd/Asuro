@@ -208,8 +208,17 @@ procedure version(params : PParamList);
 begin
     console.writestringWND('Asuro Version: ', TERMINAL_HWND);
     console.writestringlnWND(asuro.VERSION, TERMINAL_HWND);
-    console.writestringWND('Source Line-Count: ', TERMINAL_HWND);
-    console.writeintlnWND(LINE_COUNT, TERMINAL_HWND);
+    console.writestringWND('  Compiled on: ', TERMINAL_HWND);
+    console.writestringWND(asuro.COMPILE_DATE, TERMINAL_HWND);
+    console.writestringWND(' ', TERMINAL_HWND);
+    console.writestringlnWND(asuro.COMPILE_TIME, TERMINAL_HWND);
+    console.writestringlnWND('  Compiled With: ', TERMINAL_HWND);
+    console.writestringWND('    FPC Version: ', TERMINAL_HWND);
+    console.writestringlnWND(asuro.FPC_VERSION, TERMINAL_HWND);
+    console.writestringWND('    NASM Version: ', TERMINAL_HWND);
+    console.writestringlnWND(asuro.NASM_VERSION, TERMINAL_HWND);
+    console.writestringWND('  Source Line-Count: ', TERMINAL_HWND);
+    console.writeintlnWND(asuro.LINE_COUNT, TERMINAL_HWND);
 end;
 
 procedure help(params : PParamList);
@@ -274,17 +283,22 @@ var
 
 begin
      DateTime:= getDateTime;
+     if DateTime.Day < 10 then writeStringWND('0', TERMINAL_HWND);
      writeIntWND(DateTime.Day, TERMINAL_HWND);     
      writeStringWND('/', TERMINAL_HWND);
+     if DateTime.Month < 10 then writeStringWND('0', TERMINAL_HWND);
      writeIntWND(DateTime.Month, TERMINAL_HWND);
      writeStringWND('/', TERMINAL_HWND);  
      writeIntWND(DateTime.Century, TERMINAL_HWND);  
      writeIntWND(DateTime.Year, TERMINAL_HWND);    
      writeStringWND(' ', TERMINAL_HWND);  
+     if DateTime.Hours < 10 then writeStringWND('0', TERMINAL_HWND);
      writeIntWND(DateTime.Hours, TERMINAL_HWND);
      writeStringWND(':', TERMINAL_HWND);
+     if DateTime.Minutes < 10 then writeStringWND('0', TERMINAL_HWND);
      writeIntWND(DateTime.Minutes, TERMINAL_HWND);
      writeStringWND(':', TERMINAL_HWND);
+     if DateTime.Seconds < 10 then writeStringWND('0', TERMINAL_HWND);
      writeIntlnWND(DateTime.Seconds, TERMINAL_HWND);
      writeStringWND('Weekday: ', TERMINAL_HWND);
      writeStringlnWND(WeekdayToString(DateTime.Weekday), TERMINAL_HWND); 

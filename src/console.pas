@@ -835,7 +835,6 @@ begin
         if not UnhandledClickLeft then begin
             SelectedWindow:= WindowMask[MouseYToTile(WindowManager.MousePrev.Y)][MouseXToTile(WindowManager.MousePrev.X)];
             if (SelectedWindow <> 0) and (WindowManager.Windows[SelectedWindow] <> nil) then begin
-                //OnClickHandler(Right)
                 if (WindowManager.Z_Order[0] = SelectedWindow) or (WindowManager.Windows[SelectedWindow]^.ShellWND = false) then begin
                     if WindowManager.Windows[SelectedWindow]^.Hooks.OnMouseClick <> nil then begin
                         deltax:= MouseXToTile(WindowManager.MousePrev.X) - WindowManager.Windows[SelectedWindow]^.WND_X;
