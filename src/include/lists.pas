@@ -5,7 +5,8 @@ interface
 uses
     console,
     lmemorymanager,
-    util;
+    util,
+    strings;
 
 type
     { Managed Linked List }
@@ -33,6 +34,7 @@ function LL_Size(LinkedList : PLinkedListBase) : uint32;
 function LL_Insert(LinkedList : PLinkedListBase; idx : uint32) : Void;
 function LL_Get(LinkedList : PLinkedListBase; idx : uint32) : Void;
 procedure LL_Free(LinkedList : PLinkedListBase);
+function LL_FromString(str : pchar; delimter : char) : PLinkedListBase;
 procedure LL_TEST();
 
 implementation
@@ -192,6 +194,39 @@ begin
     kfree(void(LinkedList));
 end;
 
+{function LL_FromString(str : pchar; delimter : char) : PLinkedListBase; //todo implment function for freeing pointer lists
+var
+    list       : PLinkedListBase;
+    i          : uint32 = 0;  
+    out_str    : pchar;
+    elm        : puint32;
+    head       : pchar;
+    base       : pchar;
+    size       : uint32;
+    null_delim : boolean;
+
+begin
+    list := LL_New(sizeof(uint32));
+    stringToLL:= list; 
+
+    head:= str;
+    base:= head;
+    null_delim:= false;
+    while not null_delim do begin
+        i:=0;
+        while (head[i] <> delimter) and (head[i] <> char(0)) do begin
+            inc(i);
+        end;
+        if head[i] = char(0) then null_delim:= true;
+        size:= (uint32(@head[i]) - uint32(base)) + 1;
+        out_str:= stringNew(size);
+        memset(uint32(out_str), 0, size);
+        memcpy(uint32(base), uint32(out_str), size-1);
+        elm:= puint32(LL_Add(list));
+        elm
+    end;
+end;}
+
 procedure LL_Test();
 var
     i : uint32;
@@ -236,6 +271,41 @@ begin
      end;
 
      LL_Free(LList);    
+end;
+
+function LL_FromString(str : pchar; delimter : char) : PLinkedListBase; //todo implment function for freeing pointer lists
+var
+    list       : PLinkedListBase;
+    i          : uint32 = 0;  
+    out_str    : pchar;
+    elm        : puint32;
+    head       : pchar;
+    tail       : pchar;
+    size       : uint32;
+    null_delim : boolean;
+
+begin
+    list := LL_New(sizeof(uint32));
+    LL_FromString:= list; 
+
+    head:= str;
+    tail:= head;
+
+    null_delim:= false;
+    while not null_delim do begin
+        if (head^ = delimter) or (head^ = char(0)) then begin
+            if head^ = char(0) then null_delim:= true;
+            size:= uint32(head) - uint32(tail);
+            if size > 0 then begin
+                elm:= puint32(LL_Add(list));
+                out_str:= stringNew(size + 1); //maybe
+                memcpy(uint32(tail), uint32(out_str), size);
+                elm^:= uint32(out_str);
+            end;
+            tail:= head+1;
+        end;
+        inc(head);
+    end;
 end;
 
 end.

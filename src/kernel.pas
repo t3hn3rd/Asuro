@@ -92,6 +92,7 @@ var
    atmp            : puint32;
    test            : puint8;
    fb              : puint16;
+   l               : PLinkedListBase;
    
 begin
      { Store Multiboot info }
@@ -210,6 +211,10 @@ begin
      splash.init();
 
      tracer.push_trace('kmain.END');
+
+     l:= LL_FromString('/./hhhhhhh/', '/');
+     writestringln(pchar(puint32(LL_Get(l, 0)^)));
+     writestringln(pchar(puint32(LL_Get(l, 1)^)));
 
      while true do begin
         console.redrawWindows;

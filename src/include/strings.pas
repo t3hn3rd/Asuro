@@ -13,8 +13,7 @@ interface
 
 uses
     util, 
-    lmemorymanager,
-    lists;
+    lmemorymanager;
 
 function stringToUpper(str : pchar) : pchar;
 function stringToLower(str : pchar) : pchar;
@@ -27,7 +26,6 @@ function stringContains(str : pchar; sub : pchar) : boolean;
 function stringToInt(str : pchar) : uint32;
 function intToString(i : uint32) : pchar;
 function boolToString(b : boolean; ext : boolean) : pchar;
-function stringToLL(str : pchar; delimter : char) : PLinkedListBase;
 
 implementation
 
@@ -175,42 +173,6 @@ begin
     end else begin
         kfree(void(t));
         boolToString:= f;
-    end;
-end;
-
-function stringToLL(str : pchar; delimter : char) : PLinkedListBase; //todo implment function for freeing pointer lists
-var
-    list       : PLinkedListBase;
-    i          : uint32 = 0;  
-    out_str    : pchar;
-    elm        : puint32;
-    head       : pchar;
-    tail       : pchar;
-    size       : uint32;
-    null_delim : boolean;
-
-begin
-    list := LL_New(sizeof(uint32));
-    stringToLL:= list; 
-
-    head:= str;
-    tail:= head;
-
-    null_delim:= false;
-    while not null_delim do begin
-        if (head^ = delimter) or (head^ = char(0)) then begin
-            if head^ = char(0) then null_delim:= true;
-            size:= uint32(head) - uint32(tail);
-            if size > 0 then begin
-                elm:= puint32(LL_Add(list));
-                out_str:= stringNew(size + 1); //maybe
-                memcpy(uint32(tail), uint32(out_str), size);
-                elm^:= uint32(out_str);
-            end;
-            tail:= head+1;
-        end else begin
-        end;
-        inc(head);
     end;
 end;
 
