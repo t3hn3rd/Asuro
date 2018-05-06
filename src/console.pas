@@ -201,6 +201,7 @@ procedure _MouseUp();
 procedure _MouseClick(left : boolean);
 
 procedure setWindowColors(colors : uint32);
+function getWindowColorPtr : puint32;
 
 implementation
 
@@ -318,6 +319,11 @@ var
    UnhandledClickLeft : Boolean = false;
    MouseCursorEnabled : Boolean = true;
    OpenTerminal       : Boolean = false;
+
+function getWindowColorPtr : puint32;
+begin
+    getWindowColorPtr:= @Window_Border.Attributes;
+end;
 
 procedure setWindowColors(colors : uint32);
 begin
@@ -1087,6 +1093,7 @@ begin
     if (key_info.CTRL_DOWN) and (key_info.ALT_DOWN) then begin
         case key_info.key_code of
             uint8('c'):OpenTerminal:=true;
+            uint8('r'):resetSystem;
         end;
     end else begin
         if WindowManager.Z_Order[0] <> MAX_WINDOWS then begin

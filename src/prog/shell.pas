@@ -6,6 +6,9 @@ uses
     Console, RTC, terminal, strings, asuro;
 
 procedure init();
+function getTaskbarColorsPtr : puint32;
+function getExploreColorsPtr : puint32;
+function getDesktopColorsPtr : puint32;
 
 implementation
 
@@ -15,6 +18,21 @@ var
     Takbar_Colors : uint32;
     Explore_Colors : uint32;
     Desktop_Colors : uint32;
+
+function getTaskbarColorsPtr : puint32;
+begin
+    getTaskbarColorsPtr:= @Takbar_Colors;
+end;
+
+function getExploreColorsPtr : puint32;
+begin
+    getExploreColorsPtr:= @Explore_Colors;
+end;
+
+function getDesktopColorsPtr : puint32;
+begin
+    getDesktopColorsPtr:= @Desktop_Colors;
+end;
 
 procedure Draw();
 var
