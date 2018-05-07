@@ -122,6 +122,25 @@ begin
     console.outputln('DUMMY DRIVER', 'LOADED.')
 end;
 
+function cleanString(str : pchar) : byteArray8;
+var
+    i : uint32;
+    ii: uint32;
+begin
+    
+    for i:=0 to 7 do begin
+        if str[i] = char(0) then begin
+            for ii:=i to 7 do begin
+                cleanString[ii]:= ' ';
+            end;
+            break;
+        end else begin
+            cleanString[i]:= str[i];
+        end;
+    end;
+
+end;    
+
 function readBootRecord(volume : PStorage_volume) : PBootRecord; // need write functions for boot record!
 var
     buffer : puint32;
@@ -148,21 +167,7 @@ begin
     dataStart:= (volume^.sectorStart + 1 + bootRecord^.rsvSectors);
 
     volume^.device^.readcallback(volume^.device, datastart + sectorLocation, 1, buffer); 
-            //console.writehexln(uint32(buffer[1]));
-
-            //console.writeint(cluster);
-            //console.writestring(' - (');
-            //console.writeint(sectorLocation);
-            //console.writestring(' * ');
-            //console.writeint(fatEntriesPerSector);
-            //console.writestringln(') ');
-        console.redrawWindows();
     readFat:= buffer[cluster - (sectorLocation * fatEntriesPerSector)];
-
-    //console.writehexlnWND(readFat(volume, 0, bootRecord) ,getTerminalHWND());
-    //console.writehexlnWND(readFat(volume, 1, bootRecord) ,getTerminalHWND());
-    //console.writehexlnWND(readFat(volume, 2, bootRecord) ,getTerminalHWND());
-    //console.writehexlnWND(readFat(volume, 3, bootRecord) ,getTerminalHWND());
 
     kfree(buffer);
 end;
@@ -198,16 +203,8 @@ begin
     currentCluster:= cluster;
     currentClusterValue:= cluster;
 
-    console.writestringlnWND('cluster-get', getTerminalHWND());
-    console.writeintlnWND(cluster, getTerminalHWND()); //cluster is 20 and shouldn't be..
-
-
     while true do begin
         currentClusterValue:= readFat(volume, currentClusterValue, bootRecord);
-        //while true do begin end;
-        console.writestringlnWND('getfatchain: ', getTerminalHWND());
-        console.writeintlnWND(currentClusterValue, getTerminalHWND());
-        console.writeintlnWND(currentCluster, getTerminalHWND());
 
         if currentClusterValue = $FFFFFFF7 then begin
             break;
@@ -223,14 +220,7 @@ begin
         end;
 
         currentCluster+=1;
-        console.redrawWindows();
     end;
-
-    redrawWindows();
-    console.writestringlnWND('------------------', getTerminalHWND());
-    console.writehexlnWND(uint32(clusters), getTerminalHWND());
-    console.writeintlnWND(LL_size(clusters), getTerminalHWND()); //size of 0
-    redrawWindows();
 
     getFatChain:= clusters;
 end;
@@ -279,33 +269,13 @@ var
 begin
     directories:= LL_New(sizeof(TDirectory));
 
-    console.writeintlnWND(cluster, getTerminalHWND());
-
     clusters:= PLinkedListBase(getFatChain(volume, cluster, bootRecord));
-
-        console.writehexln(uint32(clusters));
-        console.writehexln(uint32(LL_Get(clusters, 0)^));
-        console.redrawWindows();
-
-        console.writeintlnWND(1, getTerminalHWND());
-        console.writeintlnWND(LL_size(clusters), getTerminalHWND());
-        console.writeintlnWND(21, getTerminalHWND());
-        console.redrawWindows();
-
-        //while true do begin end;
-
-    //kalloc-ing 0, this is why it is not going anywhere
     buffer:= puint32(kalloc( (bootRecord^.sectorSize * bootRecord^.spc) * LL_size(clusters) ));
     memset(uint32(buffer), 0, (bootRecord^.sectorSize * bootRecord^.spc) * LL_size(clusters) );
 
     dataStart:= volume^.sectorStart + 1 + bootRecord^.rsvSectors + bootRecord^.FATSize;
 
-        console.writeintlnWND(2, getTerminalHWND());
-        console.redrawWindows();
-
     for i:=0 to LL_size(clusters) - 1 do begin
-        console.writestringln('LOOP');
-        redrawWindows();
         sectorLocation:= bootRecord^.spc * (i + cluster);
         bufferI:= @buffer[i * (bootRecord^.spc * bootRecord^.sectorSize)];
         volume^.device^.readcallback(volume^.device, datastart + sectorLocation, bootRecord^.spc, bufferI); //datastart + spc(i + cluster)
@@ -320,7 +290,7 @@ begin
         i+=1;
     end;
 
-    getDirEntries:= directories;
+    getDirEntries:= directories; //get last .
     LL_Free(clusters);
     kfree(buffer);
 end;
@@ -351,41 +321,28 @@ var
 begin
     bootRecord:= readBootRecord(volume);
     directoryStrings:= LL_fromString(directory, '/');
-        console.writestringWND('cluster: ', getTerminalHWND());
-                redrawWindows();
-
     directories:= getDirEntries(volume, bootRecord^.rootCluster, bootRecord);
 
-
-
-
-
-
     if LL_size(directoryStrings) > 0 then begin
-        for i:=0 to LL_Size(directoryStrings) - 1 do begin
+        for i:=0 to LL_Size(directoryStrings) do begin
             ii:=0;
 
             while true do begin
                 if ii > LL_Size(directories) - 1 then break;
                 dirEntry:= PDirectory(LL_Get(directories, ii));
-                //console.writestringlnWND(pchar(@dirEntry^.fileName), getTerminalHWND());
-                //console.writestringlnWND(pchar(LL_Get(directoryStrings, i)), getTerminalHWND());
-                if stringEquals( @dirEntry^.fileName, pchar(puint32(LL_Get(directoryStrings, i))^ ) ) then begin
-                //if compareByteArray8( dirEntry^.fileName, pbyteArray8(LL_Get(directoryStrings, i))^ ) then begin
+
+                if compareByteArray8( dirEntry^.fileName, cleanString( pchar(puint32(LL_Get(directoryStrings, i))^) ) ) then begin
                     cluster:= uint32(dirEntry^.clusterLow);
-                    cluster:= uint32(cluster) and uint32(dirEntry^.clusterHigh shl 16);
-                                console.writestringWND('cluster: ', getTerminalHWND());
-                                console.writeintlnWND(cluster, getTerminalHWND()); ////////////////
-                                redrawWindows();
+                    cluster:= uint32(cluster) or uint32(dirEntry^.clusterHigh shl 16);
                     break;
                 end;
                 ii+=1;
             end;
+            
+            LL_Free(directories); //TODO need to really free the things
+            directories:= getDirEntries(volume, cluster, bootRecord);
 
             if i = LL_Size(directoryStrings) - 1 then break;
-            
-            LL_Free(directories);
-            directories:= getDirEntries(volume, cluster, bootRecord);
         end;
     end else begin
         while true do begin
@@ -421,21 +378,13 @@ var
     parentArray   : byteArray8 = ('.','.',' ',' ',' ',' ',' ',' ');
 begin
     push_trace('fat32.writeDirectory');
-    console.writestringlnWND('start write', getTerminalHWND());
-    console.writestringlnWND(directory, getTerminalHWND());
-    redrawWindows();
+
     directories:= readDirectory(volume, directory, status); //TODO error check first
-        console.writestringlnWND('after read', getTerminalHWND());
-    redrawWindows();
     bootRecord:= readBootRecord(volume);
     datastart:= volume^.sectorStart + 1 + bootRecord^.FATSize + bootRecord^.rsvSectors;
 
     parentDirectory:= PDirectory(LL_Get(directories, 0));
-    parentCluster:= uint32(parentDirectory^.clusterlow);
-
-    console.writeintlnWND(parentDirectory^.clusterlow, getTerminalHWND());
-    console.writeintlnWND(parentDirectory^.clusterhigh, getTerminalHWND());
-    console.writeintlnWND(parentCluster, getTerminalHWND());
+    parentCluster:= uint32(parentDirectory^.clusterlow) or uint32(parentDirectory^.clusterhigh shl 16);
 
     clusters:= findFreeClusters(volume, 1, bootRecord);
     cluster:= uint32(LL_Get(clusters, 0)^);
@@ -448,13 +397,13 @@ begin
         bufferPointer^.fileName:= thisArray; //TODO implement time
         bufferPointer^.attributes:= attributes;
         bufferPointer^.clusterLow:= cluster;
-        bufferPointer^.clusterHigh:= (cluster shr 16) and $0000FFFF;
+        bufferPointer^.clusterHigh:= uint16((cluster shr 16) and $0000FFFF);
         
         bufferPointer:= @PDirectory(buffer)[1];
         bufferPointer^.fileName:= parentArray; //TODO implement time
         bufferPointer^.attributes:= attributes;
         bufferPointer^.clusterLow:= parentCluster;
-        bufferPointer^.clusterHigh:= (parentCluster shr 16) and $0000FFFF;
+        bufferPointer^.clusterHigh:= uint16((parentCluster shr 16) and $0000FFFF);
 
         //write to disk
         volume^.device^.writecallback(volume^.device, dataStart + (cluster * bootRecord^.spc), 1, buffer);
@@ -465,30 +414,17 @@ begin
 
     memset(uint32(buffer), 0, bootRecord^.sectorSize);
     //calculate write cluster using directories and parentCluster
-    sectorLocation:= LL_size(directories) * sizeof(PDirectory) div bootRecord^.sectorSize;
+    sectorLocation:= LL_size(directories) * sizeof(TDirectory) div bootRecord^.sectorSize;
     sectorLocation:= sectorLocation + (parentCluster * bootRecord^.spc);
     //dataOffset:= datastart + ( (LL_size(directories) * sizeof(PDirectory)) - (sizeUsed * bootRecord^.sectorSize));
     volume^.device^.readcallback(volume^.device, dataStart + sectorLocation, 1, buffer);
 
     //construct my dir entry
     bufferPointer:= @PDirectory(buffer)[LL_size(directories)];
-    bufferPointer^.fileName:= pbytearray8(dirName)^;
+    bufferPointer^.fileName:= cleanString(dirName);
     bufferPointer^.attributes:= attributes;
     bufferPointer^.clusterLow:= cluster;
-    bufferPointer^.clusterHigh:= (cluster shr 16) and $0000FFFF;
-
-
-    console.writestringlnWND(dirName, getTerminalHWND());
-    printmemory(uint32(buffer),256,32,' ',true);
-
-    console.writeintlnWND(dataStart, getTerminalHWND()); //parent cluster is 0 what the fuck
-    console.writeintlnWND(uint32(LL_size(directories)), getTerminalHWND());
-
-    for i:=0 to 4 do begin
-        console.writestringlnWND( PChar( PDirectory(LL_Get(directories, i))^.fileName) , getTerminalHWND());
-    end;
-
-    redrawWindows();
+    bufferPointer^.clusterHigh:= uint16((cluster shr 16) and $0000FFFF);
 
     //write to disk
     volume^.device^.writecallback(volume^.device, dataStart + sectorLocation, 1, buffer);
@@ -497,7 +433,6 @@ begin
     kfree(puint32(bootRecord));
     LL_Free(directories);
 end;
-
 
 procedure create_volume(disk : PStorage_Device; sectors : uint32; start : uint32; config : puint32);
 var
