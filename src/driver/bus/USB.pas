@@ -11,11 +11,17 @@ uses
     vmemorymanager,
     util,
     drivermanagement,
-    OHCI, UHCI, EHCI;
+    OHCI, UHCI, EHCI, XHCI;
 
 procedure init;
 
 implementation
+
+function loadXHCI(ptr : void) : boolean;
+begin
+    push_trace('USB.loadXHCI');
+    loadXHCI:= XHCI.load;
+end;
 
 function loadEHCI(ptr : void) : boolean;
 begin
@@ -37,7 +43,10 @@ end;
 
 procedure init;
 var
-    UHCI_ID, OHCI_ID, EHCI_ID: TDeviceIdentifier;
+    UHCI_ID, 
+    OHCI_ID, 
+    EHCI_ID,
+    XHCI_ID: TDeviceIdentifier;
 
 begin
     push_trace('USB.init');
@@ -67,9 +76,18 @@ begin
     EHCI_ID.id4:= $FFFFFFFF;
     EHCI_ID.ex:= nil;
 
+    XHCI_ID.Bus:= biPCI;
+    XHCI_ID.id0:= idANY;
+    XHCI_ID.id1:= $0000000C;
+    XHCI_ID.id2:= $00000003;
+    XHCI_ID.id3:= $00000030;
+    XHCI_ID.id4:= $FFFFFFFF;
+    XHCI_ID.ex:= nil;
+
     drivermanagement.register_driver('USB-UHCI Driver', @UHCI_ID, @loadUHCI);
     drivermanagement.register_driver('USB-OHCI Driver', @OHCI_ID, @loadOHCI);
     drivermanagement.register_driver('USB-EHCI Driver', @EHCI_ID, @loadEHCI);
+    drivermanagement.register_driver('USB-XHCI Driver', @XHCI_ID, @loadXHCI);
 
     console.outputln('USB Driver', 'INIT END.');
     pop_trace;
