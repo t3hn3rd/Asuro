@@ -25,6 +25,7 @@ uses
 type 
 
     TControllerType = (ControllerIDE, ControllerUSB, ControllerAHCI, ControllerNET);
+    TDirectory_Entry_Type = (Directory, Data, Executable, Mounted);
     PStorage_volume = ^TStorage_Volume;
     PStorage_device = ^TStorage_Device;
     APStorage_Volume = array[0..10] of PStorage_volume;
@@ -73,6 +74,13 @@ type
         readCallback     : PPHIOHook;
     end;
     APStorage_Device = array[0..255] of PStorage_device;
+
+    TDirectory_Entry = record //TODO implement dtae.time stuff
+        fileName  : pchar;
+        extension : pchar;
+        volume    : PStorage_Volume;
+        entryType : TDirectory_Entry_Type;
+    end;
 
 
 var 
@@ -208,17 +216,19 @@ var
     dirp : PDirectory;
     device : PStorage_Device;
     volume : PStorage_Volume;
-    error : uint32;
+    error : puint32;
     i : uint32;
 begin
     push_trace('ls');
+    
+    error:= puint32(kalloc(4));
 
     if paramCount(params) > 0 then begin
         dir := getParam(0, params);
 
         device:= PStorage_Device(LL_Get(storageDevices, 0));
         volume:= PStorage_Volume(LL_Get(device^.volumes, 0));
-        dirs:= volume^.filesystem^.readDirCallback(volume, dir, @error);
+        dirs:= volume^.filesystem^.readDirCallback(volume, dir, error);
 
         //if error <> 1 then console.writestringln('ERROR');
         for i:=2 to LL_Size(dirs) - 1 do begin
@@ -231,6 +241,7 @@ begin
         console.writestringlnWND('Specifiy a folder', getTerminalHWND);
     end;
 end;
+
 
 procedure volume_command(params : PParamList);
 var

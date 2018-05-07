@@ -319,6 +319,7 @@ var
     ii               : uint32 = 0;
     dirEntry         : PDirectory;
 begin
+    status^:= 0;
     bootRecord:= readBootRecord(volume);
     directoryStrings:= LL_fromString(directory, '/');
     directories:= getDirEntries(volume, bootRecord^.rootCluster, bootRecord);
@@ -328,7 +329,10 @@ begin
             ii:=0;
 
             while true do begin
-                if ii > LL_Size(directories) - 1 then break;
+                if ii > LL_Size(directories) - 1 then begin
+                   status^:= 1;
+                   break; 
+                end;
                 dirEntry:= PDirectory(LL_Get(directories, ii));
 
                 if compareByteArray8( dirEntry^.fileName, cleanString( pchar(puint32(LL_Get(directoryStrings, i))^) ) ) then begin
@@ -338,6 +342,8 @@ begin
                 end;
                 ii+=1;
             end;
+
+            if status^ <> 0 then break;
             
             LL_Free(directories); //TODO need to really free the things
             directories:= getDirEntries(volume, cluster, bootRecord);
@@ -434,6 +440,8 @@ begin
     LL_Free(directories);
 end;
 
+//procedure writeFile()
+
 procedure create_volume(disk : PStorage_Device; sectors : uint32; start : uint32; config : puint32);
 var
     buffer     : puint32;
@@ -456,15 +464,15 @@ var
 begin
     push_trace('fat32.create_volume()');
 
-    zeroBuffer:= puint32(kalloc( disk^.sectorSize * 4 ));
-    memset(uint32(zeroBuffer), 0, disk^.sectorSize * 4);
+    // zeroBuffer:= puint32(kalloc( disk^.sectorSize * 4 ));
+    // memset(uint32(zeroBuffer), 0, disk^.sectorSize * 4);
 
-    while true do begin
-        if i > sectors then break;
-        disk^.writecallback(disk, 1 + i, 1, zeroBuffer);
-        i+=1;
-    end;
-    kfree(zeroBuffer);
+    // while true do begin
+    //     if i > sectors then break;
+    //     disk^.writecallback(disk, 1 + i, 1, zeroBuffer);
+    //     i+=1;
+    // end;
+    // kfree(zeroBuffer);
 
     //fat32 structure
     (* BootRecord            *)
@@ -505,11 +513,11 @@ begin
     zeroBuffer:= puint32(kalloc( disk^.sectorSize * 4 ));
     memset(uint32(zeroBuffer), 0, disk^.sectorSize * 4);
 
-    // while true do begin
-    //     if i > FATSize then break;
-    //     disk^.writecallback(disk, fatStart + i, 1, zeroBuffer);
-    //     i+=4;
-    // end;
+    while true do begin
+        if i > FATSize then break;
+        disk^.writecallback(disk, fatStart + i, 1, zeroBuffer);
+        i+=4;
+    end;
 
     kfree(buffer);
     kfree(zeroBuffer);
@@ -565,8 +573,8 @@ var
     dirs : PLinkedListBase;
 begin
     push_trace('fat32.detectVolumes()');
-        redrawWindows();
-    //sleep(1);
+    console.writeintln(2);
+    redrawWindows();
 
     volume:= PStorage_volume(kalloc(sizeof(TStorage_Volume)));
     //check first address for MBR
@@ -574,6 +582,9 @@ begin
     buffer := puint32(kalloc(512));
     memset(uint32(buffer), 0, 512);
     disk^.readcallback(disk, 2, 1, buffer);
+
+        console.writeintln(3);
+    redrawWindows();
 
     if (puint32(buffer)[127] = $55AA) and (PBootRecord(buffer)^.bsignature = $29) then begin
         console.writestringln('FAT32: volume found!');
@@ -584,6 +595,7 @@ begin
         volume^.filesystem := @filesystem;
         storagemanagement.register_volume(disk, volume);
     end;
+
     kfree(buffer);
 end;
 
