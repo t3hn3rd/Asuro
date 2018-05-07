@@ -23,6 +23,7 @@ var
     i       : uint32;
 
 begin
+    tracer.push_trace('EHCI.load');
     devices:= PCI.getDeviceInfo($0C, $03, $20, count);
     console.output('USB-EHCI Driver', 'Found ');
     console.writeint(count);

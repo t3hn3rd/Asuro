@@ -23,6 +23,7 @@ var
     i       : uint32;
 
 begin
+    tracer.push_trace('XHCI.load');
     devices:= PCI.getDeviceInfo($0C, $03, $30, count);
     console.output('USB-XHCI Driver', 'Found ');
     console.writeint(count);

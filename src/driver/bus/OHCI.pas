@@ -50,6 +50,7 @@ var
     MMR     : POHCI_MMR;
 
 begin
+    tracer.push_trace('OHCI.load');
     devices:= PCI.getDeviceInfo($0C, $03, $10, count);
     console.output('USB-OHCI Driver', 'Found ');
     console.writeint(count);

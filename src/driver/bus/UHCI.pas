@@ -23,6 +23,7 @@ var
     i       : uint32;
 
 begin
+    tracer.push_trace('UHCI.load');
     devices:= PCI.getDeviceInfo($0C, $03, $00, count);
     console.output('USB-UHCI Driver','Found ');
     console.writeint(count);

@@ -8,11 +8,11 @@ echo " "
 echo "Running Asaro..."
 if [ "$1" = "-d" ]
 then
-	qemu-system-i386 -serial pty -s -S -cdrom Asuro.iso&
+	qemu-system-i386 -hda IMAGE.img -serial pty -s -S -cdrom Asuro.iso&
 	sleep 1
 	gdb -ex "target remote localhost:1234"
 else
-	qemu-system-i386 -serial pty -monitor stdio -cdrom Asuro.iso
+	qemu-system-i386 -hda IMAGE.img -serial pty -monitor stdio -cdrom Asuro.iso
 fi
 
 if [ $? -ne 0 ]
