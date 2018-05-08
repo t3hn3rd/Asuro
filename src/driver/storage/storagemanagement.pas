@@ -36,7 +36,7 @@ type
     PPHIOHook = procedure(volume : PStorage_device; addr : uint32; sectors : uint32; buffer : puint32);
     PPCreateHook = procedure(disk : PStorage_Device; sectors : uint32; start : uint32; config : puint32);
     PPDetectHook = procedure(disk : PStorage_Device);
-    PPCreateDirHook = procedure(volume : PStorage_volume; directory : pchar; dirname : pchar; attributes : uint32; status : puint32);
+    PPCreateDirHook = procedure(volume : PStorage_volume; directory : pchar; dirname : pchar; attributes : uint32; var status : puint32);
     PPReadDirHook = function(volume : PStorage_volume; directory : pchar; status : puint32) : PLinkedListBase; //returns: 0 = success, 1 = dir not exsist, 2 = not directory, 3 = error //returns: 0 = success, 1 = dir not exsist, 2 = not directory, 3 = error
 
     PPHIOHook_ = procedure;
@@ -72,6 +72,8 @@ type
         volumes          : PLinkedListBase;
         writeCallback    : PPHIOHook;
         readCallback     : PPHIOHook;
+        hpc              : uint16;
+        spt              : uint16;
     end;
     APStorage_Device = array[0..255] of PStorage_device;
 
@@ -170,10 +172,12 @@ var
     dirName : pbyteArray8;
     device : PStorage_Device;
     volume : PStorage_Volume;
-    error : uint32;
+    error : puint32;
     i : uint32;
 begin
     push_trace('mkdir');
+    error := puint32(kalloc(8));
+    error^ := 0;
     if paramCount(params) > 0 then begin
         dir := getParam(0, params);
         temp:= getParam(1, params);
@@ -187,9 +191,10 @@ begin
         device:= PStorage_Device(LL_Get(storageDevices, 0));
         volume:= PStorage_Volume(LL_Get(device^.volumes, 0));
 
-        volume^.filesystem^.createDirCallback(volume, dir, temp, $10, @error);
+        volume^.filesystem^.createDirCallback(volume, dir, temp, $10, error);
         //if error <> 1 then console.writestringln('ERROR');
     end;
+    kfree(error);
 end;
 
 procedure ls_command(params : PParamList);

@@ -224,8 +224,7 @@ begin
         storageDevice.controllerId0:= 0;
         storageDevice.maxSectorCount:= (IDEDevices[0].info[60] or (IDEDevices[0].info[61] shl 16) ); //LBA28 SATA
 
-        console.writeintln(storageDevice.maxSectorCount);
-        redrawWindows();
+        storageDevice.hpc:= uint32(IDEDevices[0].info[3] DIV IDEDevices[0].info[1]);
 
         storageDevice.sectorSize:= 512;
         if storageDevice.maxSectorCount <> 0 then begin
@@ -290,7 +289,6 @@ begin
         outw($1F5, 0); 
 
         outw($1F7, ATA_CMD_IDENTIFY); //send identify command
-            console.writeint(1);
 
         while true do begin
             if (inw($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
@@ -397,16 +395,8 @@ begin
 
     for i:=0 to sectorCount do begin
 
-        console.writeintln(11);
-        redrawWindows();
-
         //poll status
         while true do if (inw($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
-
-
-        console.writeintln(12);
-        redrawWindows();
-
         while true do begin
             if (inw($1f7) and (1 shl 3)) <> 0 then break;
             if (inw($1f7) and (1 shl 5)) <> 0 then begin
@@ -425,10 +415,6 @@ begin
                 exit;
             end; //drive error
         end;
-
-
-        console.writeintln(13);
-        redrawWindows();
 
         for ii:=0 to 127 do begin //read data
             Puint32(buffer + ((i * 512) + (ii * 32) DIV 32))^ := uint32(inw($1F0)); 
