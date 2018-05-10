@@ -616,7 +616,7 @@ begin
     old_cur:= tx_curr;
     tx_curr:= (tx_curr + 1) MOD E1000_NUM_TX_DESC;
     writeCommand(REG_TXDESCTAIL, tx_curr);
-    timeout:= 10000;
+    timeout:= 1000000;
     while ((tx_descs[old_cur]^.status AND $FF) = 0) and (timeout > 0) do begin
         dec(timeout);
     end;
