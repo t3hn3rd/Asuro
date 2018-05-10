@@ -3,10 +3,12 @@ unit netutils;
 interface
 
 uses
-    tracer, util, nettypes, console, lmemorymanager;
+    tracer, util, nettypes, console, lmemorymanager, lists, strings;
 
 procedure copyMAC(src : puint8; dst : puint8);
 procedure copyIPv4(src : puint8; dst : puint8);
+function  stringToMAC(str : pchar) : puint8;
+function  stringToIPv4(str : pchar) : puint8;
 procedure writeMACAddress(mac : puint8; WND : HWND);
 procedure writeIPv4Address(ip : puint8; WND : HWND);
 function MACEqual(mac1 : puint8; mac2 : puint8) : boolean;
@@ -15,6 +17,36 @@ function newPacketContext : PPacketContext;
 procedure freePacketContext(p_context : PPacketContext);
 
 implementation
+
+function  stringToMAC(str : pchar) : puint8;
+var
+    Mac_Delim : PLinkedListBase;
+    i         : uint32;
+
+begin
+    stringToMac:= puint8(kalloc(6));
+    Mac_Delim:= STRLL_FromString(str, ':');
+    if STRLL_Size(Mac_Delim) >= 6 then begin
+        for i:=0 to 5 do begin
+            stringToMAC[i]:= stringToInt(STRLL_Get(Mac_Delim, i));
+        end;
+    end;
+end;
+
+function  stringToIPv4(str : pchar) : puint8;
+var
+    IP_Delim : PLinkedListBase;
+    i        : uint32;
+
+begin
+    stringToIPv4:= puint8(kalloc(6));
+    IP_Delim:= STRLL_FromString(str, '.');
+    if STRLL_Size(IP_Delim) >= 4 then begin
+        for i:=0 to 3 do begin
+            stringToIPv4[i]:= stringToInt(STRLL_Get(IP_Delim, i));
+        end;
+    end;
+end;
 
 function IPEqual(ip1 : puint8; ip2 : puint8) : boolean;
 var

@@ -17,8 +17,9 @@ type
     end;
 
 procedure register;
-function IPv4ToMAC(ip : puint8) : puint8;
-function MACToIIPv4(mac : puint8) : puint8;
+function  IPv4ToMAC(ip : puint8) : puint8;
+function  MACToIIPv4(mac : puint8) : puint8;
+procedure send(hType : uint16; pType : uint16; op : uint16; p_context : PPacketContext);
 
 implementation
 
@@ -97,6 +98,9 @@ begin
             copyIPv4(@p_context^.IP.Source[0], @hdr^.Source_Protocol[0]);
             copyMAC(@p_context^.MAC.Destination[0], @hdr^.Destination_Hardware[0]);
             copyIPv4(@p_context^.IP.Destination[0], @hdr^.Destination_Protocol[0]);
+            if MACEqual(@p_context^.MAC.Destination[0], @NULL_MAC[0]) then begin
+                CopyMAC(@BROADCAST_MAC[0], @p_context^.MAC.Destination[0]);
+            end;
             eth2.send(buf, sizeof(TARPHeader), p_context);
         end;
         kfree(buf);

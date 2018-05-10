@@ -605,6 +605,7 @@ end;
 function sendPacket(p_data : void; p_len : uint16) : sint32;
 var
     old_cur : uint8;
+    timeout : uint32;
 
 begin
     push_trace('E1000.sendPacket');
@@ -615,9 +616,12 @@ begin
     old_cur:= tx_curr;
     tx_curr:= (tx_curr + 1) MOD E1000_NUM_TX_DESC;
     writeCommand(REG_TXDESCTAIL, tx_curr);
-    while (tx_descs[old_cur]^.status AND $FF) = 0 do begin
+    timeout:= 10000;
+    while ((tx_descs[old_cur]^.status AND $FF) = 0) and (timeout > 0) do begin
+        dec(timeout);
     end;
-    sendPacket:= 0;
+    sendPacket:= 1;
+    if timeout > 0 then sendPacket:= 0;
     pop_trace;
 end;
 

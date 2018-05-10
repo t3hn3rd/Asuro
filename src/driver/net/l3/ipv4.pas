@@ -3,10 +3,11 @@ unit ipv4;
 interface
 
 uses
-    tracer,
-    util, console, terminal,
+    tracer, lmemorymanager,
+    util, console, terminal, strings,
     net, nettypes, netutils,
     netlog,
+    lists,
     eth2;
 
 procedure registerProtocol(Protocol_ID : uint8; recv_callback : TRecvCallback);
@@ -14,6 +15,9 @@ function  getIPv4Config : PIPv4Configuration;
 procedure register;
 
 implementation
+
+uses
+    arp;
 
 var
     Registered : Boolean = false;
@@ -74,9 +78,49 @@ begin
 end;
 
 procedure terminal_command_ifconfig(params : PParamList);
+var
+    Command, Sub, Address, Gateway, Netmask : pchar;
+    _Address, _Gateway, _Netmask : puint8;
+    context : PPacketContext;
+
 begin
     push_trace('ipv4.terminal_command_ifconfig');
-    if paramCount(params) > 2 then begin
+    if paramCount(params) > 1 then begin
+        Command:= GetParam(0, Params);
+        if StringEquals(Command, 'set') then begin
+            if paramCount(params) > 3 then begin
+                Address:= GetParam(1, Params);
+                Gateway:= GetParam(2, Params);
+                Netmask:= GetParam(3, Params);
+                _Address:= stringToIPv4(Address);
+                _Gateway:= stringToIPv4(Gateway);
+                _Netmask:= stringToIPv4(Netmask);
+                copyIPv4(_Address, @Config.Address[0]);
+                copyIPv4(_Gateway, @Config.Gateway[0]);
+                copyIPv4(_Netmask, @Config.Netmask[0]);
+                kfree(void(_Address));
+                kfree(void(_Gateway));
+                kfree(void(_Netmask));
+            end else begin
+                writestringlnWND('Invalid number of params to call ''set''.', getTerminalHWND);
+            end;
+        end;
+        if StringEquals(Command, 'net') then begin
+            Sub:= GetParam(1, Params);
+            if StringEquals(Sub, 'up') then begin
+                Config.UP:= true;
+            end;
+            if StringEquals(Sub, 'down') then begin
+                Config.UP:= false;
+            end;
+        end;
+        context:= newPacketContext;
+        CopyIPv4(@Config.Gateway[0], @context^.IP.Destination[0]);
+        CopyIPv4(@Config.Address[0], @context^.IP.Source[0]);
+        CopyMAC(GetMAC, @context^.MAC.Source[0]);
+        CopyMAC(@NULL_MAC[0], @context^.MAC.Destination[0]);
+        arp.send($1, $8000, $1, context);
+        freePacketContext(context);
     end else begin
         writestringWND('   MAC:     ', getTerminalHWND);
         writeMACAddress(net.GetMAC, getTerminalHWND);
@@ -87,9 +131,9 @@ begin
         writestringWND('   Netmask: ', getTerminalHWND);
         writeIPv4Address(@Config.Netmask[0], getTerminalHWND);
         if Config.UP then 
-        writestringlnWND('   NetUP:   true', getTerminalHWND) 
+            writestringlnWND('   NetUP:   true', getTerminalHWND) 
         else 
-        writestringlnWND('   NetUP:   false', getTerminalHWND);
+            writestringlnWND('   NetUP:   false', getTerminalHWND);
     end;
     pop_trace;
 end;

@@ -116,6 +116,7 @@ type
 
 const
     BROADCAST_MAC : Array[0..5] of uint8 = ($FF, $FF, $FF, $FF, $FF, $FF);
+    NULL_MAC      : Array[0..5] of uint8 = ($00, $00, $00, $00, $00, $00);
 
 implementation
 
