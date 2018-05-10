@@ -37,6 +37,7 @@ var
     buffer : void;
     hdr    : TEthernetHeader;
     pad    : sint32;
+    size   : uint32;
 
 begin
     pad:= 46 - p_len;
@@ -44,14 +45,15 @@ begin
     push_trace('eth2.send');
     writeToLogLn('    L2: eth2.send');
     if p_context <> nil then begin
-        buffer:= kalloc(pad + p_len + sizeof(TEthernetHeader) + pad);
+        size:= pad + p_len + sizeof(TEthernetHeader) + pad;
+        buffer:= kalloc(size);
         copyMAC(@p_context^.MAC.Source[0], @hdr.src[0]);
         copyMAC(@p_context^.MAC.Destination[0], @hdr.dst[0]);
         hdr.EthTypeHi:= eth_type SHR 8;
         hdr.EthTypeLo:= eth_type AND $FF;
         memcpy(uint32(@hdr), uint32(buffer), sizeof(TEthernetHeader));
         memcpy(uint32(p_data), uint32(buffer)+sizeof(TEthernetHeader), p_len);
-        net.send(buffer, p_len + sizeof(TEthernetHeader));
+        net.send(buffer, size);
         kfree(buffer);
     end;
 end;
