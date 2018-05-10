@@ -128,7 +128,11 @@ begin
     
     { Process ARP Packet }
     Merge:= false;
+    writeToLogLn('        L3: arp.findByIP');
+    console.redrawWindows;
     CacheElement:= findCacheRecordByIP(@AHeader.Source_Protocol[0]);
+    writeToLogLn('        L3: arp.findByIPDone');
+    console.redrawWindows;
     if CacheElement <> nil then begin
         copyMAC(@AHeader.Source_Hardware[0], @CacheElement^.MAC[0]);
         Merge:= true;
