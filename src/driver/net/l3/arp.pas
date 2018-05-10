@@ -4,7 +4,7 @@ interface
 
 uses
     tracer, lmemorymanager,
-    util, lists, console,
+    util, lists, console, terminal,
     net, nettypes, netutils,
     netlog,
     eth2, ipv4;
@@ -189,12 +189,33 @@ begin
     end;
 end;
 
+procedure terminal_command_arp(Params : PParamList);
+var
+    i : uint32;
+    elm : PARPCacheRecord;
+
+begin
+    if LL_Size(Cache) > 0 then begin
+        writestringlnWND('MAC                IPv4', getTerminalHWND);
+        For i:=0 to LL_Size(Cache)-1 do begin
+            elm:= PARPCacheRecord(LL_Get(Cache, i));
+            writeMACAddressEx(@elm^.MAC[0], getTerminalHWND);
+            writestringWND('  ', getTerminalHWND);
+            writeIPv4AddressEx(@elm^.IP[0], getTerminalHWND);
+            writestringlnWND(' ', getTerminalHWND);
+        end;
+    end else begin
+        writestringlnWND('No entries in ARP table.', getTerminalHWND);
+    end;
+end;
+
 procedure register;
 begin
     push_trace('arp.register');
     if not Registered then begin
         Cache:= LL_New(sizeof(TARPCacheRecord));
         eth2.registerType($0806, @recv);
+        terminal.registerCommand('ARP', @terminal_command_arp, 'Get ARP Table.');
         Registered:= true;
     end;
     pop_trace;
