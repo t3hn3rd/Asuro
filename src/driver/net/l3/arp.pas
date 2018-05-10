@@ -97,7 +97,7 @@ begin
             copyIPv4(@p_context^.IP.Source[0], @hdr^.Source_Protocol[0]);
             copyMAC(@p_context^.MAC.Destination[0], @hdr^.Destination_Hardware[0]);
             copyIPv4(@p_context^.IP.Destination[0], @hdr^.Destination_Protocol[0]);
-            //eth2.send(buf, sizeof(TARPHeader), p_context);
+            eth2.send(buf, sizeof(TARPHeader), p_context);
         end;
         kfree(buf);
     end;
@@ -153,7 +153,7 @@ begin
                     copyIPv4(@AHeader.Source_Protocol[0], @context^.IP.Destination[0]);
                     copyMAC(getMAC, @context^.MAC.Source[0]);
                     copyIPv4(@getIPv4Config^.Address[0], @context^.IP.Source[0]);
-                    //send($1, $8000, $2, context);
+                    send($1, $8000, $2, context);
                     freePacketContext(context);
                 end;
                 $2:begin { ARP Reply }
