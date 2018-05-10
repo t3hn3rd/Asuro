@@ -34,11 +34,13 @@ var
 begin
     push_trace('arp.findCacheRecordByMAC');
     findCacheRecordByMAC:= nil;
-    for i:=0 to LL_Size(Cache)-1 do begin
-        r:= PARPCacheRecord(LL_Get(Cache, i));
-        if MACEqual(mac, @r^.MAC[0]) then begin
-            findCacheRecordByMAC:= r;
-            break;
+    if LL_Size(Cache) > 0 then begin
+        for i:=0 to LL_Size(Cache)-1 do begin
+            r:= PARPCacheRecord(LL_Get(Cache, i));
+            if MACEqual(mac, @r^.MAC[0]) then begin
+                findCacheRecordByMAC:= r;
+                break;
+            end;
         end;
     end;
     pop_trace;
@@ -52,11 +54,13 @@ var
 begin
     push_trace('arp.findCacheRecordByIP');
     findCacheRecordByIP:= nil;
-    for i:=0 to LL_Size(Cache)-1 do begin
-        r:= PARPCacheRecord(LL_Get(Cache, i));
-        if IPEqual(ip, @r^.IP[0]) then begin
-            findCacheRecordByIP:= r;
-            break;
+    if LL_Size(Cache) > 0 then begin
+        for i:=0 to LL_Size(Cache)-1 do begin
+            r:= PARPCacheRecord(LL_Get(Cache, i));
+            if IPEqual(ip, @r^.IP[0]) then begin
+                findCacheRecordByIP:= r;
+                break;
+            end;
         end;
     end;
     pop_trace;
