@@ -101,7 +101,7 @@ begin
             if MACEqual(@p_context^.MAC.Destination[0], @NULL_MAC[0]) then begin
                 CopyMAC(@BROADCAST_MAC[0], @p_context^.MAC.Destination[0]);
             end;
-            eth2.send(buf, sizeof(TARPHeader), p_context);
+            eth2.send(buf, sizeof(TARPHeader), $0806, p_context);
         end;
         kfree(buf);
     end;

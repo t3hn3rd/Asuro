@@ -10,7 +10,7 @@ uses
     netlog,
     console;
 
-procedure send(p_data : void; p_len : uint16; p_context : PPacketContext);
+procedure send(p_data : void; p_len : uint16; eth_type : uint16; p_context : PPacketContext);
 procedure registerType(eType : uint16; RecvCB : TRecvCallback);
 procedure register;
 
@@ -32,7 +32,7 @@ begin
     pop_trace;
 end;
 
-procedure send(p_data : void; p_len : uint16; p_context : PPacketContext);
+procedure send(p_data : void; p_len : uint16; eth_type : uint16; p_context : PPacketContext);
 var
     buffer : void;
     hdr    : TEthernetHeader;
@@ -44,8 +44,8 @@ begin
         buffer:= kalloc(p_len + sizeof(TEthernetHeader));
         copyMAC(@p_context^.MAC.Source[0], @hdr.src[0]);
         copyMAC(@p_context^.MAC.Destination[0], @hdr.dst[0]);
-        hdr.EthTypeHi:= 0;
-        hdr.EthTypeLo:= 1;
+        hdr.EthTypeHi:= eth_type SHR 8;
+        hdr.EthTypeLo:= eth_type AND $FF;
         memcpy(uint32(@hdr), uint32(buffer), sizeof(TEthernetHeader));
         memcpy(uint32(p_data), uint32(buffer+sizeof(TEthernetHeader)), p_len);
         net.send(buffer, p_len + sizeof(TEthernetHeader));
