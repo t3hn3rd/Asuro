@@ -82,7 +82,7 @@ begin
             else hSize:= 0;
         end;
         case pType of
-            $8000 : pSize:= 4;
+            $0800 : pSize:= 4;
             else pSize:= 0;
         end;
         if (hSize > 0) and (pSize > 0) then begin
