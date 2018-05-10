@@ -43,7 +43,6 @@ begin
             end;
         end;
     end;
-    pop_trace;
 end;
 
 function findCacheRecordByIP(ip : puint8) : PARPCacheRecord;
@@ -63,7 +62,6 @@ begin
             end;
         end;
     end;
-    pop_trace;
 end;
 
 procedure send(hType : uint16; pType : uint16; op : uint16; p_context : PPacketContext);
