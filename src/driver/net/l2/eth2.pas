@@ -6,6 +6,7 @@ uses
     tracer,
     nettypes, netutils, 
     net,
+    netlog,
     console;
 
 procedure registerType(eType : uint16; RecvCB : TRecvCallback);
@@ -34,6 +35,7 @@ var
 
 begin
     push_trace('eth2.recv');
+    if getNetlogHWND <> 0 then writestringlnWND('eth2.recv', getNetlogHWND);
     //console.outputln('net.eth2', 'RECV.');
     buf:= puint8(p_data);
     

@@ -3,17 +3,14 @@ unit memview;
 interface
 
 uses
-    console, terminal, keyboard;
+    console, terminal, keyboard, util, strings, tracer;
 
 procedure init();
 
 implementation
 
-uses
-    strings, tracer;
-
 type
-    TMode = (tmHex, tmChar);
+    TMode = (tmHex, tmChar, tmStackHex, tmStackChar);
 
 var
     Handle  : HWND = 0;
@@ -39,7 +36,12 @@ begin
         end;
     end;
     console.writestringlnExWND(' ', Colors, Handle);
-    console.writestringlnExWND(' ', Colors, Handle);
+    //console.writestringlnExWND(' ', Colors, Handle);
+    console.writestringExWND('        Mode: ', Colors, Handle);
+    case mode of
+        tmChar:console.writestringlnExWND('Memory', Colors, Handle);
+        tmStackChar:console.writestringlnExWND('Stack', Colors, Handle);
+    end;
     for i:=0 to length-1 do begin
         if offset_row and (i = 0) then begin
             console.writestringExWND('  ', Colors, Handle);
@@ -61,7 +63,10 @@ begin
             end;
         end;
     end;
-    console.writestringlnExWND(' ', Colors, Handle);   
+    //console.writestringlnExWND(' ', Colors, Handle);  
+    console.writestringlnExWND(' ', Colors, Handle); 
+    console.writestringExWND('     Display: ', Colors, Handle);
+    console.writestringExWND('ASCII', Colors, Handle);
 end;
 
 procedure printmemoryashex(source : uint32; length : uint32; col : uint32; delim : PChar; offset_row : boolean);
@@ -79,7 +84,12 @@ begin
         end;
     end;
     console.writestringlnExWND(' ', Colors, Handle);
-    console.writestringlnExWND(' ', Colors, Handle);
+    //console.writestringlnExWND(' ', Colors, Handle);
+    console.writestringExWND('        Mode: ', Colors, Handle);
+    case mode of
+        tmHex:console.writestringlnExWND('Memory', Colors, Handle);
+        tmStackHex:console.writestringlnExWND('Stack', Colors, Handle);
+    end;
     for i:=0 to length-1 do begin
         if offset_row and (i = 0) then begin
             console.writestringExWND('  ', Colors, Handle);
@@ -100,7 +110,10 @@ begin
             end;
         end;
     end;
-    console.writestringlnExWND(' ', Colors, Handle);   
+    console.writestringlnExWND(' ', Colors, Handle);
+    console.writestringExWND('     Display: ', Colors, Handle);
+    console.writestringExWND('Hex', Colors, Handle);
+    //console.writestringlnExWND(' ', Colors, Handle);   
 end;
 
 procedure OnClose();
@@ -116,36 +129,66 @@ begin
         case mode of
             tmHex:printmemoryashex(MEM_LOC, 176, 16, ' ', true);
             tmChar:printmemoryaschar(MEM_LOC, 176, 16, ' ', true);
+            tmStackHex:printmemoryashex(MEM_LOC, 44, 4, ' ', true);
+            tmStackChar:printmemoryaschar(MEM_LOC, 44, 4, ' ', true);
         end;
     end;
 end;
 
 procedure OnKeyPressed(info : TKeyInfo);
+var
+    line : uint32;
+    window : uint32;
+
 begin
+    if (Mode = tmStackHex) or (Mode = tmStackChar) then begin
+        line:= 4;
+        window:= 44;
+    end else begin
+        line:= 16;
+        window:= 176;
+    end;
     if info.CTRL_DOWN then begin
         if info.key_code = 16 then begin
-            dec(MEM_LOC, 176);
+            dec(MEM_LOC, window);
             NEW_LOC:= true;
         end;
         if info.key_code = 18 then begin
-            inc(MEM_LOC, 176);
+            inc(MEM_LOC, window);
             NEW_LOC:= true;
         end;
     end else begin
         if info.key_code = 16 then begin
-            dec(MEM_LOC, 16);
+            dec(MEM_LOC, line);
             NEW_LOC:= true;
         end;
         if info.key_code = 18 then begin
-            inc(MEM_LOC, 16);
+            inc(MEM_LOC, line);
             NEW_LOC:= true;
         end;
     end;
     if info.key_code = uint8('c') then begin
-        Mode:= tmChar;
+        if (Mode <> tmStackHex) and (Mode <> tmStackChar) then begin
+            Mode:= tmChar;
+        end else begin
+            Mode:= tmStackChar;
+        end;
     end;
     if info.key_code = uint8('h') then begin
-        Mode:= tmHex;
+        if (Mode <> tmStackHex) and (Mode <> tmStackChar) then begin
+            Mode:= tmHex;
+        end else begin
+            Mode:= tmStackHex;
+        end;
+    end;
+    if info.key_code = uint8('s') then begin
+        if (Mode <> tmStackHex) and (Mode <> tmStackChar) then begin
+            Mode:= tmStackHex;
+        end else begin
+            Mode:= tmHex;
+        end;
+        MEM_LOC:= getESP;
+        NEW_LOC:= true;
     end;
 end;
 

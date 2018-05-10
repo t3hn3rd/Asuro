@@ -6,6 +6,7 @@ uses
     tracer,
     util, lists, console,
     nettypes, netutils,
+    netlog,
     eth2;
 
 type
@@ -69,6 +70,7 @@ var
 
 begin
     push_trace('arp.recv');
+    if getNetlogHWND <> 0 then writestringlnWND('arp.recv', getNetlogHWND);
     { Get our converted Header }
     Header:= PARPHeader(p_data);
     AHeader.Hardware_Type:= (Header^.Hardware_Type_Hi SHL 8) + Header^.Hardware_Type_Lo;
@@ -80,34 +82,33 @@ begin
     copyIPv4(@Header^.Source_Protocol[0], @AHeader.Source_Protocol[0]);
     copyMAC(@Header^.Destination_Hardware[0], @AHeader.Destination_Hardware[0]);
     copyIPv4(@Header^.Destination_Protocol[0], @AHeader.Destination_Protocol[0]);
-
     case AHeader.Operation of
         $1:begin { ARP Request }
-            //console.writestringln('ARP Request.');
+            if getNetlogHWND <> 0 then writestringlnWND('arp.recv.arp.req', getNetlogHWND);
         end;
         $2:begin { ARP Reply }
-            //console.writestringln('ARP Reply.');
+            if getNetlogHWND <> 0 then writestringlnWND('arp.recv.arp.rep', getNetlogHWND);
         end;
         $3:begin { RARP Request }
-        
+            if getNetlogHWND <> 0 then writestringlnWND('arp.recv.rarp.req', getNetlogHWND);
         end;
         $4:begin { RARP Reply }
-        
+            if getNetlogHWND <> 0 then writestringlnWND('arp.recv.rarp.rep', getNetlogHWND);
         end;
         $5:begin { DRARP Request }
-        
+            if getNetlogHWND <> 0 then writestringlnWND('arp.recv.drarp.req', getNetlogHWND);
         end;
         $6:begin { DRARP Reply }
-        
+            if getNetlogHWND <> 0 then writestringlnWND('arp.recv.drarp.rep', getNetlogHWND);
         end;
         $7:begin { DRARP Error }
-        
+            if getNetlogHWND <> 0 then writestringlnWND('arp.recv.drarp.err', getNetlogHWND);
         end;
         $8:begin { InARP Request }
-        
+            if getNetlogHWND <> 0 then writestringlnWND('arp.recv.inarp.req', getNetlogHWND);
         end;
         $9:begin { InARP Reply }
-        
+            if getNetlogHWND <> 0 then writestringlnWND('arp.recv.inarp.rep', getNetlogHWND);
         end;
     end;
     pop_trace;

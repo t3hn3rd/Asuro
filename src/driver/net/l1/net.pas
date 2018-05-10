@@ -5,7 +5,8 @@ interface
 uses
     tracer,
     console,
-    nettypes, netutils;
+    nettypes, netutils,
+    netlog;
 
 procedure init;
 procedure registerNetworkCard(SendCallback : TNetSendCallback; _MAC : puint8);
@@ -46,6 +47,7 @@ end;
 procedure send(p_data : void; p_len : uint16);
 begin
     push_trace('net.send');
+    if getNetlogHWND <> 0 then writestringlnWND('net.send', getNetlogHWND);
     if CBSend <> nil then CBSend(p_data, p_len);
     pop_trace;
 end;
@@ -56,7 +58,7 @@ var
 
 begin
     push_trace('net.recv');
-    //console.outputln('net', 'RECV.');
+    if getNetlogHWND <> 0 then writestringlnWND('net.recv', getNetlogHWND);
     context:= newPacketContext;
     if CBNext <> nil then CBNext(p_data, p_len, context);
     freePacketContext(context);

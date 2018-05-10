@@ -3,20 +3,20 @@ unit asuro;
 interface
  
 const
-     VERSION       = '1.0.1-672ia';
+     VERSION       = '1.0.1-674ia';
      VERSION_MAJOR = '1';
      VERSION_MINOR = '0';
      VERSION_SUB   = '1';
-     REVISION      = '672';
+     REVISION      = '674';
      RELEASE       = 'ia';
-     LINE_COUNT    = 28180;
-     FILE_COUNT    = 90;
-     DRIVER_COUNT  = 34;
+     LINE_COUNT    = 27628;
+     FILE_COUNT    = 89;
+     DRIVER_COUNT  = 32;
      FPC_VERSION   = '2.6.4';
      NASM_VERSION  = '2.10.09';
      MAKE_VERSION  = '3.81';
-     COMPILE_DATE  = '08/05/18';
-     COMPILE_TIME  = '10:05:48';
+     COMPILE_DATE  = '10/05/18';
+     COMPILE_TIME  = '08:36:31';
  
 implementation
  

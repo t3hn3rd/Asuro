@@ -6,6 +6,7 @@ uses
     tracer,
     util, console, terminal,
     net, nettypes, netutils,
+    netlog,
     eth2;
 
 procedure registerProtocol(Protocol_ID : uint8; recv_callback : TRecvCallback);
@@ -28,7 +29,7 @@ var
 
 begin
     push_trace('ipv4.recv');
-    //console.outputln('net.ipv4', 'RECV.');
+    if getNetlogHWND <> 0 then writestringlnWND('ipv4.recv', getNetlogHWND);
     Header:= PIPV4Header(p_data);
     AHeader.version:= Header^.version;
     AHeader.header_len:= Header^.header_len;

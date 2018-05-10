@@ -42,7 +42,8 @@ uses
      memview,
      splash,
      cpu,
-     themer;
+     themer,
+     netlog;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
@@ -202,6 +203,7 @@ begin
      shell.init();
      memview.init();
      themer.init();
+     netlog.init();
 
      { Init Splash }
      splash.init();

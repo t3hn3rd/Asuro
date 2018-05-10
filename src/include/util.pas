@@ -58,6 +58,8 @@ function HexCharToDecimal(hex : char) : uint8;
 
 procedure resetSystem();
 
+function getESP : uint32;
+
 var
     endptr : uint32; external name '__end';
     stack  : uint32; external name 'KERNEL_STACK';
@@ -66,6 +68,13 @@ implementation
 
 uses
     console, RTC, cpu;
+
+function getESP : uint32;
+begin
+    asm
+        MOV getESP, ESP
+    end;
+end;
 
 function HexCharToDecimal(hex : char) : uint8;
 begin
