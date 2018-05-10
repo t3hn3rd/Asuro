@@ -27,17 +27,18 @@ implementation
 var
     Hooks : Array[1..MAX_HOOKS] of pp_hook_method;
     Registered : boolean = false;
+    v : uint32 = 0;
 
 procedure Main; //IRQ0, 1024.19hz aprox
 var
     i : integer;
-    regs : PRegisters;
 
 begin
     CLI;
-    asm
-        MOV EAX, EBP
-        MOV Regs, EAX
+    inc(v);
+    if v = 1024 then begin
+        console.redrawWindows;
+        v:= 0;
     end;
     for i:=0 to MAX_HOOKS-1 do begin
         if uint32(Hooks[i]) <> 0 then begin 
