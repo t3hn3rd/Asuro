@@ -8,7 +8,8 @@ uses
     nettypes, netutils, 
     net,
     netlog,
-    console;
+    console,
+    crc;
 
 procedure send(p_data : void; p_len : uint16; eth_type : uint16; p_context : PPacketContext);
 procedure registerType(eType : uint16; RecvCB : TRecvCallback);
@@ -38,6 +39,7 @@ var
     hdr    : TEthernetHeader;
     pad    : sint32;
     size   : uint32;
+    FCS    : puint32;
 
 begin
     pad:= 46 - p_len;
@@ -45,7 +47,7 @@ begin
     push_trace('eth2.send');
     writeToLogLn('    L2: eth2.send');
     if p_context <> nil then begin
-        size:= pad + p_len + sizeof(TEthernetHeader);
+        size:= sizeof(TEthernetHeader) + p_len + pad + 4;
         buffer:= kalloc(size);
         copyMAC(@p_context^.MAC.Source[0], @hdr.src[0]);
         copyMAC(@p_context^.MAC.Destination[0], @hdr.dst[0]);
@@ -53,6 +55,8 @@ begin
         hdr.EthTypeLo:= eth_type AND $FF;
         memcpy(uint32(@hdr), uint32(buffer), sizeof(TEthernetHeader));
         memcpy(uint32(p_data), uint32(buffer)+sizeof(TEthernetHeader), p_len);
+        FCS:= puint32((uint32(buffer) + size) - 4);
+        FCS^:= crc32(puint8(buffer), size - 4);
         net.send(buffer, size);
         kfree(buffer);
     end;
