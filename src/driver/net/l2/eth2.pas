@@ -45,7 +45,7 @@ begin
         hdr.EthTypeLo:= 1;
         memcpy(uint32(@hdr), uint32(buffer), sizeof(TEthernetHeader));
         memcpy(uint32(p_data), uint32(buffer+sizeof(TEthernetHeader)), p_len);
-        net.send(buffer, p_len + sizeof(TEthernetHeader));
+        //net.send(buffer, p_len + sizeof(TEthernetHeader));
         kfree(buffer);
     end;
 end;
