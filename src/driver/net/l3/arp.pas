@@ -112,6 +112,7 @@ var
 begin
     push_trace('arp.recv');
     writeToLogLn('        L3: arp.recv');
+    console.redrawWindows;
     
     { Get our converted Header }
     Header:= PARPHeader(p_data);
@@ -142,7 +143,6 @@ begin
                 $1:begin { ARP Request }
                     writeToLogLn('            arp.recv.arp.req');
                     context:= newPacketContext;
-                    //context^.
                     copyMAC(@AHeader.Source_Hardware[0], @context^.MAC.Destination[0]);
                     copyIPv4(@AHeader.Source_Protocol[0], @context^.IP.Destination[0]);
                     copyMAC(getMAC, @context^.MAC.Source[0]);
