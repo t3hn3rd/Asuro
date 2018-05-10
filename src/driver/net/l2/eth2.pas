@@ -5,7 +5,7 @@ interface
 uses
     lmemorymanager, util,
     tracer,
-    nettypes, netutils, 
+    nettypes, netutils, terminal,
     net,
     netlog,
     console,
@@ -56,7 +56,8 @@ begin
         memcpy(uint32(@hdr), uint32(buffer), sizeof(TEthernetHeader));
         memcpy(uint32(p_data), uint32(buffer)+sizeof(TEthernetHeader), p_len);
         FCS:= puint32((uint32(buffer) + size) - 4);
-        FCS^:= crc32(puint8(buffer), size - 4);
+        FCS^:= crc32(puint8(buffer), size - 5);
+        //writehexlnWND(FCS^, getTerminalHWND);
         net.send(buffer, size);
         kfree(buffer);
     end;
