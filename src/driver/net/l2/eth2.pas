@@ -43,11 +43,11 @@ var
 
 begin
     pad:= 46 - p_len;
-    if pad < 0 then pad:= 0;
+    if pad < 0 then pad:= 4;
     push_trace('eth2.send');
     writeToLogLn('    L2: eth2.send');
     if p_context <> nil then begin
-        size:= sizeof(TEthernetHeader) + p_len + pad + 4;
+        size:= sizeof(TEthernetHeader) + p_len + pad;
         buffer:= kalloc(size);
         copyMAC(@p_context^.MAC.Source[0], @hdr.src[0]);
         copyMAC(@p_context^.MAC.Destination[0], @hdr.dst[0]);
