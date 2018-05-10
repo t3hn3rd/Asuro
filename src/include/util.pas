@@ -24,6 +24,7 @@ procedure GPF();
 function hi(b : uint8) : uint8;
 function lo(b : uint8) : uint8;
 function switchendian(b : uint8) : uint8;
+function switchendian32(b : uint32) : uint32;
 function getWord(i : uint32; hi : boolean) : uint16;
 function getByte(i : uint32; index : uint8) : uint8;
 
@@ -68,6 +69,14 @@ implementation
 
 uses
     console, RTC, cpu;
+
+function switchendian32(b : uint32) : uint32;
+begin
+    switchendian32:= ((b AND $FF000000) SHR 24) OR 
+                     ((b AND $00FF0000) SHR 8) OR 
+                     ((b AND $0000FF00) SHL 8) OR 
+                     ((b AND $000000FF) SHL 24);
+end;
 
 function getESP : uint32;
 begin

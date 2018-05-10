@@ -95,6 +95,7 @@ begin
             hdr^.Operation_Hi:= op SHR 8;
             hdr^.Operation_Lo:= op AND $FF;
             copyMAC(@p_context^.MAC.Source[0], @hdr^.Source_Hardware[0]);
+            //copyMAC(@FORCE_MAC[0], @hdr^.Source_Hardware[0]);
             copyIPv4(@p_context^.IP.Source[0], @hdr^.Source_Protocol[0]);
             copyMAC(@p_context^.MAC.Destination[0], @hdr^.Destination_Hardware[0]);
             copyIPv4(@p_context^.IP.Destination[0], @hdr^.Destination_Protocol[0]);
