@@ -35,7 +35,7 @@ var
 
 begin
     push_trace('eth2.recv');
-    writeToLogLn('L2: eth2.recv');
+    writeToLogLn('    L2: eth2.recv');
     //console.outputln('net.eth2', 'RECV.');
     buf:= puint8(p_data);
     
