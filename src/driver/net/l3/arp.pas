@@ -20,6 +20,7 @@ procedure register;
 function  IPv4ToMAC(ip : puint8) : puint8;
 function  MACToIIPv4(mac : puint8) : puint8;
 procedure sendGratuitous;
+procedure sendRequest(ip : puint8);
 procedure send(hType : uint16; pType : uint16; op : uint16; p_context : PPacketContext);
 
 implementation
@@ -116,6 +117,20 @@ var
 begin
      context:= newPacketContext;
      CopyIPv4(@getIPv4Config^.Address[0], @context^.IP.Destination[0]);
+     CopyIPv4(@getIPv4Config^.Address[0], @context^.IP.Source[0]);
+     CopyMAC(GetMAC, @context^.MAC.Source[0]);
+     CopyMAC(@BROADCAST_MAC[0], @context^.MAC.Destination[0]);
+     arp.send($1, $0800, $1, context);
+     freePacketContext(context);
+end;
+
+procedure sendRequest(ip : puint8);
+var
+    context : PPacketContext;
+
+begin
+     context:= newPacketContext;
+     CopyIPv4(ip, @context^.IP.Destination[0]);
      CopyIPv4(@getIPv4Config^.Address[0], @context^.IP.Source[0]);
      CopyMAC(GetMAC, @context^.MAC.Source[0]);
      CopyMAC(@BROADCAST_MAC[0], @context^.MAC.Destination[0]);

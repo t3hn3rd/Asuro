@@ -81,7 +81,9 @@ procedure terminal_command_ifconfig(params : PParamList);
 var
     Command, Sub, Address, Gateway, Netmask : pchar;
     _Address, _Gateway, _Netmask : puint8;
+    Target : TIPv4Address;
     context : PPacketContext;
+    i : uint32;
 
 begin
     push_trace('ipv4.terminal_command_ifconfig');
@@ -115,14 +117,21 @@ begin
             end;
         end;
         arp.sendGratuitous;
-        context:= newPacketContext;
-        CopyIPv4(@Config.Gateway[0], @context^.IP.Destination[0]);
-        CopyIPv4(@Config.Address[0], @context^.IP.Source[0]);
-        CopyMAC(GetMAC, @context^.MAC.Source[0]);
-        //copyMAC(@FORCE_MAC[0], @context^.MAC.Source[0]);
-        CopyMAC(@BROADCAST_MAC[0], @context^.MAC.Destination[0]);
-        arp.send($1, $0800, $1, context);
-        freePacketContext(context);
+
+        CopyIPv4(@Config.Address[0], @Target[0]);
+        for i:=1 to 255 do begin
+            Target[3]:= i;
+            arp.sendRequest(@Target[0]);
+        end;
+
+        // context:= newPacketContext;
+        // CopyIPv4(@Config.Gateway[0], @context^.IP.Destination[0]);
+        // CopyIPv4(@Config.Address[0], @context^.IP.Source[0]);
+        // CopyMAC(GetMAC, @context^.MAC.Source[0]);
+        // //copyMAC(@FORCE_MAC[0], @context^.MAC.Source[0]);
+        // CopyMAC(@BROADCAST_MAC[0], @context^.MAC.Destination[0]);
+        // arp.send($1, $0800, $1, context);
+        // freePacketContext(context);
     end else begin
         writestringWND('   MAC:     ', getTerminalHWND);
         writeMACAddress(net.GetMAC, getTerminalHWND);
