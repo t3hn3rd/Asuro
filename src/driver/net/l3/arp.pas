@@ -157,7 +157,7 @@ begin
                     copyIPv4(@AHeader.Source_Protocol[0], @context^.IP.Destination[0]);
                     copyMAC(getMAC, @context^.MAC.Source[0]);
                     copyIPv4(@getIPv4Config^.Address[0], @context^.IP.Source[0]);
-                    send($1, $8000, $2, context);
+                    send($1, $0800, $2, context);
                     freePacketContext(context);
                 end;
                 $2:begin { ARP Reply }
