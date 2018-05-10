@@ -47,7 +47,7 @@ begin
         hdr.EthTypeHi:= eth_type SHR 8;
         hdr.EthTypeLo:= eth_type AND $FF;
         memcpy(uint32(@hdr), uint32(buffer), sizeof(TEthernetHeader));
-        memcpy(uint32(p_data), uint32(buffer+sizeof(TEthernetHeader)), p_len);
+        memcpy(uint32(p_data[0]), uint32(buffer+sizeof(TEthernetHeader)), p_len);
         net.send(buffer, p_len + sizeof(TEthernetHeader));
         kfree(buffer);
     end;
