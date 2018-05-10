@@ -6,7 +6,8 @@ uses
     tracer,
     console,
     nettypes, netutils,
-    netlog;
+    netlog,
+    RTC;
 
 procedure init;
 procedure registerNetworkCard(SendCallback : TNetSendCallback; _MAC : puint8);
@@ -14,6 +15,8 @@ procedure registerNextLayer(RecvCallback : TRecvCallback);
 procedure send(p_data : void; p_len : uint16);
 procedure recv(p_data : void; p_len : uint16);
 function  getMAC : puint8;
+procedure writeToLog(str : pchar);
+procedure writeToLogLn(str : pchar);
 
 implementation
 
@@ -24,6 +27,39 @@ var
     CBSend : TNetSendCallback = nil;
     CBNext : TRecvCallback    = nil;
     MAC    : puint8           = nil;
+
+procedure writeToLog(str : pchar);
+var
+    DateTime : TDateTime;
+
+begin
+    if getNetlogHWND <> 0 then begin
+        DateTime:= getDateTime;
+        writeStringWND('[', getNetlogHWND);
+
+        if DateTime.Hours < 10 then writeIntWND(0, getNetlogHWND);
+        writeIntWND(DateTime.Hours, getNetlogHWND);
+        writeStringWND(':', getNetlogHWND);
+        
+        if DateTime.Minutes < 10 then writeIntWND(0, getNetlogHWND);
+        writeIntWND(DateTime.Minutes, getNetlogHWND);
+        writeStringWND(':', getNetlogHWND);
+
+        if DateTime.Seconds < 10 then writeIntWND(0, getNetlogHWND);
+        writeIntWND(DateTime.Seconds, getNetlogHWND);
+        writeStringWND('] ', getNetlogHWND); 
+
+        writeStringWND(str, getNetlogHWND);
+    end;
+end;
+
+procedure writeToLogLn(str : pchar);
+begin
+    writeToLog(str);
+    if getNetlogHWND <> 0 then begin
+        writestringlnWND(' ', getNetlogHWND);
+    end;
+end;
 
 procedure registerNetworkCard(SendCallback : TNetSendCallback; _MAC : puint8);
 begin
@@ -47,7 +83,7 @@ end;
 procedure send(p_data : void; p_len : uint16);
 begin
     push_trace('net.send');
-    if getNetlogHWND <> 0 then writestringlnWND('net.send', getNetlogHWND);
+    writeToLogLn('net.send');
     if CBSend <> nil then CBSend(p_data, p_len);
     pop_trace;
 end;
@@ -58,7 +94,7 @@ var
 
 begin
     push_trace('net.recv');
-    if getNetlogHWND <> 0 then writestringlnWND('net.recv', getNetlogHWND);
+    writeToLogLn('net.recv');
     context:= newPacketContext;
     if CBNext <> nil then CBNext(p_data, p_len, context);
     freePacketContext(context);

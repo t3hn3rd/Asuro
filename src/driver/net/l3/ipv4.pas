@@ -29,7 +29,7 @@ var
 
 begin
     push_trace('ipv4.recv');
-    if getNetlogHWND <> 0 then writestringlnWND('ipv4.recv', getNetlogHWND);
+    writeToLogLn('ipv4.recv');
     Header:= PIPV4Header(p_data);
     AHeader.version:= Header^.version;
     AHeader.header_len:= Header^.header_len;
