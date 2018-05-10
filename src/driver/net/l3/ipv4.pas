@@ -29,7 +29,7 @@ var
 
 begin
     push_trace('ipv4.recv');
-    writeToLogLn('ipv4.recv');
+    writeToLogLn('L3: ipv4.recv');
     Header:= PIPV4Header(p_data);
     AHeader.version:= Header^.version;
     AHeader.header_len:= Header^.header_len;

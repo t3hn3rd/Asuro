@@ -5,7 +5,7 @@ interface
 uses
     tracer,
     util, lists, console,
-    nettypes, netutils,
+    net, nettypes, netutils,
     netlog,
     eth2;
 
@@ -21,9 +21,6 @@ function IPv4ToMAC(ip : puint8) : puint8;
 function MACToIIPv4(mac : puint8) : puint8;
 
 implementation
-
-uses
-    net;
 
 var
     Registered : Boolean = false;
@@ -73,7 +70,7 @@ var
 
 begin
     push_trace('arp.recv');
-    writeToLogLn('arp.recv');
+    writeToLogLn('L3: arp.recv');
     { Get our converted Header }
     Header:= PARPHeader(p_data);
     AHeader.Hardware_Type:= (Header^.Hardware_Type_Hi SHL 8) + Header^.Hardware_Type_Lo;
@@ -87,31 +84,31 @@ begin
     copyIPv4(@Header^.Destination_Protocol[0], @AHeader.Destination_Protocol[0]);
     case AHeader.Operation of
         $1:begin { ARP Request }
-            writeToLogLn('arp.recv.arp.req');
+            writeToLogLn('    arp.recv.arp.req');
         end;
         $2:begin { ARP Reply }
-            writeToLogLn('arp.recv.arp.rep');
+            writeToLogLn('    arp.recv.arp.rep');
         end;
         $3:begin { RARP Request }
-            writeToLogLn('arp.recv.rarp.req');
+            writeToLogLn('    arp.recv.rarp.req');
         end;
         $4:begin { RARP Reply }
-            writeToLogLn('arp.recv.rarp.rep');
+            writeToLogLn('    arp.recv.rarp.rep');
         end;
         $5:begin { DRARP Request }
-            writeToLogLn('arp.recv.drarp.req');
+            writeToLogLn('    arp.recv.drarp.req');
         end;
         $6:begin { DRARP Reply }
-            writeToLogLn('arp.recv.drarp.rep');
+            writeToLogLn('    arp.recv.drarp.rep');
         end;
         $7:begin { DRARP Error }
-            writeToLogLn('arp.recv.drarp.err');
+            writeToLogLn('    arp.recv.drarp.err');
         end;
         $8:begin { InARP Request }
-            writeToLogLn('arp.recv.inarp.req');
+            writeToLogLn('    arp.recv.inarp.req');
         end;
         $9:begin { InARP Reply }
-            writeToLogLn('arp.recv.inarp.rep');
+            writeToLogLn('    arp.recv.inarp.rep');
         end;
     end;
     pop_trace;
