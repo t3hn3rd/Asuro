@@ -120,7 +120,7 @@ begin
         CopyIPv4(@Config.Address[0], @context^.IP.Source[0]);
         CopyMAC(GetMAC, @context^.MAC.Source[0]);
         //copyMAC(@FORCE_MAC[0], @context^.MAC.Source[0]);
-        CopyMAC(@NULL_MAC[0], @context^.MAC.Destination[0]);
+        CopyMAC(@BROADCAST_MAC[0], @context^.MAC.Destination[0]);
         arp.send($1, $0800, $1, context);
         freePacketContext(context);
     end else begin

@@ -115,7 +115,7 @@ var
 
 begin
      context:= newPacketContext;
-     CopyIPv4(@getIPv4Config^.Address[0], @context^.IP.Destination[0]);
+     CopyIPv4(@getIPv4Config^.Gateway[0], @context^.IP.Destination[0]);
      CopyIPv4(@getIPv4Config^.Address[0], @context^.IP.Source[0]);
      CopyMAC(GetMAC, @context^.MAC.Source[0]);
      CopyMAC(@BROADCAST_MAC[0], @context^.MAC.Destination[0]);
