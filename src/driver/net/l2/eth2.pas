@@ -3,12 +3,14 @@ unit eth2;
 interface
 
 uses
+    lmemorymanager, util,
     tracer,
     nettypes, netutils, 
     net,
     netlog,
     console;
 
+procedure send(p_data : void; p_len : uint16; p_context : PPacketContext);
 procedure registerType(eType : uint16; RecvCB : TRecvCallback);
 procedure register;
 
@@ -25,6 +27,27 @@ begin
     register;
     if EthTypes[eType] = nil then EthTypes[eType]:= RecvCB;
     pop_trace;
+end;
+
+procedure send(p_data : void; p_len : uint16; p_context : PPacketContext);
+var
+    buffer : void;
+    hdr    : TEthernetHeader;
+
+begin
+    push_trace('eth2.send');
+    writeToLogLn('    L2: eth2.send');
+    if p_context <> nil then begin
+        buffer:= kalloc(p_len + sizeof(TEthernetHeader));
+        copyMAC(@p_context^.MAC.Source[0], @hdr.src[0]);
+        copyMAC(@p_context^.MAC.Destination[0], @hdr.dst[0]);
+        hdr.EthTypeHi:= 0;
+        hdr.EthTypeLo:= 1;
+        memcpy(uint32(@hdr), uint32(buffer), sizeof(TEthernetHeader));
+        memcpy(uint32(p_data), uint32(buffer+sizeof(TEthernetHeader)), p_len);
+        net.send(buffer, p_len + sizeof(TEthernetHeader));
+        kfree(buffer);
+    end;
 end;
 
 procedure recv(p_data : void; p_len : uint16; p_context : PPacketContext);

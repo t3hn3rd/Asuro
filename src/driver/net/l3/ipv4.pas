@@ -10,6 +10,7 @@ uses
     eth2;
 
 procedure registerProtocol(Protocol_ID : uint8; recv_callback : TRecvCallback);
+function  getIPv4Config : PIPv4Configuration;
 procedure register;
 
 implementation
@@ -18,6 +19,11 @@ var
     Registered : Boolean = false;
     Protocols  : Array[0..255] of TRecvCallback;
     Config     : TIPv4Configuration;
+
+function  getIPv4Config : PIPv4Configuration;
+begin
+    getIPv4Config:= @Config;
+end;
 
 procedure recv(p_data : void; p_len : uint16; p_context : PPacketContext);
 var

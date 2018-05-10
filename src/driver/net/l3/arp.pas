@@ -3,11 +3,11 @@ unit arp;
 interface
 
 uses
-    tracer,
+    tracer, lmemorymanager,
     util, lists, console,
     net, nettypes, netutils,
     netlog,
-    eth2;
+    eth2, ipv4;
 
 type
     PARPCacheRecord = ^TARPCacheRecord;
@@ -62,15 +62,57 @@ begin
     pop_trace;
 end;
 
+procedure send(hType : uint16; pType : uint16; op : uint16; p_context : PPacketContext);
+var
+    buf : void;
+    hdr : PARPHeader;
+    hSize, pSize : uint8;
+
+begin
+    push_trace('arp.send');
+    writeToLogLn('        L3: arp.send');
+    if p_context <> nil then begin
+        buf:= kalloc(sizeof(TARPHeader));
+        hdr:= PARPHeader(buf);
+        case hType of
+            $1 : hSize:= 6;
+            else hSize:= 0;
+        end;
+        case pType of
+            $8000 : pSize:= 4;
+            else pSize:= 0;
+        end;
+        if (hSize > 0) and (pSize > 0) then begin
+            hdr^.Hardware_Type_Hi:= hType SHR 8;
+            hdr^.Hardware_Type_Lo:= hType AND $FF;
+            hdr^.Protocol_Type_Hi:= pType SHR 8;
+            hdr^.Protocol_Type_Lo:= pType AND $FF;
+            hdr^.Hardware_Address_Length:= hSize;
+            hdr^.Protocol_Address_Length:= pSize;
+            hdr^.Operation_Hi:= op SHR 8;
+            hdr^.Operation_Lo:= op AND $FF;
+            copyMAC(@p_context^.MAC.Source[0], @hdr^.Source_Hardware[0]);
+            copyIPv4(@p_context^.IP.Source[0], @hdr^.Source_Protocol[0]);
+            copyMAC(@p_context^.MAC.Destination[0], @hdr^.Destination_Hardware[0]);
+            copyIPv4(@p_context^.IP.Destination[0], @hdr^.Destination_Protocol[0]);
+            eth2.send(buf, sizeof(TARPHeader), p_context);
+        end;
+        kfree(buf);
+    end;
+end;
+
 procedure recv(p_data : void; p_len : uint16; p_context : PPacketContext);
 var
     Header       : PARPHeader;
     AHeader      : TARPAbstractHeader;
     CacheElement : PARPCacheRecord;
+    Merge        : boolean;
+    context      : PPacketContext;
 
 begin
     push_trace('arp.recv');
     writeToLogLn('        L3: arp.recv');
+    
     { Get our converted Header }
     Header:= PARPHeader(p_data);
     AHeader.Hardware_Type:= (Header^.Hardware_Type_Hi SHL 8) + Header^.Hardware_Type_Lo;
@@ -82,36 +124,59 @@ begin
     copyIPv4(@Header^.Source_Protocol[0], @AHeader.Source_Protocol[0]);
     copyMAC(@Header^.Destination_Hardware[0], @AHeader.Destination_Hardware[0]);
     copyIPv4(@Header^.Destination_Protocol[0], @AHeader.Destination_Protocol[0]);
-    case AHeader.Operation of
-        $1:begin { ARP Request }
-            writeToLogLn('            arp.recv.arp.req');
-        end;
-        $2:begin { ARP Reply }
-            writeToLogLn('            arp.recv.arp.rep');
-        end;
-        $3:begin { RARP Request }
-            writeToLogLn('            arp.recv.rarp.req');
-        end;
-        $4:begin { RARP Reply }
-            writeToLogLn('            arp.recv.rarp.rep');
-        end;
-        $5:begin { DRARP Request }
-            writeToLogLn('            arp.recv.drarp.req');
-        end;
-        $6:begin { DRARP Reply }
-            writeToLogLn('            arp.recv.drarp.rep');
-        end;
-        $7:begin { DRARP Error }
-            writeToLogLn('            arp.recv.drarp.err');
-        end;
-        $8:begin { InARP Request }
-            writeToLogLn('            arp.recv.inarp.req');
-        end;
-        $9:begin { InARP Reply }
-            writeToLogLn('            arp.recv.inarp.rep');
+    
+    { Process ARP Packet }
+    Merge:= false;
+    CacheElement:= findCacheRecordByIP(@AHeader.Source_Protocol[0]);
+    if CacheElement <> nil then begin
+        copyMAC(@AHeader.Source_Hardware[0], @CacheElement^.MAC[0]);
+        Merge:= true;
+    end else begin
+        if IPEqual(@AHeader.Destination_Protocol[0], @getIPv4Config^.Address[0]) then begin
+            if not Merge then begin
+                CacheElement:= PARPCacheRecord(LL_Add(Cache));
+                CopyMAC(@AHeader.Source_Hardware[0], @CacheElement^.MAC[0]);
+                copyIPv4(@AHeader.Source_Protocol[0], @CacheElement^.IP[0]);
+            end;
+            case AHeader.Operation of
+                $1:begin { ARP Request }
+                    writeToLogLn('            arp.recv.arp.req');
+                    context:= newPacketContext;
+                    //context^.
+                    copyMAC(@AHeader.Source_Hardware[0], @context^.MAC.Destination[0]);
+                    copyIPv4(@AHeader.Source_Protocol[0], @context^.IP.Destination[0]);
+                    copyMAC(getMAC, @context^.MAC.Source[0]);
+                    copyIPv4(@getIPv4Config^.Address[0], @context^.IP.Source[0]);
+                    send($1, $8000, $2, context);
+                    freePacketContext(context);
+                end;
+                $2:begin { ARP Reply }
+                    writeToLogLn('            arp.recv.arp.rep');
+                end;
+                $3:begin { RARP Request }
+                    writeToLogLn('            arp.recv.rarp.req');
+                end;
+                $4:begin { RARP Reply }
+                    writeToLogLn('            arp.recv.rarp.rep');
+                end;
+                $5:begin { DRARP Request }
+                    writeToLogLn('            arp.recv.drarp.req');
+                end;
+                $6:begin { DRARP Reply }
+                    writeToLogLn('            arp.recv.drarp.rep');
+                end;
+                $7:begin { DRARP Error }
+                    writeToLogLn('            arp.recv.drarp.err');
+                end;
+                $8:begin { InARP Request }
+                    writeToLogLn('            arp.recv.inarp.req');
+                end;
+                $9:begin { InARP Reply }
+                    writeToLogLn('            arp.recv.inarp.rep');
+                end;
+            end;
         end;
     end;
-    pop_trace;
 end;
 
 procedure register;
