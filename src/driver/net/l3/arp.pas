@@ -19,6 +19,7 @@ type
 procedure register;
 function  IPv4ToMAC(ip : puint8) : puint8;
 function  MACToIIPv4(mac : puint8) : puint8;
+procedure sendGratuitous;
 procedure send(hType : uint16; pType : uint16; op : uint16; p_context : PPacketContext);
 
 implementation
@@ -108,6 +109,20 @@ begin
     end;
 end;
 
+procedure sendGratuitous;
+var
+    context : PPacketContext;
+
+begin
+     context:= newPacketContext;
+     CopyIPv4(@getIPv4Config^.Address[0], @context^.IP.Destination[0]);
+     CopyIPv4(@getIPv4Config^.Address[0], @context^.IP.Source[0]);
+     CopyMAC(GetMAC, @context^.MAC.Source[0]);
+     CopyMAC(@BROADCAST_MAC[0], @context^.MAC.Destination[0]);
+     arp.send($1, $0800, $1, context);
+     freePacketContext(context);
+end;
+
 procedure recv(p_data : void; p_len : uint16; p_context : PPacketContext);
 var
     Header       : PARPHeader;
@@ -135,11 +150,7 @@ begin
     
     { Process ARP Packet }
     Merge:= false;
-    writeToLogLn('        L3: arp.findByIP');
-    console.redrawWindows;
     CacheElement:= findCacheRecordByIP(@AHeader.Source_Protocol[0]);
-    writeToLogLn('        L3: arp.findByIPDone');
-    console.redrawWindows;
     if CacheElement <> nil then begin
         copyMAC(@AHeader.Source_Hardware[0], @CacheElement^.MAC[0]);
         Merge:= true;

@@ -114,6 +114,7 @@ begin
                 Config.UP:= false;
             end;
         end;
+        arp.sendGratuitous;
         context:= newPacketContext;
         CopyIPv4(@Config.Gateway[0], @context^.IP.Destination[0]);
         CopyIPv4(@Config.Address[0], @context^.IP.Source[0]);
