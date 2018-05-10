@@ -6,7 +6,8 @@ uses
     console,
     lmemorymanager,
     util,
-    strings;
+    strings,
+    tracer;
 
 type
     { Managed Linked List }
@@ -25,17 +26,27 @@ type
         ElementSize : uint32;
     end;
 
+{ String Linked List }
+
+procedure  STRLL_Add(LinkedList : PLinkedListBase; str : pchar);
+function   STRLL_Get(LinkedList : PLinkedListBase; idx : uint32) : pchar;
+function   STRLL_New : PLinkedListBase;
+function   STRLL_Size(LinkedList : PLinkedListBase) : uint32;
+procedure  STRLL_Delete(LinkedList : PLinkedListBase; idx : uint32);
+procedure  STRLL_Free(LinkedList : PLinkedListBase);
+procedure  STRLL_Clear(LinkedList : PLinkedListBase);
+function   STRLL_FromString(str : pchar; delimter : char) : PLinkedListBase;
+
 { Managed Linked List }
 
-function LL_New(ElementSize : uint32) : PLinkedListBase;
-function LL_Add(LinkedList : PLinkedListBase) : Void;
-function LL_Delete(LinkedList : PLinkedListBase; idx : uint32) : boolean;
-function LL_Size(LinkedList : PLinkedListBase) : uint32;
-function LL_Insert(LinkedList : PLinkedListBase; idx : uint32) : Void;
-function LL_Get(LinkedList : PLinkedListBase; idx : uint32) : Void;
+function  LL_New(ElementSize : uint32) : PLinkedListBase;
+function  LL_Add(LinkedList : PLinkedListBase) : Void;
+function  LL_Delete(LinkedList : PLinkedListBase; idx : uint32) : boolean;
+function  LL_Size(LinkedList : PLinkedListBase) : uint32;
+function  LL_Insert(LinkedList : PLinkedListBase; idx : uint32) : Void;
+function  LL_Get(LinkedList : PLinkedListBase; idx : uint32) : Void;
 procedure LL_Free(LinkedList : PLinkedListBase);
-function LL_FromString(str : pchar; delimter : char) : PLinkedListBase;
-procedure LL_TEST();
+function  LL_FromString(str : pchar; delimter : char) : PLinkedListBase;
 
 implementation
 
@@ -194,86 +205,7 @@ begin
     kfree(void(LinkedList));
 end;
 
-{function LL_FromString(str : pchar; delimter : char) : PLinkedListBase; //todo implment function for freeing pointer lists
-var
-    list       : PLinkedListBase;
-    i          : uint32 = 0;  
-    out_str    : pchar;
-    elm        : puint32;
-    head       : pchar;
-    base       : pchar;
-    size       : uint32;
-    null_delim : boolean;
-
-begin
-    list := LL_New(sizeof(uint32));
-    stringToLL:= list; 
-
-    head:= str;
-    base:= head;
-    null_delim:= false;
-    while not null_delim do begin
-        i:=0;
-        while (head[i] <> delimter) and (head[i] <> char(0)) do begin
-            inc(i);
-        end;
-        if head[i] = char(0) then null_delim:= true;
-        size:= (uint32(@head[i]) - uint32(base)) + 1;
-        out_str:= stringNew(size);
-        memset(uint32(out_str), 0, size);
-        memcpy(uint32(base), uint32(out_str), size-1);
-        elm:= puint32(LL_Add(list));
-        elm
-    end;
-end;}
-
-procedure LL_Test();
-var
-    i : uint32;
-    LList : PLinkedListBase;
-    Elem : Void;
-    Str : PChar;
-
-begin
-     console.writestringln('Add 3 Elements: ');
-     LList:= LL_New(10);
-     Elem:= LL_Add(LList);
-     Str:= PChar(Elem);
-     Str[0]:= 'H';
-     Str[1]:= 'E';
-     Str[2]:= 'L';
-     Str[3]:= 'L';
-     Str[4]:= 'O';
-     Elem:= LL_Add(LList);
-     Str:= PChar(Elem);
-     Str[0]:= 'W';
-     Str[1]:= 'O';
-     Str[2]:= 'R';
-     Str[3]:= 'L';
-     Str[4]:= 'D';
-     Elem:= LL_Add(LList);
-     Str:= PChar(Elem);
-     Str[0]:= 'T';
-     Str[1]:= 'E';
-     Str[2]:= 'S';
-     Str[3]:= 'T';
-
-     for i:=0 to LL_Size(LList)-1 do begin
-        console.writestringln(PChar(LL_Get(LList, i)));
-     end;
-
-     console.writestringln(' ');
-     console.writestringln('Remove Element 1:');
-     LL_Delete(LList, 1);
-
-     for i:=0 to LL_Size(LList)-1 do begin
-        console.writestringln(PChar(LL_Get(LList, i)));
-     end;
-
-     LL_Free(LList);    
-end;
-
-function LL_FromString(str : pchar; delimter : char) : PLinkedListBase; //todo implment function for freeing pointer lists
+function LL_FromString(str : pchar; delimter : char) : PLinkedListBase;
 var
     list       : PLinkedListBase;
     i          : uint32 = 0;  
@@ -287,6 +219,96 @@ var
 begin
     list := LL_New(sizeof(uint32));
     LL_FromString:= list; 
+
+    head:= str;
+    tail:= head;
+
+    null_delim:= false;
+    while not null_delim do begin
+        if (head^ = delimter) or (head^ = char(0)) then begin
+            if head^ = char(0) then null_delim:= true;
+            size:= uint32(head) - uint32(tail);
+            if size > 0 then begin
+                elm:= puint32(LL_Add(list));
+                out_str:= stringNew(size + 1); //maybe
+                memcpy(uint32(tail), uint32(out_str), size);
+                elm^:= uint32(out_str);
+            end;
+            tail:= head+1;
+        end;
+        inc(head);
+    end;
+end;
+
+{ String Linked List }
+
+procedure STRLL_Add(LinkedList : PLinkedListBase; str : pchar);
+var
+    ptr : puint32;
+
+begin
+    ptr:= puint32(LL_Add(LinkedList));
+    ptr^:= uint32(str);
+end;
+
+function STRLL_Get(LinkedList : PLinkedListBase; idx : uint32) : pchar;
+var
+    ptr : puint32;
+
+begin
+    ptr:= puint32(LL_Get(LinkedList, idx));
+    STRLL_Get:= nil;
+    if ptr <> nil then begin
+        STRLL_Get:= pchar(ptr^);
+    end;
+end;
+
+function STRLL_New : PLinkedListBase;
+begin
+    STRLL_New:= LL_New(sizeof(uint32));   
+end;
+
+function STRLL_Size(LinkedList : PLinkedListBase) : uint32;
+begin
+    STRLL_Size:= LL_Size(LinkedList);
+end;
+
+procedure STRLL_Delete(LinkedList : PLinkedListBase; idx : uint32);
+var
+    ptr : pchar;
+
+begin
+    tracer.push_trace('lists.STRLL_Delete (Don''t add static strings)');
+    ptr:= STRLL_get(LinkedList, idx);
+    kfree(void(ptr));
+    LL_Delete(LinkedList, idx);
+end;
+
+procedure STRLL_Free(LinkedList : PLinkedListBase);
+begin
+    STRLL_Clear(LinkedList);
+    LL_Free(LinkedList);
+end;
+
+procedure STRLL_Clear(LinkedList : PLinkedListBase);
+begin
+    while STRLL_Size(LinkedList) > 0 do STRLL_Delete(LinkedList, 0);
+end;
+
+function STRLL_FromString(str : pchar; delimter : char) : PLinkedListBase;
+var
+    list       : PLinkedListBase;
+    i          : uint32 = 0;  
+    out_str    : pchar;
+    elm        : puint32;
+    head       : pchar;
+    tail       : pchar;
+    size       : uint32;
+    null_delim : boolean;
+
+begin
+    list := LL_New(sizeof(uint32));
+    STRLL_FromString:= list; 
 
     head:= str;
     tail:= head;
