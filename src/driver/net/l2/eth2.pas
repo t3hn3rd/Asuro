@@ -36,12 +36,15 @@ procedure send(p_data : void; p_len : uint16; eth_type : uint16; p_context : PPa
 var
     buffer : void;
     hdr    : TEthernetHeader;
+    pad    : sint32;
 
 begin
+    pad:= 46 - p_len;
+    if pad < 0 then pad:= 0;
     push_trace('eth2.send');
     writeToLogLn('    L2: eth2.send');
     if p_context <> nil then begin
-        buffer:= kalloc(p_len + sizeof(TEthernetHeader));
+        buffer:= kalloc(pad + p_len + sizeof(TEthernetHeader) + pad);
         copyMAC(@p_context^.MAC.Source[0], @hdr.src[0]);
         copyMAC(@p_context^.MAC.Destination[0], @hdr.dst[0]);
         hdr.EthTypeHi:= eth_type SHR 8;
