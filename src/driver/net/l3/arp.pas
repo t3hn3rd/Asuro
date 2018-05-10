@@ -95,7 +95,7 @@ begin
             copyIPv4(@p_context^.IP.Source[0], @hdr^.Source_Protocol[0]);
             copyMAC(@p_context^.MAC.Destination[0], @hdr^.Destination_Hardware[0]);
             copyIPv4(@p_context^.IP.Destination[0], @hdr^.Destination_Protocol[0]);
-            eth2.send(buf, sizeof(TARPHeader), p_context);
+            //eth2.send(buf, sizeof(TARPHeader), p_context);
         end;
         kfree(buf);
     end;
