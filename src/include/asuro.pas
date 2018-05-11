@@ -16,7 +16,7 @@ const
      NASM_VERSION  = '2.10.09';
      MAKE_VERSION  = '3.81';
      COMPILE_DATE  = '11/05/18';
-     COMPILE_TIME  = '09:17:35';
+     COMPILE_TIME  = '09:53:40';
  
 implementation
  
