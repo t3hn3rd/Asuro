@@ -166,8 +166,10 @@ begin
     { Process ARP Packet }
     Merge:= false;
     CacheElement:= findCacheRecordByIP(@AHeader.Source_Protocol[0]);
+    if CacheElement = nil then CacheElement:= findCacheRecordByMAC(@AHeader.Source_Hardware[0]);
     if CacheElement <> nil then begin
         copyMAC(@AHeader.Source_Hardware[0], @CacheElement^.MAC[0]);
+        copyIPv4(@AHeader.Source_Protocol[0], @CacheElement^.IP[0]);
         Merge:= true;
     end else begin
         if IPEqual(@AHeader.Destination_Protocol[0], @getIPv4Config^.Address[0]) then begin
