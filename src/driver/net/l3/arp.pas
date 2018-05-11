@@ -220,19 +220,28 @@ procedure terminal_command_arp(Params : PParamList);
 var
     i : uint32;
     elm : PARPCacheRecord;
+    sIP : pchar;
+    _IP : puint8;
 
 begin
-    if LL_Size(Cache) > 0 then begin
-        writestringlnWND('MAC                IPv4', getTerminalHWND);
-        For i:=0 to LL_Size(Cache)-1 do begin
-            elm:= PARPCacheRecord(LL_Get(Cache, i));
-            writeMACAddressEx(@elm^.MAC[0], getTerminalHWND);
-            writestringWND('  ', getTerminalHWND);
-            writeIPv4AddressEx(@elm^.IP[0], getTerminalHWND);
-            writestringlnWND(' ', getTerminalHWND);
-        end;
+    if ParamCount(Params) > 0 then begin
+        sIP:= getParam(0, Params);
+        _IP:= stringToIPv4(sIP);
+        sendRequest(_IP);
+        writestringlnWND('ARP Request Sent.', getTerminalHWND);
     end else begin
-        writestringlnWND('No entries in ARP table.', getTerminalHWND);
+        if LL_Size(Cache) > 0 then begin
+            writestringlnWND('MAC                IPv4', getTerminalHWND);
+            For i:=0 to LL_Size(Cache)-1 do begin
+                elm:= PARPCacheRecord(LL_Get(Cache, i));
+                writeMACAddressEx(@elm^.MAC[0], getTerminalHWND);
+                writestringWND('  ', getTerminalHWND);
+                writeIPv4AddressEx(@elm^.IP[0], getTerminalHWND);
+                writestringlnWND(' ', getTerminalHWND);
+            end;
+        end else begin
+            writestringlnWND('No entries in ARP table.', getTerminalHWND);
+        end;
     end;
 end;
 

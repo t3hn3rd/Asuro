@@ -9,14 +9,14 @@ const
      VERSION_SUB   = '1';
      REVISION      = '677';
      RELEASE       = 'ia';
-     LINE_COUNT    = 28025;
+     LINE_COUNT    = 28032;
      FILE_COUNT    = 90;
      DRIVER_COUNT  = 32;
      FPC_VERSION   = '2.6.4';
      NASM_VERSION  = '2.10.09';
      MAKE_VERSION  = '3.81';
      COMPILE_DATE  = '11/05/18';
-     COMPILE_TIME  = '08:34:35';
+     COMPILE_TIME  = '09:12:36';
  
 implementation
  

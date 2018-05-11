@@ -47,7 +47,7 @@ begin
     push_trace('eth2.send');
     writeToLogLn('    L2: eth2.send');
     if p_context <> nil then begin
-        size:= sizeof(TEthernetHeader) + p_len + pad + 4;
+        size:= sizeof(TEthernetHeader) + p_len {+ pad} + 4;
         buffer:= kalloc(size);
         copyMAC(@p_context^.MAC.Source[0], @hdr.src[0]);
         copyMAC(@p_context^.MAC.Destination[0], @hdr.dst[0]);
@@ -57,9 +57,7 @@ begin
         memcpy(uint32(p_data), uint32(buffer)+sizeof(TEthernetHeader), p_len);
         FCS:= puint32((uint32(buffer) + size) - 4);
         FCS^:= crc32(puint8(buffer), size - 4);
-        //writehexlnWND(FCS^, getTerminalHWND);
         net.send(buffer, size);
-        //printmemoryWND(uint32(buffer), size, 16, ' ', true, getTerminalHWND);
         kfree(buffer);
     end;
 end;
