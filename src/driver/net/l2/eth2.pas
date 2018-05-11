@@ -13,6 +13,7 @@ uses
 
 procedure send(p_data : void; p_len : uint16; eth_type : uint16; p_context : PPacketContext);
 procedure registerType(eType : uint16; RecvCB : TRecvCallback);
+procedure registerTypePromisc(eType : uint16; RecvCB : TRecvCallback);
 procedure register;
 
 implementation
@@ -23,14 +24,22 @@ uses
 var
     Registered : Boolean = false;
     EthTypes   : Array[0..65535] of TRecvCallback;
+    Promisc    : Array[0..65535] of Boolean;
     MAC        : puint8;
+
+procedure registerTypePromisc(eType : uint16; RecvCB : TRecvCallback);
+begin
+    push_trace('eth2.registerType');
+    register;
+    if EthTypes[eType] = nil then EthTypes[eType]:= RecvCB;
+    Promisc[eType]:= true;
+end;
 
 procedure registerType(eType : uint16; RecvCB : TRecvCallback);
 begin
     push_trace('eth2.registerType');
     register;
     if EthTypes[eType] = nil then EthTypes[eType]:= RecvCB;
-    pop_trace;
 end;
 
 procedure send(p_data : void; p_len : uint16; eth_type : uint16; p_context : PPacketContext);
@@ -81,7 +90,9 @@ begin
     copyMAC(@Header^.src[0], @p_context^.MAC.Source[0]);
     copyMAC(@Header^.dst[0], @p_context^.MAC.Destination[0]);
 
-    if MACEqual(@Header^.dst[0], @Header^.src[0]) or MACEqual(@Header^.dst[0], @BROADCAST_MAC[0]) then begin
+    if MACEqual(@Header^.dst[0], @Header^.src[0]) or 
+       MACEqual(@Header^.dst[0], @BROADCAST_MAC[0]) or
+       Promisc[proto_type] then begin
         if EthTypes[proto_type] <> nil then begin
             EthTypes[proto_type](void(buf), p_len - 14, p_context);
         end;    
@@ -98,6 +109,7 @@ begin
     if not Registered then begin
         for i:=0 to 65535 do begin
             EthTypes[i]:= nil;
+            Promisc[i]:= false;
         end;
         net.registerNextLayer(@recv);
         MAC:= net.getMAC;

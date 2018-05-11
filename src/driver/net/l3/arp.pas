@@ -250,7 +250,7 @@ begin
     push_trace('arp.register');
     if not Registered then begin
         Cache:= LL_New(sizeof(TARPCacheRecord));
-        eth2.registerType($0806, @recv);
+        eth2.registerTypePromisc($0806, @recv);
         terminal.registerCommand('ARP', @terminal_command_arp, 'Get ARP Table.');
         Registered:= true;
     end;
