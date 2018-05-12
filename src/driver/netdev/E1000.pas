@@ -484,6 +484,31 @@ begin
     pop_trace;
 end;
 
+procedure terminal_command_e1000status(Params : PParamList);
+begin
+    console.writestringWND('Status: ', getTerminalHWND);
+    console.writeHexLnWND(readStatus, getTerminalHWND);
+
+    console.writestringWND('CTRL: ', getTerminalHWND);
+    console.writehexlnWND(readCommand(REG_CTRL), getTerminalHWND);
+
+    console.writestringWND('TX Curr: ', getTerminalHWND);
+    console.writeintWND(tx_curr, getTerminalHWND);
+    console.writestringWND('/', getTerminalHWND);
+    console.writeintlnWND(E1000_NUM_TX_DESC, getTerminalHWND);
+
+    console.writestringWND('RX Curr: ', getTerminalHWND);
+    console.writeintWND(rx_curr, getTerminalHWND);
+    console.writestringWND('/', getTerminalHWND);
+    console.writeintlnWND(E1000_NUM_RX_DESC, getTerminalHWND);
+
+    console.writestringWND('RX MEM: ', getTerminalHWND);
+    console.writeHexLnWND(uint32(@rx_descs[0]), getTerminalHWND);
+
+    console.writestringWND('TX MEM: ', getTerminalHWND);
+    console.writeHexLnWND(uint32(@tx_descs[0]), getTerminalHWND);
+end;
+
 function load(ptr : void) : boolean;
 var
     PCI_Info : PPCI_Device;
@@ -539,7 +564,7 @@ begin
 
         load:= true;   
 
-        if load then registercommandEx('E1000', @console_command_sendtest, 'Test sending a ARP Request.', true);
+        if load then registercommandEx('E1000', @terminal_command_e1000status, 'E1000 Information.', true);
         if load then registercommand('MAC', @console_command_mac, 'Print MAC Address.');
     end;
 
