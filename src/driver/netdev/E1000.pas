@@ -486,6 +486,15 @@ end;
 
 procedure terminal_command_e1000status(Params : PParamList);
 begin
+    console.writestringWND('Card: ', getTerminalHWND);
+    case card_type of
+        ctUnknown:console.writestringlnWND('Unknown', getTerminalHWND);
+        ctE1000:console.writestringlnWND('E1000 Generic', getTerminalHWND);
+        ct82577LM:console.writestringlnWND('82577LM', getTerminalHWND);
+        ctI217:console.writestringlnWND('I217', getTerminalHWND);
+        else console.writestringlnWND('UNIDENTIFIED!!!', getTerminalHWND);
+    end;
+
     console.writestringWND('Status: ', getTerminalHWND);
     console.writeHexLnWND(readStatus, getTerminalHWND);
 
@@ -564,7 +573,7 @@ begin
 
         load:= true;   
 
-        if load then registercommandEx('E1000', @terminal_command_e1000status, 'E1000 Information.', true);
+        if load then registercommand('E1000', @terminal_command_e1000status, 'E1000 Information.');
         if load then registercommand('MAC', @console_command_mac, 'Print MAC Address.');
     end;
 
