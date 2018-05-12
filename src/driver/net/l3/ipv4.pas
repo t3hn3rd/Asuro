@@ -23,10 +23,72 @@ var
     Registered : Boolean = false;
     Protocols  : Array[0..255] of TRecvCallback;
     Config     : TIPv4Configuration;
+    CurrentID  : uint16 = 0;
 
 function  getIPv4Config : PIPv4Configuration;
 begin
     getIPv4Config:= @Config;
+end;
+
+function calculateChecksum(p_data : puint16; p_len : uint16) : uint16;
+var
+    sum   : uint32;
+    dat   : puint16;
+    carry : uint16;
+    i     : uint32;
+    l     : uint32;
+
+begin
+    dat:= p_data;
+    sum:= 0;
+    l:= p_len div 2;
+    for i:=1 to l do begin
+        sum:= sum + p_data^;
+        inc(p_data);
+    end;
+    while (sum > $FFFF) do begin
+        carry:= (sum AND $FFFF0000) SHR 16;
+        sum:= sum + carry;
+    end;
+    calculateChecksum:= not sum;
+end;
+
+procedure send(p_data : void; p_len : uint16; p_context : PPacketContext);
+var
+    Header : TIPV4Header;
+    Len    : uint16;
+    CHK    : uint16;
+    buffer : void;
+
+begin
+    writeToLogLn('        L3: ipv4.send');  
+    inc(CurrentID);
+    Header.version:= 4;
+    Header.header_len:= 5;
+    Header.ToS:= 0;
+    Len:= 20 + p_len;
+    Header.total_len_Hi:= Len SHR 8;
+    Header.total_len_Lo:= Len AND $FF;
+    Header.identifier_Hi:= CurrentID SHR 8;
+    Header.identifier_Lo:= CurrentID AND $FF;
+    Header.Flags:= 0;
+    Header.Fragment_Off:= 0;
+    Header.TTL:= p_context^.TTL;
+    Header.Protocol:= p_context^.Protocol.L4 AND $FF;
+    Header.HDR_CHK_Hi:= 0;
+    Header.HDR_CHK_Lo:= 0;
+    CopyIPv4(@getIPv4Config^.Address[0], @Header.Src[0]);
+    CopyIPv4(@p_context^.IP.Destination[0], @Header.Dst[0]);
+    Header.Options:= 0;
+    Header.Padding:= 0;
+    CHK:= calculateChecksum(puint16(@Header), sizeof(TIPV4Header));
+    Header.HDR_CHK_Hi:= CHK SHR 8;
+    Header.HDR_CHK_Lo:= CHK AND $FF;
+    Buffer:= kalloc(Len);
+    memcpy(uint32(@Header), uint32(Buffer), Header.header_len * 4);
+    memcpy(uint32(p_data), uint32(Buffer) + (Header.header_len * 4), p_len);
+    eth2.send(Buffer, (Header.header_len * 4) + p_len, $0800, p_context);
+    kfree(Buffer);
 end;
 
 procedure recv(p_data : void; p_len : uint16; p_context : PPacketContext);

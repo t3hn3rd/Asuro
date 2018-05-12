@@ -556,7 +556,6 @@ begin
         net.registerNetworkCard(@sendPacket, getMACAddress());
 
         isrmanager.registerISR(32 + PCI_Info^.interrupt_line, @fire);
-        //IDT.set_gate(32 + PCI_Info^.interrupt_line, uint32(@fire), $08, ISR_RING_0);
         enableInturrupt();
 
         rxinit();

@@ -18,10 +18,19 @@ type
         Destination : TIPv4Address;
     end;
 
+    TProtocol = record
+        L1 : uint16;
+        L2 : uint16;
+        L3 : uint16;
+        L4 : uint16;
+    end;
+
     PPacketContext = ^TPacketContext;
     TPacketContext = record
         MAC : TMACPair;
         IP  : TIPv4Pair;
+        Protocol : TProtocol;
+        TTL : uint8;
     end;
 
     PIPv4Configuration = ^TIPv4Configuration;
