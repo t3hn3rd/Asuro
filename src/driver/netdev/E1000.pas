@@ -416,29 +416,18 @@ var
     data     : uint32;
 
 begin
-    //console.writestringln('E1000');
     push_trace('E1000.fire');
-    //console.outputln('E1000 Driver', 'FIRED.');
-
+    writeToLogLn('L0: E1000 Fire');
     status:= readCommand($C0);
-    //console.output('E1000 Driver', 'Int Status: ');
-    //console.writehexln(status);
     if (status AND $04) > 0 then begin
-        //console.outputln('E1000 Driver', 'Link Status.');
         startLink();
     end else if (Status AND $10) > 0 then begin
-        //console.outputln('E1000 Driver', 'Good Threshold.');
         //Good Threshold
     end else if (Status AND $80) > 0 then begin
-        //console.outputln('E1000 Driver', 'Packet Recv.');
         handleReceive();
     end; 
     //Clear the INT on the Device First by using write-1
     writeCommand(REG_IMASK, 1);
-
-    //Clear INT on PIC and Cascade
-
-    pop_trace;
 end;
 
 procedure console_command_mac(params : PParamList);
