@@ -20,12 +20,13 @@ uses
     lmemorymanager,
     strings,
     lists,
-    tracer;
+    tracer,
+    rtc;
 
 type 
 
     TControllerType = (ControllerIDE, ControllerUSB, ControllerAHCI, ControllerNET);
-    TDirectory_Entry_Type = (Directory, Data, Executable, Mounted);
+    TDirectory_Entry_Type = (directoryEntry, fileEntry, mountEntry);
     PStorage_volume = ^TStorage_Volume;
     PStorage_device = ^TStorage_Device;
     APStorage_Volume = array[0..10] of PStorage_volume;
@@ -36,7 +37,7 @@ type
     PPHIOHook = procedure(volume : PStorage_device; addr : uint32; sectors : uint32; buffer : puint32);
     PPCreateHook = procedure(disk : PStorage_Device; sectors : uint32; start : uint32; config : puint32);
     PPDetectHook = procedure(disk : PStorage_Device);
-    PPCreateDirHook = procedure(volume : PStorage_volume; directory : pchar; dirname : pchar; attributes : uint32; var status : puint32);
+    PPCreateDirHook = procedure(volume : PStorage_volume; directory : pchar; dirname : pchar; attributes : uint32; status : puint32);
     PPReadDirHook = function(volume : PStorage_volume; directory : pchar; status : puint32) : PLinkedListBase; //returns: 0 = success, 1 = dir not exsist, 2 = not directory, 3 = error //returns: 0 = success, 1 = dir not exsist, 2 = not directory, 3 = error
 
     PPHIOHook_ = procedure;
@@ -80,14 +81,16 @@ type
     TDirectory_Entry = record //TODO implement dtae.time stuff
         fileName  : pchar;
         extension : pchar;
-        volume    : PStorage_Volume;
         entryType : TDirectory_Entry_Type;
+        creationT : TDateTime;
+        modifiedT : TDateTime;
     end;
-
+    PDirectory_Entry = ^TDirectory_Entry;
 
 var 
     storageDevices : PLinkedListBase; //index in this array is global drive id
     fileSystems : PLinkedListBase;
+    rootVolume : PStorage_Volume = PStorage_Volume(0);
 
 procedure init();
 
@@ -101,24 +104,6 @@ procedure register_volume(device : PStorage_Device; volume : PStorage_Volume);
 //TODO write partition table
 
 implementation 
-
-procedure test_command(params : PParamList);
-var
-    i : uint32;
-    elm : puint32;
-    str : pchar;
-    list : PLinkedListBase;
-begin
-    str := getParam(0, params);
-
-    list := LL_fromString(str, '/');
-
-    for i:=0 to LL_Size(list) - 1 do begin
-        elm:= puint32(LL_Get(list, i));
-        str := pchar(elm^);
-        console.writestringln(str);
-    end;
-end;
 
 procedure disk_command(params : PParamList);
 var
@@ -165,89 +150,6 @@ begin
     pop_trace;
 end;
 
-procedure mkdir_command(params : PParamList);
-var
-    dir : pchar;
-    temp : pchar;
-    dirName : pbyteArray8;
-    device : PStorage_Device;
-    volume : PStorage_Volume;
-    error : puint32;
-    i : uint32;
-begin
-    push_trace('mkdir');
-    error := puint32(kalloc(8));
-    error^ := 0;
-    if paramCount(params) > 0 then begin
-        dir := getParam(0, params);
-        temp:= getParam(1, params);
-
-        //for i:=0 to 7 do begin
-        //    dirname[i]:= pbyteArray8(temp)[i];
-        //end;
-
-        //console.writestringlnWND(pchar(dirname), getTerminalHWND());
-
-        device:= PStorage_Device(LL_Get(storageDevices, 0));
-        volume:= PStorage_Volume(LL_Get(device^.volumes, 0));
-
-        volume^.filesystem^.createDirCallback(volume, dir, temp, $10, error);
-        //if error <> 1 then console.writestringln('ERROR');
-    end;
-    kfree(error);
-end;
-
-procedure ls_command(params : PParamList);
-type
-    TDirectory = bitpacked record
-        fileName      : array[0..7] of char;
-        fileExtension : array[0..2] of char;
-        attributes    : uint8;
-        reserved0     : uint8;
-        timeFine      : uint8;
-        time          : uint16;
-        date          : uint16;
-        accessTime    : uint16;
-        clusterHigh   : uint16;
-        modifiedTime  : uint16;
-        modifiedDate  : uint16;
-        clusterLow    : uint16;
-        byteSize      : uint32;
-    end;
-    PDirectory = ^TDirectory;
-var
-    dirs : PLinkedListBase;
-    dir : pchar;
-    dirp : PDirectory;
-    device : PStorage_Device;
-    volume : PStorage_Volume;
-    error : puint32;
-    i : uint32;
-begin
-    push_trace('ls');
-    
-    error:= puint32(kalloc(4));
-
-    if paramCount(params) > 0 then begin
-        dir := getParam(0, params);
-
-        device:= PStorage_Device(LL_Get(storageDevices, 0));
-        volume:= PStorage_Volume(LL_Get(device^.volumes, 0));
-        dirs:= volume^.filesystem^.readDirCallback(volume, dir, error);
-
-        //if error <> 1 then console.writestringln('ERROR');
-        for i:=2 to LL_Size(dirs) - 1 do begin
-            console.writestringWND('    /', getTerminalHWND);
-            dirp:= PDirectory(LL_Get(dirs, i));
-            console.writestringlnWND(pchar(dirp^.fileName), getTerminalHWND);
-        end;
-        pop_trace();
-    end else begin
-        console.writestringlnWND('Specifiy a folder', getTerminalHWND);
-    end;
-end;
-
-
 procedure volume_command(params : PParamList);
 var
     i : uint32;
@@ -274,16 +176,185 @@ begin
     end;
 end;
 
+function padWithSpaces(str : pchar; length : uint16) : pchar;
+var
+    i : uint32;
+    ii : uint32;
+begin
+    for i:=0 to length do begin
+        if str[i] = ' ' then begin
+            for ii:=i to length do begin
+                padWithSpaces[i]:= ' ';
+            end;
+        end else begin
+            if str[i] = char(0) then exit;
+            padWithSpaces[i]:= str[i];
+        end;
+    end;
+end;
+
+function allButLast(str : pchar; delim : char) : pchar;
+var
+    strings : PLinkedListBase;
+    i       : uint32;
+begin
+    strings:= STRLL_FromString(str, delim);
+
+    if STRLL_Size(strings) > 2 then begin
+        for i:=0 to STRLL_Size(strings) - 2 do begin
+            stringConcat(allButLast, STRLL_Get(strings, i));
+        end;
+    end else begin
+        if STRLL_Size(strings) = 2 then begin
+            allButLast:= STRLL_Get(strings, 0);
+        end else begin
+            allButLast:= str;
+        end;
+    end;
+
+    console.writestringlnWND(allButLast, getTerminalHWND());
+
+    STRLL_Clear(strings);
+    STRLL_Free(strings);
+end;
+
+procedure list_command(params : PParamList);
+var
+    dirEntries : PLinkedListBase;
+    i : uint32;
+    ii : uint32;
+    error : puint32;
+    nli : uint32 = 0;
+begin
+    error := puint32(kalloc(4));
+
+    if paramCount(params) > 1 then begin
+        console.writestringlnWND('', getTerminalHWND());
+        console.writestringlnWND('Lists the files and directories in working directory, or optionaly, the specified directory.', getTerminalHWND());
+        console.writestringlnWND('', getTerminalHWND());
+        console.writestringlnWND('Usage:', getTerminalHWND());
+        console.writestringlnWND('ls <directory>', getTerminalHWND());
+    end else begin
+
+        if paramCount(params) = 1 then begin
+            dirEntries:= rootVolume^.filesystem^.readDirCallback(rootVolume, pchar(getParam(0, params)), error);
+        end else begin
+            dirEntries:= rootVolume^.filesystem^.readDirCallback(rootVolume, getWorkingDirectory(), error);
+        end;
+
+        //loop and print dirs
+        for i:=2 to LL_Size(dirEntries) - 1 do begin
+            console.writestringWND('    /', getTerminalHWND);
+            console.writestringWND( PDirectory_Entry(LL_Get(dirEntries, i ))^.fileName , getTerminalHWND());
+            if nli > 3 then begin 
+                console.writestringlnWND('',getTerminalHWND());
+                nli:= 0;
+            end else begin
+                nli+=1;
+            end;
+        end;
+
+        console.writestringlnWND('',getTerminalHWND());
+
+
+    end;
+    kfree(error);
+end;
+
+procedure change_dir_command(params : PParamList);
+var
+    targetDirectory : pchar;
+    dirEntries      : PLinkedListBase;
+    lastString      : pchar;
+    entry           : PDirectory_Entry;
+    error           : puint32;
+begin
+    error := puint32(kalloc(4));
+    if paramCount(params) = 1 then begin
+
+        if (pchar(getParam(0, params))[0] = '/') then begin //search from root
+            targetDirectory:= pchar(getParam(0,params));
+            dirEntries:= rootVolume^.filesystem^.readDirCallback(rootVolume, pchar( getParam(0, params)), error);
+            console.writestringlnWND('from root', getTerminalHWND());
+        end else begin //search from working directory
+            //concat current dir and param
+            targetDirectory:= stringConcat(getWorkingDirectory, '/');
+            targetDirectory:= stringConcat(targetDirectory, pchar(getParam(0,params)) ); //do i need pad with space?
+            dirEntries:= rootVolume^.filesystem^.readDirCallback(rootVolume, targetDirectory, error); // need to be able to supply attributes for list conversion method
+        end;
+
+        if error^ = 0 then begin
+            setworkingdirectory(targetDirectory); // need to clean ..
+        end;
+        
+        kfree(puint32(dirEntries));
+    end else begin
+        console.writestringlnWND('', getTerminalHWND());
+        console.writestringlnWND('Changes the current working directory, this is the context wich other commands rely on.', getTerminalHWND());
+        console.writestringlnWND('', getTerminalHWND());
+        console.writestringlnWND('Usage:', getTerminalHWND());
+        console.writestringlnWND('cd <directory>', getTerminalHWND());
+    end;
+    kfree(error);
+end;
+
+procedure mkdir_command(params : PParamList);
+var
+    directories : PLinkedListBase;
+    targetDirectory : pchar;
+    temp : pchar;
+    target : pchar;
+    device : PStorage_Device;
+    volume : PStorage_Volume;
+    status : uint32;
+    error : puint32;
+    i : uint32;
+    isRoot : boolean = false;
+begin
+    error:= @status;
+    error^ := 0;
+    
+    if paramCount(params) = 1 then begin
+        directories:= STRLL_FromString(getParam(0, params), '/');
+
+        if LL_Size(directories) > 1 then begin
+                temp := allbutlast(getParam(0, params), '/');
+        end else begin
+            temp:= '/';
+        end;
+
+        target:= STRLL_Get(directories, LL_Size(directories)-1);
+
+        if (getParam(0, params)[0] = '/') then begin //search from root
+            targetDirectory:= temp;
+        end else begin //search from working directory
+            targetDirectory:= stringConcat(getWorkingDirectory, '/');
+            targetDirectory:= stringConcat(targetDirectory, temp ); //do i need pad with space?
+        end;
+
+
+        console.writestringlnWND(targetDirectory, getTerminalHWND());
+        console.writestringlnWND(target, getTerminalHWND());
+
+        device:= PStorage_Device(LL_Get(storageDevices, 0));
+        volume:= PStorage_Volume(LL_Get(device^.volumes, 0));
+
+        volume^.filesystem^.createDirCallback(volume, targetDirectory, target, $10, error);
+        if error^ <> 0 then console.writestringlnWND('ERROR', getTerminalHWND());
+    end; // else print out help
+end;
 
 procedure init();
 begin
     push_trace('storagemanagement.init');
+    setworkingdirectory('.');
     storageDevices:= ll_New(sizeof(TStorage_Device));
     fileSystems:= ll_New(sizeof(TFilesystem));
     terminal.registerCommand('DISK', @disk_command, 'Disk utility');
     terminal.registerCommand('VOLUME', @volume_command, 'Volume utility');
-    terminal.registerCommandEx('mkdir', @mkdir_command, 'Volume utility', true);
-    terminal.registerCommandEx('ls', @ls_command, 'Volume utility', true);
+    terminal.registerCommandEx('mkdir', @mkdir_command, 'Make Directory', true);
+    terminal.registerCommandEx('ls', @list_command, 'List contents of directory', true);
+    terminal.registerCommandEx('cd', @change_dir_command, 'Chae the working directory', true);
     pop_trace();
 end;
 
@@ -324,6 +395,8 @@ begin
     push_trace('storagemanagement.register_volume');
     elm := LL_Add(device^.volumes);
     PStorage_volume(elm)^:= volume^;
+
+    if rootVolume = PStorage_Volume(0) then rootVolume:= volume;
 end;
 
 end.
