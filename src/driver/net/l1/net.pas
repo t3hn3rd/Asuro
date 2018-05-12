@@ -26,7 +26,7 @@ uses
 var
     CBSend : TNetSendCallback = nil;
     CBNext : TRecvCallback    = nil;
-    MAC    : puint8           = nil;
+    MAC     : puint8          = @NULL_MAC[0];
 
 procedure writeToLog(str : pchar);
 var
