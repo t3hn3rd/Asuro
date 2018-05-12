@@ -421,9 +421,11 @@ begin
     status:= readCommand($C0);
     if (status AND $04) > 0 then begin
         startLink();
-    end else if (Status AND $10) > 0 then begin
+    end;
+    if (Status AND $10) > 0 then begin
         //Good Threshold
-    end else if (Status AND $80) > 0 then begin
+    end;
+    if (Status AND $80) > 0 then begin
         handleReceive();
     end; 
     //Clear the INT on the Device First by using write-1
