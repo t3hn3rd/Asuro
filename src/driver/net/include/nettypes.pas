@@ -4,6 +4,7 @@ interface
 
 type
 
+    { Generic }
 
     TMACAddress  = Array[0..5] of uint8;
     TIPv4Address = Array[0..3] of uint8; 
@@ -25,6 +26,8 @@ type
         L4 : uint16;
     end;
 
+    { Context }
+
     PPacketContext = ^TPacketContext;
     TPacketContext = record
         MAC : TMACPair;
@@ -33,6 +36,8 @@ type
         TTL : uint8;
     end;
 
+    { Config }
+
     PIPv4Configuration = ^TIPv4Configuration;
     TIPv4Configuration = record
         Address   : array[0..3] of uint8;
@@ -40,6 +45,8 @@ type
         Netmask   : array[0..3] of uint8;
         UP        : Boolean;
     end;
+
+    { ARP }
 
     TARPAbstractHeader = record
         Hardware_Type           : uint16;
@@ -69,6 +76,8 @@ type
         Destination_Protocol    : TIPv4Address;
     end;
 
+    { ETH2 }
+
     PEthernetHeader = ^TEthernetHeader;
     TEthernetHeader = bitpacked record
         dst       : array[0..5] of uint8;
@@ -76,6 +85,8 @@ type
         EthTypeHi : uint8;
         EthTypeLo : uint8;
     end;
+
+    { IPv4 }
 
     PIPV4Header = ^TIPV4Header;
     TIPV4Header = bitpacked record
@@ -96,11 +107,6 @@ type
         Dst           : Array[0..3] of uint8;
         Options       : ubit24;
         Padding       : uint8;
-    end;
-
-    PIPv4AsWORDs = ^TIPv4AsWORDs;
-    TIPv4AsWORDs = bitpacked record
-        WORDS : Array[0..11] of uint16;
     end;
 
     TTCPFlags = record
@@ -125,8 +131,12 @@ type
         Options       : uint32;
     end;
 
+    { Callback Types }
+
     TNetSendCallback = function(p_data : void; p_len : uint16) : sint32;
     TRecvCallback    = procedure(p_data : void; p_len : uint16; p_context : PPacketContext);
+
+{ Constants }
 
 const
     BROADCAST_MAC : Array[0..5] of uint8 = ($FF, $FF, $FF, $FF, $FF, $FF);

@@ -23,6 +23,7 @@ uses
     serial;
 
 type
+    THaltCallback = procedure();
     PParamList = ^TParamList;
     TParamList = record
         Param : pchar;
@@ -49,6 +50,9 @@ var
     bIndex   : uint32 = 0;
     Commands : array[0..65534] of TCommand;
     Working_Directory : PChar = '/';
+    Halted   : Boolean = false;
+    HaltID   : uint32 = 0;
+    HaltCB   : THaltCallback = nil;
 
 procedure run;
 procedure init;
@@ -60,6 +64,8 @@ function getParam(index : uint32; params : PParamList) : pchar;
 procedure setWorkingDirectory(str : pchar);
 function getWorkingDirectory : pchar;
 function getTerminalHWND : uint32;
+function halt(id : uint32; cb : THaltCallback) : boolean;
+function done(id : uint32) : boolean;
 
 implementation
 
@@ -68,6 +74,42 @@ uses
 
 var
     TERMINAL_HWND : HWND = 0;
+
+function halt(id : uint32; cb : THaltCallback) : boolean;
+begin
+    halt:= false;
+    if not Halted then begin
+        Halted:= true;
+        halt:= true;
+        HaltID:= id;
+        HaltCB:= cb;
+    end;
+end;
+
+function done(id : uint32) : boolean;
+begin
+    done:= false;
+    if Halted then begin
+        if id = HaltID then begin
+            if HaltCB <> nil then HaltCB();
+            HaltCB:= nil;
+            Halted:= false;
+            HaltID:= 0;
+            done:= true;
+            console.writestringWND('Asuro#', TERMINAL_HWND);
+            console.writestringWND(Working_Directory, TERMINAL_HWND);
+            console.writestringWND('> ', TERMINAL_HWND);
+            bIndex:= 0;
+            memset(uint32(@buffer[0]), 0, 1024);
+        end;
+    end;
+end;
+
+procedure force_done;
+begin
+    HaltID:= 0;
+    done(0);
+end;
 
 function getTerminalHWND : uint32;
 begin
@@ -381,13 +423,14 @@ begin
         console.writestringlnWND('Unknown Command.', TERMINAL_HWND);
     end;
 
-    { Reset the terminal ready for the next command }
-    console.writestringWND('Asuro#', TERMINAL_HWND);
-    console.writestringWND(Working_Directory, TERMINAL_HWND);
-    console.writestringWND('> ', TERMINAL_HWND);
-    bIndex:= 0;
-    memset(uint32(@buffer[0]), 0, 1024);
-
+    if not Halted then begin
+        { Reset the terminal ready for the next command }
+        console.writestringWND('Asuro#', TERMINAL_HWND);
+        console.writestringWND(Working_Directory, TERMINAL_HWND);
+        console.writestringWND('> ', TERMINAL_HWND);
+        bIndex:= 0;
+        memset(uint32(@buffer[0]), 0, 1024);
+    end;
     pop_trace;
 end;
 
@@ -395,22 +438,28 @@ procedure key_event(info : TKeyInfo);
 begin
     if TERMINAL_HWND <> 0 then begin
         //writeintlnWND(info.key_code, TERMINAL_HWND);
-        if (info.key_code >= 32) and (info.key_code <= 126) then begin
-            if bIndex < 1024 then begin
-                buffer[bIndex]:= info.key_code;
-                inc(bIndex);
-                console.writecharWND(char(info.key_code), TERMINAL_HWND);
+        if info.CTRL_DOWN then begin
+            if info.key_code = uint8('c') then force_done;
+        end else begin
+            if not halted then begin
+                if (info.key_code >= 32) and (info.key_code <= 126) then begin
+                    if bIndex < 1024 then begin
+                        buffer[bIndex]:= info.key_code;
+                        inc(bIndex);
+                        console.writecharWND(char(info.key_code), TERMINAL_HWND);
+                    end;
+                end; 
+                if info.key_code = 8 then begin //backspace
+                    if bIndex > 0 then begin
+                        console.backspaceWND(TERMINAL_HWND);
+                        dec(bIndex);
+                        buffer[bIndex]:= 0;
+                    end;
+                end;
+                if info.key_code = 13 then begin //return
+                    process_command;
+                end;
             end;
-        end; 
-        if info.key_code = 8 then begin //backspace
-            if bIndex > 0 then begin
-                console.backspaceWND(TERMINAL_HWND);
-                dec(bIndex);
-                buffer[bIndex]:= 0;
-            end;
-        end;
-        if info.key_code = 13 then begin //return
-            process_command;
         end;
     end;
 end;
@@ -452,9 +501,14 @@ begin
     resetSystem;
 end;
 
+procedure teapot_halt;
+begin
+    console.writeStringlnWND('Stopped. [CTRL+C]', getTerminalHWND);
+end;
+
 procedure teapot(Params : PParamList);
 begin
-    console.writestringlnWND('Teapot?', getTerminalHWND);
+    terminal.halt(555, @teapot_halt);
 end;
 
 procedure init;

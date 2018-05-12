@@ -30,29 +30,6 @@ begin
     getIPv4Config:= @Config;
 end;
 
-function calculateChecksum(p_data : puint16; p_len : uint16) : uint16;
-var
-    sum   : uint32;
-    dat   : puint16;
-    carry : uint16;
-    i     : uint32;
-    l     : uint32;
-
-begin
-    dat:= p_data;
-    sum:= 0;
-    l:= p_len div 2;
-    for i:=1 to l do begin
-        sum:= sum + p_data^;
-        inc(p_data);
-    end;
-    while (sum > $FFFF) do begin
-        carry:= (sum AND $FFFF0000) SHR 16;
-        sum:= sum + carry;
-    end;
-    calculateChecksum:= not sum;
-end;
-
 procedure send(p_data : void; p_len : uint16; p_context : PPacketContext);
 var
     Header : TIPV4Header;
@@ -133,8 +110,10 @@ begin
     copyIPv4(@AHeader.Src[0], @p_context^.IP.Source[0]);
     copyIPv4(@AHeader.Dst[0], @p_context^.IP.Destination[0]);
 
-    if (IPEqual(@Config.Address[0], @AHeader.Dst[0])) OR (AHeader.Dst[3] = 255) then begin
-        if Protocols[AHeader.Protocol] <> nil then Protocols[AHeader.Protocol](void(buf), len, p_context);
+    if Config.UP then begin
+        if (IPEqual(@Config.Address[0], @AHeader.Dst[0])) OR (AHeader.Dst[3] = 255) then begin
+            if Protocols[AHeader.Protocol] <> nil then Protocols[AHeader.Protocol](void(buf), len, p_context);
+        end;
     end;
     pop_trace;
 end;

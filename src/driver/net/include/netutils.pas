@@ -17,8 +17,39 @@ function MACEqual(mac1 : puint8; mac2 : puint8) : boolean;
 function IPEqual(ip1 : puint8; ip2 : puint8) : boolean;
 function newPacketContext : PPacketContext;
 procedure freePacketContext(p_context : PPacketContext);
+function calculateChecksum(p_data : puint16; p_len : uint16) : uint16;
+function verifyChecksum(p_data : puint16; p_len : uint16) : boolean;
 
 implementation
+
+function calculateChecksum(p_data : puint16; p_len : uint16) : uint16;
+var
+    sum   : uint32;
+    dat   : puint16;
+    carry : uint16;
+    i     : uint32;
+    l     : uint32;
+
+begin
+    dat:= p_data;
+    sum:= 0;
+    l:= p_len div 2;
+    for i:=1 to l do begin
+        sum:= sum + p_data^;
+        inc(p_data);
+    end;
+    while (sum > $FFFF) do begin
+        carry:= (sum AND $FFFF0000) SHR 16;
+        sum:= (sum AND $FFFF);
+        sum:= sum + carry;
+    end;
+    calculateChecksum:= not (sum AND $FFFF);
+end;
+
+function verifyChecksum(p_data : puint16; p_len : uint16) : boolean;
+begin
+    verifyChecksum:= calculateChecksum(p_data, p_len) = $0000;
+end;
 
 function  stringToMAC(str : pchar) : puint8;
 var
