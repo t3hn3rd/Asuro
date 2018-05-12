@@ -77,7 +77,7 @@ type
         total_len_Lo  : uint8;
         identifier_Hi : uint8;
         identifier_Lo : uint8;
-        Flags         : ubit3;
+        Flags         : ubit3; 
         Fragment_Off  : ubit13;
         TTL           : uint8;
         Protocol      : uint8;
@@ -87,6 +87,11 @@ type
         Dst           : Array[0..3] of uint8;
         Options       : ubit24;
         Padding       : uint8;
+    end;
+
+    PIPv4AsWORDs = ^TIPv4AsWORDs;
+    TIPv4AsWORDs = bitpacked record
+        WORDS : Array[0..11] of uint16;
     end;
 
     TTCPFlags = record

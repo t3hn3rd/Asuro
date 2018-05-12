@@ -67,6 +67,18 @@ begin
     end;
 end;
 
+function findCacheRecord(ip : puint8) : PARPCacheRecord;
+var
+    CacheRecord : PARPCacheRecord;
+
+begin
+    CacheRecord:= findCacheRecordByIP(ip);
+    if CacheRecord = nil then begin
+        
+    end;
+    findCacheRecord:= CacheRecord;
+end;
+
 procedure send(hType : uint16; pType : uint16; op : uint16; p_context : PPacketContext);
 var
     buf : void;
@@ -124,6 +136,24 @@ begin
      freePacketContext(context);
 end;
 
+procedure sendRequestGateway(ip : puint8);
+var
+    context : PPacketContext;
+    CacheRecord : PARPCacheRecord;
+
+begin
+     context:= newPacketContext;
+     CacheRecord:= findCacheRecordByIP(@getIPv4Config^.Gateway[0]);
+     if CacheRecord <> nil then begin
+        CopyMAC(@CacheRecord^.MAC[0], @context^.MAC.Destination[0]);
+        CopyIPv4(ip, @context^.IP.Destination[0]);
+        CopyIPv4(@getIPv4Config^.Address[0], @context^.IP.Source[0]);
+        CopyMAC(GetMAC, @context^.MAC.Source[0]);
+        arp.send($1, $0800, $1, context);
+     end;
+     freePacketContext(context);
+end;
+
 procedure sendRequest(ip : puint8);
 var
     context : PPacketContext;
@@ -135,10 +165,10 @@ begin
      CopyIPv4(@getIPv4Config^.Address[0], @context^.IP.Source[0]);
      CopyMAC(GetMAC, @context^.MAC.Source[0]);
      CacheRecord:= findCacheRecordByIP(@getIPv4Config^.Gateway[0]);
-     if CacheRecord <> nil then CopyMAC(@CacheRecord^.MAC[0], @context^.MAC.Destination[0])
-     else CopyMAC(@NULL_MAC[0], @context^.MAC.Destination[0]);
+     CopyMAC(@NULL_MAC[0], @context^.MAC.Destination[0]);
      arp.send($1, $0800, $1, context);
      freePacketContext(context);
+     sendRequestGateway(ip);
 end;
 
 procedure recv(p_data : void; p_len : uint16; p_context : PPacketContext);

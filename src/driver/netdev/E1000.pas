@@ -135,6 +135,7 @@ type
 procedure init();
 function getMACAddress : puint8;
 function sendPacket(p_data : void; p_len : uint16) : sint32;
+function readStatus : uint32;
 
 implementation
 
@@ -184,6 +185,11 @@ begin
         readCommand:= inl(io_base + 4);
     end;   
     pop_trace; 
+end;
+
+function readStatus : uint32;
+begin
+    readStatus:= readCommand(REG_STATUS);
 end;
 
 function detectEEPROM() : boolean;
@@ -305,7 +311,7 @@ begin
     writeCommand(REG_RXDESCLO, uint32(outptr));
     writeCommand(REG_RXDESCHI, 0);
 
-    writeCommand(REG_RXDESCLEN, E1000_NUM_RX_DESC * 16);
+    writeCommand(REG_RXDESCLEN, E1000_NUM_RX_DESC * sizeof(TE1000_rx_desc));
 
     writeCommand(REG_RXDESCHEAD, 0);
     writeCommand(REG_RXDESCTAIL, E1000_NUM_RX_DESC-1);
@@ -343,7 +349,7 @@ begin
     writeCommand(REG_TXDESCHI, 0);
     writeCommand(REG_TXDESCLO, uint32(outptr));
 
-    writeCommand(REG_TXDESCLEN, E1000_NUM_TX_DESC * 16);
+    writeCommand(REG_TXDESCLEN, E1000_NUM_TX_DESC * sizeof(TE1000_tx_desc));
 
     writeCommand( REG_TXDESCHEAD, 0 );
     writeCommand( REG_TXDESCTAIL, 0 );

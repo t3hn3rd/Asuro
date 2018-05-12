@@ -21,7 +21,7 @@ procedure writeToLogLn(str : pchar);
 implementation
 
 uses
-    ipv4, arp, eth2;
+    ipv4, arp, eth2, e1000, terminal;
 
 var
     CBSend : TNetSendCallback = nil;
@@ -108,12 +108,18 @@ begin
     pop_trace;
 end;
 
+procedure terminal_command_e1000status(Params : PParamList);
+begin
+    console.writeHexLnWND(e1000.readStatus, getTerminalHWND);
+end;
+
 procedure init;
 begin
     push_trace('net.init');
     eth2.register;
     arp.register;
     ipv4.register;
+    terminal.registerCommand('e1000status', @terminal_command_e1000status, 'e1000 status');
     pop_trace;
 end;
 
