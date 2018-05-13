@@ -90,7 +90,7 @@ begin
     copyMAC(@Header^.src[0], @p_context^.MAC.Source[0]);
     copyMAC(@Header^.dst[0], @p_context^.MAC.Destination[0]);
 
-    if MACEqual(@Header^.dst[0], @Header^.src[0]) or 
+    if MACEqual(@Header^.dst[0], getMAC) or 
        MACEqual(@Header^.dst[0], @BROADCAST_MAC[0]) or
        Promisc[proto_type] then begin
         if EthTypes[proto_type] <> nil then begin
