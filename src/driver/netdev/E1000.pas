@@ -417,7 +417,7 @@ var
 
 begin
     push_trace('E1000.fire');
-    writeToLogLn('L0: E1000 Fire');
+    //writeToLogLn('L0: E1000 Fire');
     status:= readCommand($C0);
     if (status AND $04) > 0 then begin
         startLink();

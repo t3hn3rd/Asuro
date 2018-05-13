@@ -39,7 +39,7 @@ var
     buffer : void;
 
 begin
-    writeToLogLn('        L3: ipv4.send');  
+    //writeToLogLn('        L3: ipv4.send');  
     inc(CurrentID);
     Header.version:= 4;
     Header.header_len:= 5;
@@ -79,7 +79,7 @@ var
 
 begin
     push_trace('ipv4.recv');
-    writeToLogLn('        L3: ipv4.recv');
+    //writeToLogLn('        L3: ipv4.recv');
     Header:= PIPV4Header(p_data);
     AHeader.version:= Header^.version;
     AHeader.header_len:= Header^.header_len;

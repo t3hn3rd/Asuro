@@ -83,7 +83,7 @@ end;
 procedure send(p_data : void; p_len : uint16);
 begin
     push_trace('net.send');
-    writeToLogLn('L1: net.send');
+    //writeToLogLn('L1: net.send');
     if CBSend <> nil then CBSend(p_data, p_len);
     pop_trace;
 end;
@@ -94,7 +94,7 @@ var
 
 begin
     push_trace('net.recv');
-    writeToLogLn('L1: net.recv');
+    //writeToLogLn('L1: net.recv');
     context:= newPacketContext;
     if CBNext <> nil then CBNext(p_data, p_len, context);
     freePacketContext(context);
