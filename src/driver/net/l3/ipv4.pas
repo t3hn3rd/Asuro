@@ -10,6 +10,7 @@ uses
     lists,
     eth2;
 
+procedure send(p_data : void; p_len : uint16; p_context : PPacketContext);
 procedure registerProtocol(Protocol_ID : uint8; recv_callback : TRecvCallback);
 function  getIPv4Config : PIPv4Configuration;
 procedure register;

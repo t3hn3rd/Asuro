@@ -46,6 +46,18 @@ type
         UP        : Boolean;
     end;
 
+    { ICMP }
+
+    PICMPHeader = ^TICMPHeader;
+    TICMPHeader = record
+        ICMP_Type   : uint8;
+        ICMP_Code   : uint8;
+        ICMP_CHK_Hi : uint8;
+        ICMP_CHK_Lo : uint8;
+        Identifier  : uint16;
+        Sequence    : uint16;
+    end;
+
     { ARP }
 
     TARPAbstractHeader = record
@@ -139,9 +151,16 @@ type
 { Constants }
 
 const
+    { MACs }
     BROADCAST_MAC : Array[0..5] of uint8 = ($FF, $FF, $FF, $FF, $FF, $FF);
     NULL_MAC      : Array[0..5] of uint8 = ($00, $00, $00, $00, $00, $00);
     FORCE_MAC     : Array[0..5] of uint8 = ($08, $00, $27, $E6, $3F, $81);
+
+    { ICMP Data }
+    ICMP_DATA_GENERIC : Array[0..31] of uint8 = ( $61, $62, $63, $64, $65, $66, $67, $68, 
+                                                  $69, $6a, $6b, $6c, $6d, $6e, $6f, $70, 
+                                                  $71, $72, $73, $74, $75, $76, $77, $61, 
+                                                  $62, $63, $64, $65, $66, $67, $68, $69 );
 
 implementation
 

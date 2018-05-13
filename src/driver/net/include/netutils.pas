@@ -19,8 +19,45 @@ function newPacketContext : PPacketContext;
 procedure freePacketContext(p_context : PPacketContext);
 function calculateChecksum(p_data : puint16; p_len : uint16) : uint16;
 function verifyChecksum(p_data : puint16; p_len : uint16) : boolean;
+function sameSubnetIPv4(ip1, ip2, netmask : puint8) : boolean;
+procedure contextMACSwitch(p_context : PPacketContext);
+procedure contextIPv4Switch(p_context : PPacketContext);
 
 implementation
+
+function sameSubnetIPv4(ip1, ip2, netmask : puint8) : boolean;
+var
+    _ip1, _ip2, _netmask : puint32;
+    c1, c2 : uint32;
+
+begin
+    _ip1:= puint32(ip1);
+    _ip2:= puint32(ip2);
+    _netmask:= puint32(netmask);
+    c1:= _ip1^ AND _netmask^;
+    c2:= _ip2^ AND _netmask^;
+    sameSubnetIPv4:= c1 = c2;
+end;
+
+procedure contextMACSwitch(p_context : PPacketContext);
+var
+    tmp : TMACAddress;
+
+begin
+    copyMAC(@p_context^.MAC.Source[0], @tmp[0]);
+    copyMAC(@p_context^.MAC.Destination[0], @p_context^.MAC.Source[0]);
+    copyMAC(@tmp[0], @p_context^.MAC.Destination[0]);
+end;
+
+procedure contextIPv4Switch(p_context : PPacketContext);
+var
+    tmp : TIPv4Address;
+
+begin
+    copyIPv4(@p_context^.IP.Source[0], @tmp[0]);
+    copyIPv4(@p_context^.IP.Destination[0], @p_context^.IP.Source[0]);
+    copyIPv4(@tmp[0], @p_context^.IP.Destination[0]);
+end;
 
 function calculateChecksum(p_data : puint16; p_len : uint16) : uint16;
 var

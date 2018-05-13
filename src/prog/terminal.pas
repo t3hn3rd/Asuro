@@ -20,7 +20,8 @@ uses
     strings,
     tracer,
     asuro,
-    serial;
+    serial,
+    netutils, nettypes;
 
 type
     THaltCallback = procedure();
@@ -507,7 +508,20 @@ begin
 end;
 
 procedure teapot(Params : PParamList);
+var
+    ip1, ip2, ip3 : pchar;
+
 begin
+    if paramCount(Params) > 2 then begin
+        ip1:= getParam(0, Params);
+        ip2:= getParam(1, Params);
+        ip3:= getParam(2, Params);
+        if sameSubnetIPv4(stringToIPv4(ip1), stringToIPv4(ip2), stringToIPv4(ip3)) then begin
+            console.writeStringlnWND('Same.', getTerminalHWND);
+        end else begin
+            console.writeStringlnWND('Different', getTerminalHWND);
+        end;
+    end;
     terminal.halt(555, @teapot_halt);
 end;
 

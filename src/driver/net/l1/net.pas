@@ -21,7 +21,7 @@ procedure writeToLogLn(str : pchar);
 implementation
 
 uses
-    ipv4, arp, eth2, e1000, terminal;
+    ipv4, arp, eth2, icmp, e1000, terminal;
 
 var
     CBSend : TNetSendCallback = nil;
@@ -114,6 +114,7 @@ begin
     eth2.register;
     arp.register;
     ipv4.register;
+    icmp.register;
     pop_trace;
 end;
 
