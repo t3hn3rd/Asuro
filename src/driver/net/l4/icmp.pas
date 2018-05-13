@@ -3,7 +3,7 @@ unit icmp;
 interface
 
 uses
-    nettypes, netutils, ipv4;
+    net, nettypes, netutils, ipv4;
 
 procedure register;
 
@@ -25,6 +25,7 @@ var
     CHK    : uint16;
 
 begin
+    writeToLogLn('            L4: icmp.recv'); 
     Header:= PICMPHeader(p_data);
     case Header^.ICMP_Type of
         $08:Begin //Request
