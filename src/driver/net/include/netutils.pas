@@ -70,17 +70,20 @@ var
 begin
     dat:= p_data;
     sum:= 0;
-    l:= p_len div 2;
-    for i:=1 to l do begin
-        sum:= sum + p_data^;
-        inc(p_data);
+    l:= p_len;
+
+    while l > 1 do begin
+        sum:= sum + dat^;
+        inc(dat);
+        l:= l - 2;
     end;
-    while (sum > $FFFF) do begin
-        carry:= (sum AND $FFFF0000) SHR 16;
-        sum:= (sum AND $FFFF);
-        sum:= sum + carry;
+    if l > 0 then sum:= sum + puint8(dat)^;
+
+    while (sum AND $FFFF0000) > 0 do begin
+        sum:= (sum AND $FFFF) + (sum SHR 16);
     end;
-    calculateChecksum:= not (sum AND $FFFF);
+
+    calculateChecksum:= not(sum);
 end;
 
 function verifyChecksum(p_data : puint16; p_len : uint16) : boolean;

@@ -509,19 +509,14 @@ end;
 
 procedure teapot(Params : PParamList);
 var
-    ip1, ip2, ip3 : pchar;
+    packet : array[0..39] of uint8 = ( $00, $00, $00, $00, $00, $01, $00, $f3, $61, $62, $63, $64, $65, $66, $67, $68, 
+                                       $69, $6a, $6b, $6c, $6d, $6e, $6f, $70, $71, $72, $73, $74, $75, $76, $77, $61, 
+                                       $62, $63, $64, $65, $66, $67, $68, $69);
+    CHK : uint16;
 
 begin
-    if paramCount(Params) > 2 then begin
-        ip1:= getParam(0, Params);
-        ip2:= getParam(1, Params);
-        ip3:= getParam(2, Params);
-        if sameSubnetIPv4(stringToIPv4(ip1), stringToIPv4(ip2), stringToIPv4(ip3)) then begin
-            console.writeStringlnWND('Same.', getTerminalHWND);
-        end else begin
-            console.writeStringlnWND('Different', getTerminalHWND);
-        end;
-    end;
+    CHK:= calculateChecksum(puint16(@packet[0]), 40);
+    writehexlnWND(CHK, getTerminalHWND);
     terminal.halt(555, @teapot_halt);
 end;
 

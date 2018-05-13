@@ -54,7 +54,7 @@ begin
     pad:= 46 - p_len;
     if pad < 0 then pad:= 0;
     push_trace('eth2.send');
-    //writeToLogLn('    L2: eth2.send');
+    writeToLogLn('    L2: eth2.send');
     if p_context <> nil then begin
         size:= sizeof(TEthernetHeader) + p_len + pad;// + 4;
         buffer:= kalloc(size);
@@ -79,7 +79,7 @@ var
 
 begin
     push_trace('eth2.recv');
-    //writeToLogLn('    L2: eth2.recv');
+    writeToLogLn('    L2: eth2.recv');
     buf:= puint8(p_data);
     
     Header:= PEthernetHeader(buf);

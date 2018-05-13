@@ -39,7 +39,7 @@ var
     buffer : void;
 
 begin
-    //writeToLogLn('        L3: ipv4.send');  
+    writeToLogLn('        L3: ipv4.send');  
     inc(CurrentID);
     Header.version:= 4;
     Header.header_len:= 5;
@@ -60,8 +60,8 @@ begin
     Header.Options:= 0;
     Header.Padding:= 0;
     CHK:= calculateChecksum(puint16(@Header), sizeof(TIPV4Header));
-    Header.HDR_CHK_Hi:= CHK SHR 8;
-    Header.HDR_CHK_Lo:= CHK AND $FF;
+    Header.HDR_CHK_Hi:= CHK AND $FF;//CHK SHR 8;
+    Header.HDR_CHK_Lo:= CHK SHR 8;//CHK AND $FF;
     Buffer:= kalloc(Len);
     memcpy(uint32(@Header), uint32(Buffer), Header.header_len * 4);
     memcpy(uint32(p_data), uint32(Buffer) + (Header.header_len * 4), p_len);
@@ -79,7 +79,7 @@ var
 
 begin
     push_trace('ipv4.recv');
-    //writeToLogLn('        L3: ipv4.recv');
+    writeToLogLn('        L3: ipv4.recv');
     Header:= PIPV4Header(p_data);
     AHeader.version:= Header^.version;
     AHeader.header_len:= Header^.header_len;
@@ -108,7 +108,9 @@ begin
 
     if Config.UP then begin
         if (IPEqual(@Config.Address[0], @AHeader.Dst[0])) OR (AHeader.Dst[3] = 255) then begin
-            if Protocols[AHeader.Protocol] <> nil then Protocols[AHeader.Protocol](void(buf), len, p_context);
+            if Protocols[AHeader.Protocol] <> nil then begin
+                Protocols[AHeader.Protocol](void(buf), len, p_context);
+            end;
         end;
     end;
     pop_trace;

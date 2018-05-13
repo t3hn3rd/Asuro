@@ -102,8 +102,8 @@ type
 
     PIPV4Header = ^TIPV4Header;
     TIPV4Header = bitpacked record
-        version       : ubit4;
         header_len    : ubit4;
+        version       : ubit4;
         ToS           : uint8;
         total_len_Hi  : uint8;
         total_len_Lo  : uint8;

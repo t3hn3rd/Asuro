@@ -94,3 +94,5 @@ fi
 echo " "
 echo "======================="
 echo " "
+
+cp Asuro.iso ~/host/Asuro.iso
