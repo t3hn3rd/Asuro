@@ -26,7 +26,6 @@ var
 
 begin
     writeToLogLn('            L4: icmp.recv'); 
-    writestringlnWND('!', 0);
     Header:= PICMPHeader(p_data);
     case Header^.ICMP_Type of
         $08:Begin //Request

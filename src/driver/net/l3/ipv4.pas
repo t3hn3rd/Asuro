@@ -99,11 +99,6 @@ begin
     end;
     AHeader.Options:= Header^.Options;
 
-    //console.output('net.ipv4', 'Source: ');
-    //writeIPv4Address(puint8(@AHeader.Src[0]));
-    //console.output('net.ipv4', 'Dest: ');
-    //writeIPv4Address(puint8(@AHeader.Dst[0]));
-
     buf:= puint8(p_data);
     buf:= buf + (AHeader.header_len * 4);
     len:= p_len - (AHeader.header_len * 4);
@@ -113,7 +108,6 @@ begin
 
     if Config.UP then begin
         if (IPEqual(@Config.Address[0], @AHeader.Dst[0])) OR (AHeader.Dst[3] = 255) then begin
-            writehexln(AHeader.Protocol);
             if Protocols[AHeader.Protocol] <> nil then Protocols[AHeader.Protocol](void(buf), len, p_context);
         end;
     end;
