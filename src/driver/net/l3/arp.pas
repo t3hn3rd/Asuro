@@ -197,55 +197,51 @@ begin
     copyIPv4(@Header^.Destination_Protocol[0], @AHeader.Destination_Protocol[0]);
     
     { Process ARP Packet }
-    Merge:= false;
     CacheElement:= findCacheRecordByIP(@AHeader.Source_Protocol[0]);
     if CacheElement = nil then CacheElement:= findCacheRecordByMAC(@AHeader.Source_Hardware[0]);
     if CacheElement <> nil then begin
         copyMAC(@AHeader.Source_Hardware[0], @CacheElement^.MAC[0]);
         copyIPv4(@AHeader.Source_Protocol[0], @CacheElement^.IP[0]);
-        Merge:= true;
     end else begin
-        if not Merge then begin
-            CacheElement:= PARPCacheRecord(LL_Add(Cache));
-            CopyMAC(@AHeader.Source_Hardware[0], @CacheElement^.MAC[0]);
-            copyIPv4(@AHeader.Source_Protocol[0], @CacheElement^.IP[0]);
-        end;
-        if IPEqual(@AHeader.Destination_Protocol[0], @getIPv4Config^.Address[0]) then begin
-            case AHeader.Operation of
-                $1:begin { ARP Request }
-                    writeToLogLn('            arp.recv.arp.req');
-                    context:= newPacketContext;
-                    copyMAC(@AHeader.Source_Hardware[0], @context^.MAC.Destination[0]);
-                    copyIPv4(@AHeader.Source_Protocol[0], @context^.IP.Destination[0]);
-                    copyMAC(getMAC, @context^.MAC.Source[0]);
-                    copyIPv4(@getIPv4Config^.Address[0], @context^.IP.Source[0]);
-                    send($1, $0800, $2, context);
-                    freePacketContext(context);
-                end;
-                $2:begin { ARP Reply }
-                    writeToLogLn('            arp.recv.arp.rep');
-                end;
-                $3:begin { RARP Request }
-                    writeToLogLn('            arp.recv.rarp.req');
-                end;
-                $4:begin { RARP Reply }
-                    writeToLogLn('            arp.recv.rarp.rep');
-                end;
-                $5:begin { DRARP Request }
-                    writeToLogLn('            arp.recv.drarp.req');
-                end;
-                $6:begin { DRARP Reply }
-                    writeToLogLn('            arp.recv.drarp.rep');
-                end;
-                $7:begin { DRARP Error }
-                    writeToLogLn('            arp.recv.drarp.err');
-                end;
-                $8:begin { InARP Request }
-                    writeToLogLn('            arp.recv.inarp.req');
-                end;
-                $9:begin { InARP Reply }
-                    writeToLogLn('            arp.recv.inarp.rep');
-                end;
+        CacheElement:= PARPCacheRecord(LL_Add(Cache));
+        CopyMAC(@AHeader.Source_Hardware[0], @CacheElement^.MAC[0]);
+        copyIPv4(@AHeader.Source_Protocol[0], @CacheElement^.IP[0]);
+    end;
+    if IPEqual(@AHeader.Destination_Protocol[0], @getIPv4Config^.Address[0]) then begin
+        case AHeader.Operation of
+            $1:begin { ARP Request }
+                writeToLogLn('            arp.recv.arp.req');
+                context:= newPacketContext;
+                copyMAC(@AHeader.Source_Hardware[0], @context^.MAC.Destination[0]);
+                copyIPv4(@AHeader.Source_Protocol[0], @context^.IP.Destination[0]);
+                copyMAC(getMAC, @context^.MAC.Source[0]);
+                copyIPv4(@getIPv4Config^.Address[0], @context^.IP.Source[0]);
+                send($1, $0800, $2, context);
+                freePacketContext(context);
+            end;
+            $2:begin { ARP Reply }
+                writeToLogLn('            arp.recv.arp.rep');
+            end;
+            $3:begin { RARP Request }
+                writeToLogLn('            arp.recv.rarp.req');
+            end;
+            $4:begin { RARP Reply }
+                writeToLogLn('            arp.recv.rarp.rep');
+            end;
+            $5:begin { DRARP Request }
+                writeToLogLn('            arp.recv.drarp.req');
+            end;
+            $6:begin { DRARP Reply }
+                writeToLogLn('            arp.recv.drarp.rep');
+            end;
+            $7:begin { DRARP Error }
+                writeToLogLn('            arp.recv.drarp.err');
+            end;
+            $8:begin { InARP Request }
+                writeToLogLn('            arp.recv.inarp.req');
+            end;
+            $9:begin { InARP Reply }
+                writeToLogLn('            arp.recv.inarp.rep');
             end;
         end;
     end;
