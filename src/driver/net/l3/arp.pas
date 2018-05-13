@@ -205,12 +205,12 @@ begin
         copyIPv4(@AHeader.Source_Protocol[0], @CacheElement^.IP[0]);
         Merge:= true;
     end else begin
+        if not Merge then begin
+            CacheElement:= PARPCacheRecord(LL_Add(Cache));
+            CopyMAC(@AHeader.Source_Hardware[0], @CacheElement^.MAC[0]);
+            copyIPv4(@AHeader.Source_Protocol[0], @CacheElement^.IP[0]);
+        end;
         if IPEqual(@AHeader.Destination_Protocol[0], @getIPv4Config^.Address[0]) then begin
-            if not Merge then begin
-                CacheElement:= PARPCacheRecord(LL_Add(Cache));
-                CopyMAC(@AHeader.Source_Hardware[0], @CacheElement^.MAC[0]);
-                copyIPv4(@AHeader.Source_Protocol[0], @CacheElement^.IP[0]);
-            end;
             case AHeader.Operation of
                 $1:begin { ARP Request }
                     writeToLogLn('            arp.recv.arp.req');
