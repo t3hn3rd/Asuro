@@ -113,6 +113,7 @@ begin
 
     if Config.UP then begin
         if (IPEqual(@Config.Address[0], @AHeader.Dst[0])) OR (AHeader.Dst[3] = 255) then begin
+            writehexln(AHeader.Protocol);
             if Protocols[AHeader.Protocol] <> nil then Protocols[AHeader.Protocol](void(buf), len, p_context);
         end;
     end;
