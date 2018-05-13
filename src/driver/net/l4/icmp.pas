@@ -38,6 +38,7 @@ begin
             CHK:= calculateChecksum(puint16(p_data), sizeof(TICMPHeader));
             Header^.ICMP_CHK_Hi:= CHK SHR 8;
             Header^.ICMP_CHK_Lo:= CHK AND $FF;
+            p_context^.Protocol.L4:= $01;
             ipv4.send(p_data, p_len, p_context);    
         end;
         $00:begin //Reply
