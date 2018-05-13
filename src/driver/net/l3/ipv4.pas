@@ -105,8 +105,8 @@ begin
     //writeIPv4Address(puint8(@AHeader.Dst[0]));
 
     buf:= puint8(p_data);
-    buf:= buf + AHeader.header_len;
-    len:= p_len - AHeader.header_len;
+    buf:= buf + (AHeader.header_len * 4);
+    len:= p_len - (AHeader.header_len * 4);
 
     copyIPv4(@AHeader.Src[0], @p_context^.IP.Source[0]);
     copyIPv4(@AHeader.Dst[0], @p_context^.IP.Destination[0]);
