@@ -32,8 +32,9 @@ type
     APStorage_Volume = array[0..10] of PStorage_volume;
     byteArray8 = array[0..7] of char;
     PByteArray8 = ^byteArray8;
+    PDirectory_Entry = ^TDirectory_Entry;
 
-    PPIOHook = procedure(volume : PStorage_volume; directory : pchar; byteCount : uint32; buffer : puint32);
+    PPWriteHook = procedure(volume : PStorage_volume; directory : pchar; entry : PDirectory_Entry; byteCount : uint32; buffer : puint32; statusOut : puint32);
     PPHIOHook = procedure(volume : PStorage_device; addr : uint32; sectors : uint32; buffer : puint32);
     PPCreateHook = procedure(disk : PStorage_Device; sectors : uint32; start : uint32; config : puint32);
     PPDetectHook = procedure(disk : PStorage_Device);
@@ -44,8 +45,8 @@ type
 
     TFilesystem = record
         sName : pchar;
-        writeCallback     : PPIOHook;
-        readCallback      : PPIOHook;
+        writeCallback     : PPWriteHook;
+        //readCallback      : PPIOHook;
         createCallback    : PPCreateHook;
         detectCallback    : PPDetectHook;
         createDirCallback : PPCreateDirHook;
@@ -85,7 +86,6 @@ type
         creationT : TDateTime;
         modifiedT : TDateTime;
     end;
-    PDirectory_Entry = ^TDirectory_Entry;
 
 var 
     storageDevices : PLinkedListBase; //index in this array is global drive id
@@ -344,6 +344,25 @@ begin
     end; // else print out help
 end;
 
+procedure txt_command(params : PParamList);
+var
+    buffer : puint32;
+    entry : TDirectory_Entry;
+    error : puint32;
+begin
+    push_trace('txt_command');
+    error:= puint32(kalloc(512));
+    memset(uint32(buffer), 0, 512);
+    pchar(buffer)^ := getParam(0, params)^;
+
+    entry.fileName:= 'file';
+    entry.extension:= 'txt';
+    entry.entryType:= TDirectory_Entry_Type.fileEntry;
+
+    push_trace('txt_cmd_');
+    rootVolume^.filesystem^.writeCallback(rootVolume, '.', @entry, stringSize(pchar(buffer)), buffer, error); //need to change the function pointer to match and impiment it in the filesystem init.
+end;
+
 procedure init();
 begin
     push_trace('storagemanagement.init');
@@ -354,8 +373,8 @@ begin
     terminal.registerCommand('VOLUME', @volume_command, 'Volume utility');
     terminal.registerCommandEx('mkdir', @mkdir_command, 'Make Directory', true);
     terminal.registerCommandEx('ls', @list_command, 'List contents of directory', true);
-    terminal.registerCommandEx('cd', @change_dir_command, 'Chae the working directory', true);
-    pop_trace();
+    terminal.registerCommandEx('cd', @change_dir_command, 'Change the working directory', true);
+    terminal.registerCommandEx('txt', @txt_command, 'testing file write', false);
 end;
 
 procedure register_device(device : PStorage_device);
