@@ -3,7 +3,7 @@ unit serial;
 interface
 
 uses
-    util, isrmanager;
+    util, isrmanager, strings;
 
 const
     COM1 = $3F8;
@@ -14,6 +14,7 @@ const
 procedure init();
 function receive(PORT : uint16; timeout : uint32) : uint8;
 function send(PORT : uint16; data : uint8; timeout : uint32) : boolean;
+function sendString(str : pchar) : boolean;
 
 implementation
 
@@ -83,6 +84,19 @@ begin
         outb(PORT, data);
         send:= true;
     end;
+end;
+
+function sendString(str : pchar) : boolean;
+var
+    i : uint32;
+
+begin
+    sendString:= true;
+    for i:=0 to StringSize(str)-1 do begin
+        sendString:= sendString AND send(COM1, uint8(str[i]), 10000);
+    end;
+    sendString:= sendString AND send(COM1, uint8(13), 10000);
+    sendString:= sendString AND send(COM1, uint8(10), 10000);
 end;
 
 end.

@@ -71,7 +71,7 @@ function done(id : uint32) : boolean;
 implementation
 
 uses
-    RTC;
+    RTC, cpu;
 
 var
     TERMINAL_HWND : HWND = 0;
@@ -520,6 +520,27 @@ begin
     terminal.halt(555, @teapot_halt);
 end;
 
+var
+    c1, c2 : uint64;
+    first : boolean = true;
+
+procedure testt(Params : PParamList);
+var
+    diff : uint32;
+
+begin
+    if first then begin
+        c1:= Counters.c64;
+        first:= false;
+    end else begin
+        c2:= Counters.c64;
+        diff:= c2 - c1;
+        writeIntWND(diff, getTerminalHWND);
+        writeStringlnWND('ms', getTerminalHWND);
+        c1:= c2;
+    end;
+end;
+
 procedure init;
 begin
     console.writestringln('TERMINAL: INIT BEGIN.');
@@ -533,6 +554,7 @@ begin
     registerCommandEx('SERIAL', @SendSerial, 'Send ''helloworld'' through COM1.', true);
     registerCommand('REBOOT', @Reboot, 'Reboot the system.');
     registerCommandEx('LOLWUT', @teapot, '?', true);
+    registerCommandEx('TEST', @testt, '?', true);
     console.writestringln('TERMINAL: INIT END.');
 end;
 

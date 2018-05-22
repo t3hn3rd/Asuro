@@ -53,6 +53,8 @@ function get32bitcounter : uint32;
 function get64bitcounter : uint64;
 function getTSC : uint64;
 
+function div6432(dividend : uint64; divisor : uint32) : uint64;
+
 function BCDToUint8(bcd : uint8) : uint8;
 
 function HexCharToDecimal(hex : char) : uint8;
@@ -60,6 +62,8 @@ function HexCharToDecimal(hex : char) : uint8;
 procedure resetSystem();
 
 function getESP : uint32;
+
+function MsSinceSystemBoot : uint64;
 
 var
     endptr : uint32; external name '__end';
@@ -69,6 +73,33 @@ implementation
 
 uses
     console, RTC, cpu;
+
+function MsSinceSystemBoot : uint64;
+begin
+    MsSinceSystemBoot:= div6432(getTSC, (CPUID.ClockSpeed.Hz div 1000));
+end;
+
+function div6432(dividend : uint64; divisor : uint32) : uint64;
+var
+    d0, d4 : uint32;
+    r0, r4 : uint32;
+
+begin
+    d4:= dividend SHR 32;
+    d0:= dividend AND $FFFFFFFF;
+    asm
+        PUSHAD
+        xor edx, edx
+        mov eax, d4
+        div divisor
+        mov r4, eax
+        mov eax, d0
+        div divisor
+        mov r0, eax
+        POPAD
+    end;
+    div6432:= (r0 SHL 32) OR r4;
+end;
 
 function switchendian32(b : uint32) : uint32;
 begin
@@ -254,6 +285,7 @@ begin
           POP EDX
           POP EAX
      end;
+     io_wait;
 end;
 
 procedure outw(port : uint16; val : uint16); [public, alias: 'util_outw'];
@@ -267,6 +299,7 @@ begin
           POP EDX
           POP EAX
      end;
+     io_wait;
 end;
 
 procedure outb(port : uint16; val : uint8); [public, alias: 'util_outb'];
@@ -280,6 +313,7 @@ begin
           POP EDX
           POP EAX
      end;
+     io_wait;
 end;
 
 procedure halt_and_catch_fire(); [public, alias: 'util_halt_and_catch_fire'];
@@ -307,6 +341,7 @@ begin
           POP EDX
           POP EAX
      end;
+     io_wait;
 end;
 
 function inw(port : uint16) : uint16; [public, alias: 'util_inw'];
@@ -320,6 +355,7 @@ begin
           POP EDX
           POP EAX
      end;
+     io_wait;
 end;
 
 function inb(port : uint16) : uint8; [public, alias: 'util_inb'];
@@ -333,6 +369,7 @@ begin
           POP EDX
           POP EAX
      end;
+     io_wait;
 end;
 
 procedure memset(location : uint32; value : uint8; size : uint32);

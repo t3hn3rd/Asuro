@@ -71,11 +71,6 @@ procedure writeintln(i: Integer);
 procedure writeintex(i: Integer; attributes: uint32);
 procedure writeintlnex(i: Integer; attributes: uint32);
 
-procedure writeword(i: DWORD);
-procedure writewordln(i: DWORD);
-procedure writewordex(i: DWORD; attributes: uint32);
-procedure writewordlnex(i: DWORD; attributes: uint32);
-
 procedure writehexpair(b : uint8);
 procedure writehex(i: DWORD);
 procedure writehexln(i: DWORD);
@@ -129,11 +124,6 @@ procedure writeintWND(i: Integer; WND : uint32);
 procedure writeintlnWND(i: Integer; WND : uint32);
 procedure writeintexWND(i: Integer; attributes: uint32; WND : uint32);
 procedure writeintlnexWND(i: Integer; attributes: uint32; WND : uint32);
-
-procedure writewordWND(i: DWORD; WND : uint32);
-procedure writewordlnWND(i: DWORD; WND : uint32);
-procedure writewordexWND(i: DWORD; attributes: uint32; WND : uint32);
-procedure writewordlnexWND(i: DWORD; attributes: uint32; WND : uint32);
 
 procedure writehexpairWND(b : uint8; WND : uint32);
 procedure writehexpairExWND(b : uint8; Attributes : uint32; WND : uint32);
@@ -283,12 +273,16 @@ type
     end;
     PWindow = ^TWindow;
 
-    TWindows = Array[0..MAX_WINDOWS-1] of PWindow;
-    TZOrder  = Array[0..MAX_WINDOWS-1] of uint32;
+    TWindows    = Array[0..MAX_WINDOWS-1] of PWindow;
+    TZOrder     = Array[0..MAX_WINDOWS-1] of uint32;
+    TBackOrder  = Array[0..MAX_WINDOWS-1] of uint32;
+    TFrontOrder = Array[0..MAX_WINDOWS-1] of uint32;
 
     TWindowManager = record
         Windows     : TWindows;
         Z_Order     : TZOrder;
+        Back_Order  : TBackOrder;
+        Front_Order : TFrontOrder;
         MousePos    : TMouseCoord;
         MousePrev   : TMouseCoord;
     end;
@@ -544,6 +538,7 @@ var
     WND : PWindow;
 
 begin
+    tracer.push_trace('console.newWindow');
     newWindow:= 0;
     for idx:=1 to MAX_WINDOWS-1 do begin
         if WindowManager.Windows[idx] = nil then begin
@@ -927,6 +922,16 @@ begin
     WND^.Closed:= false;
     WND^.Border:= false;
     WND^.ShellWND:= false;
+    WND^.Hooks.OnDraw:= nil;
+    WND^.Hooks.OnMouseClick:= nil;
+    WND^.Hooks.OnMouseMove:= nil;
+    WND^.Hooks.OnMouseDown:= nil;
+    WND^.Hooks.OnMouseUp:= nil;
+    WND^.Hooks.OnKeyPressed:= nil;
+    WND^.Hooks.OnClose:= nil;
+    WND^.Hooks.OnMinimize:= nil;
+    WND^.Hooks.OnFocus:= nil;
+    WND^.Hooks.OnLoseFocus:= nil;
     WindowManager.Windows[0]:= WND;
     AddToZOrder(0);
     FocusZOrder(0);
@@ -1252,11 +1257,6 @@ begin
      console.writeintex(i, Console_Properties.Default_Attribute);
 end;
 
-procedure writeword(i: DWORD); [public, alias: 'console_writeword'];
-begin
-     console.writewordex(i, Console_Properties.Default_Attribute);
-end;
-
 procedure writecharln(character: char); [public, alias: 'console_writecharln'];
 begin
      console.writecharlnex(character, Console_Properties.Default_Attribute);
@@ -1272,13 +1272,9 @@ begin
      console.writeintlnex(i, Console_Properties.Default_Attribute);
 end;
 
-procedure writewordln(i: DWORD); [public, alias: 'console_writewordln'];
-begin
-     console.writewordlnex(i, Console_Properties.Default_Attribute);
-end;
-
 procedure writecharex(character: char; attributes: uint32); [public, alias: 'console_writecharex'];
 begin
+    serial.send(COM1, uint8(character), 10000);
     if WindowManager.Windows[DefaultWND] <> nil then begin
         WindowManager.Windows[DefaultWND]^.Buffer[WindowManager.Windows[DefaultWND]^.Cursor.Y][WindowManager.Windows[DefaultWND]^.Cursor.X].Character:= character;
         WindowManager.Windows[DefaultWND]^.Buffer[WindowManager.Windows[DefaultWND]^.Cursor.Y][WindowManager.Windows[DefaultWND]^.Cursor.X].Attributes:= attributes;
@@ -1435,24 +1431,6 @@ begin
         end;
         console.writestringex(str, attributes);
 end;
- 
-procedure writewordex(i: DWORD; attributes: uint32); [public, alias: 'console_writedwordex'];
-var
-        buffer: array [0..11] of Char;
-        str: PChar;
-        digit: DWORD;
-begin
-        for digit := 0 to 10 do buffer[digit] := '0';
-        str := @buffer[11];
-        str^ := #0;
-        digit := i;
-        repeat
-                Dec(str);
-                str^ := Char((digit mod 10) + Byte('0'));
-                digit := digit div 10;
-        until (digit = 0);
-        console.writestringex(@Buffer[0], attributes);
-end;
 
 procedure writecharlnex(character: char; attributes: uint32); [public, alias: 'console_writecharlnex'];
 begin
@@ -1469,12 +1447,6 @@ end;
 procedure writeintlnex(i: Integer; attributes: uint32); [public, alias: 'console_writeintlnex'];
 begin
      console.writeintex(i, attributes);
-     console._safeincrement_y();
-end;
-
-procedure writewordlnex(i: DWORD; attributes: uint32); [public, alias: 'console_writewordlnex'];
-begin
-     console.writewordex(i, attributes);
      console._safeincrement_y();
 end;
 
@@ -1558,6 +1530,8 @@ end;
 
 procedure _safeincrement_y(); [public, alias: '_console_safeincrement_y'];
 begin
+     serial.send(COM1, uint8(13), 10000);
+     serial.send(COM1, uint8(10), 10000);
      if WindowManager.Windows[DefaultWND] <> nil then begin
         WindowManager.Windows[DefaultWND]^.Cursor.Y:= WindowManager.Windows[DefaultWND]^.Cursor.Y+1;
         if WindowManager.Windows[DefaultWND]^.Cursor.Y > WindowManager.Windows[DefaultWND]^.WND_H-1 then begin
@@ -1758,11 +1732,6 @@ begin
      console.writeintexWND(i, Console_Properties.Default_Attribute, WND);
 end;
 
-procedure writewordWND(i: DWORD; WND : uint32);
-begin
-     console.writewordexWND(i, Console_Properties.Default_Attribute, WND);
-end;
-
 procedure writecharlnWND(character: char; WND : uint32);
 begin
      console.writecharlnexWND(character, Console_Properties.Default_Attribute, WND);
@@ -1776,11 +1745,6 @@ end;
 procedure writeintlnWND(i: Integer; WND : uint32); 
 begin
      console.writeintlnexWND(i, Console_Properties.Default_Attribute, WND);
-end;
-
-procedure writewordlnWND(i: DWORD; WND : uint32);
-begin
-     console.writewordlnexWND(i, Console_Properties.Default_Attribute, WND);
 end;
 
 procedure writecharexWND(character: char; attributes: uint32; WND : uint32); 
@@ -1946,24 +1910,6 @@ begin
         end;
         console.writestringexWND(str, attributes, WND);
 end;
- 
-procedure writewordexWND(i: DWORD; attributes: uint32; WND : uint32);
-var
-        buffer: array [0..11] of Char;
-        str: PChar;
-        digit: DWORD;
-begin
-        for digit := 0 to 10 do buffer[digit] := '0';
-        str := @buffer[11];
-        str^ := #0;
-        digit := i;
-        repeat
-                Dec(str);
-                str^ := Char((digit mod 10) + Byte('0'));
-                digit := digit div 10;
-        until (digit = 0);
-        console.writestringexWND(@Buffer[0], attributes, WND);
-end;
 
 procedure writecharlnexWND(character: char; attributes: uint32; WND : uint32);
 begin
@@ -1980,12 +1926,6 @@ end;
 procedure writeintlnexWND(i: Integer; attributes: uint32; WND : uint32);
 begin
      console.writeintexWND(i, attributes, WND);
-     console._safeincrement_y_WND(WND);
-end;
-
-procedure writewordlnexWND(i: DWORD; attributes: uint32; WND : uint32);
-begin
-     console.writewordexWND(i, attributes, WND);
      console._safeincrement_y_WND(WND);
 end;
 

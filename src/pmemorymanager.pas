@@ -125,7 +125,7 @@ begin
     force_alloc_block(2, 0); //First 12MiB reserved for Kernel/BIOS.
     force_alloc_block(3, 0);
     console.output('PMM',' ');
-    console.writeword(nPresent);
+    console.writeint(nPresent);
     console.writestringln('/1024 Block Available for Allocation.');
     console.outputln('PMM','INIT END.');
     pop_trace;

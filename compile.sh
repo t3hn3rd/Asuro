@@ -5,6 +5,10 @@ echo "======================="
 echo "== ASURO COMPILATION =="
 echo "======================="
 echo " "
+echo "Checking out latest VM Source..."
+echo " "
+./updatevm.sh
+echo " "
 echo "Compiling ASM Stub..."
 echo " "
 rm lib/*

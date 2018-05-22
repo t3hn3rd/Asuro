@@ -45,9 +45,7 @@ procedure register();
 begin
     if not registered then begin
         asm
-            mov al, $36
-            out $46, al
-            mov ax, 1165
+            mov ax, 1193
             out $40, al
             mov al, ah
             out $40, al

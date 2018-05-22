@@ -1,4 +1,4 @@
-unit netlog;
+unit vmlog;
 
 interface
 
@@ -6,16 +6,16 @@ uses
     console, terminal, keyboard, util, strings, tracer;
 
 procedure init();
-function  getNetlogHWND : HWND;
+function  getVMLogHWND : HWND;
 
 implementation
 
 var
     Handle  : HWND = 0;
 
-function  getNetlogHWND : HWND;
+function getVMLogHWND : HWND;
 begin
-    getNetlogHWND:= Handle;
+    getVMLogHWND:= Handle;
 end;
 
 procedure OnClose();
@@ -26,7 +26,7 @@ end;
 procedure run(Params : PParamList);
 begin
     if Handle = 0 then begin
-        Handle:= newWindow(20, 40, 63, 14, 'NETLOG');
+        Handle:= newWindow(20, 40, 63, 14, 'VMLOG');
         clearWND(Handle);
         registerEventHandler(Handle, EVENT_CLOSE, void(@OnClose));
     end;
@@ -34,8 +34,8 @@ end;
 
 procedure init();
 begin
-    tracer.push_trace('netlog.init');
-    terminal.registerCommand('NETLOG', @Run, 'View network event log.');
+    tracer.push_trace('vmlog.init');
+    terminal.registerCommand('VMLOG', @Run, 'View virtual-machine event log.');
 end;
 
 end.

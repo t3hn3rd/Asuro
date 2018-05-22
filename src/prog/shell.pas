@@ -3,7 +3,7 @@ unit shell;
 interface
 
 uses
-    Console, RTC, terminal, strings, asuro;
+    Console, RTC, terminal, strings, asuro, tracer;
 
 procedure init();
 function getTaskbarColorsPtr : puint32;
@@ -197,24 +197,38 @@ end;
 
 procedure init();
 begin
+    tracer.push_trace('shell.init.1');
     Takbar_Colors:= console.combinecolors($0000, $FFFF);
+    tracer.push_trace('shell.init.2');
     Explore_Colors:= console.combinecolors($01C3, $07EE);
+    tracer.push_trace('shell.init.3');
     Desktop_Colors:= console.combinecolors($FFFF, $34DB);
 
+    tracer.push_trace('shell.init.4');
     DesktopHandle:= Console.newWindow(0, 0, 159, 63, 'DESKTOP');
+    tracer.push_trace('shell.init.5');
     TaskBarHandle:= Console.newWindow(0, 63, 159, 1, 'SHELL');
 
+    tracer.push_trace('shell.init.6');
     console.bordersEnabled(TaskBarHandle, false);
+    tracer.push_trace('shell.init.7');
     console.setShellWindow(TaskBarHandle, false);
 
+    tracer.push_trace('shell.init.8');
     console.bordersEnabled(DesktopHandle, false);
+    tracer.push_trace('shell.init.9');
     console.setShellWindow(DesktopHandle, false);
     
+    tracer.push_trace('shell.init.10');
     console.registerEventHandler(TaskBarHandle, EVENT_DRAW, void(@Draw));
+    tracer.push_trace('shell.init.11');
     console.registerEventHandler(TaskBarHandle, EVENT_MOUSE_CLICK, void(@OnMouseClick));
+    tracer.push_trace('shell.init.12');
     console.registerEventHandler(DesktopHandle, EVENT_DRAW, void(@onBaseDraw));
 
+    tracer.push_trace('shell.init.13');
     terminal.registerCommand('BACKGROUND', @Command_Background, 'Hide/Show background - usage: BACKGROUND <hide/show>');
+    tracer.push_trace('shell.init.14');
     terminal.registerCommand('COLORS', @Command_Colors, 'Set the desktop colors');
 end;
 

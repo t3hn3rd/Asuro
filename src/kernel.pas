@@ -43,7 +43,9 @@ uses
      splash,
      cpu,
      themer,
-     netlog;
+     netlog,
+     vmlog,
+     vm;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
@@ -97,6 +99,9 @@ var
    l               : PLinkedListBase;
    
 begin
+     { Serial Init }
+     serial.init();
+
      { Store Multiboot info }
      multibootinfo:= mbinfo;
      multibootmagic:= mbmagic;
@@ -133,6 +138,15 @@ begin
         BSOD('GDT', 'Failed to load the GDT correctly.');
      end;
 
+     console.output('MULTIBOOT', 'Assigned Framebuffer: ');
+     console.writehexln(multibootinfo^.framebuffer_addr);
+     console.output('MULTIBOOT', 'Assigned Framebuffer Metrics: ');
+     console.writeint(multibootinfo^.framebuffer_width);
+     console.writestring('x');
+     console.writeint(multibootinfo^.framebuffer_height);
+     console.writestring('x');
+     console.writeintln(multibootinfo^.framebuffer_bpp);
+
      { Memory/CPU Init }
      idt.init();
      irq.init();
@@ -150,9 +164,6 @@ begin
 
      { CPUID }
      cpu.init();
-
-     { Serial Init }
-     serial.init();
 
      { Call Tracer }
      tracer.init();
@@ -184,7 +195,7 @@ begin
      { Bus Drivers }
      tracer.push_trace('kmain.BUSDRV');
      console.outputln('KERNEL', 'BUS DRIVERS: INIT BEGIN.');
-     USB.init();
+     //USB.init();
      pci.init();
      console.outputln('KERNEL', 'BUS DRIVERS: INIT END.');
 
@@ -192,26 +203,43 @@ begin
      tracer.push_trace('kmain.NETDRV');
      net.init;
 
+     tracer.push_trace('kmain.VMINIT');
+     vm.init();
+
+     { Init Progs }
+     tracer.push_trace('kmain.SHELLINIT');
+     shell.init();
+     tracer.push_trace('kmain.MEMVIEWINIT');
+     memview.init();
+     tracer.push_trace('kmain.THEMERINIT');
+     themer.init();
+     tracer.push_trace('kmain.NETLOGINIT');
+     netlog.init();
+     tracer.push_trace('kmain.VMLOGINIT');
+     vmlog.init();
+
+     terminal.run();
+
+     { Init Splash }
+     tracer.push_trace('kmain.SPLASHINIT');
+     splash.init();
+
      { End of Boot }
      tracer.push_trace('kmain.EOB');
+
      console.writestringln('');
      console.setdefaultattribute(console.combinecolors($17E0, $0000));
      console.writestringln('Asuro Booted Correctly!');
      console.setdefaultattribute(console.combinecolors($FFFF, $0000));
 
-     { Init Progs }
-     shell.init();
-     memview.init();
-     themer.init();
-     netlog.init();
-
-     { Init Splash }
-     splash.init();
-
      tracer.push_trace('kmain.END');
 
+     tracer.push_trace('kmain.TICK');
      while true do begin
+        tracer.push_trace('kmain.RedrawWindows');
         console.redrawWindows;
+        tracer.push_trace('kmain.VMTick');
+        vm.tick();
      end;
 end;
  

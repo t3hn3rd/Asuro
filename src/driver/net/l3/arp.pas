@@ -22,6 +22,7 @@ function  MACToIIPv4(mac : puint8) : puint8;
 procedure sendGratuitous;
 procedure sendRequest(ip : puint8);
 procedure send(hType : uint16; pType : uint16; op : uint16; p_context : PPacketContext);
+function resolveIP(ip : puint8) : puint8;
 
 implementation
 
@@ -65,18 +66,6 @@ begin
             end;
         end;
     end;
-end;
-
-function findCacheRecord(ip : puint8) : PARPCacheRecord;
-var
-    CacheRecord : PARPCacheRecord;
-
-begin
-    CacheRecord:= findCacheRecordByIP(ip);
-    if CacheRecord = nil then begin
-        
-    end;
-    findCacheRecord:= CacheRecord;
 end;
 
 procedure send(hType : uint16; pType : uint16; op : uint16; p_context : PPacketContext);
@@ -169,6 +158,21 @@ begin
      arp.send($1, $0800, $1, context);
      freePacketContext(context);
      sendRequestGateway(ip);
+end;
+
+function resolveIP(ip : puint8) : puint8;
+var
+    CacheRecord : PARPCacheRecord;
+
+begin
+    CacheRecord:= findCacheRecordByIP(ip);
+    resolveIP:= nil;
+    if CacheRecord = nil then begin
+        sendRequest(ip);
+        sendRequestGateway(ip);
+    end else begin
+        resolveIP:= @CacheRecord^.MAC[0];
+    end;
 end;
 
 procedure recv(p_data : void; p_len : uint16; p_context : PPacketContext);
