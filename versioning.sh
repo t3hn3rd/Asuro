@@ -1,4 +1,5 @@
 #!/bin/bash
+./checksum.sh
 outfile="src/include/asuro.pas"
 file="version"
 while IFS=: read -r line;do
@@ -16,6 +17,7 @@ makeversion=$(make -v | grep GNU | awk '{print $3}')
 nasmversion=$(nasm -v | awk '{print $3'})
 compiledate=$(date +"%d/%m/%y")
 compiletime=$(date +"%T")
+checksum=$(md5sum checksums.md5 | awk '{print $1}')
 echo "unit asuro;" > $outfile
 echo " " >> $outfile
 echo "interface" >> $outfile
@@ -35,6 +37,7 @@ echo "     NASM_VERSION  = '$nasmversion';" >> $outfile
 echo "     MAKE_VERSION  = '$makeversion';" >> $outfile
 echo "     COMPILE_DATE  = '$compiledate';" >> $outfile
 echo "     COMPILE_TIME  = '$compiletime';" >> $outfile
+echo "     CHECKSUM      = '$checksum';" >> $outfile
 echo " " >> $outfile
 echo "implementation" >> $outfile
 echo " " >> $outfile

@@ -269,6 +269,8 @@ begin
     console.writestringlnWND(' files.', TERMINAL_HWND);
     console.writestringWND('  Baked Drivers: ', TERMINAL_HWND);
     console.writeintlnWND(asuro.DRIVER_COUNT, TERMINAL_HWND);
+    console.writestringWND('  Checksum: ', TERMINAL_HWND);
+    console.writestringlnWND(asuro.CHECKSUM, TERMINAL_HWND);
 end;
 
 procedure help(params : PParamList);
