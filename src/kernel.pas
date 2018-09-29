@@ -45,7 +45,8 @@ uses
      themer,
      netlog,
      vmlog,
-     vm;
+     vm,
+     vmstate;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
@@ -217,6 +218,8 @@ begin
      netlog.init();
      tracer.push_trace('kmain.VMLOGINIT');
      vmlog.init();
+     tracer.push_trace('kmain.VMSTATEINIT');
+     vmstate.init();
 
      terminal.run();
 
