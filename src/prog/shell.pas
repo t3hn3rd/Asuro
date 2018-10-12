@@ -1,3 +1,8 @@
+{ 
+	Prog->Shell - Main Desktop UI.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit shell;
 
 interface

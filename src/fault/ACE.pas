@@ -1,12 +1,8 @@
-{ ************************************************
-  * Asuro
-  * Unit: Drivers/ISR17
-  * Description: Alignment Check Exception
-  ************************************************
-  * Author: K Morris
-  * Contributors: 
-  ************************************************ }
-
+{ 
+	Fault->ACE - Alignment Check Exception.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit ACE;
 
 interface

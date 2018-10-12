@@ -1,12 +1,8 @@
-{ ************************************************
-  * Asuro
-  * Unit: Drivers/mouse
-  * Description: Mouse Driver
-  ************************************************
-  * Author: K Morris
-  * Contributors: 
-  ************************************************ }
-
+{ 
+	Driver->HID->Mouse - Mouse Driver.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit mouse;
 
 interface

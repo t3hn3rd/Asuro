@@ -1,3 +1,8 @@
+{ 
+	Include->Fonts - Standard Fonts & Font Masks.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit fonts;
 
 interface

@@ -1,12 +1,8 @@
-{ ************************************************
-  * Asuro
-  * Unit: Drivers/ISR7
-  * Description: No Coprocessor Exception
-  ************************************************
-  * Author: K Morris
-  * Contributors: 
-  ************************************************ }
-
+{ 
+	Fault->NCE - No Coprocessor Exception.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit NCE;
 
 interface

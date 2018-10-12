@@ -1,12 +1,9 @@
-{ ************************************************
-  * Asuro
-  * Unit: system
-  * Description: Standard System Types
-  ************************************************
-  * Author: K Morris
-  * Contributors: 
-  ************************************************ }
-
+{ 
+	Include->System - Base Types & Structures.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+	@author(Aaron Hance <ah@aaronhance.me>)
+}
 unit system;
 
 interface

@@ -1,12 +1,8 @@
-{ ************************************************
-  * Asuro
-  * Unit: Drivers/ISR18
-  * Description: Machine Check Exception
-  ************************************************
-  * Author: K Morris
-  * Contributors: 
-  ************************************************ }
-
+{ 
+	Fault->MCE - Machine Check Exception.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit MCE;
 
 interface

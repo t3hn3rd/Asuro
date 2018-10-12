@@ -1,3 +1,8 @@
+{ 
+	Driver->Bus->USB - Universal Serial Bus Driver/Interface.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit USB;
 
 interface

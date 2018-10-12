@@ -1,12 +1,8 @@
-{ ************************************************
-  * Asuro
-  * Unit: Drivers/ISR8
-  * Description: Double Fault Exception
-  ************************************************
-  * Author: K Morris
-  * Contributors: 
-  ************************************************ }
-
+{ 
+	Fault->DFE - Double Fault Exception.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit DFE;
 
 interface

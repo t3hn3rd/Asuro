@@ -1,3 +1,8 @@
+{ 
+	Driver->NetDev->E1000 - Intel E1000/I217/82577LM Network Card Driver.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit E1000;
 
 interface

@@ -1,12 +1,8 @@
-{ ************************************************
-  * Asuro
-  * Unit: Drivers/ISR11
-  * Description: Coprocessor Fault Exception
-  ************************************************
-  * Author: K Morris
-  * Contributors: 
-  ************************************************ }
-
+{ 
+	Fault->CFE - Coprocessor Fault Exception.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit CFE;
 
 interface

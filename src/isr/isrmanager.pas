@@ -1,3 +1,8 @@
+{ 
+	ISR->ISRManager - Interrupt Service Routine Registration, Dispatch & Management.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit isrmanager;
 
 interface

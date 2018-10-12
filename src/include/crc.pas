@@ -1,3 +1,8 @@
+{ 
+	Include->CRC - CRC32 Implementation.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit crc;
 
 interface

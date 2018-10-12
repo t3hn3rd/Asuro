@@ -1,12 +1,8 @@
-{ ************************************************
-  * Asuro
-  * Unit: tss
-  * Description: Representation of Kernel Space to
-  *              Enable System Calls Via Interrupts.
-  ************************************************
-  * Author: K Morris
-  * Contributors:
-  ************************************************ }
+{ 
+	TSS - Task State Segment (stub).
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit tss;
 
 interface

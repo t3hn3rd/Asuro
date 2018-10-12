@@ -1,3 +1,8 @@
+{ 
+	Prog->NetLog - Network Driver Logs.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit netlog;
 
 interface

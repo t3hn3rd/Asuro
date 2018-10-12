@@ -1,3 +1,8 @@
+{ 
+	Prog->VMLog - Virtual Machine Event Log.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit vmlog;
 
 interface

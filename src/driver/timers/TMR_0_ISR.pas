@@ -1,12 +1,8 @@
-{ ************************************************
-  * Asuro
-  * Unit: Drivers/isr32
-  * Description: 1024hz Timer interrupt
-  ************************************************
-  * Author: Aaron Hance
-  * Contributors: K Morris
-  ************************************************ }
-
+{ 
+	Driver->Timer->TMR_0_ISR - 1024hz Timer Driver.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit TMR_0_ISR;
 
 interface

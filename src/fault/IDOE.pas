@@ -1,12 +1,8 @@
-{ ************************************************
-  * Asuro
-  * Unit: Drivers/ISR4
-  * Description: Into Detected Overflow Exception
-  ************************************************
-  * Author: K Morris
-  * Contributors: 
-  ************************************************ }
-
+{ 
+	Fault->IDO - Into Detected Overflow Exception.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit IDOE;
 
 interface

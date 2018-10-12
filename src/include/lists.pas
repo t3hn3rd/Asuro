@@ -1,3 +1,8 @@
+{ 
+	Include->Lists - Linked List Data Structures & Helpers.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit lists;
 
 interface

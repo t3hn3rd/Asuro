@@ -1,12 +1,8 @@
-{ ************************************************
-  * Asuro
-  * Unit: Drivers/ISR6
-  * Description: Invalid OPCode Exception
-  ************************************************
-  * Author: K Morris
-  * Contributors: 
-  ************************************************ }
-
+{ 
+	Fault->IOPE - Invalid OPCode Exception.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit IOPE;
 
 interface

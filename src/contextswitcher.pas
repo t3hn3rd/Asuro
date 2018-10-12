@@ -1,12 +1,8 @@
-{ ************************************************
-  * Asuro
-  * Unit: ContextSwitcher
-  * Description: Switches context between processes
-  *              when preempted by the scheduler.
-  ************************************************
-  * Author: K Morris
-  * Contributors:
-  ************************************************ }
+{ 
+	ContextSwitcher - Switch Process Contexts when preempted.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit contextswitcher;
 
 interface

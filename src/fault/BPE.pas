@@ -1,12 +1,8 @@
-{ ************************************************
-  * Asuro
-  * Unit: Drivers/ISR3
-  * Description: Breakpoint Exception
-  ************************************************
-  * Author: K Morris
-  * Contributors: 
-  ************************************************ }
-
+{ 
+	Fault->BPE - Break Point Exception.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit BPE;
 
 interface

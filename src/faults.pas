@@ -1,3 +1,8 @@
+{ 
+	Faults - Fault Registration & Detouring.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit faults;
 
 interface

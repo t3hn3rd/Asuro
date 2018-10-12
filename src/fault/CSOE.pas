@@ -1,12 +1,8 @@
-{ ************************************************
-  * Asuro
-  * Unit: Drivers/ISR9
-  * Description: Coprocessor Seg Overrun Exception
-  ************************************************
-  * Author: K Morris
-  * Contributors: 
-  ************************************************ }
-
+{ 
+	Fault->CSOE - Coprocessor Seg Overruun Exception.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit CSOE;
 
 interface

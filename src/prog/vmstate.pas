@@ -1,3 +1,8 @@
+{ 
+	Prog->VMState - Live MINJ Virtual Machine State Information.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit vmstate;
 
 interface

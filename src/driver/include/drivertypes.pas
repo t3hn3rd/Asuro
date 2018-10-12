@@ -1,11 +1,8 @@
-{ ************************************************
-  * Asuro
-  * Unit: Drivers/drivertypes
-  * Description: types shared between drivers
-  ************************************************
-  * Author: Aaron Hance
-  * Contributors: 
-  ************************************************ }
+{ 
+	Driver->Include->DriverTypes - Structs & Data Shared Across Drivers.
+	
+	@author(Aaron Hance <ah@aaronhance.me>)
+}
 unit drivertypes;
 
 interface

@@ -1,12 +1,8 @@
-{ ************************************************
-  * Asuro
-  * Unit: Drivers/ISR2
-  * Description: Non-Maskable Interrupt Exception
-  ************************************************
-  * Author: K Morris
-  * Contributors: 
-  ************************************************ }
-
+{ 
+	Fault->NMIE - Non-Maskable Interrupt Exception.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit NMIE;
 
 interface

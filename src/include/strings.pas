@@ -1,12 +1,8 @@
-{ ************************************************
-  * Asuro
-  * Unit: Strings
-  * Description: Collection of function for string manipulation.
-  ************************************************
-  * Author: K Morris
-  * Contributors: 
-  ************************************************ }
-
+{ 
+	Include->Strings - String Manipulation.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit strings;
 
 interface

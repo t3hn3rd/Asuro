@@ -1,11 +1,8 @@
-{ ************************************************
-  * Asuro
-  * Unit: Driver_Management
-  * Description: Manages Driver Loading
-  ************************************************
-  * Author: K Morris
-  * Contributors:
-  ************************************************ }
+{ 
+	DriverManagement - Driver Initialization & Management Interface.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit drivermanagement;
 
 interface

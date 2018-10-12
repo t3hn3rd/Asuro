@@ -1,12 +1,8 @@
-{ ************************************************
-  * Asuro
-  * Unit: Drivers/keyboard
-  * Description: Keyboard driver
-  ************************************************
-  * Author: Aaron Hance
-  * Contributors: 
-  ************************************************ }
-
+{ 
+	Driver->HID->Keyboard - Keyboard Driver.
+	
+	@author(Aaron Hance <ah@aaronhance.me>)
+}
 unit keyboard;
 
 interface

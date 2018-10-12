@@ -1,12 +1,8 @@
-{ ************************************************
-  * Asuro
-  * Unit: Drivers/ISR1
-  * Description: Debug Exception
-  ************************************************
-  * Author: K Morris
-  * Contributors: 
-  ************************************************ }
-
+{ 
+	Fault->DBGE - Debug Exception.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit DBGE;
 
 interface

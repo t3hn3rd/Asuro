@@ -1,3 +1,8 @@
+{ 
+	CPU - CPU Structures & Utility/Capabilities Functions.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit cpu;
 
 interface

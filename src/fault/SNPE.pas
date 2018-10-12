@@ -1,12 +1,8 @@
-{ ************************************************
-  * Asuro
-  * Unit: Drivers/ISR11
-  * Description: Segment Not Present Exception
-  ************************************************
-  * Author: K Morris
-  * Contributors: 
-  ************************************************ }
-
+{ 
+	Fault->SNPE - Segment Not Present Exception.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit SNPE;
 
 interface

@@ -1,12 +1,9 @@
-{ ************************************************
-  * Asuro
-  * Unit: Drivers/PCI
-  * Description: PCI Driver
-  ************************************************
-  * Author: Aaron Hance
-  * Contributors: Kieron Morris
-  ************************************************ }
-
+{ 
+	Driver->Bus->PCI - Peripheral Component Interconnect Driver.
+	
+	@author(Aaron Hance <ah@aaronhance.me>)
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit PCI;
 
 interface

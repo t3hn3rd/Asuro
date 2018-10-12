@@ -1,12 +1,8 @@
-{ ************************************************
-  * Asuro
-  * Unit: Drivers/ISR15
-  * Description: Unknown Interrupt Exception
-  ************************************************
-  * Author: K Morris
-  * Contributors: 
-  ************************************************ }
-
+{ 
+	Fault->UIE - Unknown Interrupt Exception.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit UIE;
 
 interface

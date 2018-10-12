@@ -1,11 +1,8 @@
-{ ************************************************
-  * Asuro
-  * Unit: Scheduler
-  * Description: Schedules Context Switches
-  ************************************************
-  * Author: K Morris
-  * Contributors: 
-  ************************************************ }
+{ 
+	Scheduler - Schedules Context Switches.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 
 unit scheduler;
 

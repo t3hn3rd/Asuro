@@ -1,12 +1,8 @@
-{ ************************************************
-  * Asuro
-  * Unit: Drivers/isr40
-  * Description: 1024/s Timer interrupt
-  ************************************************
-  * Author: Aaron Hance
-  * Contributors: K Morris
-  ************************************************ }
-
+{ 
+	Driver->Timer->TMR_1_ISR - 1024/s Timer Driver.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit TMR_1_ISR;
 
 interface

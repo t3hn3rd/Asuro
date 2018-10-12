@@ -1,12 +1,8 @@
-{ ************************************************
-  * Asuro
-  * Unit: irq
-  * Description: mapping IRQs
-  ************************************************
-  * Author: Aaron Hance
-  * Contributors:
-  ************************************************ }
-
+{ 
+	Interrupt Request Line - Initialization & Remapping.
+	
+	@author(Aaron Hance <ah@aaronhance.me>)
+}
 unit irq;
 
 interface

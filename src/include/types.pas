@@ -1,3 +1,8 @@
+{ 
+	Include->Types - Dummy Unit For VM Compatability.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit types;
 
 interface

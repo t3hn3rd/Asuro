@@ -1,3 +1,8 @@
+{ 
+	Include->Asuro - Auto-Generated Version & Compilation Information
+	
+	@author(Asuro Compilation Script)
+}
 unit asuro;
  
 interface

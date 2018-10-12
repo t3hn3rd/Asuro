@@ -1,12 +1,8 @@
-{ ************************************************
-  * Asuro
-  * Unit: isr
-  * Description: Stub for ISR Driver Initialization
-  ************************************************
-  * Author: K Morris
-  * Contributors: A Hance
-  ************************************************ }
-
+{ 
+	ISR Driver - Initialization (stub).
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit isr;
 
 interface

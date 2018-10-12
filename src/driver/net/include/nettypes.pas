@@ -1,3 +1,8 @@
+{ 
+	Driver->Net->NetTypes - Structures & Types Shared Across Network Drivers.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit nettypes;
 
 interface

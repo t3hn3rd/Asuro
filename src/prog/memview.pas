@@ -1,3 +1,8 @@
+{ 
+	Prog->MemView - Live Memory View.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit memview;
 
 interface

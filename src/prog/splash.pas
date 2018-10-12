@@ -1,3 +1,8 @@
+{ 
+	Prog->Splash - Asuro Splash Screen.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit splash;
 
 interface

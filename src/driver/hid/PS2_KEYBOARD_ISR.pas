@@ -1,12 +1,9 @@
-{ ************************************************
-  * Asuro
-  * Unit: Drivers/isr33
-  * Description: Keyboard interrupt
-  ************************************************
-  * Author: Aaron Hance
-  * Contributors: K Morris
-  ************************************************ }
-
+{ 
+	Driver->HID->PS2_KEYBAORD_ISR - PS2 ISR Hook & Driver.
+	
+	@author(Aaron Hance <ah@aaronhance.me>)
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit PS2_KEYBOARD_ISR;
 
 interface

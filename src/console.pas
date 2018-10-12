@@ -1,12 +1,8 @@
-{ ************************************************
-  * Asuro
-  * Unit: console
-  * Description: Basic Console Output
-  ************************************************
-  * Author: K Morris
-  * Contributors: 
-  ************************************************ }
-
+{ 
+	Console - Provides Screen/Window management & drawing.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit console;
 
 interface
@@ -19,6 +15,7 @@ uses
      tracer;
 
 type
+	{ 4-bit nibble representing a color. }
     TColor = ( Black   = $0,
                Blue    = $1,
                Green   = $2,
@@ -36,6 +33,7 @@ type
                lYellow = $E,
                lWhite  = $F );
 
+	{ Window Manager Events. }
     TEventType = ( EVENT_DRAW,
                    EVENT_MOUSE_CLICK,
                    EVENT_MOUSE_MOVE,
@@ -47,62 +45,269 @@ type
                    EVENT_FOCUS,
                    EVENT_LOSE_FOCUS );
 
+
+
+
+{ Default Buffer Specific }
+
+{ 
+	Initialize the Frame Buffer & Window Manager ready for use.
+}
 procedure init();
+
+{ 
+	Clear the Frame Buffer. 
+}
 procedure clear();
+
+{ 
+	Set the default set of attributes to be used when drawing to the screen.
+	@param(attribute A 32-bit value representing the Foreground & Background colors.) 
+}
 procedure setdefaultattribute(attribute : uint32);
 
+{
+	@bold(Text mode only!) - Disable the cursor/text-caret. 
+	@deprecated
+}
 procedure disable_cursor;
 
+{ 
+	Write a single 8-bit character to the screen.
+	@param(character An 8-bit value representing an ASCII character.) 
+}
 procedure writechar(character : char);
+
+{ 
+	Write a single 8-bit character to the screen, followed by starting a new line.
+	@param(character An 8-bit value representing an ASCII character.) 
+}
 procedure writecharln(character : char);
+
+{ 
+	Write a single 8-bit character to the screen, specifying custom color attributes.
+	@param(character An 8-bit value representing an ASCII character.)
+	@param(attributes A 32-bit value representing the colors for the background and foreground.)
+}
 procedure writecharex(character : char; attributes: uint32);
+
+{ 
+	Write a single 8-bit character to the screen, followed by starting a new line, specifying custom color attributes.
+	@param(character An 8-bit value representing an ASCII character.)
+	@param(attributes A 32-bit value representing the colors for the background and foreground.)
+}
 procedure writecharlnex(character : char; attributes: uint32);
 
+{ 
+	Simple console write for debugging.
+	@param(identifier A NULL terminated string with the name of the module printing the output.)
+	@param(str A NULL terminated string with the debug message.)
+}
 procedure Output(identifier : PChar; str : PChar);
+
+{ 
+	Simple console writeln for debugging.
+	@param(identifier A NULL terminated string with the name of the module printing the output.)
+	@param(str A NULL terminated string with the debug message.)
+}
 procedure Outputln(identifier : PChar; str : PChar);
 
+{ 
+	Write a NULL terminated string to the console.
+	@param(str A NULL terminated string with the debug message.)
+}
 procedure writestring(str: PChar);
+
+{ 
+	Write a NULL terminated string to the console, followed by a new-line.
+	@param(str A NULL terminated string with the debug message.)
+}
 procedure writestringln(str: PChar);
+
+{ 
+	Write a NULL terminated string to the console, with the specified attributes.
+	@param(str A NULL terminated string with the debug message.)
+	@param(attributes A 32-bit representation of the background/foreground colors.)
+}
 procedure writestringex(str: PChar; attributes: uint32);
+
+{ 
+	Write a NULL terminated string + new-line to the console, with the specified attributes.
+	@param(str A NULL terminated string with the debug message.)
+	@param(attributes A 32-bit representation of the background/foreground colors.)
+}
 procedure writestringlnex(str: PChar; attributes: uint32);
 
+{ 
+	Write a 32-bit value to the console.
+	@param(i A 32-bit value.)
+}
 procedure writeint(i: Integer);
+
+{ 
+	Write a 32-bit value to the console followed by a new-line.
+	@param(i A 32-bit value.)
+}
 procedure writeintln(i: Integer);
+
+{ 
+	Write a 32-bit value to the console, with the specified attributes.
+	@param(i A 32-bit value.)
+	@param(attributes A 32-bit representation of the background/foreground colors.)
+}
 procedure writeintex(i: Integer; attributes: uint32);
+
+{ 
+	Write a 32-bit value + new-line to the console, with the specified attributes.
+	@param(i A 32-bit value.)
+	@param(attributes A 32-bit representation of the background/foreground colors.)
+}
 procedure writeintlnex(i: Integer; attributes: uint32);
 
+{ 
+	Write an 8-bit Hex Pair to the console.
+	@param(b An 8-bit value.)
+}
 procedure writehexpair(b : uint8);
+
+{ 
+	Write a 32-bit value as Hex Pairs to the console.
+	@param(i A 32-bit value.)
+}
 procedure writehex(i: DWORD);
+
+{ 
+	Write a 32-bit value as Hex Pairs to the console, followed by a new-line.
+	@param(i A 32-bit value.)
+}
 procedure writehexln(i: DWORD);
+
+{ 
+	Write a 32-bit value as Hex Pairs to the console, with the specified attributes.
+	@param(b A 32-bit value.)
+	@param(attributes A 32-bit representation of the background/foreground colors.)
+}
 procedure writehexex(i : DWORD; attributes: uint32);
+
+{ 
+	Write a 32-bit value as Hex Pairs + new-line to the console, with the specified attributes.
+	@param(b A 32-bit value.)
+	@param(attributes A 32-bit representation of the background/foreground colors.)
+}
 procedure writehexlnex(i: DWORD; attributes: uint32);
 
+{ 
+	Write an 8-bit value as binary to the console.
+	@param(b An 8-bit value.)
+}
 procedure writebin8(b : uint8);
+
+{ 
+	Write an 8-bit value as binary to the console, followed by a new-line.
+	@param(b An 8-bit value.)
+}
 procedure writebin8ln(b : uint8);
+
+{ 
+	Write an 8-bit value as binary to the console, with the specified attributes.
+	@param(b An 8-bit value.)
+	@param(attributes A 32-bit representation of the background/foreground colors.)
+}
 procedure writebin8ex(b : uint8; attributes: uint32);
+
+{ 
+	Write an 8-bit value as binary + new-line to the console, with the specified attributes.
+	@param(b An 8-bit value.)
+	@param(attributes A 32-bit representation of the background/foreground colors.)
+}
 procedure writebin8lnex(b : uint8; attributes: uint32);
 
+{ 
+	Write a 16-bit value as binary to the console.
+	@param(b A 16-bit value.)
+}
 procedure writebin16(b : uint16);
+
+{ 
+	Write an 16-bit value as binary to the console, followed by a new-line.
+	@param(b A 16-bit value.)
+}
 procedure writebin16ln(b : uint16);
+
+{
+	Write a 16-bit value as binary to the console, with the specified attributes.
+	@param(b A 16-bit value.)
+	@param(attributes A 32-bit representation of the background/foreground colors.)
+}
 procedure writebin16ex(b : uint16; attributes: uint32);
+
+{
+	Write a 16-bit value as binary + new-line to the console, with the specified attributes.
+	@param(b A 16-bit value.)
+	@param(attributes A 32-bit representation of the background/foreground colors.)
+}
 procedure writebin16lnex(b : uint16; attributes: uint32);
 
+{ 
+	Write a 32-bit value as binary to the console.
+	@param(b A 32-bit value.)
+}
 procedure writebin32(b : uint32);
+
+{ 
+	Write an 32-bit value as binary to the console, followed by a new-line.
+	@param(b A 32-bit value.)
+}
 procedure writebin32ln(b : uint32);
+
+{
+	Write a 32-bit value as binary to the console, with the specified attributes.
+	@param(b A 32-bit value.)
+	@param(attributes A 32-bit representation of the background/foreground colors.)
+}
 procedure writebin32ex(b : uint32; attributes: uint32);
+
+{
+	Write a 32-bit value as binary + new-line to the console, with the specified attributes.
+	@param(b A 32-bit value.)
+	@param(attributes A 32-bit representation of the background/foreground colors.)
+}
 procedure writebin32lnex(b : uint32; attributes: uint32);
 
+{ 
+	Move the caret back 1 position and remove the character within the cell the caret occupies.
+}
 procedure backspace;
 
+{
+	Combine two 16-bit values representing Foreground and Background respectively, into a 32-bit value representing an attribute. 
+	@param(Foreground A 16-bit value representing the foreground color.)
+	@param(Background A 16-bit value representing the background color.)
+	@returns(A 32-bit value representing an attribute set. (uint32) )
+}
 function combinecolors(Foreground, Background : uint16) : uint32;
 
+{ Increment the cursor one cell to the right (x+1). }
 procedure _increment_x();
+
+{ Increment the cursor one cell down (y+1). }
 procedure _increment_y();
-procedure _safeincrement_y();
+
+{ Increment the cursor one cell to the right (x+1), wrapping to the next line and performing a Y-Axis scroll when when needed. }
 procedure _safeincrement_x();
+
+{ Increment the cursor one cell down (y+1), performing a Y-Axis roll when when needed. }
+procedure _safeincrement_y();
+
+{ Increment the cursor one cell down and reposition it at the first X Cell (y+1, x=0),performing a Y-Axis scroll when needed. }
 procedure _newline();
 
-{ WND Specific }
+
+
+
+
+{ Window Specific }
+
 
 procedure clearWND(WND : uint32);
 procedure clearWNDEx(WND : uint32; attributes : uint32);
@@ -193,20 +398,19 @@ procedure _MouseClick(left : boolean);
 procedure setWindowColors(colors : uint32);
 function getWindowColorPtr : puint32;
 
+const
+	MAX_WINDOWS = 255; //<Maximum number of Windows open.
+    DefaultWND  = 0;   //<The Window assigned for output when no Window is specified. (Default).
+
 implementation
 
-uses
-    lmemorymanager, strings, keyboard, serial, terminal;
-
-const
-    MAX_WINDOWS = 255;
-    DefaultWND  = 0;
-
 type
+	{ Properties pertaining to the raw screen matrix.}
     TConsoleProperties = record
-      Default_Attribute : uint32;
+      Default_Attribute : uint32; //Attribute (Colors) to use when no override defined.
     end;
 
+	{ Unrasterized representation of a character.}
     TCharacter = bitpacked record
       Character  : Char;
       attributes : uint32;
@@ -214,6 +418,7 @@ type
     end;
     PCharacter = ^TCharacter;
 
+	{ Unrasterized screen matrix. }
     TVideoMemory = Array[0..1999] of TCharacter;
     PVideoMemory = ^TVideoMemory;
 
@@ -313,6 +518,9 @@ var
    UnhandledClickLeft : Boolean = false;
    MouseCursorEnabled : Boolean = true;
    OpenTerminal       : Boolean = false;
+
+uses
+    lmemorymanager, strings, keyboard, serial, terminal;
 
 function getWindowColorPtr : puint32;
 begin

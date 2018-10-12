@@ -1,12 +1,8 @@
-{ ************************************************
-  * Asuro
-  * Unit: Multiboot
-  * Description: Mutliboot (GRUB) Structures.
-  ************************************************
-  * Author: K Morris
-  * Contributors: 
-  ************************************************ }
-
+{ 
+	Include->Multiboot - Multiboot Structures & Access.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit multiboot;
  
 interface

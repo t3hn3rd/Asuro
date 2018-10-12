@@ -1,12 +1,8 @@
-{ ************************************************
-  * Asuro
-  * Unit: IDT
-  * Description: IDT Structure and Implementation
-  ************************************************
-  * Author: K Morris
-  * Contributors: 
-  ************************************************ }
-
+{ 
+	Interrupt Descriptor Table - Structures & Interface.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit idt;
 
 interface

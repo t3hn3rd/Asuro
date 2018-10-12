@@ -1,11 +1,8 @@
-{ ************************************************
-  * Asuro
-  * Unit: Drivers/isr_types
-  * Description: Defines for ISRs (WIP)
-  ************************************************
-  * Author: K Morris
-  * Contributors: 
-  ************************************************ }
+{ 
+	ISR->ISR_Types - Interrupt Service Routine Structures.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 
 unit isr_types;
 

@@ -1,3 +1,8 @@
+{ 
+	Driver->Bus->EHCI - Enhanced Host Controller Interface Driver.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit EHCI;
 
 interface

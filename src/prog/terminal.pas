@@ -1,12 +1,8 @@
-{ ************************************************
-  * Asuro
-  * Unit: Terminal
-  * Description: Interactive shell for the user
-  ************************************************
-  * Author: K Morris
-  * Contributors: 
-  ************************************************ }
-
+{ 
+	Prog->Terminal - Interactive Command Line Environment.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit terminal;
 
 interface

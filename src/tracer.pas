@@ -1,3 +1,8 @@
+{ 
+	Tracer - Trace stack for debugging method calls.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit tracer;
 
 interface

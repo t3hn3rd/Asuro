@@ -1,3 +1,8 @@
+{ 
+	Driver->Bus->XHCI - eXtensible Host Controller Interface Driver.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit XHCI;
 
 interface

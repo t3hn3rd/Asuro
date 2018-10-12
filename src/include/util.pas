@@ -1,12 +1,8 @@
-{ ************************************************
-  * Asuro
-  * Unit: util
-  * Description: Utilities for data manipulation
-  ************************************************
-  * Author: K Morris
-  * Contributors: 
-  ************************************************ }
-
+{ 
+	Include->Util - Data Manipulation Utlities.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit util;
 
 {$ASMMODE intel}

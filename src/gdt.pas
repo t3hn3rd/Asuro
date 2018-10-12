@@ -1,12 +1,8 @@
-{ ************************************************
-  * Asuro
-  * Unit: GDT
-  * Description: GDT Structure and Implementation
-  ************************************************
-  * Author: K Morris
-  * Contributors: A Hance
-  ************************************************ }
-
+{ 
+	Global Descriptor Table - Data Structures & Interface.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit gdt;
 
 interface

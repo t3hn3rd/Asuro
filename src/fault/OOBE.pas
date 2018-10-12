@@ -1,12 +1,8 @@
-{ ************************************************
-  * Asuro
-  * Unit: Drivers/ISR5
-  * Description: Out of Bounds Exception
-  ************************************************
-  * Author: K Morris
-  * Contributors: 
-  ************************************************ }
-
+{ 
+	Fault->OOBE - Out Of Bounds Exception.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit OOBE;
 
 interface

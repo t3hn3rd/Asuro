@@ -1,12 +1,8 @@
-{ ************************************************
-  * Asuro
-  * Unit: Drivers/ISR13
-  * Description: General Protection Fault
-  ************************************************
-  * Author: K Morris
-  * Contributors: 
-  ************************************************ }
-
+{ 
+	Fault->GPF - General Protection Fault.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit GPF;
 
 interface

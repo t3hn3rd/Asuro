@@ -1,3 +1,8 @@
+{ 
+	Driver->Net->L2->Eth2 - Ethernet Driver.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit eth2;
 
 interface

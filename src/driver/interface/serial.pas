@@ -1,3 +1,8 @@
+{ 
+	Driver->Interface->Serial - Serial Driver.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit serial;
 
 interface

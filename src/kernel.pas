@@ -1,12 +1,9 @@
-{ ************************************************
-  * Asuro
-  * Unit: Kernel
-  * Description: Main Entry Point for Asuro
-  ************************************************
-  * Author: K Morris
-  * Contributors: A Hance
-  ************************************************ }
-
+{ 
+	Kernel Main - Main Kernel Entry Point.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+	@author(Aaron Hance <ah@aaronhance.me>)
+}
 unit kernel;
  
 interface

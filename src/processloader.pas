@@ -1,13 +1,8 @@
-{ ************************************************
-  * Asuro
-  * Unit: ProcessLoader
-  * Description: Loads a Process and any related
-  *              structers into memory ready for
-  *              execution.
-  ************************************************
-  * Author: K Morris
-  * Contributors:
-  ************************************************ }
+{ 
+	ProcessLoader - Process Initialization & Tasking (stub).
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit processloader;
 
 interface

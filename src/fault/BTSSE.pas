@@ -1,12 +1,8 @@
-{ ************************************************
-  * Asuro
-  * Unit: Drivers/ISR10
-  * Description: Bad TSS Exception
-  ************************************************
-  * Author: K Morris
-  * Contributors: 
-  ************************************************ }
-
+{ 
+	Fault->BTSSE - Bad TSS Exception.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit BTSSE;
 
 interface

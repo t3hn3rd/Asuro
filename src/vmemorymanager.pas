@@ -1,11 +1,8 @@
-{ ************************************************
-  * Asuro
-  * Unit: VMemoryManager
-  * Description: Manages Pages of Virtual Memory
-  ************************************************
-  * Author: K Morris
-  * Contributors: 
-  ************************************************ }
+{ 
+	VMemoryManager - Virtual Memory Management.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 
 unit vmemorymanager;
 

@@ -1,3 +1,8 @@
+{ 
+	Driver->Bus->OHCI - Open Host Controller Interface Driver.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit OHCI;
 
 interface

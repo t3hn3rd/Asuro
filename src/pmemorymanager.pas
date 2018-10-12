@@ -1,12 +1,8 @@
-{ ************************************************
-  * Asuro
-  * Unit: PMemoryManager
-  * Description: Physical Memory Management
-  ************************************************
-  * Author: K Morris
-  * Contributors: 
-  ************************************************ }
-
+{ 
+	PMemoryManager - Physical Memory Management
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit pmemorymanager;
 
 interface

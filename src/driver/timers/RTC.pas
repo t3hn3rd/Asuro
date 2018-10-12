@@ -1,3 +1,8 @@
+{ 
+	Driver->Timers->RTC - Real Time Clock Driver.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit RTC;
 
 interface

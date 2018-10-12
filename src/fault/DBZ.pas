@@ -1,12 +1,8 @@
-{ ************************************************
-  * Asuro
-  * Unit: Drivers/ISR0
-  * Description: Divide-By-Zero Exception
-  ************************************************
-  * Author: K Morris
-  * Contributors: 
-  ************************************************ }
-
+{ 
+	Fault->DBZ - Divide By Zero Exception.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit DBZ;
 
 interface

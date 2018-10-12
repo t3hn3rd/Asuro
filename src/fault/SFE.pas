@@ -1,12 +1,8 @@
-{ ************************************************
-  * Asuro
-  * Unit: Drivers/ISR12
-  * Description: Stack Fault Exception
-  ************************************************
-  * Author: K Morris
-  * Contributors: 
-  ************************************************ }
-
+{ 
+	Fault->SFE - Stack Fault Exception.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit SFE;
 
 interface

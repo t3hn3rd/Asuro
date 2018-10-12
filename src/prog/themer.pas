@@ -1,3 +1,8 @@
+{ 
+	Prog->Themer - Live Desktop Color Picker.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit themer;
 
 interface

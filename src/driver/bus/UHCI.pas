@@ -1,3 +1,8 @@
+{ 
+	Driver->Bus->UHCI - Universal Host Controller Interface Driver.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit UHCI;
 
 interface
