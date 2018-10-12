@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<title>Asuro: terminal</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="PasDoc 0.15.0">
+<meta http-equiv="content-type" content="text/html; charset=utf-8">
+<link rel="StyleSheet" type="text/css" href="pasdoc.css">
+</head>
+<body>
+<table class="container"><tr><td class="navigation">
+<h2>Asuro</h2><p><a href="AllUnits.html" class="navigation">Units</a></p><p><a href="ClassHierarchy.html" class="navigation">Class Hierarchy</a></p><p><a href="AllClasses.html" class="navigation">Classes, Interfaces, Objects and Records</a></p><p><a href="AllTypes.html" class="navigation">Types</a></p><p><a href="AllVariables.html" class="navigation">Variables</a></p><p><a href="AllConstants.html" class="navigation">Constants</a></p><p><a href="AllFunctions.html" class="navigation">Functions and Procedures</a></p><p><a href="AllIdentifiers.html" class="navigation">Identifiers</a></p><p><a href="GVUses.png" class="navigation">Unit dependency graph</a></p></td><td class="content">
+<h1 class="unit">Unit terminal</h1>
+<div class="sections">
+<div class="one_section"><a class="section" href="#PasDoc-Description">Description</a></div><div class="one_section"><a class="section" href="#PasDoc-Uses">Uses</a></div><div class="one_section"><a class="section" href="#PasDoc-Classes">Classes, Interfaces, Objects and Records</a></div><div class="one_section"><a class="section" href="#PasDoc-FuncsProcs">Functions and Procedures</a></div><div class="one_section"><a class="section" href="#PasDoc-Types">Types</a></div><div class="one_section">Constants</div><div class="one_section"><a class="section" href="#PasDoc-Variables">Variables</a></div></div>
+<span id="PasDoc-Description"></span><h2 class="description">Description</h2>
+<p>
+Prog-&gt;<code>Terminal</code> - Interactive Command Line Environment.
+
+<p></p>
+<span id="PasDoc-Uses"></span><h2 class="uses">Uses</h2>
+<ul class="useslist"><li><a  href="bios_data_area.html">bios_data_area</a></li><li><a  href="console.html">console</a></li><li><a  href="keyboard.html">keyboard</a></li><li><a  href="util.html">util</a></li><li><a  href="lmemorymanager.html">lmemorymanager</a></li><li><a  href="strings.html">strings</a></li><li><a  href="tracer.html">tracer</a></li><li><a  href="asuro.html">asuro</a></li><li><a  href="serial.html">serial</a></li><li><a  href="netutils.html">netutils</a></li><li><a  href="nettypes.html">nettypes</a></li></ul><h2 class="overview">Overview</h2>
+<span id="PasDoc-Classes"></span><h3 class="cio">Classes, Interfaces, Objects and Records</h3>
+<table class="classestable wide_list">
+<tr class="listheader">
+<th class="itemname">Name</th>
+<th class="itemdesc">Description</th>
+</tr>
+<tr class="list">
+<td class="itemname">Record&nbsp;<a class="bold" href="terminal.TParamList.html"><code>TParamList</code></a></td>
+<td class="itemdesc">&nbsp;</td>
+</tr>
+<tr class="list2">
+<td class="itemname">Record&nbsp;<a class="bold" href="terminal.THistory.html"><code>THistory</code></a></td>
+<td class="itemdesc">&nbsp;</td>
+</tr>
+<tr class="list">
+<td class="itemname">Record&nbsp;<a class="bold" href="terminal.TCommand.html"><code>TCommand</code></a></td>
+<td class="itemdesc">&nbsp;</td>
+</tr>
+</table>
+<span id="PasDoc-FuncsProcs"></span><h3 class="summary">Functions and Procedures</h3>
+<table class="summary wide_list">
+<tr class="list">
+<td class="itemcode"><code>procedure <b><a  href="terminal.html#run">run</a></b>;</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code>procedure <b><a  href="terminal.html#init">init</a></b>;</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code>procedure <b><a  href="terminal.html#registerCommand">registerCommand</a></b>(command : <a  href="system.html#pchar">pchar</a>; method : <a  href="terminal.html#TCommandMethod">TCommandMethod</a>; description : <a  href="system.html#pchar">pchar</a>);</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code>procedure <b><a  href="terminal.html#registerCommandEx">registerCommandEx</a></b>(command : <a  href="system.html#pchar">pchar</a>; method : <a  href="terminal.html#TCommandMethod">TCommandMethod</a>; description : <a  href="system.html#pchar">pchar</a>; hide : boolean);</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code>function <b><a  href="terminal.html#getParams">getParams</a></b>(buf : <a  href="terminal.html#TCommandBuffer">TCommandBuffer</a>) : <a  href="terminal.html#PParamList">PParamList</a>;</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code>function <b><a  href="terminal.html#paramCount">paramCount</a></b>(params : <a  href="terminal.html#PParamList">PParamList</a>) : <a  href="system.html#uInt32">uint32</a>;</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code>function <b><a  href="terminal.html#getParam">getParam</a></b>(index : <a  href="system.html#uInt32">uint32</a>; params : <a  href="terminal.html#PParamList">PParamList</a>) : <a  href="system.html#pchar">pchar</a>;</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code>procedure <b><a  href="terminal.html#setWorkingDirectory">setWorkingDirectory</a></b>(str : <a  href="system.html#pchar">pchar</a>);</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code>function <b><a  href="terminal.html#getWorkingDirectory">getWorkingDirectory</a></b> : <a  href="system.html#pchar">pchar</a>;</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code>function <b><a  href="terminal.html#getTerminalHWND">getTerminalHWND</a></b> : <a  href="system.html#uInt32">uint32</a>;</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code>function <b><a  href="terminal.html#halt">halt</a></b>(id : <a  href="system.html#uInt32">uint32</a>; cb : <a  href="terminal.html#THaltCallback">THaltCallback</a>) : boolean;</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code>function <b><a  href="terminal.html#done">done</a></b>(id : <a  href="system.html#uInt32">uint32</a>) : boolean;</code></td>
+</tr>
+</table>
+<span id="PasDoc-Types"></span><h3 class="summary">Types</h3>
+<table class="summary wide_list">
+<tr class="list">
+<td class="itemcode"><code><b><a  href="terminal.html#THaltCallback">THaltCallback</a></b> = procedure();</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="terminal.html#PParamList">PParamList</a></b> = &circ;<a  href="terminal.TParamList.html">TParamList</a>;</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="terminal.html#PHistory">PHistory</a></b> = &circ;<a  href="terminal.THistory.html">THistory</a>;</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="terminal.html#TCommandBuffer">TCommandBuffer</a></b> = array[0..1023] of byte;</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="terminal.html#TCommandMethod">TCommandMethod</a></b> = procedure(params : <a  href="terminal.html#PParamList">PParamList</a>);</code></td>
+</tr>
+</table>
+<span id="PasDoc-Variables"></span><h3 class="summary">Variables</h3>
+<table class="summary wide_list">
+<tr class="list">
+<td class="itemcode"><code><b><a  href="terminal.html#buffer">buffer</a></b>: <a  href="terminal.html#TCommandBuffer">TCommandBuffer</a>;</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="terminal.html#History">History</a></b>: <a  href="terminal.html#PHistory">PHistory</a>;</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="terminal.html#bIndex">bIndex</a></b>: <a  href="system.html#uInt32">uint32</a> = 0;</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="terminal.html#Commands">Commands</a></b>: array[0..65534] of <a  href="terminal.TCommand.html">TCommand</a>;</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="terminal.html#Working_Directory">Working_Directory</a></b>: <a  href="system.html#pchar">PChar</a> = '/';</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="terminal.html#Halted">Halted</a></b>: Boolean = false;</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="terminal.html#HaltID">HaltID</a></b>: <a  href="system.html#uInt32">uint32</a> = 0;</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="terminal.html#HaltCB">HaltCB</a></b>: <a  href="terminal.html#THaltCallback">THaltCallback</a> = nil;</code></td>
+</tr>
+</table>
+<h2 class="description">Description</h2>
+<h3 class="detail">Functions and Procedures</h3>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="run"></span><code>procedure <b>run</b>;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="init"></span><code>procedure <b>init</b>;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="registerCommand"></span><code>procedure <b>registerCommand</b>(command : <a  href="system.html#pchar">pchar</a>; method : <a  href="terminal.html#TCommandMethod">TCommandMethod</a>; description : <a  href="system.html#pchar">pchar</a>);</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="registerCommandEx"></span><code>procedure <b>registerCommandEx</b>(command : <a  href="system.html#pchar">pchar</a>; method : <a  href="terminal.html#TCommandMethod">TCommandMethod</a>; description : <a  href="system.html#pchar">pchar</a>; hide : boolean);</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="getParams"></span><code>function <b>getParams</b>(buf : <a  href="terminal.html#TCommandBuffer">TCommandBuffer</a>) : <a  href="terminal.html#PParamList">PParamList</a>;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="paramCount"></span><code>function <b>paramCount</b>(params : <a  href="terminal.html#PParamList">PParamList</a>) : <a  href="system.html#uInt32">uint32</a>;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="getParam"></span><code>function <b>getParam</b>(index : <a  href="system.html#uInt32">uint32</a>; params : <a  href="terminal.html#PParamList">PParamList</a>) : <a  href="system.html#pchar">pchar</a>;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="setWorkingDirectory"></span><code>procedure <b>setWorkingDirectory</b>(str : <a  href="system.html#pchar">pchar</a>);</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="getWorkingDirectory"></span><code>function <b>getWorkingDirectory</b> : <a  href="system.html#pchar">pchar</a>;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="getTerminalHWND"></span><code>function <b>getTerminalHWND</b> : <a  href="system.html#uInt32">uint32</a>;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="halt"></span><code>function <b>halt</b>(id : <a  href="system.html#uInt32">uint32</a>; cb : <a  href="terminal.html#THaltCallback">THaltCallback</a>) : boolean;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="done"></span><code>function <b>done</b>(id : <a  href="system.html#uInt32">uint32</a>) : boolean;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<h3 class="detail">Types</h3>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="THaltCallback"></span><code><b>THaltCallback</b> = procedure();</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="PParamList"></span><code><b>PParamList</b> = &circ;<a  href="terminal.TParamList.html">TParamList</a>;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="PHistory"></span><code><b>PHistory</b> = &circ;<a  href="terminal.THistory.html">THistory</a>;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="TCommandBuffer"></span><code><b>TCommandBuffer</b> = array[0..1023] of byte;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="TCommandMethod"></span><code><b>TCommandMethod</b> = procedure(params : <a  href="terminal.html#PParamList">PParamList</a>);</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<h3 class="detail">Variables</h3>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="buffer"></span><code><b>buffer</b>: <a  href="terminal.html#TCommandBuffer">TCommandBuffer</a>;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="History"></span><code><b>History</b>: <a  href="terminal.html#PHistory">PHistory</a>;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="bIndex"></span><code><b>bIndex</b>: <a  href="system.html#uInt32">uint32</a> = 0;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="Commands"></span><code><b>Commands</b>: array[0..65534] of <a  href="terminal.TCommand.html">TCommand</a>;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="Working_Directory"></span><code><b>Working_Directory</b>: <a  href="system.html#pchar">PChar</a> = '/';</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="Halted"></span><code><b>Halted</b>: Boolean = false;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="HaltID"></span><code><b>HaltID</b>: <a  href="system.html#uInt32">uint32</a> = 0;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="HaltCB"></span><code><b>HaltCB</b>: <a  href="terminal.html#THaltCallback">THaltCallback</a> = nil;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<h2 class="authors">Author</h2>
+<ul class="authors">
+<li>Kieron Morris &lt;<a  href="mailto:kjm@kieronmorris.me">kjm@kieronmorris.me</a>&gt;</li>
+</ul>
+<hr><span class="appinfo"><em>Generated by <a  href="https://github.com/pasdoc/pasdoc/wiki">PasDoc 0.15.0</a>. </em>
+</span>
+</td></tr></table></body></html>

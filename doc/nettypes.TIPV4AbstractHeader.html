@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<title>Asuro: nettypes: Record TIPV4AbstractHeader</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="PasDoc 0.15.0">
+<meta http-equiv="content-type" content="text/html; charset=utf-8">
+<link rel="StyleSheet" type="text/css" href="pasdoc.css">
+</head>
+<body>
+<table class="container"><tr><td class="navigation">
+<h2>Asuro</h2><p><a href="AllUnits.html" class="navigation">Units</a></p><p><a href="ClassHierarchy.html" class="navigation">Class Hierarchy</a></p><p><a href="AllClasses.html" class="navigation">Classes, Interfaces, Objects and Records</a></p><p><a href="AllTypes.html" class="navigation">Types</a></p><p><a href="AllVariables.html" class="navigation">Variables</a></p><p><a href="AllConstants.html" class="navigation">Constants</a></p><p><a href="AllFunctions.html" class="navigation">Functions and Procedures</a></p><p><a href="AllIdentifiers.html" class="navigation">Identifiers</a></p><p><a href="GVUses.png" class="navigation">Unit dependency graph</a></p></td><td class="content">
+<span id="TIPV4AbstractHeader"></span><h1 class="cio">Record TIPV4AbstractHeader</h1>
+<div class="sections">
+<div class="one_section"><a class="section" href="#PasDoc-Description">Description</a></div><div class="one_section">Hierarchy</div><div class="one_section"><a class="section" href="#PasDoc-Fields">Fields</a></div><div class="one_section">Methods</div><div class="one_section">Properties</div></div>
+<span id="PasDoc-Description"></span><h2 class="unit">Unit</h2>
+<p class="unitlink">
+<a  href="nettypes.html">nettypes</a></p>
+<h2 class="declaration">Declaration</h2>
+<p class="declaration">
+<code>type TIPV4AbstractHeader = record</code></p>
+<h2 class="description">Description</h2>
+&nbsp;<h2 class="overview">Overview</h2>
+<span id="PasDoc-Fields"></span><h3 class="summary">Fields</h3>
+<table class="summary wide_list">
+<tr class="list">
+<td class="itemcode"><code><b><a  href="nettypes.TIPV4AbstractHeader.html#version">version</a></b>: <a  href="system.html#uInt8">uint8</a>;</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="nettypes.TIPV4AbstractHeader.html#header_len">header_len</a></b>: <a  href="system.html#uInt8">uint8</a>;</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="nettypes.TIPV4AbstractHeader.html#ToS">ToS</a></b>: <a  href="system.html#uInt8">uint8</a>;</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="nettypes.TIPV4AbstractHeader.html#total_len">total_len</a></b>: <a  href="system.html#uInt16">uint16</a>;</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="nettypes.TIPV4AbstractHeader.html#identifier">identifier</a></b>: <a  href="system.html#uInt16">uint16</a>;</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="nettypes.TIPV4AbstractHeader.html#Flags">Flags</a></b>: <a  href="nettypes.TTCPFlags.html">TTCPFlags</a>;</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="nettypes.TIPV4AbstractHeader.html#Fragment_Off">Fragment_Off</a></b>: <a  href="system.html#uInt16">uint16</a>;</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="nettypes.TIPV4AbstractHeader.html#TTL">TTL</a></b>: <a  href="system.html#uInt8">uint8</a>;</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="nettypes.TIPV4AbstractHeader.html#Protocol">Protocol</a></b>: <a  href="system.html#uInt8">uint8</a>;</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="nettypes.TIPV4AbstractHeader.html#HDR_CHK">HDR_CHK</a></b>: <a  href="system.html#uInt16">uint16</a>;</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="nettypes.TIPV4AbstractHeader.html#Src">Src</a></b>: Array[0..3] of <a  href="system.html#uInt8">uint8</a>;</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="nettypes.TIPV4AbstractHeader.html#Dst">Dst</a></b>: Array[0..3] of <a  href="system.html#uInt8">uint8</a>;</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="nettypes.TIPV4AbstractHeader.html#Options">Options</a></b>: <a  href="system.html#uInt32">uint32</a>;</code></td>
+</tr>
+</table>
+<h2 class="description">Description</h2>
+<h3 class="detail">Fields</h3>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="version"></span><code><b>version</b>: <a  href="system.html#uInt8">uint8</a>;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="header_len"></span><code><b>header_len</b>: <a  href="system.html#uInt8">uint8</a>;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="ToS"></span><code><b>ToS</b>: <a  href="system.html#uInt8">uint8</a>;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="total_len"></span><code><b>total_len</b>: <a  href="system.html#uInt16">uint16</a>;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="identifier"></span><code><b>identifier</b>: <a  href="system.html#uInt16">uint16</a>;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="Flags"></span><code><b>Flags</b>: <a  href="nettypes.TTCPFlags.html">TTCPFlags</a>;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="Fragment_Off"></span><code><b>Fragment_Off</b>: <a  href="system.html#uInt16">uint16</a>;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="TTL"></span><code><b>TTL</b>: <a  href="system.html#uInt8">uint8</a>;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="Protocol"></span><code><b>Protocol</b>: <a  href="system.html#uInt8">uint8</a>;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="HDR_CHK"></span><code><b>HDR_CHK</b>: <a  href="system.html#uInt16">uint16</a>;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="Src"></span><code><b>Src</b>: Array[0..3] of <a  href="system.html#uInt8">uint8</a>;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="Dst"></span><code><b>Dst</b>: Array[0..3] of <a  href="system.html#uInt8">uint8</a>;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="Options"></span><code><b>Options</b>: <a  href="system.html#uInt32">uint32</a>;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<hr><span class="appinfo"><em>Generated by <a  href="https://github.com/pasdoc/pasdoc/wiki">PasDoc 0.15.0</a>. </em>
+</span>
+</td></tr></table></body></html>

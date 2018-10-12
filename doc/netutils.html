@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<title>Asuro: netutils</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="PasDoc 0.15.0">
+<meta http-equiv="content-type" content="text/html; charset=utf-8">
+<link rel="StyleSheet" type="text/css" href="pasdoc.css">
+</head>
+<body>
+<table class="container"><tr><td class="navigation">
+<h2>Asuro</h2><p><a href="AllUnits.html" class="navigation">Units</a></p><p><a href="ClassHierarchy.html" class="navigation">Class Hierarchy</a></p><p><a href="AllClasses.html" class="navigation">Classes, Interfaces, Objects and Records</a></p><p><a href="AllTypes.html" class="navigation">Types</a></p><p><a href="AllVariables.html" class="navigation">Variables</a></p><p><a href="AllConstants.html" class="navigation">Constants</a></p><p><a href="AllFunctions.html" class="navigation">Functions and Procedures</a></p><p><a href="AllIdentifiers.html" class="navigation">Identifiers</a></p><p><a href="GVUses.png" class="navigation">Unit dependency graph</a></p></td><td class="content">
+<h1 class="unit">Unit netutils</h1>
+<div class="sections">
+<div class="one_section"><a class="section" href="#PasDoc-Description">Description</a></div><div class="one_section"><a class="section" href="#PasDoc-Uses">Uses</a></div><div class="one_section">Classes, Interfaces, Objects and Records</div><div class="one_section"><a class="section" href="#PasDoc-FuncsProcs">Functions and Procedures</a></div><div class="one_section">Types</div><div class="one_section">Constants</div><div class="one_section">Variables</div></div>
+<span id="PasDoc-Description"></span><h2 class="description">Description</h2>
+<p>
+Driver-&gt;<a class="normal" href="net.html">Net</a>-&gt;<code>NetUtils</code> - Helper Functions For Network Drivers.
+
+<p></p>
+<span id="PasDoc-Uses"></span><h2 class="uses">Uses</h2>
+<ul class="useslist"><li><a  href="tracer.html">tracer</a></li><li><a  href="util.html">util</a></li><li><a  href="nettypes.html">nettypes</a></li><li><a  href="console.html">console</a></li><li><a  href="lmemorymanager.html">lmemorymanager</a></li><li><a  href="lists.html">lists</a></li><li><a  href="strings.html">strings</a></li></ul><h2 class="overview">Overview</h2>
+<span id="PasDoc-FuncsProcs"></span><h3 class="summary">Functions and Procedures</h3>
+<table class="summary wide_list">
+<tr class="list">
+<td class="itemcode"><code>procedure <b><a  href="netutils.html#copyMAC">copyMAC</a></b>(src : <a  href="system.html#PuInt8">puint8</a>; dst : <a  href="system.html#PuInt8">puint8</a>);</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code>procedure <b><a  href="netutils.html#copyIPv4">copyIPv4</a></b>(src : <a  href="system.html#PuInt8">puint8</a>; dst : <a  href="system.html#PuInt8">puint8</a>);</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code>function <b><a  href="netutils.html#stringToMAC">stringToMAC</a></b>(str : <a  href="system.html#pchar">pchar</a>) : <a  href="system.html#PuInt8">puint8</a>;</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code>function <b><a  href="netutils.html#stringToIPv4">stringToIPv4</a></b>(str : <a  href="system.html#pchar">pchar</a>) : <a  href="system.html#PuInt8">puint8</a>;</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code>procedure <b><a  href="netutils.html#writeMACAddress">writeMACAddress</a></b>(mac : <a  href="system.html#PuInt8">puint8</a>; WND : <a  href="system.html#HWND">HWND</a>);</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code>procedure <b><a  href="netutils.html#writeIPv4Address">writeIPv4Address</a></b>(ip : <a  href="system.html#PuInt8">puint8</a>; WND : <a  href="system.html#HWND">HWND</a>);</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code>procedure <b><a  href="netutils.html#writeMACAddressEx">writeMACAddressEx</a></b>(mac : <a  href="system.html#PuInt8">puint8</a>; WND : <a  href="system.html#HWND">HWND</a>);</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code>procedure <b><a  href="netutils.html#writeIPv4AddressEx">writeIPv4AddressEx</a></b>(ip : <a  href="system.html#PuInt8">puint8</a>; WND : <a  href="system.html#HWND">HWND</a>);</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code>function <b><a  href="netutils.html#MACEqual">MACEqual</a></b>(mac1 : <a  href="system.html#PuInt8">puint8</a>; mac2 : <a  href="system.html#PuInt8">puint8</a>) : boolean;</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code>function <b><a  href="netutils.html#IPEqual">IPEqual</a></b>(ip1 : <a  href="system.html#PuInt8">puint8</a>; ip2 : <a  href="system.html#PuInt8">puint8</a>) : boolean;</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code>function <b><a  href="netutils.html#newPacketContext">newPacketContext</a></b> : <a  href="nettypes.html#PPacketContext">PPacketContext</a>;</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code>procedure <b><a  href="netutils.html#freePacketContext">freePacketContext</a></b>(p_context : <a  href="nettypes.html#PPacketContext">PPacketContext</a>);</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code>function <b><a  href="netutils.html#calculateChecksum">calculateChecksum</a></b>(p_data : <a  href="system.html#PuInt16">puint16</a>; p_len : <a  href="system.html#uInt16">uint16</a>) : <a  href="system.html#uInt16">uint16</a>;</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code>function <b><a  href="netutils.html#verifyChecksum">verifyChecksum</a></b>(p_data : <a  href="system.html#PuInt16">puint16</a>; p_len : <a  href="system.html#uInt16">uint16</a>) : boolean;</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code>function <b><a  href="netutils.html#sameSubnetIPv4">sameSubnetIPv4</a></b>(ip1, ip2, netmask : <a  href="system.html#PuInt8">puint8</a>) : boolean;</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code>procedure <b><a  href="netutils.html#contextMACSwitch">contextMACSwitch</a></b>(p_context : <a  href="nettypes.html#PPacketContext">PPacketContext</a>);</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code>procedure <b><a  href="netutils.html#contextIPv4Switch">contextIPv4Switch</a></b>(p_context : <a  href="nettypes.html#PPacketContext">PPacketContext</a>);</code></td>
+</tr>
+</table>
+<h2 class="description">Description</h2>
+<h3 class="detail">Functions and Procedures</h3>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="copyMAC"></span><code>procedure <b>copyMAC</b>(src : <a  href="system.html#PuInt8">puint8</a>; dst : <a  href="system.html#PuInt8">puint8</a>);</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="copyIPv4"></span><code>procedure <b>copyIPv4</b>(src : <a  href="system.html#PuInt8">puint8</a>; dst : <a  href="system.html#PuInt8">puint8</a>);</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="stringToMAC"></span><code>function <b>stringToMAC</b>(str : <a  href="system.html#pchar">pchar</a>) : <a  href="system.html#PuInt8">puint8</a>;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="stringToIPv4"></span><code>function <b>stringToIPv4</b>(str : <a  href="system.html#pchar">pchar</a>) : <a  href="system.html#PuInt8">puint8</a>;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="writeMACAddress"></span><code>procedure <b>writeMACAddress</b>(mac : <a  href="system.html#PuInt8">puint8</a>; WND : <a  href="system.html#HWND">HWND</a>);</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="writeIPv4Address"></span><code>procedure <b>writeIPv4Address</b>(ip : <a  href="system.html#PuInt8">puint8</a>; WND : <a  href="system.html#HWND">HWND</a>);</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="writeMACAddressEx"></span><code>procedure <b>writeMACAddressEx</b>(mac : <a  href="system.html#PuInt8">puint8</a>; WND : <a  href="system.html#HWND">HWND</a>);</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="writeIPv4AddressEx"></span><code>procedure <b>writeIPv4AddressEx</b>(ip : <a  href="system.html#PuInt8">puint8</a>; WND : <a  href="system.html#HWND">HWND</a>);</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="MACEqual"></span><code>function <b>MACEqual</b>(mac1 : <a  href="system.html#PuInt8">puint8</a>; mac2 : <a  href="system.html#PuInt8">puint8</a>) : boolean;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="IPEqual"></span><code>function <b>IPEqual</b>(ip1 : <a  href="system.html#PuInt8">puint8</a>; ip2 : <a  href="system.html#PuInt8">puint8</a>) : boolean;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="newPacketContext"></span><code>function <b>newPacketContext</b> : <a  href="nettypes.html#PPacketContext">PPacketContext</a>;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="freePacketContext"></span><code>procedure <b>freePacketContext</b>(p_context : <a  href="nettypes.html#PPacketContext">PPacketContext</a>);</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="calculateChecksum"></span><code>function <b>calculateChecksum</b>(p_data : <a  href="system.html#PuInt16">puint16</a>; p_len : <a  href="system.html#uInt16">uint16</a>) : <a  href="system.html#uInt16">uint16</a>;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="verifyChecksum"></span><code>function <b>verifyChecksum</b>(p_data : <a  href="system.html#PuInt16">puint16</a>; p_len : <a  href="system.html#uInt16">uint16</a>) : boolean;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="sameSubnetIPv4"></span><code>function <b>sameSubnetIPv4</b>(ip1, ip2, netmask : <a  href="system.html#PuInt8">puint8</a>) : boolean;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="contextMACSwitch"></span><code>procedure <b>contextMACSwitch</b>(p_context : <a  href="nettypes.html#PPacketContext">PPacketContext</a>);</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="contextIPv4Switch"></span><code>procedure <b>contextIPv4Switch</b>(p_context : <a  href="nettypes.html#PPacketContext">PPacketContext</a>);</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<h2 class="authors">Author</h2>
+<ul class="authors">
+<li>Kieron Morris &lt;<a  href="mailto:kjm@kieronmorris.me">kjm@kieronmorris.me</a>&gt;</li>
+</ul>
+<hr><span class="appinfo"><em>Generated by <a  href="https://github.com/pasdoc/pasdoc/wiki">PasDoc 0.15.0</a>. </em>
+</span>
+</td></tr></table></body></html>

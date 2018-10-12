@@ -1,0 +1,1003 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<title>Asuro: E1000</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="PasDoc 0.15.0">
+<meta http-equiv="content-type" content="text/html; charset=utf-8">
+<link rel="StyleSheet" type="text/css" href="pasdoc.css">
+</head>
+<body>
+<table class="container"><tr><td class="navigation">
+<h2>Asuro</h2><p><a href="AllUnits.html" class="navigation">Units</a></p><p><a href="ClassHierarchy.html" class="navigation">Class Hierarchy</a></p><p><a href="AllClasses.html" class="navigation">Classes, Interfaces, Objects and Records</a></p><p><a href="AllTypes.html" class="navigation">Types</a></p><p><a href="AllVariables.html" class="navigation">Variables</a></p><p><a href="AllConstants.html" class="navigation">Constants</a></p><p><a href="AllFunctions.html" class="navigation">Functions and Procedures</a></p><p><a href="AllIdentifiers.html" class="navigation">Identifiers</a></p><p><a href="GVUses.png" class="navigation">Unit dependency graph</a></p></td><td class="content">
+<h1 class="unit">Unit E1000</h1>
+<div class="sections">
+<div class="one_section"><a class="section" href="#PasDoc-Description">Description</a></div><div class="one_section"><a class="section" href="#PasDoc-Uses">Uses</a></div><div class="one_section">Classes, Interfaces, Objects and Records</div><div class="one_section"><a class="section" href="#PasDoc-FuncsProcs">Functions and Procedures</a></div><div class="one_section"><a class="section" href="#PasDoc-Types">Types</a></div><div class="one_section"><a class="section" href="#PasDoc-Constants">Constants</a></div><div class="one_section">Variables</div></div>
+<span id="PasDoc-Description"></span><h2 class="description">Description</h2>
+<p>
+Driver-&gt;NetDev-&gt;<code>E1000</code> - Intel <code>E1000</code>/I217/82577LM Network Card Driver.
+
+<p></p>
+<span id="PasDoc-Uses"></span><h2 class="uses">Uses</h2>
+<ul class="useslist"><li><a  href="tracer.html">tracer</a></li><li><a  href="console.html">console</a></li><li><a  href="strings.html">strings</a></li><li><a  href="vmemorymanager.html">vmemorymanager</a></li><li><a  href="lmemorymanager.html">lmemorymanager</a></li><li><a  href="drivermanagement.html">drivermanagement</a></li><li><a  href="drivertypes.html">drivertypes</a></li><li><a  href="util.html">util</a></li><li><a  href="idt.html">IDT</a></li><li><a  href="PCI.html">PCI</a></li><li><a  href="terminal.html">terminal</a></li><li><a  href="net.html">net</a></li><li><a  href="nettypes.html">nettypes</a></li><li><a  href="netutils.html">netutils</a></li><li><a  href="isrmanager.html">isrmanager</a></li></ul><h2 class="overview">Overview</h2>
+<span id="PasDoc-FuncsProcs"></span><h3 class="summary">Functions and Procedures</h3>
+<table class="summary wide_list">
+<tr class="list">
+<td class="itemcode"><code>procedure <b><a  href="E1000.html#init">init</a></b>();</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code>function <b><a  href="E1000.html#getMACAddress">getMACAddress</a></b> : <a  href="system.html#PuInt8">puint8</a>;</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code>function <b><a  href="E1000.html#sendPacket">sendPacket</a></b>(p_data : <a  href="system.html#Void">void</a>; p_len : <a  href="system.html#uInt16">uint16</a>) : <a  href="system.html#sInt32">sint32</a>;</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code>function <b><a  href="E1000.html#readStatus">readStatus</a></b> : <a  href="system.html#uInt32">uint32</a>;</code></td>
+</tr>
+</table>
+<span id="PasDoc-Types"></span><h3 class="summary">Types</h3>
+<table class="summary wide_list">
+<tr class="list">
+<td class="itemcode"><code><b><a  href="E1000.html#PE1000_rx_desc">PE1000_rx_desc</a></b> = &circ;<a  href="E1000.html#TE1000_rx_desc">TE1000_rx_desc</a>;</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="E1000.html#TE1000_rx_desc">TE1000_rx_desc</a></b> = bitpacked record
+        address  : <a  href="system.html#uInt64">uint64</a>;
+        length   : <a  href="system.html#uInt16">uint16</a>;
+        checksum : <a  href="system.html#uInt16">uint16</a>;
+        status   : <a  href="system.html#uInt8">uint8</a>;
+        errors   : <a  href="system.html#uInt8">uint8</a>;
+        special  : <a  href="system.html#uInt16">uint16</a>;
+    end;</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="E1000.html#PE1000_tx_desc">PE1000_tx_desc</a></b> = &circ;<a  href="E1000.html#TE1000_tx_desc">TE1000_tx_desc</a>;</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="E1000.html#TE1000_tx_desc">TE1000_tx_desc</a></b> = bitpacked record
+        address : <a  href="system.html#uInt64">uint64</a>;
+        length  : <a  href="system.html#uInt16">uint16</a>;
+        cso     : <a  href="system.html#uInt8">uint8</a>;
+        cmd     : <a  href="system.html#uInt8">uint8</a>;
+        status  : <a  href="system.html#uInt8">uint8</a>;
+        css     : <a  href="system.html#uInt8">uint8</a>;
+        special : <a  href="system.html#uInt16">uint16</a>;
+    end;</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="E1000.html#TCardType">TCardType</a></b> = (...);</code></td>
+</tr>
+</table>
+<span id="PasDoc-Constants"></span><h3 class="summary">Constants</h3>
+<table class="summary wide_list">
+<tr class="list">
+<td class="itemcode"><code><b><a  href="E1000.html#INTEL_VEND">INTEL_VEND</a></b>      = $8086;</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="E1000.html#E1000_DEV">E1000_DEV</a></b>       = $100E;</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="E1000.html#I217_DEV">I217_DEV</a></b>        = $153A;</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="E1000.html#LM82577_DEV">LM82577_DEV</a></b>     = $10EA;</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="E1000.html#REG_CTRL">REG_CTRL</a></b>        = $0000;</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="E1000.html#REG_STATUS">REG_STATUS</a></b>      = $0008;</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="E1000.html#REG_EEPROM">REG_EEPROM</a></b>      = $0014;</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="E1000.html#REG_CTRL_EXT">REG_CTRL_EXT</a></b>    = $0018;</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="E1000.html#REG_IMASK">REG_IMASK</a></b>       = $00D0;</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="E1000.html#REG_RCTRL">REG_RCTRL</a></b>       = $0100;</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="E1000.html#REG_RXDESCLO">REG_RXDESCLO</a></b>    = $2800;</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="E1000.html#REG_RXDESCHI">REG_RXDESCHI</a></b>    = $2804;</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="E1000.html#REG_RXDESCLEN">REG_RXDESCLEN</a></b>   = $2808;</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="E1000.html#REG_RXDESCHEAD">REG_RXDESCHEAD</a></b>  = $2810;</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="E1000.html#REG_RXDESCTAIL">REG_RXDESCTAIL</a></b>  = $2818;</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="E1000.html#REG_TCTRL">REG_TCTRL</a></b>       = $0400;</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="E1000.html#REG_TXDESCLO">REG_TXDESCLO</a></b>    = $3800;</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="E1000.html#REG_TXDESCHI">REG_TXDESCHI</a></b>    = $3804;</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="E1000.html#REG_TXDESCLEN">REG_TXDESCLEN</a></b>   = $3808;</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="E1000.html#REG_TXDESCHEAD">REG_TXDESCHEAD</a></b>  = $3810;</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="E1000.html#REG_TXDESCTAIL">REG_TXDESCTAIL</a></b>  = $3818;</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="E1000.html#REG_RDTR">REG_RDTR</a></b>         = $2820;</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="E1000.html#REG_RXDCTL">REG_RXDCTL</a></b>       = $3828;</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="E1000.html#REG_RADV">REG_RADV</a></b>         = $282C;</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="E1000.html#REG_RSRPD">REG_RSRPD</a></b>        = $2C00;</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="E1000.html#REG_TIPG">REG_TIPG</a></b>         = $0410;</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="E1000.html#ECTRL_SLU">ECTRL_SLU</a></b>        = $40;</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="E1000.html#RCTL_EN">RCTL_EN</a></b>                 =       (1 SHL 1);</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="E1000.html#RCTL_SBP">RCTL_SBP</a></b>                =       (1 SHL 2);</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="E1000.html#RCTL_UPE">RCTL_UPE</a></b>                =       (1 SHL 3);</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="E1000.html#RCTL_MPE">RCTL_MPE</a></b>                =       (1 SHL 4);</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="E1000.html#RCTL_LPE">RCTL_LPE</a></b>                =       (1 SHL 5);</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="E1000.html#RCTL_LBM_NONE">RCTL_LBM_NONE</a></b>           =       (0 SHL 6);</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="E1000.html#RCTL_LBM_PHY">RCTL_LBM_PHY</a></b>            =       (3 SHL 6);</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="E1000.html#RTCL_RDMTS_HALF">RTCL_RDMTS_HALF</a></b>         =       (0 SHL 8);</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="E1000.html#RTCL_RDMTS_QUARTER">RTCL_RDMTS_QUARTER</a></b>      =       (1 SHL 8);</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="E1000.html#RTCL_RDMTS_EIGHTH">RTCL_RDMTS_EIGHTH</a></b>       =       (2 SHL 8);</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="E1000.html#RCTL_MO_36">RCTL_MO_36</a></b>              =       (0 SHL 12);</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="E1000.html#RCTL_MO_35">RCTL_MO_35</a></b>              =       (1 SHL 12);</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="E1000.html#RCTL_MO_34">RCTL_MO_34</a></b>              =       (2 SHL 12);</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="E1000.html#RCTL_MO_32">RCTL_MO_32</a></b>              =       (3 SHL 12);</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="E1000.html#RCTL_BAM">RCTL_BAM</a></b>                =       (1 SHL 15);</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="E1000.html#RCTL_VFE">RCTL_VFE</a></b>                =       (1 SHL 18);</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="E1000.html#RCTL_CFIEN">RCTL_CFIEN</a></b>              =       (1 SHL 19);</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="E1000.html#RCTL_CFI">RCTL_CFI</a></b>                =       (1 SHL 20);</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="E1000.html#RCTL_DPF">RCTL_DPF</a></b>                =       (1 SHL 22);</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="E1000.html#RCTL_PMCF">RCTL_PMCF</a></b>               =       (1 SHL 23);</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="E1000.html#RCTL_SECRC">RCTL_SECRC</a></b>              =       (1 SHL 26);</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="E1000.html#RCTL_BSIZE_256">RCTL_BSIZE_256</a></b>          =       (3 SHL 16);</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="E1000.html#RCTL_BSIZE_512">RCTL_BSIZE_512</a></b>          =       (2 SHL 16);</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="E1000.html#RCTL_BSIZE_1024">RCTL_BSIZE_1024</a></b>         =       (1 SHL 16);</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="E1000.html#RCTL_BSIZE_2048">RCTL_BSIZE_2048</a></b>         =       (0 SHL 16);</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="E1000.html#RCTL_BSIZE_4096">RCTL_BSIZE_4096</a></b>         =       ((3 SHL 16) OR (1 SHL 25));</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="E1000.html#RCTL_BSIZE_8192">RCTL_BSIZE_8192</a></b>         =       ((2 SHL 16) OR (1 SHL 25));</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="E1000.html#RCTL_BSIZE_16384">RCTL_BSIZE_16384</a></b>        =       ((1 SHL 16) OR (1 SHL 25));</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="E1000.html#CMD_EOP">CMD_EOP</a></b>                 =       (1 SHL 0);</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="E1000.html#CMD_IFCS">CMD_IFCS</a></b>                =       (1 SHL 1);</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="E1000.html#CMD_IC">CMD_IC</a></b>                  =       (1 SHL 2);</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="E1000.html#CMD_RS">CMD_RS</a></b>                  =       (1 SHL 3);</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="E1000.html#CMD_RPS">CMD_RPS</a></b>                 =       (1 SHL 4);</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="E1000.html#CMD_VLE">CMD_VLE</a></b>                 =       (1 SHL 6);</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="E1000.html#CMD_IDE">CMD_IDE</a></b>                 =       (1 SHL 7);</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="E1000.html#TCTL_EN">TCTL_EN</a></b>                 =       (1 SHL 1);</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="E1000.html#TCTL_PSP">TCTL_PSP</a></b>                =       (1 SHL 3);</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="E1000.html#TCTL_CT_SHIFT">TCTL_CT_SHIFT</a></b>           =       4;</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="E1000.html#TCTL_COLD_SHIFT">TCTL_COLD_SHIFT</a></b>         =       12;</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="E1000.html#TCTL_SWXOFF">TCTL_SWXOFF</a></b>             =       (1 SHL 22);</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="E1000.html#TCTL_RTLC">TCTL_RTLC</a></b>               =       (1 SHL 24);</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="E1000.html#TSTA_DD">TSTA_DD</a></b>                 =       (1 SHL 0);</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="E1000.html#TSTA_EC">TSTA_EC</a></b>                 =       (1 SHL 1);</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="E1000.html#TSTA_LC">TSTA_LC</a></b>                 =       (1 SHL 2);</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="E1000.html#LSTA_TU">LSTA_TU</a></b>                 =       (1 SHL 3);</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="E1000.html#E1000_NUM_RX_DESC">E1000_NUM_RX_DESC</a></b>       =       32;</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="E1000.html#E1000_NUM_TX_DESC">E1000_NUM_TX_DESC</a></b>       =       8;</code></td>
+</tr>
+</table>
+<h2 class="description">Description</h2>
+<h3 class="detail">Functions and Procedures</h3>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="init"></span><code>procedure <b>init</b>();</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="getMACAddress"></span><code>function <b>getMACAddress</b> : <a  href="system.html#PuInt8">puint8</a>;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="sendPacket"></span><code>function <b>sendPacket</b>(p_data : <a  href="system.html#Void">void</a>; p_len : <a  href="system.html#uInt16">uint16</a>) : <a  href="system.html#sInt32">sint32</a>;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="readStatus"></span><code>function <b>readStatus</b> : <a  href="system.html#uInt32">uint32</a>;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<h3 class="detail">Types</h3>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="PE1000_rx_desc"></span><code><b>PE1000_rx_desc</b> = &circ;<a  href="E1000.html#TE1000_rx_desc">TE1000_rx_desc</a>;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="TE1000_rx_desc"></span><code><b>TE1000_rx_desc</b> = bitpacked record
+        address  : <a  href="system.html#uInt64">uint64</a>;
+        length   : <a  href="system.html#uInt16">uint16</a>;
+        checksum : <a  href="system.html#uInt16">uint16</a>;
+        status   : <a  href="system.html#uInt8">uint8</a>;
+        errors   : <a  href="system.html#uInt8">uint8</a>;
+        special  : <a  href="system.html#uInt16">uint16</a>;
+    end;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="PE1000_tx_desc"></span><code><b>PE1000_tx_desc</b> = &circ;<a  href="E1000.html#TE1000_tx_desc">TE1000_tx_desc</a>;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="TE1000_tx_desc"></span><code><b>TE1000_tx_desc</b> = bitpacked record
+        address : <a  href="system.html#uInt64">uint64</a>;
+        length  : <a  href="system.html#uInt16">uint16</a>;
+        cso     : <a  href="system.html#uInt8">uint8</a>;
+        cmd     : <a  href="system.html#uInt8">uint8</a>;
+        status  : <a  href="system.html#uInt8">uint8</a>;
+        css     : <a  href="system.html#uInt8">uint8</a>;
+        special : <a  href="system.html#uInt16">uint16</a>;
+    end;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="TCardType"></span><code><b>TCardType</b> = (...);</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;<h6 class="description_section">Values</h6>
+<ul>
+<li>
+<span id="ctUnknown">ctUnknown</span></li>
+<li>
+<span id="ctE1000">ctE1000</span></li>
+<li>
+<span id="ctI217">ctI217</span></li>
+<li>
+<span id="ct82577LM">ct82577LM</span></li>
+</ul>
+</td></tr>
+</table>
+<h3 class="detail">Constants</h3>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="INTEL_VEND"></span><code><b>INTEL_VEND</b>      = $8086;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="E1000_DEV"></span><code><b>E1000_DEV</b>       = $100E;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="I217_DEV"></span><code><b>I217_DEV</b>        = $153A;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="LM82577_DEV"></span><code><b>LM82577_DEV</b>     = $10EA;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="REG_CTRL"></span><code><b>REG_CTRL</b>        = $0000;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="REG_STATUS"></span><code><b>REG_STATUS</b>      = $0008;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="REG_EEPROM"></span><code><b>REG_EEPROM</b>      = $0014;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="REG_CTRL_EXT"></span><code><b>REG_CTRL_EXT</b>    = $0018;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="REG_IMASK"></span><code><b>REG_IMASK</b>       = $00D0;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="REG_RCTRL"></span><code><b>REG_RCTRL</b>       = $0100;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="REG_RXDESCLO"></span><code><b>REG_RXDESCLO</b>    = $2800;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="REG_RXDESCHI"></span><code><b>REG_RXDESCHI</b>    = $2804;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="REG_RXDESCLEN"></span><code><b>REG_RXDESCLEN</b>   = $2808;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="REG_RXDESCHEAD"></span><code><b>REG_RXDESCHEAD</b>  = $2810;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="REG_RXDESCTAIL"></span><code><b>REG_RXDESCTAIL</b>  = $2818;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="REG_TCTRL"></span><code><b>REG_TCTRL</b>       = $0400;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="REG_TXDESCLO"></span><code><b>REG_TXDESCLO</b>    = $3800;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="REG_TXDESCHI"></span><code><b>REG_TXDESCHI</b>    = $3804;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="REG_TXDESCLEN"></span><code><b>REG_TXDESCLEN</b>   = $3808;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="REG_TXDESCHEAD"></span><code><b>REG_TXDESCHEAD</b>  = $3810;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="REG_TXDESCTAIL"></span><code><b>REG_TXDESCTAIL</b>  = $3818;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="REG_RDTR"></span><code><b>REG_RDTR</b>         = $2820;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="REG_RXDCTL"></span><code><b>REG_RXDCTL</b>       = $3828;</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+RX Delay Timer <a class="normal" href="ACE.html#register">Register</a></p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="REG_RADV"></span><code><b>REG_RADV</b>         = $282C;</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+RX Descriptor Control</p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="REG_RSRPD"></span><code><b>REG_RSRPD</b>        = $2C00;</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+RX Int. Absolute Delay Timer</p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="REG_TIPG"></span><code><b>REG_TIPG</b>         = $0410;</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+RX Small Packet Detect Interrupt</p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="ECTRL_SLU"></span><code><b>ECTRL_SLU</b>        = $40;</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+Transmit Inter Packet Gap</p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="RCTL_EN"></span><code><b>RCTL_EN</b>                 =       (1 SHL 1);</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+set link up</p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="RCTL_SBP"></span><code><b>RCTL_SBP</b>                =       (1 SHL 2);</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+Receiver Enable</p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="RCTL_UPE"></span><code><b>RCTL_UPE</b>                =       (1 SHL 3);</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+Store Bad Packets</p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="RCTL_MPE"></span><code><b>RCTL_MPE</b>                =       (1 SHL 4);</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+Unicast Promiscuous Enabled</p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="RCTL_LPE"></span><code><b>RCTL_LPE</b>                =       (1 SHL 5);</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+Multicast Promiscuous Enabled</p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="RCTL_LBM_NONE"></span><code><b>RCTL_LBM_NONE</b>           =       (0 SHL 6);</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+Long Packet Reception Enable</p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="RCTL_LBM_PHY"></span><code><b>RCTL_LBM_PHY</b>            =       (3 SHL 6);</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+No Loopback</p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="RTCL_RDMTS_HALF"></span><code><b>RTCL_RDMTS_HALF</b>         =       (0 SHL 8);</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+PHY or external SerDesc loopback</p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="RTCL_RDMTS_QUARTER"></span><code><b>RTCL_RDMTS_QUARTER</b>      =       (1 SHL 8);</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+Free <a class="normal" href="terminal.html#buffer">Buffer</a> Threshold is 1/2 of RDLEN</p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="RTCL_RDMTS_EIGHTH"></span><code><b>RTCL_RDMTS_EIGHTH</b>       =       (2 SHL 8);</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+Free <a class="normal" href="terminal.html#buffer">Buffer</a> Threshold is 1/4 of RDLEN</p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="RCTL_MO_36"></span><code><b>RCTL_MO_36</b>              =       (0 SHL 12);</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+Free <a class="normal" href="terminal.html#buffer">Buffer</a> Threshold is 1/8 of RDLEN</p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="RCTL_MO_35"></span><code><b>RCTL_MO_35</b>              =       (1 SHL 12);</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+Multicast Offset - bits 47:36</p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="RCTL_MO_34"></span><code><b>RCTL_MO_34</b>              =       (2 SHL 12);</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+Multicast Offset - bits 46:35</p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="RCTL_MO_32"></span><code><b>RCTL_MO_32</b>              =       (3 SHL 12);</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+Multicast Offset - bits 45:34</p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="RCTL_BAM"></span><code><b>RCTL_BAM</b>                =       (1 SHL 15);</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+Multicast Offset - bits 43:32</p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="RCTL_VFE"></span><code><b>RCTL_VFE</b>                =       (1 SHL 18);</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+Broadcast Accept Mode</p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="RCTL_CFIEN"></span><code><b>RCTL_CFIEN</b>              =       (1 SHL 19);</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+VLAN Filter Enable</p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="RCTL_CFI"></span><code><b>RCTL_CFI</b>                =       (1 SHL 20);</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+Canonical Form Indicator Enable</p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="RCTL_DPF"></span><code><b>RCTL_DPF</b>                =       (1 SHL 22);</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+Canonical Form Indicator Bit Value</p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="RCTL_PMCF"></span><code><b>RCTL_PMCF</b>               =       (1 SHL 23);</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+Discard Pause Frames</p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="RCTL_SECRC"></span><code><b>RCTL_SECRC</b>              =       (1 SHL 26);</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+Pass MAC Control Frames</p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="RCTL_BSIZE_256"></span><code><b>RCTL_BSIZE_256</b>          =       (3 SHL 16);</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+Strip Ethernet <a class="normal" href="crc.html">CRC</a> <a class="normal" href="terminal.html#buffer">Buffer</a> Sizes</p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="RCTL_BSIZE_512"></span><code><b>RCTL_BSIZE_512</b>          =       (2 SHL 16);</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="RCTL_BSIZE_1024"></span><code><b>RCTL_BSIZE_1024</b>         =       (1 SHL 16);</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="RCTL_BSIZE_2048"></span><code><b>RCTL_BSIZE_2048</b>         =       (0 SHL 16);</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="RCTL_BSIZE_4096"></span><code><b>RCTL_BSIZE_4096</b>         =       ((3 SHL 16) OR (1 SHL 25));</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="RCTL_BSIZE_8192"></span><code><b>RCTL_BSIZE_8192</b>         =       ((2 SHL 16) OR (1 SHL 25));</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="RCTL_BSIZE_16384"></span><code><b>RCTL_BSIZE_16384</b>        =       ((1 SHL 16) OR (1 SHL 25));</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="CMD_EOP"></span><code><b>CMD_EOP</b>                 =       (1 SHL 0);</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+Transmit Command</p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="CMD_IFCS"></span><code><b>CMD_IFCS</b>                =       (1 SHL 1);</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+End of Packet</p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="CMD_IC"></span><code><b>CMD_IC</b>                  =       (1 SHL 2);</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+Insert FCS</p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="CMD_RS"></span><code><b>CMD_RS</b>                  =       (1 SHL 3);</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+Insert <a class="normal" href="asuro.html#CHECKSUM">Checksum</a></p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="CMD_RPS"></span><code><b>CMD_RPS</b>                 =       (1 SHL 4);</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+Report Status</p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="CMD_VLE"></span><code><b>CMD_VLE</b>                 =       (1 SHL 6);</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+Report Packet Sent</p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="CMD_IDE"></span><code><b>CMD_IDE</b>                 =       (1 SHL 7);</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+VLAN Packet Enable</p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="TCTL_EN"></span><code><b>TCTL_EN</b>                 =       (1 SHL 1);</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+Interrupt Delay Enable TCTL <a class="normal" href="ACE.html#register">Register</a></p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="TCTL_PSP"></span><code><b>TCTL_PSP</b>                =       (1 SHL 3);</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+Transmit Enable</p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="TCTL_CT_SHIFT"></span><code><b>TCTL_CT_SHIFT</b>           =       4;</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+Pad Short Packets</p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="TCTL_COLD_SHIFT"></span><code><b>TCTL_COLD_SHIFT</b>         =       12;</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+Collision Threshold</p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="TCTL_SWXOFF"></span><code><b>TCTL_SWXOFF</b>             =       (1 SHL 22);</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+Collision Distance</p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="TCTL_RTLC"></span><code><b>TCTL_RTLC</b>               =       (1 SHL 24);</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+Software XOFF Transmission</p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="TSTA_DD"></span><code><b>TSTA_DD</b>                 =       (1 SHL 0);</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+Re-transmit on Late Collision</p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="TSTA_EC"></span><code><b>TSTA_EC</b>                 =       (1 SHL 1);</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+Descriptor <a class="normal" href="terminal.html#done">Done</a></p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="TSTA_LC"></span><code><b>TSTA_LC</b>                 =       (1 SHL 2);</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+Excess Collisions</p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="LSTA_TU"></span><code><b>LSTA_TU</b>                 =       (1 SHL 3);</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+Late Collision</p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="E1000_NUM_RX_DESC"></span><code><b>E1000_NUM_RX_DESC</b>       =       32;</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+Transmit Underrun</p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="E1000_NUM_TX_DESC"></span><code><b>E1000_NUM_TX_DESC</b>       =       8;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<h2 class="authors">Author</h2>
+<ul class="authors">
+<li>Kieron Morris &lt;<a  href="mailto:kjm@kieronmorris.me">kjm@kieronmorris.me</a>&gt;</li>
+</ul>
+<hr><span class="appinfo"><em>Generated by <a  href="https://github.com/pasdoc/pasdoc/wiki">PasDoc 0.15.0</a>. </em>
+</span>
+</td></tr></table></body></html>

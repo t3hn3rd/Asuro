@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<title>Asuro: lmemorymanager</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="PasDoc 0.15.0">
+<meta http-equiv="content-type" content="text/html; charset=utf-8">
+<link rel="StyleSheet" type="text/css" href="pasdoc.css">
+</head>
+<body>
+<table class="container"><tr><td class="navigation">
+<h2>Asuro</h2><p><a href="AllUnits.html" class="navigation">Units</a></p><p><a href="ClassHierarchy.html" class="navigation">Class Hierarchy</a></p><p><a href="AllClasses.html" class="navigation">Classes, Interfaces, Objects and Records</a></p><p><a href="AllTypes.html" class="navigation">Types</a></p><p><a href="AllVariables.html" class="navigation">Variables</a></p><p><a href="AllConstants.html" class="navigation">Constants</a></p><p><a href="AllFunctions.html" class="navigation">Functions and Procedures</a></p><p><a href="AllIdentifiers.html" class="navigation">Identifiers</a></p><p><a href="GVUses.png" class="navigation">Unit dependency graph</a></p></td><td class="content">
+<h1 class="unit">Unit lmemorymanager</h1>
+<div class="sections">
+<div class="one_section"><a class="section" href="#PasDoc-Description">Description</a></div><div class="one_section"><a class="section" href="#PasDoc-Uses">Uses</a></div><div class="one_section"><a class="section" href="#PasDoc-Classes">Classes, Interfaces, Objects and Records</a></div><div class="one_section"><a class="section" href="#PasDoc-FuncsProcs">Functions and Procedures</a></div><div class="one_section"><a class="section" href="#PasDoc-Types">Types</a></div><div class="one_section"><a class="section" href="#PasDoc-Constants">Constants</a></div><div class="one_section"><a class="section" href="#PasDoc-Variables">Variables</a></div></div>
+<span id="PasDoc-Description"></span><h2 class="description">Description</h2>
+<p>
+<code>LMemoryManager</code> - Logical Memory Management
+
+<p></p>
+<span id="PasDoc-Uses"></span><h2 class="uses">Uses</h2>
+<ul class="useslist"><li><a  href="util.html">util</a></li><li><a  href="vmemorymanager.html">vmemorymanager</a></li><li><a  href="pmemorymanager.html">pmemorymanager</a></li><li><a  href="console.html">console</a></li><li><a  href="tracer.html">tracer</a></li></ul><h2 class="overview">Overview</h2>
+<span id="PasDoc-Classes"></span><h3 class="cio">Classes, Interfaces, Objects and Records</h3>
+<table class="classestable wide_list">
+<tr class="listheader">
+<th class="itemname">Name</th>
+<th class="itemdesc">Description</th>
+</tr>
+<tr class="list">
+<td class="itemname">Packed Record&nbsp;<a class="bold" href="lmemorymanager.THeapPage.html"><code>THeapPage</code></a></td>
+<td class="itemdesc">&nbsp;</td>
+</tr>
+</table>
+<span id="PasDoc-FuncsProcs"></span><h3 class="summary">Functions and Procedures</h3>
+<table class="summary wide_list">
+<tr class="list">
+<td class="itemcode"><code>procedure <b><a  href="lmemorymanager.html#init">init</a></b>;</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code>function <b><a  href="lmemorymanager.html#kalloc">kalloc</a></b>(size : <a  href="system.html#uInt32">uint32</a>) : <a  href="system.html#Void">void</a>;</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code>function <b><a  href="lmemorymanager.html#kpalloc">kpalloc</a></b>(address : <a  href="system.html#uInt32">uint32</a>) : <a  href="system.html#Void">void</a>;</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code>procedure <b><a  href="lmemorymanager.html#kfree">kfree</a></b>(area : <a  href="system.html#Void">void</a>);</code></td>
+</tr>
+</table>
+<span id="PasDoc-Types"></span><h3 class="summary">Types</h3>
+<table class="summary wide_list">
+<tr class="list">
+<td class="itemcode"><code><b><a  href="lmemorymanager.html#THeapEntry">THeapEntry</a></b> = bitpacked record
+        Present : Boolean;
+        Root    : Boolean;
+        Last    : Boolean;
+        Resv1   : Boolean;
+        Resv2   : Boolean;
+        Resv3   : Boolean;
+        Resv4   : Boolean;
+        Resv5   : Boolean;
+    end;</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="lmemorymanager.html#PHeapPage">PHeapPage</a></b> = &circ;<a  href="lmemorymanager.THeapPage.html">THeapPage</a>;</code></td>
+</tr>
+</table>
+<span id="PasDoc-Constants"></span><h3 class="summary">Constants</h3>
+<table class="summary wide_list">
+<tr class="list">
+<td class="itemcode"><code><b><a  href="lmemorymanager.html#ALLOC_SPACE">ALLOC_SPACE</a></b> = 8;</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="lmemorymanager.html#MAX_ENTRIES">MAX_ENTRIES</a></b> = $60000;</code></td>
+</tr>
+<tr class="list">
+<td class="itemcode"><code><b><a  href="lmemorymanager.html#DATA_OFFSET">DATA_OFFSET</a></b> = $100000;</code></td>
+</tr>
+</table>
+<span id="PasDoc-Variables"></span><h3 class="summary">Variables</h3>
+<table class="summary wide_list">
+<tr class="list">
+<td class="itemcode"><code><b><a  href="lmemorymanager.html#Root_Page">Root_Page</a></b>: <a  href="lmemorymanager.html#PHeapPage">PHeapPage</a>;</code></td>
+</tr>
+<tr class="list2">
+<td class="itemcode"><code><b><a  href="lmemorymanager.html#Search_Page">Search_Page</a></b>: <a  href="lmemorymanager.html#PHeapPage">PHeapPage</a>;</code></td>
+</tr>
+</table>
+<h2 class="description">Description</h2>
+<h3 class="detail">Functions and Procedures</h3>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="init"></span><code>procedure <b>init</b>;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="kalloc"></span><code>function <b>kalloc</b>(size : <a  href="system.html#uInt32">uint32</a>) : <a  href="system.html#Void">void</a>;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="kpalloc"></span><code>function <b>kpalloc</b>(address : <a  href="system.html#uInt32">uint32</a>) : <a  href="system.html#Void">void</a>;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="kfree"></span><code>procedure <b>kfree</b>(area : <a  href="system.html#Void">void</a>);</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<h3 class="detail">Types</h3>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="THeapEntry"></span><code><b>THeapEntry</b> = bitpacked record
+        Present : Boolean;
+        Root    : Boolean;
+        Last    : Boolean;
+        Resv1   : Boolean;
+        Resv2   : Boolean;
+        Resv3   : Boolean;
+        Resv4   : Boolean;
+        Resv5   : Boolean;
+    end;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="PHeapPage"></span><code><b>PHeapPage</b> = &circ;<a  href="lmemorymanager.THeapPage.html">THeapPage</a>;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<h3 class="detail">Constants</h3>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="ALLOC_SPACE"></span><code><b>ALLOC_SPACE</b> = 8;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="MAX_ENTRIES"></span><code><b>MAX_ENTRIES</b> = $60000;</code></td>
+</tr>
+<tr><td colspan="1">
+<p>
+64-Bit Allocations</p>
+</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="DATA_OFFSET"></span><code><b>DATA_OFFSET</b> = $100000;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<h3 class="detail">Variables</h3>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="Root_Page"></span><code><b>Root_Page</b>: <a  href="lmemorymanager.html#PHeapPage">PHeapPage</a>;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<table class="detail wide_list">
+<tr class="list">
+<td class="itemcode"><span id="Search_Page"></span><code><b>Search_Page</b>: <a  href="lmemorymanager.html#PHeapPage">PHeapPage</a>;</code></td>
+</tr>
+<tr><td colspan="1">
+&nbsp;</td></tr>
+</table>
+<h2 class="authors">Author</h2>
+<ul class="authors">
+<li>Kieron Morris &lt;<a  href="mailto:kjm@kieronmorris.me">kjm@kieronmorris.me</a>&gt;</li>
+</ul>
+<hr><span class="appinfo"><em>Generated by <a  href="https://github.com/pasdoc/pasdoc/wiki">PasDoc 0.15.0</a>. </em>
+</span>
+</td></tr></table></body></html>
