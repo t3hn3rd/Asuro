@@ -48,7 +48,7 @@ type
 
 
 
-{ Default Buffer Specific }
+{! Default Buffer Specific }
 
 { 
 	Initialize the Frame Buffer & Window Manager ready for use.
@@ -305,128 +305,544 @@ procedure _newline();
 
 
 
+{! Window Specific }
 
-{ Window Specific }
-
-
+{ 
+	Clear a Window Canvas.
+	@param(WND A Window Handle.)
+}
 procedure clearWND(WND : uint32);
+
+{ 
+	Clear a Window Canvas, with the specified attributes.
+	@param(WND A Window Handle.)
+	@param(Attributes A 32-bit value representing an attribute set.)
+}
 procedure clearWNDEx(WND : uint32; attributes : uint32);
 
+{ 
+	Write an ASCII character to a specified Window.
+	@param(Character An 8-bit value representing an ASCII character.)
+	@param(WND A 32-bit handle to a Window.)
+}
 procedure writecharWND(character : char; WND : uint32);
+
+{ 
+	Write a single 8-bit character to a Window, followed by starting a new line.
+	@param(character An 8-bit value representing an ASCII character.) 
+	@param(WND A 32-bit handle to a Window.)
+}
 procedure writecharlnWND(character : char; WND : uint32);
+
+{ 
+	Write a single 8-bit character to a Window, specifying custom color attributes.
+	@param(character An 8-bit value representing an ASCII character.)
+	@param(attributes A 32-bit value representing the colors for the background and foreground.)
+	@param(WND A 32-bit handle to a Window.)
+}
 procedure writecharexWND(character : char; attributes: uint32; WND : uint32);
+
+{ 
+	Write a single 8-bit character to a Window, followed by starting a new line, specifying custom color attributes.
+	@param(character An 8-bit value representing an ASCII character.)
+	@param(attributes A 32-bit value representing the colors for the background and foreground.)
+	@param(WND A 32-bit handle to a Window.)
+}
 procedure writecharlnexWND(character : char; attributes: uint32; WND : uint32);
 
+{ 
+	Simple console write for debugging to a Window.
+	@param(identifier A NULL terminated string with the name of the module printing the output.)
+	@param(str A NULL terminated string with the debug message.)
+	@param(WND A 32-bit handle to a Window.)
+}
 procedure OutputWND(identifier : PChar; str : PChar; WND : uint32);
+
+{ 
+	Simple console writeln for debugging to a Window.
+	@param(identifier A NULL terminated string with the name of the module printing the output.)
+	@param(str A NULL terminated string with the debug message.)
+	@param(WND A 32-bit handle to a Window.)
+}
 procedure OutputlnWND(identifier : PChar; str : PChar; WND : uint32);
 
+{ 
+	Write a NULL terminated string to a Window.
+	@param(str A NULL terminated string with the debug message.)
+	@param(WND A 32-bit handle to a Window.)
+}
 procedure writestringWND(str: PChar; WND : uint32);
+
+{ 
+	Write a NULL terminated string to a Window, followed by a new-line.
+	@param(str A NULL terminated string with the debug message.)
+	@param(WND A 32-bit handle to a Window.)
+}
 procedure writestringlnWND(str: PChar; WND : uint32);
+
+{ 
+	Write a NULL terminated string to a Window, with the specified attributes.
+	@param(str A NULL terminated string with the debug message.)
+	@param(attributes A 32-bit representation of the background/foreground colors.)
+	@param(WND A 32-bit handle to a Window.)
+}
 procedure writestringexWND(str: PChar; attributes: uint32; WND : uint32);
+
+{ 
+	Write a NULL terminated string + new-line to a Window, with the specified attributes.
+	@param(str A NULL terminated string with the debug message.)
+	@param(attributes A 32-bit representation of the background/foreground colors.)
+	@param(WND A 32-bit handle to a Window.)
+}
 procedure writestringlnexWND(str: PChar; attributes: uint32; WND : uint32);
 
+{ 
+	Write a 32-bit value to a Window.
+	@param(i A 32-bit value.)
+	@param(WND A 32-bit handle to a Window.)
+}
 procedure writeintWND(i: Integer; WND : uint32);
+
+{ 
+	Write a 32-bit value to a Window followed by a new-line.
+	@param(i A 32-bit value.)
+	@param(WND A 32-bit handle to a Window.)
+}
 procedure writeintlnWND(i: Integer; WND : uint32);
+
+{ 
+	Write a 32-bit value to a Window, with the specified attributes.
+	@param(i A 32-bit value.)
+	@param(attributes A 32-bit representation of the background/foreground colors.)
+	@param(WND A 32-bit handle to a Window.)
+}
 procedure writeintexWND(i: Integer; attributes: uint32; WND : uint32);
+
+{ 
+	Write a 32-bit value + new-line to a Window, with the specified attributes.
+	@param(i A 32-bit value.)
+	@param(attributes A 32-bit representation of the background/foreground colors.)
+	@param(WND A 32-bit handle to a Window.)
+}
 procedure writeintlnexWND(i: Integer; attributes: uint32; WND : uint32);
 
+{ 
+	Write an 8-bit Hex Pair to a Window.
+	@param(b An 8-bit value.)
+	@param(WND A 32-bit handle to a Window.)
+}
 procedure writehexpairWND(b : uint8; WND : uint32);
+
+{ 
+	Write an 8-bit Hex Pair to a Window, with the specified attributes.
+	@param(b An 8-bit value.)
+	@param(attributes A 32-bit representation of the background/foreground colors.)
+	@param(WND A 32-bit handle to a Window.)
+}
 procedure writehexpairExWND(b : uint8; Attributes : uint32; WND : uint32);
+
+{ 
+	Write a 32-bit value as Hex Pairs to a Window.
+	@param(i A 32-bit value.)
+	@param(WND A 32-bit handle to a Window.)
+}
 procedure writehexWND(i: DWORD; WND : uint32);
+
+{ 
+	Write a 32-bit value as Hex Pairs to a Window, followed by a new-line.
+	@param(i A 32-bit value.)
+	@param(WND A 32-bit handle to a Window.)
+}
 procedure writehexlnWND(i: DWORD; WND : uint32);
+
+{ 
+	Write a 32-bit value as Hex Pairs to a Window, with the specified attributes.
+	@param(b A 32-bit value.)
+	@param(attributes A 32-bit representation of the background/foreground colors.)
+	@param(WND A 32-bit handle to a Window.)
+}
 procedure writehexexWND(i : DWORD; attributes: uint32; WND : uint32);
+
+{ 
+	Write a 32-bit value as Hex Pairs + new-line to a Window, with the specified attributes.
+	@param(b A 32-bit value.)
+	@param(attributes A 32-bit representation of the background/foreground colors.)
+	@param(WND A 32-bit handle to a Window.)
+}
 procedure writehexlnexWND(i: DWORD; attributes: uint32; WND : uint32);
 
+{ 
+	Write an 8-bit value as binary to a Window.
+	@param(b An 8-bit value.)
+	@param(WND A 32-bit handle to a Window.)
+}
 procedure writebin8WND(b : uint8; WND : uint32);
+
+{ 
+	Write an 8-bit value as binary to a Window, followed by a new-line.
+	@param(b An 8-bit value.)
+	@param(WND A 32-bit handle to a Window.)
+}
 procedure writebin8lnWND(b : uint8; WND : uint32);
+
+{ 
+	Write an 8-bit value as binary to a Window, with the specified attributes.
+	@param(b An 8-bit value.)
+	@param(attributes A 32-bit representation of the background/foreground colors.)
+	@param(WND A 32-bit handle to a Window.)
+}
 procedure writebin8exWND(b : uint8; attributes: uint32; WND : uint32);
+
+{ 
+	Write an 8-bit value as binary + new-line to a Window, with the specified attributes.
+	@param(b An 8-bit value.)
+	@param(attributes A 32-bit representation of the background/foreground colors.)
+	@param(WND A 32-bit handle to a Window.)
+}
 procedure writebin8lnexWND(b : uint8; attributes: uint32; WND : uint32);
 
+{ 
+	Write a 16-bit value as binary to a Window.
+	@param(b A 16-bit value.)
+	@param(WND A 32-bit handle to a Window.)
+}
 procedure writebin16WND(b : uint16; WND : uint32);
+
+{ 
+	Write an 16-bit value as binary to a Window, followed by a new-line.
+	@param(b A 16-bit value.)
+	@param(WND A 32-bit handle to a Window.)
+}
 procedure writebin16lnWND(b : uint16; WND : uint32);
+
+{
+	Write a 16-bit value as binary to a Window, with the specified attributes.
+	@param(b A 16-bit value.)
+	@param(attributes A 32-bit representation of the background/foreground colors.)
+	@param(WND A 32-bit handle to a Window.)
+}
 procedure writebin16exWND(b : uint16; attributes: uint32; WND : uint32);
+
+{
+	Write a 16-bit value as binary + new-line to a Window, with the specified attributes.
+	@param(b A 16-bit value.)
+	@param(attributes A 32-bit representation of the background/foreground colors.)
+	@param(WND A 32-bit handle to a Window.)
+}
 procedure writebin16lnexWND(b : uint16; attributes: uint32; WND : uint32);
 
+{ 
+	Write a 32-bit value as binary to a Window.
+	@param(b A 32-bit value.)
+	@param(WND A 32-bit handle to a Window.)
+}
 procedure writebin32WND(b : uint32; WND : uint32);
+
+{ 
+	Write an 32-bit value as binary to a Window, followed by a new-line.
+	@param(b A 32-bit value.)
+	@param(WND A 32-bit handle to a Window.)
+}
 procedure writebin32lnWND(b : uint32; WND : uint32);
+
+{
+	Write a 32-bit value as binary to a Window, with the specified attributes.
+	@param(b A 32-bit value.)
+	@param(attributes A 32-bit representation of the background/foreground colors.)
+	@param(WND A 32-bit handle to a Window.)
+}
 procedure writebin32exWND(b : uint32; attributes: uint32; WND : uint32);
+
+{
+	Write a 32-bit value as binary + new-line to a Window, with the specified attributes.
+	@param(b A 32-bit value.)
+	@param(attributes A 32-bit representation of the background/foreground colors.)
+	@param(WND A 32-bit handle to a Window.)
+}
 procedure writebin32lnexWND(b : uint32; attributes: uint32; WND : uint32);
 
+{ 
+	Move a caret belonging to a Window back 1 position and remove the character within the cell the caret occupies.
+	@param(WND A 32-bit handle to a Window.)
+}
 procedure backspaceWND(WND : uint32);
+
+{
+	Set the caret belonging to a Window to a specified position.
+	@param(X The new Horizontal position.)
+	@param(Y The new Vertical postion.)
+	@param(WND A 32-bit handle to a Window.)
+}
 procedure setCursorPosWND(x : uint32; y : uint32; WND : HWND);
 
+{ 
+	Increment the cursor within a Window one cell to the right (x+1). 
+	@param(WND A 32-bit handle to a Window.)
+}
 procedure _increment_x_WND(WND : uint32);
+
+{ 
+	Increment the cursor within a Window one cell down (y+1). 
+	@param(WND A 32-bit handle to a Window.)
+}
 procedure _increment_y_WND(WND : uint32);
+
+{ 
+	Increment the cursor one cell down (y+1), performing a Y-Axis roll when when needed.
+	@param(WND A 32-bit handle to a Window.)
+}
 procedure _safeincrement_y_WND(WND : uint32);
+
+{ 
+	Increment the cursor within a Window one cell to the right (x+1), wrapping to the next line and performing a Y-Axis scroll when when needed. 
+	@param(WND A 32-bit handle to a Window.)
+}
 procedure _safeincrement_x_WND(WND : uint32);
+
+{ 
+	Increment the cursor within a Window one cell down and reposition it at the first X Cell (y+1, x=0),performing a Y-Axis scroll when needed.
+	@param(WND A 32-bit handle to a Window.)
+}
 procedure _newlineWND(WND : uint32);
 
-{ Drawing }
 
+
+
+{! Drawing }
+
+{
+	Draw an ASCII char to raw screen space conforming to cell constraints.
+	@param(C An 8-bit ASCII Character.)
+	@param(X An 8-bit Horizontal Cell position.)
+	@param(Y An 8-bit Vertical Cell Position.)
+	@param(fgcolor The 16-bit color of the Character.)
+	@param(bgcolor The 16-bit background color of the cell.)
+}
 procedure outputChar(c : char; x : uint8; y : uint8; fgcolor : uint16; bgcolor : uint16);
+
+{
+	Draw an ASCII char to raw screen space.
+	@param(C An 8-bit ASCII Character.)
+	@param(X A 32-bit Horizontal Screen position.)
+	@param(Y A 32-bit Vertical Screen Position.)
+	@param(fgcolor The 16-bit color of the Character.)
+	@param(bgcolor The 16-bit background color of the cell.)
+}
 procedure outputCharToScreenSpace(c : char; x : uint32; y : uint32; fgcolor : uint16);
+
+{
+	Draw an ASCII char without a background to raw screen space conforming to cell constraints.
+	@param(C An 8-bit ASCII Character.)
+	@param(X An 8-bit Horizontal Cell position.)
+	@param(Y An 8-bit Vertical Cell Position.)
+	@param(fgcolor The 16-bit color of the Character.)
+}
 procedure outputCharTransparent(c : char; x : uint8; y : uint8; fgcolor : uint16);
 
+{
+	Get 16-bits of pixel information from the screen position(x,y).
+	@param(X A 32-bit Horizontal Screen position.)
+	@param(Y A 32-bit Vertical Screen Position.)
+	@returns(16-bits of Pixel Information)
+}
 function  getPixel(x : uint32; y : uint32) : uint16;
+
+{
+	Draw 16-bits of pixel information at the screen position(x,y).
+	@param(X A 32-bit Horizontal Screen position.)
+	@param(Y A 32-bit Vertical Screen Position.)
+	@param(color 16-bits of Pixel Information)
+}
 procedure drawPixel(x : uint32; y : uint32; color : uint16);
+
+{
+	Get 32-bits of pixel information from the screen position(x,y).
+	@param(X A 32-bit Horizontal Screen position.)
+	@param(Y A 32-bit Vertical Screen Position.)
+	@returns(32-bits of Pixel Information)
+}
 function  getPixel32(x : uint32; y : uint32) : uint32;
+
+{
+	Draw 32-bits of pixel information at the screen position(x,y).
+	@param(X A 32-bit Horizontal Screen position.)
+	@param(Y A 32-bit Vertical Screen Position.)
+	@param(color 32-bits of Pixel Information)
+}
 procedure drawPixel32(x : uint32; y : uint32; pixel : uint32);
+
+{
+	Get 64-bits of pixel information from the screen position(x,y).
+	@param(X A 32-bit Horizontal Screen position.)
+	@param(Y A 32-bit Vertical Screen Position.)
+	@returns(64-bits of Pixel Information)
+}
 function  getPixel64(x : uint32; y : uint32) : uint64;
+
+{
+	Draw 64-bits of pixel information at the screen position(x,y).
+	@param(X A 32-bit Horizontal Screen position.)
+	@param(Y A 32-bit Vertical Screen Position.)
+	@param(color 64-bits of Pixel Information)
+}
 procedure drawPixel64(x : uint32; y : uint32; pixel : uint64);
 
-{ Windows Methods }
 
+
+
+{! Windows Methods }
+
+{
+	Set the position of the mouse cursor relative to screen space.
+	@param(X A 32-bit Horizontal Screen Position.)
+	@param(Y A 32-bit Vertical Screen Position.)
+}
 procedure setMousePosition(x : uint32; y : uint32);
+
+{
+	Redraw all of the Window adhearing to Z-Order.
+}
 procedure redrawWindows;
+
+{
+	Toggle the visibility of a Window.
+	@param(WND A 32-bit handle to a Window.)
+}
 procedure toggleWNDVisible(WND : uint32);
+
+{
+	Change a Windows visibility.
+	@param(WND A 32-bit handle to a Window.)
+	@param(Visible @true or @false.)
+}
 procedure setWNDVisible(WND : uint32; visible : boolean);
+
+{
+	Close all open Windows and release handles.
+}
 procedure closeAllWindows;
+
+{
+	Spawn a new Window at cell(x,y) with specified Width, Height and Title.
+	@param(X 32-bit Horizontal Cell for the top-left corner of the Window.)
+	@param(Y 32-bit Vertical Cell for the top-left corner of the Window.)
+	@param(Width 32-bit Width of the Window in Cells.)
+	@param(Height 32-bit Height of the Window in Cells.)
+	@param(Title NULL Terminated String used as the Title for the Window.)
+	@retruns(A 32-bit Handle for the new Window.)
+}
 function  newWindow(x : uint32; y : uint32; Width : uint32; Height : uint32; Title : PChar) : HWND;
+
+{
+	Register an Event Handler to a Window
+	@param(WND Handle for the Window the event should be registered against.)
+	@param(Event Type of event to register.)
+	@param(Handler Procedure to be called upon the event firing.)
+	@returns(@true for success @false for failure.)
+}
 function  registerEventHandler(WND : HWND; Event : TEventType; Handler : void) : boolean;
+
+{
+	Forcefully close all Windows 
+}
 procedure forceQuitAll;
+
+{
+	Close a Window specified by its Handle
+	@param(WND The handle to the target Window.)
+}
 procedure closeWindow(WND : HWND);
+
+{
+	Enable or disable the drawing of the borders surrounding a Window.
+	@param(WND A 32-bit Handle to the target Window.)
+	@param(Enabled @true for borders to be shown, @false for borders to be hidden.)
+}
 procedure bordersEnabled(WND : HWND; enabled : boolean);
+
+{
+	Set a specified Window as a Shell Window (Window cannot be moved or closed).
+	@param(WND 32-bit Handle for the target Window.)
+	@param(b @true to set Target as a Shell Window, @false to set Target as a normal Window.)
+}
 procedure SetShellWindow(WND : HWND; b : boolean);
+
+{
+	Get the title of a specified Window.
+	@param(WND 32-bit Handle for the target Window.)
+	@returns(NULL Terminated PChar.)
+}
 function  getWindowName(WND : HWND) : pchar;
 
+{
+	Enable or disable the mouse.
+	@param(b @true for mouse enabled, @false for mouse disabled.)
+}
 procedure mouseEnabled(b : boolean);
 
+{
+	Callback for a MouseDown event.
+}
 procedure _MouseDown();
+
+{
+	Callback for a MouseUp event.
+}
 procedure _MouseUp();
+
+{
+	Callback for a MouseClick event.
+	@param(Left @true for a Left-Click, @false for a Right-Click.)
+}
 procedure _MouseClick(left : boolean);
 
+{
+	Set the attributes used for drawing the border around Windows.
+	@param(Colors A 32-bit value representing the attributes (background/foreground).)
+}
 procedure setWindowColors(colors : uint32);
+
+{
+	Get a Pointer to the attribute used for Window Borders.
+	@returns(A 32-bit pointer to the Borders Attribute.)
+}
 function getWindowColorPtr : puint32;
 
 const
-	MAX_WINDOWS = 255; //<Maximum number of Windows open.
-    DefaultWND  = 0;   //<The Window assigned for output when no Window is specified. (Default).
+	MAX_WINDOWS = 255; //< Maximum number of Windows open.
+    DefaultWND  = 0;   //< The Window assigned for output when no Window is specified. (Default).
 
 implementation
 
 type
-	{ Properties pertaining to the raw screen matrix.}
+	{ Properties pertaining to the raw screen matrix. }
     TConsoleProperties = record
-      Default_Attribute : uint32; //Attribute (Colors) to use when no override defined.
+      Default_Attribute : uint32; //< Attribute (Colors) to use when no override defined.
     end;
 
-	{ Unrasterized representation of a character.}
+	{ Unrasterized representation of a character. }
     TCharacter = bitpacked record
-      Character  : Char;
-      attributes : uint32;
-      visible    : boolean;
+      Character  : Char;         //< ASCII Character
+      attributes : uint32;		 //< 32-bit Representation of Background/Foreground Colors.
+      visible    : boolean;		 //< Character is visible when rasterized. @true or @false.
     end;
-    PCharacter = ^TCharacter;
+    { Pointer to an Unrasterized Character. }
+	PCharacter = ^TCharacter;
 
 	{ Unrasterized screen matrix. }
     TVideoMemory = Array[0..1999] of TCharacter;
+	{ Pointer to the Unrasterized screen matrix. }
     PVideoMemory = ^TVideoMemory;
 
+	{ Font Mask }
     TMask = Array[0..63] of Array[0..159] of uint32;
 
+	{ 2D Unrasterized Matrix }
     T2DVideoMemory = Array[0..63] of Array[0..159] of TCharacter;
+	{ Pointer to 2D Unrasterized Matrix }
     P2DVideoMemory = ^T2DVideoMemory;
 
+	
     TMouseCoord = record
         X : sint32;
         Y : sint32;
