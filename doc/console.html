@@ -973,7 +973,12 @@ Increment the cursor one cell down and reposition it at the first X Cell (y+1, x
 </tr>
 <tr><td colspan="1">
 <p>
-Window Specific</p>
+<a class="normal" href="console.html#clear">Clear</a> a Window Canvas. </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>WND</dt>
+<dd>A Window Handle.</dd>
+</dl>
 </td></tr>
 </table>
 <table class="detail wide_list">
@@ -981,280 +986,664 @@ Window Specific</p>
 <td class="itemcode"><span id="clearWNDEx"></span><code>procedure <b>clearWNDEx</b>(WND : <a  href="system.html#uInt32">uint32</a>; attributes : <a  href="system.html#uInt32">uint32</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+<a class="normal" href="console.html#clear">Clear</a> a Window Canvas, with the specified attributes.  </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>WND</dt>
+<dd>A Window Handle.</dd>
+<dt>Attributes</dt>
+<dd>A 32-bit value representing an attribute set.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="writecharWND"></span><code>procedure <b>writecharWND</b>(character : char; WND : <a  href="system.html#uInt32">uint32</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Write an ASCII character to a specified Window.  </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>Character</dt>
+<dd>An 8-bit value representing an ASCII character.</dd>
+<dt>WND</dt>
+<dd>A 32-bit handle to a Window.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="writecharlnWND"></span><code>procedure <b>writecharlnWND</b>(character : char; WND : <a  href="system.html#uInt32">uint32</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Write a single 8-bit character to a Window, followed by starting a new line.  </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>character</dt>
+<dd>An 8-bit value representing an ASCII character.</dd>
+<dt>WND</dt>
+<dd>A 32-bit handle to a Window.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="writecharexWND"></span><code>procedure <b>writecharexWND</b>(character : char; attributes: <a  href="system.html#uInt32">uint32</a>; WND : <a  href="system.html#uInt32">uint32</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Write a single 8-bit character to a Window, specifying custom color attributes.   </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>character</dt>
+<dd>An 8-bit value representing an ASCII character.</dd>
+<dt>attributes</dt>
+<dd>A 32-bit value representing the colors for the background and foreground.</dd>
+<dt>WND</dt>
+<dd>A 32-bit handle to a Window.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="writecharlnexWND"></span><code>procedure <b>writecharlnexWND</b>(character : char; attributes: <a  href="system.html#uInt32">uint32</a>; WND : <a  href="system.html#uInt32">uint32</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Write a single 8-bit character to a Window, followed by starting a new line, specifying custom color attributes.   </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>character</dt>
+<dd>An 8-bit value representing an ASCII character.</dd>
+<dt>attributes</dt>
+<dd>A 32-bit value representing the colors for the background and foreground.</dd>
+<dt>WND</dt>
+<dd>A 32-bit handle to a Window.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="OutputWND"></span><code>procedure <b>OutputWND</b>(identifier : <a  href="system.html#pchar">PChar</a>; str : <a  href="system.html#pchar">PChar</a>; WND : <a  href="system.html#uInt32">uint32</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Simple <a class="normal" href="console.html">console</a> write for debugging to a Window.   </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>identifier</dt>
+<dd>A NULL terminated string with the name of the module printing the <a class="normal" href="console.html#Output">output</a>.</dd>
+<dt>str</dt>
+<dd>A NULL terminated string with the debug message.</dd>
+<dt>WND</dt>
+<dd>A 32-bit handle to a Window.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="OutputlnWND"></span><code>procedure <b>OutputlnWND</b>(identifier : <a  href="system.html#pchar">PChar</a>; str : <a  href="system.html#pchar">PChar</a>; WND : <a  href="system.html#uInt32">uint32</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Simple <a class="normal" href="console.html">console</a> writeln for debugging to a Window.   </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>identifier</dt>
+<dd>A NULL terminated string with the name of the module printing the <a class="normal" href="console.html#Output">output</a>.</dd>
+<dt>str</dt>
+<dd>A NULL terminated string with the debug message.</dd>
+<dt>WND</dt>
+<dd>A 32-bit handle to a Window.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="writestringWND"></span><code>procedure <b>writestringWND</b>(str: <a  href="system.html#pchar">PChar</a>; WND : <a  href="system.html#uInt32">uint32</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Write a NULL terminated string to a Window.  </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>str</dt>
+<dd>A NULL terminated string with the debug message.</dd>
+<dt>WND</dt>
+<dd>A 32-bit handle to a Window.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="writestringlnWND"></span><code>procedure <b>writestringlnWND</b>(str: <a  href="system.html#pchar">PChar</a>; WND : <a  href="system.html#uInt32">uint32</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Write a NULL terminated string to a Window, followed by a new-line.  </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>str</dt>
+<dd>A NULL terminated string with the debug message.</dd>
+<dt>WND</dt>
+<dd>A 32-bit handle to a Window.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="writestringexWND"></span><code>procedure <b>writestringexWND</b>(str: <a  href="system.html#pchar">PChar</a>; attributes: <a  href="system.html#uInt32">uint32</a>; WND : <a  href="system.html#uInt32">uint32</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Write a NULL terminated string to a Window, with the specified attributes.   </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>str</dt>
+<dd>A NULL terminated string with the debug message.</dd>
+<dt>attributes</dt>
+<dd>A 32-bit representation of the background/foreground colors.</dd>
+<dt>WND</dt>
+<dd>A 32-bit handle to a Window.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="writestringlnexWND"></span><code>procedure <b>writestringlnexWND</b>(str: <a  href="system.html#pchar">PChar</a>; attributes: <a  href="system.html#uInt32">uint32</a>; WND : <a  href="system.html#uInt32">uint32</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Write a NULL terminated string + new-line to a Window, with the specified attributes.   </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>str</dt>
+<dd>A NULL terminated string with the debug message.</dd>
+<dt>attributes</dt>
+<dd>A 32-bit representation of the background/foreground colors.</dd>
+<dt>WND</dt>
+<dd>A 32-bit handle to a Window.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="writeintWND"></span><code>procedure <b>writeintWND</b>(i: <a  href="system.html#integer">Integer</a>; WND : <a  href="system.html#uInt32">uint32</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Write a 32-bit value to a Window.  </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>i</dt>
+<dd>A 32-bit value.</dd>
+<dt>WND</dt>
+<dd>A 32-bit handle to a Window.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="writeintlnWND"></span><code>procedure <b>writeintlnWND</b>(i: <a  href="system.html#integer">Integer</a>; WND : <a  href="system.html#uInt32">uint32</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Write a 32-bit value to a Window followed by a new-line.  </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>i</dt>
+<dd>A 32-bit value.</dd>
+<dt>WND</dt>
+<dd>A 32-bit handle to a Window.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="writeintexWND"></span><code>procedure <b>writeintexWND</b>(i: <a  href="system.html#integer">Integer</a>; attributes: <a  href="system.html#uInt32">uint32</a>; WND : <a  href="system.html#uInt32">uint32</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Write a 32-bit value to a Window, with the specified attributes.   </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>i</dt>
+<dd>A 32-bit value.</dd>
+<dt>attributes</dt>
+<dd>A 32-bit representation of the background/foreground colors.</dd>
+<dt>WND</dt>
+<dd>A 32-bit handle to a Window.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="writeintlnexWND"></span><code>procedure <b>writeintlnexWND</b>(i: <a  href="system.html#integer">Integer</a>; attributes: <a  href="system.html#uInt32">uint32</a>; WND : <a  href="system.html#uInt32">uint32</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Write a 32-bit value + new-line to a Window, with the specified attributes.   </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>i</dt>
+<dd>A 32-bit value.</dd>
+<dt>attributes</dt>
+<dd>A 32-bit representation of the background/foreground colors.</dd>
+<dt>WND</dt>
+<dd>A 32-bit handle to a Window.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="writehexpairWND"></span><code>procedure <b>writehexpairWND</b>(b : <a  href="system.html#uInt8">uint8</a>; WND : <a  href="system.html#uInt32">uint32</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Write an 8-bit Hex Pair to a Window.  </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>b</dt>
+<dd>An 8-bit value.</dd>
+<dt>WND</dt>
+<dd>A 32-bit handle to a Window.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="writehexpairExWND"></span><code>procedure <b>writehexpairExWND</b>(b : <a  href="system.html#uInt8">uint8</a>; Attributes : <a  href="system.html#uInt32">uint32</a>; WND : <a  href="system.html#uInt32">uint32</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Write an 8-bit Hex Pair to a Window, with the specified attributes.   </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>b</dt>
+<dd>An 8-bit value.</dd>
+<dt>attributes</dt>
+<dd>A 32-bit representation of the background/foreground colors.</dd>
+<dt>WND</dt>
+<dd>A 32-bit handle to a Window.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="writehexWND"></span><code>procedure <b>writehexWND</b>(i: <a  href="system.html#dword">DWORD</a>; WND : <a  href="system.html#uInt32">uint32</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Write a 32-bit value as Hex Pairs to a Window.  </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>i</dt>
+<dd>A 32-bit value.</dd>
+<dt>WND</dt>
+<dd>A 32-bit handle to a Window.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="writehexlnWND"></span><code>procedure <b>writehexlnWND</b>(i: <a  href="system.html#dword">DWORD</a>; WND : <a  href="system.html#uInt32">uint32</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Write a 32-bit value as Hex Pairs to a Window, followed by a new-line.  </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>i</dt>
+<dd>A 32-bit value.</dd>
+<dt>WND</dt>
+<dd>A 32-bit handle to a Window.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="writehexexWND"></span><code>procedure <b>writehexexWND</b>(i : <a  href="system.html#dword">DWORD</a>; attributes: <a  href="system.html#uInt32">uint32</a>; WND : <a  href="system.html#uInt32">uint32</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Write a 32-bit value as Hex Pairs to a Window, with the specified attributes.   </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>b</dt>
+<dd>A 32-bit value.</dd>
+<dt>attributes</dt>
+<dd>A 32-bit representation of the background/foreground colors.</dd>
+<dt>WND</dt>
+<dd>A 32-bit handle to a Window.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="writehexlnexWND"></span><code>procedure <b>writehexlnexWND</b>(i: <a  href="system.html#dword">DWORD</a>; attributes: <a  href="system.html#uInt32">uint32</a>; WND : <a  href="system.html#uInt32">uint32</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Write a 32-bit value as Hex Pairs + new-line to a Window, with the specified attributes.   </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>b</dt>
+<dd>A 32-bit value.</dd>
+<dt>attributes</dt>
+<dd>A 32-bit representation of the background/foreground colors.</dd>
+<dt>WND</dt>
+<dd>A 32-bit handle to a Window.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="writebin8WND"></span><code>procedure <b>writebin8WND</b>(b : <a  href="system.html#uInt8">uint8</a>; WND : <a  href="system.html#uInt32">uint32</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Write an 8-bit value as binary to a Window.  </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>b</dt>
+<dd>An 8-bit value.</dd>
+<dt>WND</dt>
+<dd>A 32-bit handle to a Window.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="writebin8lnWND"></span><code>procedure <b>writebin8lnWND</b>(b : <a  href="system.html#uInt8">uint8</a>; WND : <a  href="system.html#uInt32">uint32</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Write an 8-bit value as binary to a Window, followed by a new-line.  </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>b</dt>
+<dd>An 8-bit value.</dd>
+<dt>WND</dt>
+<dd>A 32-bit handle to a Window.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="writebin8exWND"></span><code>procedure <b>writebin8exWND</b>(b : <a  href="system.html#uInt8">uint8</a>; attributes: <a  href="system.html#uInt32">uint32</a>; WND : <a  href="system.html#uInt32">uint32</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Write an 8-bit value as binary to a Window, with the specified attributes.   </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>b</dt>
+<dd>An 8-bit value.</dd>
+<dt>attributes</dt>
+<dd>A 32-bit representation of the background/foreground colors.</dd>
+<dt>WND</dt>
+<dd>A 32-bit handle to a Window.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="writebin8lnexWND"></span><code>procedure <b>writebin8lnexWND</b>(b : <a  href="system.html#uInt8">uint8</a>; attributes: <a  href="system.html#uInt32">uint32</a>; WND : <a  href="system.html#uInt32">uint32</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Write an 8-bit value as binary + new-line to a Window, with the specified attributes.   </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>b</dt>
+<dd>An 8-bit value.</dd>
+<dt>attributes</dt>
+<dd>A 32-bit representation of the background/foreground colors.</dd>
+<dt>WND</dt>
+<dd>A 32-bit handle to a Window.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="writebin16WND"></span><code>procedure <b>writebin16WND</b>(b : <a  href="system.html#uInt16">uint16</a>; WND : <a  href="system.html#uInt32">uint32</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Write a 16-bit value as binary to a Window.  </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>b</dt>
+<dd>A 16-bit value.</dd>
+<dt>WND</dt>
+<dd>A 32-bit handle to a Window.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="writebin16lnWND"></span><code>procedure <b>writebin16lnWND</b>(b : <a  href="system.html#uInt16">uint16</a>; WND : <a  href="system.html#uInt32">uint32</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Write an 16-bit value as binary to a Window, followed by a new-line.  </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>b</dt>
+<dd>A 16-bit value.</dd>
+<dt>WND</dt>
+<dd>A 32-bit handle to a Window.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="writebin16exWND"></span><code>procedure <b>writebin16exWND</b>(b : <a  href="system.html#uInt16">uint16</a>; attributes: <a  href="system.html#uInt32">uint32</a>; WND : <a  href="system.html#uInt32">uint32</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Write a 16-bit value as binary to a Window, with the specified attributes.   </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>b</dt>
+<dd>A 16-bit value.</dd>
+<dt>attributes</dt>
+<dd>A 32-bit representation of the background/foreground colors.</dd>
+<dt>WND</dt>
+<dd>A 32-bit handle to a Window.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="writebin16lnexWND"></span><code>procedure <b>writebin16lnexWND</b>(b : <a  href="system.html#uInt16">uint16</a>; attributes: <a  href="system.html#uInt32">uint32</a>; WND : <a  href="system.html#uInt32">uint32</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Write a 16-bit value as binary + new-line to a Window, with the specified attributes.   </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>b</dt>
+<dd>A 16-bit value.</dd>
+<dt>attributes</dt>
+<dd>A 32-bit representation of the background/foreground colors.</dd>
+<dt>WND</dt>
+<dd>A 32-bit handle to a Window.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="writebin32WND"></span><code>procedure <b>writebin32WND</b>(b : <a  href="system.html#uInt32">uint32</a>; WND : <a  href="system.html#uInt32">uint32</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Write a 32-bit value as binary to a Window.  </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>b</dt>
+<dd>A 32-bit value.</dd>
+<dt>WND</dt>
+<dd>A 32-bit handle to a Window.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="writebin32lnWND"></span><code>procedure <b>writebin32lnWND</b>(b : <a  href="system.html#uInt32">uint32</a>; WND : <a  href="system.html#uInt32">uint32</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Write an 32-bit value as binary to a Window, followed by a new-line.  </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>b</dt>
+<dd>A 32-bit value.</dd>
+<dt>WND</dt>
+<dd>A 32-bit handle to a Window.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="writebin32exWND"></span><code>procedure <b>writebin32exWND</b>(b : <a  href="system.html#uInt32">uint32</a>; attributes: <a  href="system.html#uInt32">uint32</a>; WND : <a  href="system.html#uInt32">uint32</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Write a 32-bit value as binary to a Window, with the specified attributes.   </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>b</dt>
+<dd>A 32-bit value.</dd>
+<dt>attributes</dt>
+<dd>A 32-bit representation of the background/foreground colors.</dd>
+<dt>WND</dt>
+<dd>A 32-bit handle to a Window.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="writebin32lnexWND"></span><code>procedure <b>writebin32lnexWND</b>(b : <a  href="system.html#uInt32">uint32</a>; attributes: <a  href="system.html#uInt32">uint32</a>; WND : <a  href="system.html#uInt32">uint32</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Write a 32-bit value as binary + new-line to a Window, with the specified attributes.   </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>b</dt>
+<dd>A 32-bit value.</dd>
+<dt>attributes</dt>
+<dd>A 32-bit representation of the background/foreground colors.</dd>
+<dt>WND</dt>
+<dd>A 32-bit handle to a Window.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="backspaceWND"></span><code>procedure <b>backspaceWND</b>(WND : <a  href="system.html#uInt32">uint32</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Move a caret belonging to a Window back 1 position and remove the character within the cell the caret occupies. </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>WND</dt>
+<dd>A 32-bit handle to a Window.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="setCursorPosWND"></span><code>procedure <b>setCursorPosWND</b>(x : <a  href="system.html#uInt32">uint32</a>; y : <a  href="system.html#uInt32">uint32</a>; WND : <a  href="system.html#HWND">HWND</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Set the caret belonging to a Window to a specified position.   </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>X</dt>
+<dd>The new Horizontal position.</dd>
+<dt>Y</dt>
+<dd>The new Vertical postion.</dd>
+<dt>WND</dt>
+<dd>A 32-bit handle to a Window.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="_increment_x_WND"></span><code>procedure <b>_increment_x_WND</b>(WND : <a  href="system.html#uInt32">uint32</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Increment the cursor within a Window one cell to the right (x+1). </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>WND</dt>
+<dd>A 32-bit handle to a Window.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="_increment_y_WND"></span><code>procedure <b>_increment_y_WND</b>(WND : <a  href="system.html#uInt32">uint32</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Increment the cursor within a Window one cell down (y+1). </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>WND</dt>
+<dd>A 32-bit handle to a Window.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="_safeincrement_y_WND"></span><code>procedure <b>_safeincrement_y_WND</b>(WND : <a  href="system.html#uInt32">uint32</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Increment the cursor one cell down (y+1), performing a Y-Axis roll when when needed. </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>WND</dt>
+<dd>A 32-bit handle to a Window.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="_safeincrement_x_WND"></span><code>procedure <b>_safeincrement_x_WND</b>(WND : <a  href="system.html#uInt32">uint32</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Increment the cursor within a Window one cell to the right (x+1), wrapping to the next line and performing a Y-Axis scroll when when needed. </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>WND</dt>
+<dd>A 32-bit handle to a Window.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="_newlineWND"></span><code>procedure <b>_newlineWND</b>(WND : <a  href="system.html#uInt32">uint32</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Increment the cursor within a Window one cell down and reposition it at the first X Cell (y+1, x=0),performing a Y-Axis scroll when needed. </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>WND</dt>
+<dd>A 32-bit handle to a Window.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
@@ -1262,7 +1651,20 @@ Window Specific</p>
 </tr>
 <tr><td colspan="1">
 <p>
-Drawing</p>
+Draw an ASCII char to raw screen space conforming to cell constraints.     </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>C</dt>
+<dd>An 8-bit ASCII Character.</dd>
+<dt>X</dt>
+<dd>An 8-bit Horizontal Cell position.</dd>
+<dt>Y</dt>
+<dd>An 8-bit Vertical Cell Position.</dd>
+<dt>fgcolor</dt>
+<dd>The 16-bit color of the Character.</dd>
+<dt>bgcolor</dt>
+<dd>The 16-bit background color of the cell.</dd>
+</dl>
 </td></tr>
 </table>
 <table class="detail wide_list">
@@ -1270,56 +1672,147 @@ Drawing</p>
 <td class="itemcode"><span id="outputCharToScreenSpace"></span><code>procedure <b>outputCharToScreenSpace</b>(c : char; x : <a  href="system.html#uInt32">uint32</a>; y : <a  href="system.html#uInt32">uint32</a>; fgcolor : <a  href="system.html#uInt16">uint16</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Draw an ASCII char to raw screen space.     </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>C</dt>
+<dd>An 8-bit ASCII Character.</dd>
+<dt>X</dt>
+<dd>A 32-bit Horizontal Screen position.</dd>
+<dt>Y</dt>
+<dd>A 32-bit Vertical Screen Position.</dd>
+<dt>fgcolor</dt>
+<dd>The 16-bit color of the Character.</dd>
+<dt>bgcolor</dt>
+<dd>The 16-bit background color of the cell.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="outputCharTransparent"></span><code>procedure <b>outputCharTransparent</b>(c : char; x : <a  href="system.html#uInt8">uint8</a>; y : <a  href="system.html#uInt8">uint8</a>; fgcolor : <a  href="system.html#uInt16">uint16</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Draw an ASCII char without a background to raw screen space conforming to cell constraints.    </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>C</dt>
+<dd>An 8-bit ASCII Character.</dd>
+<dt>X</dt>
+<dd>An 8-bit Horizontal Cell position.</dd>
+<dt>Y</dt>
+<dd>An 8-bit Vertical Cell Position.</dd>
+<dt>fgcolor</dt>
+<dd>The 16-bit color of the Character.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="getPixel"></span><code>function <b>getPixel</b>(x : <a  href="system.html#uInt32">uint32</a>; y : <a  href="system.html#uInt32">uint32</a>) : <a  href="system.html#uInt16">uint16</a>;</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Get 16-bits of pixel information from the screen position(x,y).   </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>X</dt>
+<dd>A 32-bit Horizontal Screen position.</dd>
+<dt>Y</dt>
+<dd>A 32-bit Vertical Screen Position.</dd>
+</dl>
+<h6 class="description_section">Returns</h6>
+<p class="return">16-bits of Pixel Information</p></td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="drawPixel"></span><code>procedure <b>drawPixel</b>(x : <a  href="system.html#uInt32">uint32</a>; y : <a  href="system.html#uInt32">uint32</a>; color : <a  href="system.html#uInt16">uint16</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Draw 16-bits of pixel information at the screen position(x,y).   </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>X</dt>
+<dd>A 32-bit Horizontal Screen position.</dd>
+<dt>Y</dt>
+<dd>A 32-bit Vertical Screen Position.</dd>
+<dt>color</dt>
+<dd>16-bits of Pixel Information</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="getPixel32"></span><code>function <b>getPixel32</b>(x : <a  href="system.html#uInt32">uint32</a>; y : <a  href="system.html#uInt32">uint32</a>) : <a  href="system.html#uInt32">uint32</a>;</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Get 32-bits of pixel information from the screen position(x,y).   </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>X</dt>
+<dd>A 32-bit Horizontal Screen position.</dd>
+<dt>Y</dt>
+<dd>A 32-bit Vertical Screen Position.</dd>
+</dl>
+<h6 class="description_section">Returns</h6>
+<p class="return">32-bits of Pixel Information</p></td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="drawPixel32"></span><code>procedure <b>drawPixel32</b>(x : <a  href="system.html#uInt32">uint32</a>; y : <a  href="system.html#uInt32">uint32</a>; pixel : <a  href="system.html#uInt32">uint32</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Draw 32-bits of pixel information at the screen position(x,y).   </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>X</dt>
+<dd>A 32-bit Horizontal Screen position.</dd>
+<dt>Y</dt>
+<dd>A 32-bit Vertical Screen Position.</dd>
+<dt>color</dt>
+<dd>32-bits of Pixel Information</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="getPixel64"></span><code>function <b>getPixel64</b>(x : <a  href="system.html#uInt32">uint32</a>; y : <a  href="system.html#uInt32">uint32</a>) : <a  href="system.html#uInt64">uint64</a>;</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Get 64-bits of pixel information from the screen position(x,y).   </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>X</dt>
+<dd>A 32-bit Horizontal Screen position.</dd>
+<dt>Y</dt>
+<dd>A 32-bit Vertical Screen Position.</dd>
+</dl>
+<h6 class="description_section">Returns</h6>
+<p class="return">64-bits of Pixel Information</p></td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="drawPixel64"></span><code>procedure <b>drawPixel64</b>(x : <a  href="system.html#uInt32">uint32</a>; y : <a  href="system.html#uInt32">uint32</a>; pixel : <a  href="system.html#uInt64">uint64</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Draw 64-bits of pixel information at the screen position(x,y).   </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>X</dt>
+<dd>A 32-bit Horizontal Screen position.</dd>
+<dt>Y</dt>
+<dd>A 32-bit Vertical Screen Position.</dd>
+<dt>color</dt>
+<dd>64-bits of Pixel Information</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
@@ -1327,7 +1820,14 @@ Drawing</p>
 </tr>
 <tr><td colspan="1">
 <p>
-Windows Methods</p>
+Set the position of the <a class="normal" href="mouse.html">mouse</a> cursor relative to screen space.  </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>X</dt>
+<dd>A 32-bit Horizontal Screen Position.</dd>
+<dt>Y</dt>
+<dd>A 32-bit Vertical Screen Position.</dd>
+</dl>
 </td></tr>
 </table>
 <table class="detail wide_list">
@@ -1335,119 +1835,229 @@ Windows Methods</p>
 <td class="itemcode"><span id="redrawWindows"></span><code>procedure <b>redrawWindows</b>;</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Redraw all of the Window adhearing to Z-Order.</p>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="toggleWNDVisible"></span><code>procedure <b>toggleWNDVisible</b>(WND : <a  href="system.html#uInt32">uint32</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Toggle the visibility of a Window. </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>WND</dt>
+<dd>A 32-bit handle to a Window.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="setWNDVisible"></span><code>procedure <b>setWNDVisible</b>(WND : <a  href="system.html#uInt32">uint32</a>; visible : boolean);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Change a Windows visibility.  </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>WND</dt>
+<dd>A 32-bit handle to a Window.</dd>
+<dt>Visible</dt>
+<dd><code>True</code> or <code>False</code>.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="closeAllWindows"></span><code>procedure <b>closeAllWindows</b>;</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Close all open Windows and <a class="normal" href="asuro.html#RELEASE">release</a> handles.</p>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="newWindow"></span><code>function <b>newWindow</b>(x : <a  href="system.html#uInt32">uint32</a>; y : <a  href="system.html#uInt32">uint32</a>; Width : <a  href="system.html#uInt32">uint32</a>; Height : <a  href="system.html#uInt32">uint32</a>; Title : <a  href="system.html#pchar">PChar</a>) : <a  href="system.html#HWND">HWND</a>;</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Spawn a new Window at cell(x,y) with specified Width, Height and Title.      @retruns(A 32-bit Handle for the new Window.)</p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>X</dt>
+<dd>32-bit Horizontal Cell for the top-left corner of the Window.</dd>
+<dt>Y</dt>
+<dd>32-bit Vertical Cell for the top-left corner of the Window.</dd>
+<dt>Width</dt>
+<dd>32-bit Width of the Window in Cells.</dd>
+<dt>Height</dt>
+<dd>32-bit Height of the Window in Cells.</dd>
+<dt>Title</dt>
+<dd>NULL Terminated String used as the Title for the Window.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="registerEventHandler"></span><code>function <b>registerEventHandler</b>(WND : <a  href="system.html#HWND">HWND</a>; Event : <a  href="console.html#TEventType">TEventType</a>; Handler : <a  href="system.html#Void">void</a>) : boolean;</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+<a class="normal" href="ACE.html#register">Register</a> an Event Handler to a Window    </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>WND</dt>
+<dd>Handle for the Window the event should be registered against.</dd>
+<dt>Event</dt>
+<dd>Type of event to <a class="normal" href="ACE.html#register">register</a>.</dd>
+<dt>Handler</dt>
+<dd>Procedure to be called upon the event firing.</dd>
+</dl>
+<h6 class="description_section">Returns</h6>
+<p class="return"><code>True</code> for success <code>False</code> for failure.</p></td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="forceQuitAll"></span><code>procedure <b>forceQuitAll</b>;</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Forcefully close all Windows</p>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="closeWindow"></span><code>procedure <b>closeWindow</b>(WND : <a  href="system.html#HWND">HWND</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Close a Window specified by its Handle </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>WND</dt>
+<dd>The handle to the target Window.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="bordersEnabled"></span><code>procedure <b>bordersEnabled</b>(WND : <a  href="system.html#HWND">HWND</a>; enabled : boolean);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Enable or disable the drawing of the borders surrounding a Window.  </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>WND</dt>
+<dd>A 32-bit Handle to the target Window.</dd>
+<dt>Enabled</dt>
+<dd><code>True</code> for borders to be shown, <code>False</code> for borders to be hidden.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="SetShellWindow"></span><code>procedure <b>SetShellWindow</b>(WND : <a  href="system.html#HWND">HWND</a>; b : boolean);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Set a specified Window as a <a class="normal" href="shell.html">Shell</a> Window (Window cannot be moved or closed).  </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>WND</dt>
+<dd>32-bit Handle for the target Window.</dd>
+<dt>b</dt>
+<dd><code>True</code> to set Target as a <a class="normal" href="shell.html">Shell</a> Window, <code>False</code> to set Target as a normal Window.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="getWindowName"></span><code>function <b>getWindowName</b>(WND : <a  href="system.html#HWND">HWND</a>) : <a  href="system.html#pchar">pchar</a>;</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Get the title of a specified Window.  </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>WND</dt>
+<dd>32-bit Handle for the target Window.</dd>
+</dl>
+<h6 class="description_section">Returns</h6>
+<p class="return">NULL Terminated <a class="normal" href="system.html#pchar">PChar</a>.</p></td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="mouseEnabled"></span><code>procedure <b>mouseEnabled</b>(b : boolean);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Enable or disable the <a class="normal" href="mouse.html">mouse</a>. </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>b</dt>
+<dd><code>True</code> for <a class="normal" href="mouse.html">mouse</a> enabled, <code>False</code> for <a class="normal" href="mouse.html">mouse</a> disabled.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="_MouseDown"></span><code>procedure <b>_MouseDown</b>();</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Callback for a MouseDown event.</p>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="_MouseUp"></span><code>procedure <b>_MouseUp</b>();</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Callback for a MouseUp event.</p>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="_MouseClick"></span><code>procedure <b>_MouseClick</b>(left : boolean);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Callback for a MouseClick event. </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>Left</dt>
+<dd><code>True</code> for a Left-Click, <code>False</code> for a Right-Click.</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="setWindowColors"></span><code>procedure <b>setWindowColors</b>(colors : <a  href="system.html#uInt32">uint32</a>);</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Set the attributes used for drawing the border around Windows. </p>
+<h6 class="description_section">Parameters</h6>
+<dl class="parameters">
+<dt>Colors</dt>
+<dd>A 32-bit value representing the attributes (background/foreground).</dd>
+</dl>
+</td></tr>
 </table>
 <table class="detail wide_list">
 <tr class="list">
 <td class="itemcode"><span id="getWindowColorPtr"></span><code>function <b>getWindowColorPtr</b> : <a  href="system.html#PuInt32">puint32</a>;</code></td>
 </tr>
 <tr><td colspan="1">
-&nbsp;</td></tr>
+<p>
+Get a Pointer to the attribute used for Window Borders. </p>
+<h6 class="description_section">Returns</h6>
+<p class="return">A 32-bit pointer to the Borders Attribute.</p></td></tr>
 </table>
 <h3 class="detail">Types</h3>
 <table class="detail wide_list">
