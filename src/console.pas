@@ -813,6 +813,8 @@ const
     DefaultWND  = 0;   //< The Window assigned for output when no Window is specified. (Default).
 
 implementation
+uses
+    lmemorymanager, strings, keyboard, serial, terminal;
 
 type
 	{ Properties pertaining to the raw screen matrix. }
@@ -934,9 +936,6 @@ var
    UnhandledClickLeft : Boolean = false;
    MouseCursorEnabled : Boolean = true;
    OpenTerminal       : Boolean = false;
-
-uses
-    lmemorymanager, strings, keyboard, serial, terminal;
 
 function getWindowColorPtr : puint32;
 begin

@@ -43,7 +43,8 @@ uses
      netlog,
      vmlog,
      vm,
-     vmstate;
+     vmstate,
+     edit;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
@@ -217,7 +218,8 @@ begin
      vmlog.init();
      tracer.push_trace('kmain.VMSTATEINIT');
      vmstate.init();
-
+     tracer.push_trace('kmain.EDIT');
+     edit.init();
      terminal.run();
 
      { Init Splash }

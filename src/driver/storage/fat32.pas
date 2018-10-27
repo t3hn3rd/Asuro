@@ -499,7 +499,7 @@ begin
         bufferPointer:= @PDirectory(buffer)[LL_size(directories)];
         bufferPointer^.fileName:= cleanString(dirName, status);
         bufferPointer^.attributes:= attributes;
-        //if attributes = 0 then bufferPointer^.fileExtension:= fileExtension;
+        if attributes = 0 then bufferPointer^.fileExtension:= fileExtension;
         bufferPointer^.clusterLow:= cluster;
         bufferPointer^.clusterHigh:= uint16((cluster shr 16) and $0000FFFF);
 
@@ -537,6 +537,7 @@ var
     dataStart : uint32;
     iterations : uint32;
     bufferPointer : puint32;
+    dataPosition : uint32;
 
     i : uint32;
     status : puint32;
@@ -553,14 +554,14 @@ begin
     for i:=0 to LL_size(directories) - 1 do begin
         dir:= PDirectory(LL_get(directories, i));
         if (dir^.fileName = entry^.fileName) and (dir^.fileExtension = entry^.extension) then begin
-            exists:= true;
+            exists:= true; 
             break;
         end;
     end;
 
     push_trace('writefile.1');
 
-    if exists then begin
+    if exists then begin //saving to existing file
         startCluster:= uint32(dir^.clusterlow) or uint32(dir^.clusterhigh shl 16);
         clusters:= getFatChain(volume, startCluster, bootRecord); //check no clusters and check if needs to be more or less, add/remove clusters
         clusterCount := LL_size(clusters);
@@ -588,7 +589,7 @@ begin
         push_trace('writefile.1.2.1');
 
         startCluster:= writeDirectory(volume, directory, entry^.fileName, 0, status, entry^.extension);
-        clusterDifference:= (byteCount div bootRecord^.sectorsize) - 1;
+        clusterDifference:= (byteCount div bootRecord^.sectorsize) div 4; //-1 is that needed?
             push_trace('writefile.1.2.2');
 
         for i:= startcluster to startCluster + clusterDifference - 1 do begin
@@ -598,19 +599,114 @@ begin
 
         writeFat(volume, startcluster + clusterDifference, $FFFFFFF8, bootRecord);
         //setup fat chain 
+        console.writestringWND('clust diff: ', getTerminalHWND());
+        console.writeintlnWND(clusterDifference, getTerminalHWND());
+        console.writestringWND('startclust: ', getTerminalHWND());
+        console.writeintlnWND(startcluster, getTerminalHWND());
     end;
 
     push_trace('writefile.2');
 
-    iterations:= (bytecount div bootRecord^.sectorSize) div 4;
+    iterations:= (bytecount div bootRecord^.sectorSize) div bootRecord^.spc; //no of clusters
 
-    for i:=0 to byteCount div bootRecord^.sectorSize do begin
-        bufferPointer:= @buffer[i * uint32(bootRecord^.sectorsize * 4)];
-        volume^.device^.writecallback(volume^.device, dataStart + startCluster, 4, bufferPointer);
+    for i:=0 to iterations do begin
+        console.writestringlnWND('writting to file', getTerminalHWND());
+        dataPosition:= i * uint32(bootRecord^.sectorsize * 4); //needs to be bytes / 4
+        bufferPointer:= @buffer[dataPosition div 4]; //todo change to puint8
+        volume^.device^.writecallback(volume^.device, dataStart + (startCluster * bootRecord^.spc) + (i * 4), 1, bufferPointer); //i * 4 needs to be changed, TODO fix fucking IDE driver, it suks
+        volume^.device^.writecallback(volume^.device, dataStart + (startCluster * bootRecord^.spc) + (i * 4) + 1, 1, @bufferPointer[512 div 4]); 
+        volume^.device^.writecallback(volume^.device, dataStart + (startCluster * bootRecord^.spc) + (i * 4) + 2, 1, @bufferPointer[1024 div 4]); 
+        volume^.device^.writecallback(volume^.device, dataStart + (startCluster * bootRecord^.spc) + (i * 4) + 3, 1, @bufferPointer[1536 div 4]); 
     end;
 
     kfree(puint32(bootRecord));
 end;
+
+function readFile(volume : PStorage_Volume; directory : pchar; fileName : pchar; fileExtension : pchar; buffer : puint32; bytecount : puint32) : uint32;
+var
+    bootRecord : PBootRecord;
+    directories : PLinkedListBase;
+    dir : PDirectory;
+    readbuffer : puint32;
+    data : puint32;
+    statusOut : puint32;
+    i : uint32;
+    exists : boolean = false;
+    cluster : uint32;
+    clusters: PLinkedListBase;
+    noClusters : uint32;
+    dataStart : uint32;
+begin
+    bootRecord := readBootRecord(volume);
+    directories := readDirectory(volume, directory, statusOut);
+    datastart:= volume^.sectorStart + 1 + bootRecord^.FATSize + bootRecord^.rsvSectors;
+
+    for i:=0 to LL_Size(directories) -1 do begin
+        dir:= PDirectory(LL_Get(directories, i));
+        if (dir^.fileName = fileName) and (dir^.fileExtension = fileextension) then begin
+            exists:= true;
+            break;
+        end;
+    end;
+
+    if exists = false then begin
+        statusOut^ := 0; //TODO use right error codes
+        exit(0);
+    end else begin
+        cluster := dir^.clusterlow;
+        cluster := cluster or dir^.clusterhigh shl 16;
+        clusters := getFatChain(volume, cluster, bootRecord);
+        noClusters := LL_size(clusters);
+
+        data := puint32(kalloc(noClusters * bootRecord^.spc * bootRecord^.sectorSize));
+        memset(uint32(data), 0, noClusters * bootRecord^.spc * bootRecord^.sectorSize);
+
+        readbuffer := puint32(kalloc(bootRecord^.sectorSize));
+        memset(uint32(readbuffer), 0, bootRecord^.sectorSize);
+
+        for i:=0 to noClusters * bootRecord^.spc do begin
+            volume^.device^.readcallback(volume^.device, dataStart + (cluster + i), 1, readbuffer);
+            memcpy(uint32(readbuffer), uint32(@data[i*bootRecord^.sectorSize]), bootRecord^.sectorSize)
+        end;
+
+        kfree(readbuffer);
+        buffer := data;
+        readFile := noClusters * bootRecord^.spc * bootRecord^.sectorSize;
+    end;
+
+end;
+
+// function checkExists(volume : PStorage_Volume; directory : pchar; fileName : pchar; fileExtension : pchar; entry : PDirectory_Entry) : uint32;
+// var
+//     bootRecord : PBootRecord;
+//     directories : PLinkedListBase;
+//     dir : PDirectory;
+//     genDir : PDirectory_Entry;
+//     data : puint32;
+//     statusOut : puint32;
+//     i : uint32;
+//     exists : boolean = false;
+// begin
+//     bootRecord := readBootRecord(volume);
+//     directories := readDirectory(volume, directory, statusOut);
+//     datastart:= volume^.sectorStart + 1 + bootRecord^.FATSize + bootRecord^.rsvSectors;
+
+//     for i:=0 to LL_Size(directories) -1 do begin
+//         dir:= PDirectory(LL_Get(directories, i));
+//         if (dir^.fileName = entry^.fileName) and (dir^.fileExtension = entry^.extension) then begin
+//             exists:= true;
+//             break;
+//         end;
+//     end;
+
+//     PDirectory_Entry := PDirectory_Entry(kalloc(20));
+
+//     PDirectory_Entry^.fileName := pchar(@dir^.fileName);
+//     PDirectory_Entry^.extension := pchar(@dir^.fileExtension);
+
+// end;
+
+//TODO check directory commands for errors with a clean disk
 
 procedure create_volume(disk : PStorage_Device; sectors : uint32; start : uint32; config : puint32);
 var
@@ -631,16 +727,23 @@ var
     mountFileArray     : byteArray8 = ('M','O','U','N','T',' ',' ',' ');
     programFileArray   : byteArray8 = ('P','R','O','G','R','A','M','S');
     rootCluster   : uint32 = 1;
-begin
+
+begin //maybe increase buffer size by one?
     push_trace('fat32.create_volume()');
 
     // zeroBuffer:= puint32(kalloc( disk^.sectorSize * 4 ));
     // memset(uint32(zeroBuffer), 0, disk^.sectorSize * 4);
 
+    // console.writeintlnWND(disk^.sectorsize, getTerminalHWND());
+    // console.writehexlnWND(zeroBuffer[(disk^.sectorSize) - 1], getTerminalHWND());
+    // console.writehexlnWND(uint32(zeroBuffer), getTerminalHWND());
+    // console.redrawWindows();
+
     // while true do begin
-    //     if i > sectors then break;
-    //     disk^.writecallback(disk, 1 + i, 1, zeroBuffer);
-    //     i+=1;
+    //      if i > sectors then break;
+    //      disk^.writecallback(disk, 1 + i, 1, zeroBuffer);
+
+    //      i+=1;
     // end;
     // kfree(zeroBuffer);
 
@@ -650,8 +753,13 @@ begin
     (* File Allocation Table *)
     (* Data Area             *)
     
-    buffer:= puint32(kalloc(sizeof(TBootRecord)));
-    memset(uint32(buffer), 0, sizeof(TBootRecord));
+    // buffer:= puint32(kalloc(sizeof(TBootRecord)));
+    // memset(uint32(buffer), 0, sizeof(TBootRecord));
+    // bootRecord:= PBootRecord(buffer);
+
+    buffer:= puint32(kalloc(2048));
+    memset(uint32(buffer), 0, 2048);
+
     bootRecord:= PBootRecord(buffer);
 
     FATSize:= ((sectors div config^) * 4) div disk^.sectorsize;
@@ -686,7 +794,7 @@ begin
     while true do begin
         if i > FATSize DIV 4 then break;
         disk^.writecallback(disk, fatStart + i, 4, zeroBuffer);
-        i+=4;
+        i+=1;
     end;
 
     kfree(buffer);
@@ -764,6 +872,7 @@ begin
     filesystem.createcallback:= @create_volume;
     filesystem.detectcallback:= @detect_volumes;
     filesystem.writecallback:= @writeFile;
+    filesystem.readcallback := @readFile;
 
     storagemanagement.register_filesystem(@filesystem);
 end;

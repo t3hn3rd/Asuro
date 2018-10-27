@@ -351,7 +351,7 @@ begin
             end; //drive error
         end;
 
-        for ii:=0 to 127 do begin //read data
+        for ii:=0 to 127 do begin //write data
             outw($1F0, Puint32(buffer + ((i * 512) + (ii * 32) DIV 32) )^);
             while true do if (inw($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
             outb($1F7, $E7);

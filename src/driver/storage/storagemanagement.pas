@@ -35,6 +35,7 @@ type
     PDirectory_Entry = ^TDirectory_Entry;
 
     PPWriteHook = procedure(volume : PStorage_volume; directory : pchar; entry : PDirectory_Entry; byteCount : uint32; buffer : puint32; statusOut : puint32);
+    PPReadHook = function(volume : PStorage_Volume; directory : pchar; fileName : pchar; fileExtension : pchar; buffer : puint32; bytecount : puint32) : uint32;
     PPHIOHook = procedure(volume : PStorage_device; addr : uint32; sectors : uint32; buffer : puint32);
     PPCreateHook = procedure(disk : PStorage_Device; sectors : uint32; start : uint32; config : puint32);
     PPDetectHook = procedure(disk : PStorage_Device);
@@ -46,7 +47,7 @@ type
     TFilesystem = record
         sName : pchar;
         writeCallback     : PPWriteHook;
-        //readCallback      : PPIOHook;
+        readCallback      : PPReadHook;
         createCallback    : PPCreateHook;
         detectCallback    : PPDetectHook;
         createDirCallback : PPCreateDirHook;
@@ -100,6 +101,8 @@ function get_device_list() : PLinkedListBase;
 procedure register_filesystem(filesystem : PFilesystem);
 
 procedure register_volume(device : PStorage_Device; volume : PStorage_Volume);
+function writeNewFile(fileName : pchar; extension : pchar; buffer : puint32; size : uint32) : uint32;
+function readFile(fileName : pchar; extension : pchar; buffer : puint32; byteCount : puint32) : puint32;
 
 //TODO write partition table
 
@@ -349,15 +352,20 @@ var
     buffer : puint32;
     entry : TDirectory_Entry;
     error : puint32;
+    i     : uint32 = 1;
+    fatArray      : byteArray8 = ('F','A','T','3','2',' ',' ',' ');
 begin
     push_trace('txt_command');
     error:= puint32(kalloc(512));
-    memset(uint32(buffer), 0, 512);
-    pchar(buffer)^ := getParam(0, params)^;
+    buffer:= puint32(kalloc(2048));
+    memset(uint32(buffer), 0, 2048);
 
-    entry.fileName:= 'file';
+    entry.fileName:= getParam(0, params);
     entry.extension:= 'txt';
     entry.entryType:= TDirectory_Entry_Type.fileEntry;
+
+    PByteArray8(buffer)^ := fatArray;
+
 
     push_trace('txt_cmd_');
     rootVolume^.filesystem^.writeCallback(rootVolume, '.', @entry, stringSize(pchar(buffer)), buffer, error); //need to change the function pointer to match and impiment it in the filesystem init.
@@ -418,4 +426,83 @@ begin
     if rootVolume = PStorage_Volume(0) then rootVolume:= volume;
 end;
 
+function writeNewFile(fileName : pchar; extension : pchar; buffer : puint32; size : uint32) : uint32;
+var
+    entry : TDirectory_Entry;
+    error : puint32;
+begin
+    push_trace('storagemanagment.writenewfile');
+    error:= puint32(kalloc(512));
+
+    entry.fileName:= fileName;
+    entry.extension:= extension;
+    entry.entryType:= TDirectory_Entry_Type.fileEntry;
+
+    rootVolume^.filesystem^.writeCallback(rootVolume, getWorkingDirectory(), @entry, size, buffer, error);
+    writeNewFile:= error^; //memory leak
+end;
+
+function cleanString(str : pchar) : pchar;
+var
+    i : uint32;
+    ii: uint32;
+begin
+    cleanString:= pchar(kalloc(10));
+    memset(uint32(cleanstring), 0, 10);
+    for i:=0 to 7 do begin
+        if str[i] = char(0) then begin
+            for ii:=i to 7 do begin
+                cleanString[ii]:= ' ';
+            end;
+            break;
+        end else begin
+            cleanString[i]:= str[i];
+        end;
+    end;
+end;
+
+function readFile(fileName : pchar; extension : pchar; buffer : puint32; byteCount : puint32) : puint32; //TODO add length param
+var
+    error : puint32;
+    dirs : PLinkedListBase;
+    exists : boolean = false;
+    i : uint32;
+    cleanFileName : pchar;
+    otherCleanFileName : pchar;
+begin
+    push_trace('storagemanagement.readfile');
+    bytecount := puint32(kalloc(4));
+    error := puint32(kalloc(4));
+    readfile:= error;
+
+    cleanFileName := cleanString(filename);
+
+    dirs := rootVolume^.filesystem^.readdirCallback(rootVolume, getWorkingDirectory(), error);
+    
+    for i:=0 to LL_Size(dirs) -1 do begin
+        otherCleanFileName := cleanString(PDirectory_Entry(LL_get(dirs, i))^.filename); //TODO clean extension
+                writestringlnWND(otherCleanFileName, getTerminalHWND());
+                writestringlnWND(cleanFileName, getTerminalHWND());
+
+        if stringEquals(cleanFileName, otherCleanFileName) then begin
+                writestringlnWND('match found!', getTerminalHWND());
+
+            exists := true;
+            error^ := 0;
+        end;
+
+        kfree(puint32(otherCleanFileName));
+    end;
+
+    kfree(puint32(cleanFileName));
+
+    if exists = false then begin
+        // TODO error codes
+        error^ := 1;
+        exit;
+    end;
+
+    rootVolume^.filesystem^.readCallback(rootVolume, getWorkingDirectory(), fileName, extension, buffer, bytecount);
+    exit;
+end;
 end.
