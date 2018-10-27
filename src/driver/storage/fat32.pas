@@ -1,17 +1,8 @@
-{ ************************************************
-  * Asuro
-  * Unit: Drivers/storage/fat32
-  * Description: fat32 file system driver
-  * 
-  ************************************************
-  * Author: Aaron Hance
-  * Contributors: 
-  ************************************************ }
-
-  {
-      Todo in the future, optimise by prvoiding batch read/write commands
-
-  }
+{ 
+	Driver->storage->fat32 - fat32 filesystem driver
+	
+	@author(Aaron Hance <ah@aaronhance.me>)
+}
 
 unit FAT32;
 
