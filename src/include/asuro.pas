@@ -1,28 +1,23 @@
-{ 
-	Include->Asuro - Auto-Generated Version & Compilation Information
-	
-	@author(Asuro Compilation Script)
-}
 unit asuro;
  
 interface
  
 const
-     VERSION       = '1.0.1-746ia';
+     VERSION       = '1.0.1-754ia';
      VERSION_MAJOR = '1';
      VERSION_MINOR = '0';
      VERSION_SUB   = '1';
-     REVISION      = '746';
+     REVISION      = '754';
      RELEASE       = 'ia';
-     LINE_COUNT    = 29505;
-     FILE_COUNT    = 104;
-     DRIVER_COUNT  = 32;
+     LINE_COUNT    = 31304;
+     FILE_COUNT    = 111;
+     DRIVER_COUNT  = 35;
      FPC_VERSION   = '2.6.4';
      NASM_VERSION  = '2.10.09';
      MAKE_VERSION  = '3.81';
-     COMPILE_DATE  = '29/09/18';
-     COMPILE_TIME  = '15:30:53';
-     CHECKSUM      = 'ceb05d7417d4c62b74f7c3c4c164cb15';
+     COMPILE_DATE  = '25/01/19';
+     COMPILE_TIME  = '15:15:03';
+     CHECKSUM      = '7cf8fc67ca06334f944ebe3096db755e';
  
 implementation
  
