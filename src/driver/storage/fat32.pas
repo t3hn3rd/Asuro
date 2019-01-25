@@ -118,7 +118,9 @@ var
     i : uint32;
     ii: uint32;
 begin
-    //cleanString:= pchar(kalloc(sizeof(10)));
+    //puint32(cleanString):= puint32(kalloc(sizeof(10)));
+    //memset(uint32(@cleanString), 0, 10);
+    push_trace('cleanstring()');
     for i:=0 to 7 do begin
         if str[i] = char(0) then begin
             for ii:=i to 7 do begin
@@ -134,6 +136,35 @@ begin
     end;
 
 end;    
+
+function cleanStringCha(str : pchar) : pchar;
+var
+    i : uint32;
+    ii: uint32;
+begin
+    cleanStringCha:= pchar(kalloc(10));
+    memset(uint32(cleanstringcha), 0, 10);
+        push_trace('cleanstringcha');
+    for i:=0 to 7 do begin
+            push_trace('cleanstringcha1');
+
+        if str[i] = char(0) then begin
+                push_trace('cleanstringcha1.1');
+
+            for ii:=i to 7 do begin
+                cleanStringCha[ii]:= ' ';
+            end;
+            break;
+        end else begin
+                        push_trace('cleanstringcha1.2');
+            cleanstringcha[i]:= str[i];
+                            push_trace('cleanstringcha1.3');
+
+        end;
+    end;
+            push_trace('cleanstringcha2');
+
+end;
 
 function readBootRecord(volume : PStorage_volume) : PBootRecord; // need write functions for boot record!
 var
@@ -233,6 +264,7 @@ var
 begin
     push_trace('fat32.findFreeClusters');
     clusters := LL_New(8);
+    dirElm:= kalloc(sizeof(TDirectory_Entry)); //TODO FREE
 
     while true do begin
 
@@ -317,6 +349,7 @@ var
 begin
     push_trace('fat32.fat2GenericEntries');
     puint32(entry) := kalloc(sizeof(TDirectory_Entry));
+    dirElm:= kalloc(sizeof(TDirectory_Entry));
     fat2GenericEntries:= LL_New(sizeof(TDirectory_Entry));
 
     if LL_size(list) > 0 then begin //TODO
@@ -340,6 +373,7 @@ begin
 
     kfree(puint32(list));
     kfree(puint32(entry));
+    kfree(dirElm);
 end;
 
 //need to find out why having multiple dir stings isn't working, maybe the ls command? did I fix this?
@@ -397,7 +431,7 @@ begin
 
     readDirectory:= directories;
 
-    statusOut^:= status^;
+    statusOut:= status;
     LL_Free(directoryStrings);
     kfree(puint32(bootRecord));
 end;
@@ -615,54 +649,72 @@ end;
 
 function readFile(volume : PStorage_Volume; directory : pchar; fileName : pchar; fileExtension : pchar; buffer : puint32; bytecount : puint32) : uint32;
 var
-    bootRecord : PBootRecord;
-    directories : PLinkedListBase;
-    dir : PDirectory;
-    readbuffer : puint32;
-    data : puint32;
-    statusOut : puint32;
-    i : uint32;
-    exists : boolean = false;
-    cluster : uint32;
-    clusters: PLinkedListBase;
-    noClusters : uint32;
-    dataStart : uint32;
+    bootRecord  : PBootRecord;
+    dirs        : PLinkedListBase;
+    dir         : PDirectory;
+    readbuffer  : puint32;
+    data        : puint32;
+    statusOut   : puint32;
+    i           : uint32;
+    exists      : boolean = false;
+    cluster     : uint32;
+    clusters    : PLinkedListBase;
+    noClusters  : uint32;
+    dataStart   : uint32;
+    cleanFileName : byteArray8;
+    otherCleanFileName : byteArray8;
+    tempdir : PDirectory;
 begin
+    push_trace('readfile');
     bootRecord := readBootRecord(volume);
-    directories := readDirectory(volume, directory, statusOut);
+    dirs := readDirectory(volume, directory, statusOut);
     datastart:= volume^.sectorStart + 1 + bootRecord^.FATSize + bootRecord^.rsvSectors;
 
-    for i:=0 to LL_Size(directories) -1 do begin
-        dir:= PDirectory(LL_Get(directories, i));
-        if (dir^.fileName = fileName) and (dir^.fileExtension = fileextension) then begin
-            exists:= true;
-            break;
+    if LL_size(dirs) > 0 then begin
+        cleanFileName := cleanString(filename, statusOut);
+
+        for i:=0 to LL_Size(dirs) -1 do begin
+            tempdir := PDirectory(LL_get(dirs, i));
+            otherCleanFileName := cleanString(tempdir^.filename, statusout); //TODO clean extension
+
+            if compareByteArray8(cleanFileName, otherCleanFileName) then begin
+                dir:=tempdir;
+                exists := true;
+                statusOut^ := 0;
+            end;
         end;
     end;
 
+
     if exists = false then begin
-        statusOut^ := 0; //TODO use right error codes
-        exit(0);
+        statusOut^ := 1; //TODO use right error codes
+        exit(1);
     end else begin
-        cluster := dir^.clusterlow;
-        cluster := cluster or dir^.clusterhigh shl 16;
+        cluster := uint32(dir^.clusterlow) or uint32(dir^.clusterhigh shl 16);
         clusters := getFatChain(volume, cluster, bootRecord);
         noClusters := LL_size(clusters);
 
-        data := puint32(kalloc(noClusters * bootRecord^.spc * bootRecord^.sectorSize));
-        memset(uint32(data), 0, noClusters * bootRecord^.spc * bootRecord^.sectorSize);
+        data := puint32(kalloc(noClusters * bootRecord^.spc * bootRecord^.sectorSize + bootRecord^.sectorSize));
+        if data = puint32(0) then begin
+            push_trace('UNABLE TO ALLOCATE MEMORY');
+        end;
+        memset(uint32(data), 0, noClusters * bootRecord^.spc * bootRecord^.sectorSize + bootRecord^.sectorSize);
 
-        readbuffer := puint32(kalloc(bootRecord^.sectorSize));
-        memset(uint32(readbuffer), 0, bootRecord^.sectorSize);
+        readbuffer := puint32(kalloc(bootRecord^.sectorSize * 2));
+        if readbuffer = puint32(0) then begin
+            push_trace('UNABLE TO ALLOCATE MEMORY');
+        end;
+        memset(uint32(readbuffer), 0, bootRecord^.sectorSize * 2);
 
         for i:=0 to noClusters * bootRecord^.spc do begin
-            volume^.device^.readcallback(volume^.device, dataStart + (cluster + i), 1, readbuffer);
-            memcpy(uint32(readbuffer), uint32(@data[i*bootRecord^.sectorSize]), bootRecord^.sectorSize)
+            volume^.device^.readcallback(volume^.device, dataStart + ((cluster * bootRecord^.spc)+ i), 1, readbuffer);
+            memcpy(uint32(readbuffer), uint32(@data[i*bootRecord^.sectorSize div 4]), bootRecord^.sectorSize);
         end;
 
         kfree(readbuffer);
-        buffer := data;
-        readFile := noClusters * bootRecord^.spc * bootRecord^.sectorSize;
+        buffer^ := uint32(data);
+        bytecount^ := noClusters * bootRecord^.spc * bootRecord^.sectorSize + bootRecord^.sectorSize;//maybe need to spc
+        readFile:= statusOut^;
     end;
 
 end;

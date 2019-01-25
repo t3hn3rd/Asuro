@@ -363,7 +363,7 @@ begin
 
         end;
     end;
-    pop_trace();
+    //pop_trace();
 end;
 
 procedure readPIO28(drive : uint8; LBA : uint32; sectorCount : uint8; buffer : puint32);
@@ -425,7 +425,7 @@ begin
             end;
         end;
     end;
-    pop_trace();
+    //pop_trace();
 end;
 
 procedure readPIOPI(drive : uint8; LBA : uint32; buffer : Puint32);

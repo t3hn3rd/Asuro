@@ -461,7 +461,7 @@ begin
     end;
 end;
 
-function readFile(fileName : pchar; extension : pchar; buffer : puint32; byteCount : puint32) : puint32; //TODO add length param
+function readFile(fileName : pchar; extension : pchar; buffer : puint32; byteCount : puint32) : puint32;
 var
     error : puint32;
     dirs : PLinkedListBase;
@@ -471,38 +471,36 @@ var
     otherCleanFileName : pchar;
 begin
     push_trace('storagemanagement.readfile');
-    bytecount := puint32(kalloc(4));
+    //bytecount := puint32(kalloc(4));
+    //memset(uint32(bytecount), 0, 4);
     error := puint32(kalloc(4));
     readfile:= error;
 
-    cleanFileName := cleanString(filename);
+    // cleanFileName := cleanString(filename);
 
-    dirs := rootVolume^.filesystem^.readdirCallback(rootVolume, getWorkingDirectory(), error);
+    // dirs := rootVolume^.filesystem^.readdirCallback(rootVolume, getWorkingDirectory(), error);
     
-    for i:=0 to LL_Size(dirs) -1 do begin
-        otherCleanFileName := cleanString(PDirectory_Entry(LL_get(dirs, i))^.filename); //TODO clean extension
-                writestringlnWND(otherCleanFileName, getTerminalHWND());
-                writestringlnWND(cleanFileName, getTerminalHWND());
+    // for i:=0 to LL_Size(dirs) -1 do begin
+    //     otherCleanFileName := cleanString(PDirectory_Entry(LL_get(dirs, i))^.filename); //TODO clean extension
+    //             writestringlnWND(otherCleanFileName, getTerminalHWND());
+    //             writestringlnWND(cleanFileName, getTerminalHWND());
 
-        if stringEquals(cleanFileName, otherCleanFileName) then begin
-                writestringlnWND('match found!', getTerminalHWND());
+    //     if stringEquals(cleanFileName, otherCleanFileName) then begin
+    //             writestringlnWND('match found!', getTerminalHWND());
 
-            exists := true;
-            error^ := 0;
-        end;
+    //         exists := true;
+    //         error^ := 0;
+    //     end;
 
-        kfree(puint32(otherCleanFileName));
-    end;
+    //     kfree(puint32(otherCleanFileName));
+    // end;
 
-    kfree(puint32(cleanFileName));
+    // kfree(puint32(cleanFileName));
 
-    if exists = false then begin
-        // TODO error codes
-        error^ := 1;
-        exit;
-    end;
 
-    rootVolume^.filesystem^.readCallback(rootVolume, getWorkingDirectory(), fileName, extension, buffer, bytecount);
-    exit;
+
+    error^ := rootVolume^.filesystem^.readCallback(rootVolume, getWorkingDirectory(), fileName, extension, buffer, bytecount);
+
+
 end;
 end.
