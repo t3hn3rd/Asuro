@@ -9,15 +9,15 @@ const
      VERSION_SUB   = '1';
      REVISION      = '754';
      RELEASE       = 'ia';
-     LINE_COUNT    = 31304;
-     FILE_COUNT    = 111;
+     LINE_COUNT    = 31279;
+     FILE_COUNT    = 110;
      DRIVER_COUNT  = 35;
      FPC_VERSION   = '2.6.4';
      NASM_VERSION  = '2.10.09';
      MAKE_VERSION  = '3.81';
      COMPILE_DATE  = '25/01/19';
-     COMPILE_TIME  = '15:15:03';
-     CHECKSUM      = '7cf8fc67ca06334f944ebe3096db755e';
+     COMPILE_TIME  = '15:20:16';
+     CHECKSUM      = 'aa0b1316f6cb8af40d3236128528634c';
  
 implementation
  
