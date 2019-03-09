@@ -1,4 +1,5 @@
 #!/bin/bash
+echo "Generating Versioning Info..."
 ./checksum.sh
 outfile="src/include/asuro.pas"
 file="version"
@@ -42,3 +43,16 @@ echo " " >> $outfile
 echo "implementation" >> $outfile
 echo " " >> $outfile
 echo "end." >> $outfile
+echo "Generating release info..."
+wget -q https://img.shields.io/badge/version-$major.$minor.$sub--$revision$release-blue.svg -O release/version.svg
+wget -q https://img.shields.io/badge/revision-$revision-blue.svg -O release/revision.svg
+wget -q https://img.shields.io/badge/release-$release-blue.svg -O release/version.svg
+wget -q https://img.shields.io/badge/lines-$linecount-blueviolet.svg -O release/lines.svg
+wget -q https://img.shields.io/badge/files-$sourcecount-blueviolet.svg -O release/files.svg
+wget -q https://img.shields.io/badge/drivers-$drivercount-blueviolet.svg -O release/drivers.svg
+wget -q https://img.shields.io/badge/FPC_version-$fpcversion-lightgrey.svg -O release/fpcversion.svg
+wget -q https://img.shields.io/badge/NASM_version-$nasmversion-lightgrey.svg -O release/nasmversion.svg
+wget -q https://img.shields.io/badge/MAKE_version-$makeversion-lightgrey.svg -O release/makeversion.svg
+wget -q https://img.shields.io/badge/release_date-$compiledate-lightgrey.svg -O release/date.svg
+wget -q https://img.shields.io/badge/fingerprint-$checksum-important.svg -O release/fingerprint.svg
+echo "Done versioning."

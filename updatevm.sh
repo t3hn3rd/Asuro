@@ -7,5 +7,5 @@ if [ -d "$DIRECTORY" ]; then
 	cd ".."
 else
 	cd src
-	svn checkout http://ovh.spexeah.com:81/svn/MINJ/src/vm
+	svn checkout https://spexeah.com:8443/svn/MINJ/src/vm
 fi

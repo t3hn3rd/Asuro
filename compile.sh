@@ -92,11 +92,20 @@ echo " "
 if [ "$ERRCOUNT" -ne "0" ]
 then
 	echo "$ERRCOUNT Errors Occurred, please review."
+	wget -q https://img.shields.io/badge/build-failed-red.svg -O release/build.svg
 else
-	echo "No errors."	
+	echo "No errors."
+	wget -q https://img.shields.io/badge/build-succeeded-green.svg -O release/build.svg	
 fi
 echo " "
 echo "======================="
 echo " "
 
 cp Asuro.iso ~/host/Asuro.iso
+cp Asuro.iso release/Asuro.iso
+
+checksum=$(md5sum release/Asuro.iso | awk '{print $1}')
+wget -q https://img.shields.io/badge/checksum-$checksum-important.svg -O release/checksum.svg	
+cd release
+svn commit -m "Versioning Auto-Commit"
+cd ..
