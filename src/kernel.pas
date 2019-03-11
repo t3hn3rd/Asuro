@@ -114,7 +114,8 @@ begin
      terminal.registerCommand('BSOD', @terminal_command_bsod, 'Force a Panic Screen.');
 
      console.writestringln('Booting Asuro...');
-
+     
+     console.writestringln('Checking for Multiboot Compliance');
      { Check for Multiboot }
      if (multibootmagic <> MULTIBOOT_BOOTLOADER_MAGIC) then begin
         console.setdefaultattribute(console.combinecolors($F800, $0000));
