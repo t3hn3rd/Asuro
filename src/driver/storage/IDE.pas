@@ -288,21 +288,21 @@ begin
         outw($1F4, 0);
         outw($1F5, 0); 
 
-        outw($1F7, ATA_CMD_IDENTIFY); //send identify command
+        outw($1F7, ATA_CMD_IDENTIFY); //send identify command//
 
         while true do begin
-            if (inw($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
+            if (inb($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
         end;
 
         while true do begin
-            if (inw($1f7) and (1 shl 3)) <> 0 then break;
-            if (inw($1F7) and 1) <> 0 then exit; //drive error
+            if (inb($1f7) and (1 shl 3)) <> 0 then break;
+            if (inb($1F7) and 1) <> 0 then exit; //drive error
             if t > 100000 then exit; //todo return false
             t +=1;
         end;
 
         for i:=0 to 255 do begin
-            identResponse[i] := inw($1F0); //read all bits
+            identResponse[i] := inb($1F0); //read all bits
         end;
 
         identify_device:= identResponse;
@@ -318,7 +318,7 @@ var
     iii : uint32;
 begin
     push_trace('ide.writePIO28');
-    while true do if (inw($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
+    while true do if (inb($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
 
 
     noInt(drive);
@@ -341,11 +341,11 @@ begin
     for i:=0 to sectorCount do begin
         
         //poll status
-        while true do if (inw($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
+        while true do if (inb($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
 
         while true do begin
-            if (inw($1f7) and (1 shl 3)) <> 0 then break;
-            if (inw($1F7) and 1) <> 0 then begin
+            if (inb($1f7) and (1 shl 3)) <> 0 then break;
+            if (inb($1F7) and 1) <> 0 then begin
                 console.writestringln('write error');
                 exit;
             end; //drive error
@@ -353,11 +353,11 @@ begin
 
         for ii:=0 to 127 do begin //write data
             outw($1F0, Puint32(buffer + ((i * 512) + (ii * 32) DIV 32) )^);
-            while true do if (inw($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
+            while true do if (inb($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
             outb($1F7, $E7);
             if ii <> 127 then begin
                 outw($1F0, Puint32(buffer + ((i * 512) + (ii * 32) DIV 32) )^ shr 16);
-                while true do if (inw($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
+                while true do if (inb($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
                 outb($1F7, $E7);
             end;
 
@@ -373,7 +373,7 @@ var
     iii : uint32;
 begin 
     push_trace('ide.readPIO28');
-    while true do if (inw($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
+    while true do if (inb($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
 
     noInt(drive);
 
@@ -396,20 +396,20 @@ begin
     for i:=0 to sectorCount do begin
 
         //poll status
-        while true do if (inw($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
+        while true do if (inb($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
         while true do begin
-            if (inw($1f7) and (1 shl 3)) <> 0 then break;
-            if (inw($1f7) and (1 shl 5)) <> 0 then begin
+            if (inb($1f7) and (1 shl 3)) <> 0 then break;
+            if (inb($1f7) and (1 shl 5)) <> 0 then begin
                 console.writestringln('IDE DRIVE FAULT');
                 redrawWindows();
                 exit;
             end;
-            if (inw($1f7) and (1 shl 6)) <> 0 then begin
+            if (inb($1f7) and (1 shl 6)) <> 0 then begin
                 console.writestringln('IDE Spun Down');
                 redrawWindows();
                 exit;
             end;
-            if (inw($1F7) and 1) <> 0 then begin
+            if (inb($1F7) and 1) <> 0 then begin
                 console.writestringln('IDE read ERROR');
                 redrawWindows();
                 exit;
@@ -417,11 +417,11 @@ begin
         end;
 
         for ii:=0 to 127 do begin //read data
-            Puint32(buffer + ((i * 512) + (ii * 32) DIV 32))^ := uint32(inw($1F0)); 
-            while true do if (inw($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
+            Puint32(buffer + ((i * 512) + (ii * 32) DIV 32))^ := uint32(inb($1F0)); 
+            while true do if (inb($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
             if ii <> 127 then begin
-                Puint32(buffer + ((i * 512) + (ii * 32) DIV 32))^ := ((uint32(inw($1F0)) shl 16) or Puint32(buffer + ((i * 512) + (ii * 32) DIV 32))^); //wrong
-                while true do if (inw($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
+                Puint32(buffer + ((i * 512) + (ii * 32) DIV 32))^ := ((uint32(inb($1F0)) shl 16) or Puint32(buffer + ((i * 512) + (ii * 32) DIV 32))^); //wrong
+                while true do if (inb($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
             end;
         end;
     end;
@@ -446,18 +446,18 @@ begin
     outb($1F7, ATAPI_CMD_READ); //read command
 
     //poll status
-    while true do if (inw($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
+    while true do if (inb($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
 
     while true do begin
-        if (inw($1f7) and (1 shl 3)) <> 0 then break;
-        if (inw($1F7) and 1) <> 0 then begin
+        if (inb($1f7) and (1 shl 3)) <> 0 then break;
+        if (inb($1F7) and 1) <> 0 then begin
             console.writestringln('IDE read ERROR');
             exit;
         end; //drive error
     end;
 
     // for i:=0 to 1023 do begin
-    //         Puint32(buffer + (i * 1))^ := inw($1F0);
+    //         Puint32(buffer + (i * 1))^ := inb($1F0);
     // end;
 
 end;
