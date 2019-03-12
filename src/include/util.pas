@@ -68,7 +68,7 @@ var
 implementation
 
 uses
-    console, RTC, cpu;
+    console, RTC, cpu, serial, strings;
 
 function MsSinceSystemBoot : uint64;
 begin
@@ -272,6 +272,9 @@ end;
 
 procedure outl(port : uint16; val : uint32); [public, alias: 'util_outl'];
 begin
+     //serial.sendString('[outl]');
+     //serial.sendHex(port);
+     //serial.sendHex(val);
      asm
           PUSH EAX
           PUSH EDX
@@ -286,6 +289,9 @@ end;
 
 procedure outw(port : uint16; val : uint16); [public, alias: 'util_outw'];
 begin
+     //serial.sendString('[outw]');
+     //serial.sendHex(port);
+     //serial.sendHex(val);
      asm
           PUSH EAX
           PUSH EDX
@@ -300,6 +306,9 @@ end;
 
 procedure outb(port : uint16; val : uint8); [public, alias: 'util_outb'];
 begin
+     //serial.sendString('[outb]');
+     //serial.sendHex(port);
+     //serial.sendHex(val);
      asm
           PUSH EAX
           PUSH EDX
@@ -328,6 +337,8 @@ end;
 
 function inl(port : uint16) : uint32; [public, alias: 'util_inl'];
 begin
+     //serial.sendString('[inl]');
+     //serial.sendHex(port);
      asm
           PUSH EAX
           PUSH EDX
@@ -342,6 +353,8 @@ end;
 
 function inw(port : uint16) : uint16; [public, alias: 'util_inw'];
 begin
+     //serial.sendString('[inw]');
+     //serial.sendHex(port);
      asm
           PUSH EAX
           PUSH EDX
@@ -356,6 +369,8 @@ end;
 
 function inb(port : uint16) : uint8; [public, alias: 'util_inb'];
 begin
+     //serial.sendString('[inb]');
+     //serial.sendHex(port);
      asm
           PUSH EAX
           PUSH EDX

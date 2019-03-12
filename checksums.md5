@@ -54,7 +54,7 @@ afd15dca933f082c73f48aba1059a04e  src/include/lists.pas
 fcbd8be162a75e1a971fbc58318e077c  src/include/strings.pas
 01e4c69601c664fff8922f4a0d96c02d  src/include/system.pas
 6103928fbe8c413929cde49df82f5a1f  src/include/types.pas
-6e06bfa650488c1f9e328fd99717ecae  src/include/util.pas
+177a03d217eba976acf0ead9e70d14c0  src/include/util.pas
 be084ee5d65fdc85182ff87a3f09c831  src/driver/storage/AHCI_OLD.pas
 e9c1a0807931287779b0295a88faec30  src/driver/storage/AHCI.pas
 ff442b1dc417a277c68b2890740ea5a2  src/driver/storage/asfs.pas
@@ -62,10 +62,10 @@ ff442b1dc417a277c68b2890740ea5a2  src/driver/storage/asfs.pas
 15e714c6bf0f6805f95cac019a8ef3ff  src/driver/storage/ATA_OLD.pas
 631b160eab56da3ce6df8a76b1577452  src/driver/storage/fat32_OLD.pas
 0dbc9a5453191d47edbe85a90177e4ca  src/driver/storage/fat32.pas
-9af5fc15d58531ee6040f2b8d42869b5  src/driver/storage/IDE.pas
+7e41b1d061d5ffebd887b5fc65fe655f  src/driver/storage/IDE.pas
 0843fb9b9ca537d4c595cafc88eac993  src/driver/storage/partitiontable.pas
 3437aa5ff213f37f5088ceb690e78d3d  src/driver/storage/storagemanagement.pas
-55bcf502cfd3623ca39048738a8d0917  src/driver/interface/serial.pas
+2b3d1b9259cd2e80a8849515250998be  src/driver/interface/serial.pas
 24bbc994c12729d6b85026f0881c2ab9  src/driver/exp/testdriver.pas
 ec93c6fc2b22ac56da6fec164a5da32a  src/driver/hid/keyboard.pas
 71c5ec91a9f0a148472b21cb7554205d  src/driver/hid/mouse.pas
