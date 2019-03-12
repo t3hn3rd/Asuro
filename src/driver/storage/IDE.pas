@@ -192,7 +192,7 @@ var
     devID : TDeviceIdentifier;
 begin
     push_trace('ide.init');
-    console.writestringln('IDE ATA Driver: Init()');
+    console.writestringln('[IDE] (INIT) BEGIN');
     devID.bus:= biPCI;
     devID.id0:= idANY;
     devID.id1:= $00000001;
@@ -203,6 +203,7 @@ begin
     drivermanagement.register_driver('IDE ATA Driver', @devID, @load);
     //terminal.registerCommand('IDE', @test_command, 'TEST IDE DRIVER');
     buffer := Puint32(kalloc(1024*2));
+    console.writestringln('[IDE] (INIT) END');
     pop_trace();
 end;
 
@@ -212,8 +213,10 @@ var
     storageDevice1 : TStorage_Device;
 begin
     push_trace('ide.load');
+    console.writestringln('[IDE] (LOAD) BEGIN');
     //controller := PPCI_Device(ptr);
 
+    console.writestringln('[IDE] (INIT) CHECK FLOATING BUS');
     //check if bus is floating and identify device
     if inb($1F7) <> $FF then begin
         //outb($3F6, inb($3f6) or (1 shl 1)); // disable interrupts
@@ -251,6 +254,7 @@ begin
         end;
     end;
 
+    console.writestringln('[IDE] (LOAD) END');
     pop_trace();
 end;
 
@@ -276,6 +280,7 @@ var
     t : uint32 = 0;
 begin
     push_trace('ide.identify_device');
+    console.writestringln('[IDE] (IDENTIFY_DEVICE) BEGIN');
     if bus = 0 then begin
 
         if drive = $A0 then noInt(0);
@@ -283,12 +288,12 @@ begin
 
         outb($1F6, drive); //drive select
 
-        outw($1F2, 0); //clear sector count and lba
-        outw($1F3, 0);
-        outw($1F4, 0);
-        outw($1F5, 0); 
+        outb($1F2, 0); //clear sector count and lba
+        outb($1F3, 0);
+        outb($1F4, 0);
+        outb($1F5, 0); 
 
-        outw($1F7, ATA_CMD_IDENTIFY); //send identify command//
+        outb($1F7, ATA_CMD_IDENTIFY); //send identify command//
 
         while true do begin
             if (inb($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
@@ -308,6 +313,7 @@ begin
         identify_device:= identResponse;
         exit;
     end; 
+    console.writestringln('[IDE] (IDENTIFY_DEVICE) END');
     pop_trace();
 end;
 
@@ -318,6 +324,7 @@ var
     iii : uint32;
 begin
     push_trace('ide.writePIO28');
+    console.writestringln('[IDE] (WRITEPIO28) BEGIN');
     while true do if (inb($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
 
 
@@ -352,18 +359,19 @@ begin
         end;
 
         for ii:=0 to 127 do begin //write data
-            outw($1F0, Puint32(buffer + ((i * 512) + (ii * 32) DIV 32) )^);
+            outb($1F0, Puint32(buffer + ((i * 512) + (ii * 32) DIV 32) )^);
             while true do if (inb($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
             outb($1F7, $E7);
             if ii <> 127 then begin
-                outw($1F0, Puint32(buffer + ((i * 512) + (ii * 32) DIV 32) )^ shr 16);
+                outb($1F0, Puint32(buffer + ((i * 512) + (ii * 32) DIV 32) )^ shr 16);
                 while true do if (inb($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
                 outb($1F7, $E7);
             end;
 
         end;
     end;
-    //pop_trace();
+    console.writestringln('[IDE] (WRITEPIO28) END');
+    pop_trace();
 end;
 
 procedure readPIO28(drive : uint8; LBA : uint32; sectorCount : uint8; buffer : puint32);
@@ -373,6 +381,7 @@ var
     iii : uint32;
 begin 
     push_trace('ide.readPIO28');
+    console.writestringln('[IDE] (READPIO28) BEGIN');
     while true do if (inb($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
 
     noInt(drive);
@@ -425,13 +434,15 @@ begin
             end;
         end;
     end;
-    //pop_trace();
+    console.writestringln('[IDE] (READPIO28) END');
+    pop_trace();
 end;
 
 procedure readPIOPI(drive : uint8; LBA : uint32; buffer : Puint32);
 var
     i : uint16;
 begin 
+    console.writestringln('[IDE] (READPIOPI) BEGIN');
     if IDEDevices[drive].isMaster then begin
         outb($1F7, $E0 or ((LBA shr 24) and $0F)); // command primary master
     end
@@ -459,7 +470,7 @@ begin
     // for i:=0 to 1023 do begin
     //         Puint32(buffer + (i * 1))^ := inb($1F0);
     // end;
-
+    console.writestringln('[IDE] (READPIOPI) END');
 end;
 
 

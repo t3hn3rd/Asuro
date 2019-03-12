@@ -7,7 +7,7 @@ unit strings;
 
 interface
 
-uses
+uses 
     util, 
     lmemorymanager;
 
