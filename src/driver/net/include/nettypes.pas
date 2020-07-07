@@ -148,6 +148,32 @@ type
         Options       : uint32;
     end;
 
+    { UDP }
+    TUDPError = (tueOK, tuePortInUse, tuePortRestricted, tuePortNotFound, tueInvalidUID, tueGenericError);
+    PUDPPacketContext = ^TUDPPacketContext;
+    TUDPRecieveCallback = procedure(p_data : void; p_len : uint16; context : PUDPPacketContext);
+    TUDPPacketContext = record
+        SrcPort       : Word;
+        DstPort       : Word;
+        ChecksumValid : Boolean;
+        Length        : uint16;
+        PacketContext : PPacketContext;
+    end;
+    PUDPBindContext = ^TUDPBindContext;
+    TUDPBindContext = record
+        Port          : uint16;
+        Callback      : TUDPRecieveCallback;
+        UID           : uint32;
+    end;
+    PUDPHeader = ^TUDPHeader;
+    TUDPHeader = bitpacked record
+        SrcPort  : Word;
+        DstPort  : Word;
+        Length   : Word;
+        Checksum : Word;
+    end;
+
+
     { Callback Types }
 
     TNetSendCallback = function(p_data : void; p_len : uint16) : sint32;

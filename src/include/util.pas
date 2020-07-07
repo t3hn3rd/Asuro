@@ -20,6 +20,7 @@ procedure GPF();
 function hi(b : uint8) : uint8;
 function lo(b : uint8) : uint8;
 function switchendian(b : uint8) : uint8;
+function switchendian16(b : uint16) : uint16;
 function switchendian32(b : uint32) : uint32;
 function getWord(i : uint32; hi : boolean) : uint16;
 function getByte(i : uint32; index : uint8) : uint8;
@@ -95,6 +96,11 @@ begin
         POPAD
     end;
     div6432:= (r0 SHL 32) OR r4;
+end;
+
+function switchendian16(b : uint16) : uint16;
+begin
+    switchendian16:= ((b AND $FF00) SHR 8) OR ((b AND $00FF) SHR 8);
 end;
 
 function switchendian32(b : uint32) : uint32;
