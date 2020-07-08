@@ -153,8 +153,8 @@ type
     PUDPPacketContext = ^TUDPPacketContext;
     TUDPRecieveCallback = procedure(p_data : void; p_len : uint16; context : PUDPPacketContext);
     TUDPPacketContext = record
-        SrcPort       : Word;
-        DstPort       : Word;
+        SrcPort       : uint16;
+        DstPort       : uint16;
         ChecksumValid : Boolean;
         Length        : uint16;
         PacketContext : PPacketContext;
@@ -166,11 +166,11 @@ type
         UID           : uint32;
     end;
     PUDPHeader = ^TUDPHeader;
-    TUDPHeader = bitpacked record
-        SrcPort  : Word;
-        DstPort  : Word;
-        Length   : Word;
-        Checksum : Word;
+    TUDPHeader = record
+        SrcPort  : uint16;
+        DstPort  : uint16;
+        Length   : uint16;
+        Checksum : uint16;
     end;
 
 

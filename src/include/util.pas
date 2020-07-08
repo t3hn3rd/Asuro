@@ -100,7 +100,7 @@ end;
 
 function switchendian16(b : uint16) : uint16;
 begin
-    switchendian16:= ((b AND $FF00) SHR 8) OR ((b AND $00FF) SHR 8);
+    switchendian16:= ((b AND $FF00) SHR 8) OR ((b AND $00FF) SHL 8);
 end;
 
 function switchendian32(b : uint32) : uint32;

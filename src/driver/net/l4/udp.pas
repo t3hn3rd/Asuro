@@ -74,53 +74,69 @@ var
     context : PUDPPacketContext;
     buf     : puint8;
     bind    : PUDPBindContext;
+    hex     : puint8;
+    i       : uint32;
+    size    : uint16;
 
 begin
     writeToLogLn('              L4: udp.recv');
     header:= PUDPHeader(p_data);
-    if switchendian16(header^.SrcPort) = 22294 then WriteStringln('Src-E: 22294');
-    if header^.SrcPort = 22294 then WriteStringln('Src: 22294');
-    if switchendian16(header^.DstPort) = 22294 then WriteStringln('Dst-E: 22294');
-    if header^.DstPort = 22294 then WriteStringln('Dst: 22294');
-    if Ports[header^.DstPort] <> nil then begin
-        bind:= Ports[header^.DstPort];
+    //writestringln('UDP Packet: ');
+    //hex:= puint8(p_data);
+    //for i:=0 to 7 do begin
+    //    writehexpair(hex^);
+    //    hex:= hex+1;
+    //end;
+    //writestringln(' ');
+    //Writeintln(switchendian16(header^.SrcPort));
+    //Writeintln(header^.SrcPort);
+    //Writeintln(switchendian16(header^.DstPort));
+    //Writeintln(header^.DstPort);
+    //writestringln('');
+    if Ports[switchendian16(header^.DstPort)] <> nil then begin
         context:= PUDPPacketContext(kalloc(sizeof(TUDPPacketContext)));
         context^.PacketContext:= p_context;
-        context^.SrcPort:= header^.SrcPort;
-        context^.DstPort:= header^.DstPort;
+        context^.SrcPort:= switchendian16(header^.SrcPort);
+        context^.DstPort:= switchendian16(header^.DstPort);
         context^.ChecksumValid:= false;
-        context^.Length:= header^.Length;
+        context^.Length:= switchendian16(header^.Length);
         buf:= puint8(p_data);
-        buf:= buf + (sizeof(TUDPHeader));
-        bind^.Callback(void(buf), context^.Length, context);
+        buf:= buf + sizeof(TUDPHeader);
+        size:= context^.Length - sizeof(TUDPHeader);
+        bind:= Ports[context^.DstPort];
+        bind^.Callback(void(buf), size, context);
     end;
 end;
 
 procedure TestRecv(p_data : void; p_len : uint16; context : PUDPPacketContext);
 var
     Output : PChar;
+    i      : uint16;
 
 begin
-    Output:= PChar(kalloc(p_len+1));
-    memcpy(uint32(p_data), uint32(Output), p_len);
-    Output[p_len+1]:= Char(0);
-    Writestringln(Output);
+    Output:= PChar(p_data);
+    for i:=0 to p_len-1 do begin
+        writechar(Output[i]);
+    end;
+    writestringln(' ');
 end;
 
 procedure register();
 var
     i : uint16;
-    context : TUDPBindContext;
+    context : PUDPBindContext;
     r       : TUDPError;
 
 begin
     for i:=0 to 65535 do begin
         Ports[i]:= nil;
     end;
-    context.Port:= 22294;
-    context.Callback:= @TestRecv;
-    context.UID:= 4398724;
-    r:= bind(@context);
+    context:= PUDPBindContext(kalloc(sizeof(TUDPBindContext)));
+    context^.Port:= 22294;
+    context^.Callback:= @TestRecv;
+    context^.UID:= 4398724;
+    r:= bind(context);
+    writestring('[TestBind] ');
     case r of
         tueOK:writestringln('22294 bind OK');
         tuePortInUse:writestringln('22294 port in use');
