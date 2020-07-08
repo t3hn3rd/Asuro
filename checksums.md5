@@ -8,7 +8,7 @@ fedbc69eb42fb2bd685aa3c98732dd24  src//gdt.pas
 1e96141f52b3249777c4c561f74486b2  src//idt.pas
 ff963c65c48984566b201003eec8ce47  src//irq.pas
 ab3f144c41b5e718b4575eb4ef51aa1b  src//isr.pas
-2e5d095b961c2ea7ee24726d6649209d  src//kernel.pas
+945c3c5f05deae905c9cc0a9676637ec  src//kernel.pas
 375a0beff3986ead4e9275b2dfa0ec7d  src//lmemorymanager.pas
 dce0fec2a2bb8dde7dced3598a613318  src//pmemorymanager.pas
 2517817ea68f5797b5c10926dfaf497e  src//processloader.pas

@@ -226,8 +226,8 @@ begin
      terminal.run();
 
      { Init Splash }
-     tracer.push_trace('kmain.SPLASHINIT');
-     splash.init();
+     //tracer.push_trace('kmain.SPLASHINIT');
+     //splash.init();
 
      { End of Boot }
      tracer.push_trace('kmain.EOB');
