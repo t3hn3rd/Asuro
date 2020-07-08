@@ -25,9 +25,9 @@ implementation
 uses
     console, terminal;
 
-function send(p_data : void; p_len : uint16; p_context : PPacketContext; bindContext : PUDPBindContext);
+procedure send(p_data : void; p_len : uint16; p_context : PPacketContext; bindContext : PUDPBindContext);
 begin
-    
+
 end;
 
 function bind(bindContext : PUDPBindContext) : TUDPError;
