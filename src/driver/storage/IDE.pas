@@ -41,6 +41,18 @@ type
         info         : TIdentResponse;
     end;
 
+    TIDE_Status = bitpacked record 
+        Busy  : Boolean;
+        Ready : Boolean;
+        Fault : Boolean;
+        Seek  : Boolean;
+        DRQ   : Boolean;
+        CORR  : Boolean;
+        IDDEX : Boolean;
+        ERROR : Boolean;
+    end;
+    PIDE_Status = ^TIDE_Status;
+
 
 const
     ATA_SR_BUSY = $80; //BUSY
@@ -325,19 +337,25 @@ var
 begin
     push_trace('ide.writePIO28');
     console.writestringln('[IDE] (WRITEPIO28) BEGIN');
+    console.redrawWindows;
     while true do if (inb($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
 
+    console.writestringln('[IDE] (WRITEPIO28) 1');
+    console.redrawWindows;
 
     noInt(drive);
 
     if IDEDevices[drive].isMaster then begin
-        //outb($1F6, $A0); //drive select
+        outb($1F6, $A0); //drive select
         outb($1F7, $E0 or ((LBA shr 24) and $0F)); //LBA command primary master
     end
     else begin
-        //outb($1F6, $B0); //drive select
+        outb($1F6, $B0); //drive select
         outb($1F7, $F0 or ((LBA shr 24) and $0F)); //LBA command primary slave
     end;
+
+    console.writestringln('[IDE] (WRITEPIO28) 2');
+    console.redrawWindows;
 
     outb($1F2, sectorCount);
     outb($1F3, LBA);
@@ -345,18 +363,35 @@ begin
     outb($1F5, LBA shr 16);
     outb($1F7, $30); //write command
 
-    for i:=0 to sectorCount do begin
+    console.writestringln('[IDE] (WRITEPIO28) 3');
+    console.redrawWindows;
+
+    for i:=0 to sectorCount-1 do begin
         
         //poll status
-        while true do if (inb($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
+        while true do if (inb($1f7) and ATA_SR_BUSY) = 0 then break; //Wait until drive not busy 
+
+        console.writestringln('[IDE] (WRITEPIO28) 4');
+        console.redrawWindows;
 
         while true do begin
+            console.writestring('[IDE] (WRITEPIO28) inb($1f7): ');
+            writehexpair(inb($1f7));
+            if inb($1f7) = $40 then begin
+                while true do begin console.redrawWindows; end;
+            end;
+            writestringln(' ');
+            console.redrawWindows;
             if (inb($1f7) and (1 shl 3)) <> 0 then break;
             if (inb($1F7) and 1) <> 0 then begin
                 console.writestringln('write error');
+                console.redrawWindows;
                 exit;
             end; //drive error
         end;
+
+        console.writestringln('[IDE] (WRITEPIO28) 5');
+        console.redrawWindows;
 
         for ii:=0 to 127 do begin //write data
             outb($1F0, Puint32(buffer + ((i * 512) + (ii * 32) DIV 32) )^);
@@ -367,10 +402,14 @@ begin
                 while true do if (inb($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
                 outb($1F7, $E7);
             end;
-
         end;
+
+        console.writestringln('[IDE] (WRITEPIO28) 6');
+        console.redrawWindows;
+
     end;
     console.writestringln('[IDE] (WRITEPIO28) END');
+    console.redrawWindows;
     pop_trace();
 end;
 
@@ -402,7 +441,7 @@ begin
     outb($1F7, $20); //read command
 
 
-    for i:=0 to sectorCount do begin
+    for i:=0 to sectorCount-1 do begin
 
         //poll status
         while true do if (inb($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
@@ -483,4 +522,5 @@ procedure write(device : PStorage_device; LBA : uint32; sectorCount : uint32; bu
 begin
     writePIO28(device^.controllerId0, LBA, sectorCount, buffer);
 end;
+
 end.

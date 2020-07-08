@@ -44,7 +44,8 @@ uses
      vmlog,
      vm,
      vmstate,
-     edit;
+     edit,
+     udpcat;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
@@ -221,6 +222,7 @@ begin
      vmstate.init();
      tracer.push_trace('kmain.EDIT');
      edit.init();
+     udpcat.init();
      terminal.run();
 
      { Init Splash }

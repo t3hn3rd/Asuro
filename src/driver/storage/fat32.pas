@@ -800,8 +800,8 @@ begin //maybe increase buffer size by one?
     // memset(uint32(buffer), 0, sizeof(TBootRecord));
     // bootRecord:= PBootRecord(buffer);
 
-    buffer:= puint32(kalloc(2048));
-    memset(uint32(buffer), 0, 2048);
+    buffer:= puint32(kalloc(disk^.sectorSize));
+    memset(uint32(buffer), 0, disk^.sectorSize);
 
     bootRecord:= PBootRecord(buffer);
 
@@ -831,30 +831,48 @@ begin //maybe increase buffer size by one?
     fatStart:= start + 1 + bootRecord^.rsvSectors;
     dataStart:= fatStart + bootRecord^.FATSize;
 
-    zeroBuffer:= puint32(kalloc( disk^.sectorSize * 4 ));
-    memset(uint32(zeroBuffer), 0, disk^.sectorSize * 4);
+    zeroBuffer:= puint32(kalloc( disk^.sectorSize ));
+    memset(uint32(zeroBuffer), 0, disk^.sectorSize );
 
-    while true do begin
-        if i > FATSize DIV 4 then break;
-        disk^.writecallback(disk, fatStart + i, 4, zeroBuffer);
+    {while true do begin
+        if i > FATSize then break;
+        writestring('LOOP BEGIN: ');
+        writeintln(i);
+        writeintln(bootRecord^.rsvSectors);
+        writeintln(start);
+        writeintln(fatStart);
+        writeintln(FATSize);
+        console.redrawWindows; 
+        disk^.writecallback(disk, fatStart + i, 1, zeroBuffer);
+        writestring('LOOP END: ');
+        writeintln(i);
+        console.redrawWindows;
         i+=1;
-    end;
+    end;}
 
     kfree(buffer);
     kfree(zeroBuffer);
+    writestring('Frees');
+    console.redrawWindows;
 
     buffer:= puint32(kalloc(disk^.sectorSize));
     memset(uint32(buffer), 0, disk^.sectorSize);
 
     puint32(buffer)[0]:= $FFFFFFF8; //fsinfo
     puint32(buffer)[1]:= $FFFFFFF8; //root cluster
+    writestring('Buffer Alloc');
+    console.redrawWindows;
 
     disk^.writecallback(disk, fatStart, 1, buffer);
+    writestring('WriteCB1');
+    console.redrawWindows;
 
     kfree(buffer);
 
     buffer:= puint32(kalloc(disk^.sectorsize));
     memset(uint32(buffer), 0, disk^.sectorsize);
+    writestring('Buffer Alloc 2');
+    console.redrawWindows;
 
     PDirectory(buffer)[0].fileName   := thisArray;
     PDirectory(buffer)[0].attributes := $08;
@@ -865,8 +883,12 @@ begin //maybe increase buffer size by one?
     PDirectory(buffer)[1].clusterLow := 1;
     
     disk^.writecallback(disk, dataStart + (config^ * rootCluster), 1, buffer);
+    writestring('WriteCB2');
+    console.redrawWindows;
 
     kfree(buffer);
+    writestring('Free');
+    console.redrawWindows;
 
 end;
 

@@ -17,11 +17,18 @@ var
     Ports : Array[0..65535] of PUDPBindContext;
 
 procedure register();
+function bind(bindContext : PUDPBindContext) : TUDPError;
+function unbind(bindContext : PUDPBindContext) : TUDPError;
 
 implementation
 
 uses
     console, terminal;
+
+function send(p_data : void; p_len : uint16; p_context : PPacketContext; bindContext : PUDPBindContext);
+begin
+    
+end;
 
 function bind(bindContext : PUDPBindContext) : TUDPError;
 var
@@ -66,9 +73,10 @@ begin
             result:= tuePortNotFound;
         end;
     end;
+    unbind:= result;
 end;
 
-procedure UDPReceive(p_data : void; p_len : uint16; p_context : PPacketContext);
+procedure ProcessPacket(p_data : void; p_len : uint16; p_context : PPacketContext);
 var
     header  : PUDPHeader;
     context : PUDPPacketContext;
@@ -81,18 +89,6 @@ var
 begin
     writeToLogLn('              L4: udp.recv');
     header:= PUDPHeader(p_data);
-    //writestringln('UDP Packet: ');
-    //hex:= puint8(p_data);
-    //for i:=0 to 7 do begin
-    //    writehexpair(hex^);
-    //    hex:= hex+1;
-    //end;
-    //writestringln(' ');
-    //Writeintln(switchendian16(header^.SrcPort));
-    //Writeintln(header^.SrcPort);
-    //Writeintln(switchendian16(header^.DstPort));
-    //Writeintln(header^.DstPort);
-    //writestringln('');
     if Ports[switchendian16(header^.DstPort)] <> nil then begin
         context:= PUDPPacketContext(kalloc(sizeof(TUDPPacketContext)));
         context^.PacketContext:= p_context;
@@ -105,6 +101,7 @@ begin
         size:= context^.Length - sizeof(TUDPHeader);
         bind:= Ports[context^.DstPort];
         bind^.Callback(void(buf), size, context);
+        kfree(void(context));
     end;
 end;
 
@@ -131,19 +128,19 @@ begin
     for i:=0 to 65535 do begin
         Ports[i]:= nil;
     end;
-    context:= PUDPBindContext(kalloc(sizeof(TUDPBindContext)));
-    context^.Port:= 22294;
-    context^.Callback:= @TestRecv;
-    context^.UID:= 4398724;
-    r:= bind(context);
-    writestring('[TestBind] ');
-    case r of
-        tueOK:writestringln('22294 bind OK');
-        tuePortInUse:writestringln('22294 port in use');
-        tueGenericError:writestringln('22294 generic error');
-        tuePortRestricted:writestringln('22294 restricted');
-    end;
-    ipv4.registerProtocol($11, @UDPReceive);
+    //context:= PUDPBindContext(kalloc(sizeof(TUDPBindContext)));
+    //context^.Port:= 22294;
+    //context^.Callback:= @TestRecv;
+    //context^.UID:= 4398724;
+    //r:= bind(context);
+    //writestring('[TestBind] ');
+    //case r of
+    //    tueOK:writestringln('22294 bind OK');
+    //    tuePortInUse:writestringln('22294 port in use');
+    //    tueGenericError:writestringln('22294 generic error');
+    //    tuePortRestricted:writestringln('22294 restricted');
+    //end;
+    ipv4.registerProtocol($11, @ProcessPacket);
 end;
 
 end.
