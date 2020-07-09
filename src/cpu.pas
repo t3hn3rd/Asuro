@@ -78,7 +78,7 @@ type
         OSXSAVE      : Boolean; 
         AVX          : Boolean;
         RESV3        : Boolean;
-        RESV4        : Boolean;
+        RDRAND       : Boolean;
         RESV5        : Boolean;
     end;
     TClockSpeed = record
@@ -247,6 +247,7 @@ begin
     if CPUID.Capabilities1^.XSAVE   then writestringWND(', XSAVE', WND);
     if CPUID.Capabilities1^.OSXSAVE then writestringWND(', OSXSAVE', WND);
     if CPUID.Capabilities1^.AVX     then writestringWND(', AVX', WND);
+    if CPUID.Capabilities1^.RDRAND  then writestringWND(', RDRAND', WND);
     writestringlnWND(' ', WND);
 end;
 

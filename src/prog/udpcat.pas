@@ -8,7 +8,7 @@ unit udpcat;
 interface
 
 uses
-    console, terminal, keyboard, util, strings, tracer, udp, nettypes, lmemorymanager;
+    console, terminal, keyboard, util, strings, tracer, udp, nettypes, netutils, lmemorymanager;
 
 procedure init();
 
@@ -32,6 +32,8 @@ procedure OnReceive(p_data : void; p_len : uint16; p_context : PUDPPacketContext
 var
     c : pchar;
     i : uint16;
+    sendContext : PUDPSendContext;
+    Message     : pchar;
 
 begin
     c:= pchar(p_data);
@@ -39,6 +41,23 @@ begin
         writecharWND(c[i], Handle);
     end;
     writestringlnWND(' ', Handle);
+    sendContext:= PUDPSendContext(kalloc(sizeof(TUDPSendContext)));
+    sendContext^.DstPort:= p_context^.SrcPort;
+    sendContext^.Socket:= context;
+    sendContext^.context:= p_context^.PacketContext;
+    sendContext^.context^.TTL:= 128;
+    contextMACSwitch(p_context^.PacketContext);
+    contextIPv4Switch(p_context^.PacketContext);
+    Message:= pchar(kalloc(6));
+    Message[0]:= 'A';
+    Message[1]:= 'S';
+    Message[2]:= 'U';
+    Message[3]:= 'R';
+    Message[4]:= 'O';
+    Message[5]:= '!';
+    udp.send(void(Message), 6, sendContext);
+    kfree(void(sendContext));
+    kfree(void(Message));
 end;
 
 procedure run(Params : PParamList);

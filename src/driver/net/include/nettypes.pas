@@ -166,13 +166,28 @@ type
         UID           : uint32;
     end;
     PUDPHeader = ^TUDPHeader;
-    TUDPHeader = record
+    TUDPHeader = packed record
         SrcPort  : uint16;
         DstPort  : uint16;
         Length   : uint16;
         Checksum : uint16;
     end;
-
+    TUDPSendContext = record
+        DstPort : uint16;
+        socket  : PUDPBindContext;
+        context : PPacketContext;
+    end;
+    PUDPSendContext = ^TUDPSendContext;
+    TUDPPseudoHeader = packed record
+        Source_IP       : uint32;
+        Destination_IP  : uint32;
+        Protocol        : uint16;
+        Length          : uint16;
+        UDP_Source      : uint16;
+        UDP_Destination : uint16;
+        UDP_Length      : uint16;
+    end;
+    PUDPPseudoHeader = ^TUDPPseudoHeader;
 
     { Callback Types }
 
@@ -187,11 +202,21 @@ const
     NULL_MAC      : Array[0..5] of uint8 = ($00, $00, $00, $00, $00, $00);
     FORCE_MAC     : Array[0..5] of uint8 = ($08, $00, $27, $E6, $3F, $81);
 
+    { IPs }
+    BROADCAST_IP  : Array[0..3] of uint8 = ($FF, $FF, $FF, $FF);
+    NULL_IP       : Array[0..3] of uint8 = ($00, $00, $00, $00);
+
     { ICMP Data }
     ICMP_DATA_GENERIC : Array[0..31] of uint8 = ( $61, $62, $63, $64, $65, $66, $67, $68, 
                                                   $69, $6a, $6b, $6c, $6d, $6e, $6f, $70, 
                                                   $71, $72, $73, $74, $75, $76, $77, $61, 
                                                   $62, $63, $64, $65, $66, $67, $68, $69 );
+
+    { UDP Test Data }
+    UDPT_S_IP : Array[0..3] of uint8 = ($C0, $A8, $00, $1F);
+    UDPT_D_IP : Array[0..3] of uint8 = ($C0, $A8, $00, $1E);
+    UDPT_DATA : Array[0..1] of uint8 = ($48, $69);
+
 
 implementation
 

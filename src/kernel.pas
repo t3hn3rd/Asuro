@@ -38,14 +38,15 @@ uses
      shell,
      memview,
      splash,
-     cpu,
      themer,
      netlog,
      vmlog,
      vm,
      vmstate,
      edit,
-     udpcat;
+     udpcat,
+     cpu,
+     rand;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
@@ -154,6 +155,7 @@ begin
      isrmanager.init();
      faults.init();
      RTC.init();
+     rand.srand((getDateTime.Seconds SHR 24) OR (getDateTime.Minutes SHR 16) OR (getDateTime.Hours SHR 8) OR (getDateTime.Day));     
      pmemorymanager.init();
      vmemorymanager.init();
      lmemorymanager.init();
