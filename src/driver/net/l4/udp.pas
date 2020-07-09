@@ -127,8 +127,9 @@ begin
         hdr^.Length:= switchendian16(size);
  
         memcpy(uint32(hdr), uint32(buffer), sizeof(TUDPHeader));
-        memcpy(uint32(p_data), uint32(buffer + sizeof(TUDPHeader)), p_len); 
+        memcpy(uint32(p_data), uint32(buffer) + sizeof(TUDPHeader), p_len); 
 
+        writehexln(uint32(buffer) + sizeof(TUDPHeader));
         for i:=0 to p_len-1 do begin
             writehexpair(puint8(p_data)[i]);
         end;
