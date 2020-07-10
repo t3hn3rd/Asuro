@@ -241,6 +241,10 @@ begin
 
      tracer.push_trace('kmain.END');
 
+     writehexln(rand.rand32);
+     writehexln(rand.rand32);
+     writehexln(rand.rand32);
+
      tracer.push_trace('kmain.TICK');
      while true do begin
         tracer.push_trace('kmain.RedrawWindows');

@@ -189,6 +189,132 @@ type
     end;
     PUDPPseudoHeader = ^TUDPPseudoHeader;
 
+    { DHCP }
+    TDHCPHeader = packed record
+        Message_Type            : uint8;
+        Hardware_Type           : uint8;
+        Hardware_Address_Length : uint8;
+        Hops                    : uint8;
+        Transaction_ID          : uint32;
+        Seconds_Elapsed         : uint16;
+        Bootp_Flags             : uint16;
+        Client_IP               : TIPv4Address;
+        Your_IP                 : TIPv4Address;
+        Server_IP               : TIPV4Header;
+        Relay_Agent_IP          : TIPV4Header;
+        Client_MAC              : TMACAddress;
+        Padding                 : Array[0..9] of uint8;
+        Server_Hostname         : Array[0..63] of uint8;
+        Boot_File               : Array[0..127] of uint8;
+        Magic_Cookie            : Array[0..3] of uint8;
+        Option_start            : char;
+    end;
+    PDHCPHeader = ^TDHCPHeader;
+    TDHCPOpCode = (
+        //BootTP Vendor Information Extensions
+        PAD:= 0,
+        SUBNET_MASK:= 1,
+        TIME_OFFSET:= 2,
+        ROUTER:= 3,
+        TIME_SERVER:= 4,
+        NAME_SERVER:= 5,
+        DNS_SERVER:= 6,
+        LOG_SERVER:= 7,
+        COOKIE_SERVER:= 8,
+        LPR_SERVER:= 9,
+        IMPRESS_SERVER:= 10,
+        RESOURCE_LOCATION_SERVER:= 11,
+        HOST_NAME:= 12,
+        BOOT_FILE_SIZE:= 13,
+        MERIT_DUMP_FILE:= 14,
+        DOMAIN_NAME:= 15,
+        SWAP_SERVER:= 16,
+        ROOT_PATH:= 17,
+        EXTENSIONS_PATH:= 18,
+        END_VENDOR_OPTIONS:= 255,
+        //IP Layer Parameters Per Host
+        IP_FORWARDING:= 19,
+        NONLOCAL_SOURCE_ROUTING:= 20,
+        POLICY_FILTER:= 21,
+        MAXIMUM_DATAGRAM_REASSEMBLY_SIZE:= 22,
+        DEFAULT_IP_TTL:= 23,
+        PATH_MTU_AGING_TIMEOUT:= 24,
+        PATH_MTU_PLATEAU_TABLE:= 25,
+        //IP Layer Parameters Per Interface
+        INTERFACE_MTU:= 26,
+        ALL_SUBNETS_ARE_LOCAL:= 27,
+        BROADCAST_ADDRESS:= 28,
+        PERFORM_MASK_DISCOVERY:= 29,
+        MASK_SUPPLIER:= 30,
+        PERFORM_ROUTER_DISCOVERY:= 31,
+        ROUTER_SOLICITATION_ADDRESS:= 32,
+        STATIC_ROUTE:= 33,
+        //Link Layer Parameters Per Interface
+        TRAILER_ENCAPSULATION_OPTION:= 34,
+        ARP_CACHE_TIMEOUT:= 35,
+        ETHERNET_ENCAPSULATION:= 36,
+        //TCP Parameters
+        TCP_DEFAULT_TTL:= 37,
+        TCP_KEEPALIVE_INTERVAL:= 38,
+        TCP_KEEPALIVE_GARBAGE:= 39,
+        //Application and Service Parameters
+        NETWORK_INFORMATION_SERVICE_DOMAIN:= 40,
+        NETWORK_INFORMATION_SERVERS:= 41,
+        NTP_SERVERS:= 42,
+        VENDOR_SPECIFIC_INFORMATION:= 43,
+        NETBIOS_OVER_TCP_NAME_SERVER:= 44,
+        NETBIOS_OVER_TCP_DATAGRAM_DISTRIBUTION_SERVER:= 45,
+        NETBIOS_OVER_TCP_NODE_TYPE:= 46,
+        NETBIOS_OVER_TCP_SCOPE:= 47,
+        X_WINDOW_SYSTEM_FONT_SERVER:= 48,
+        X_WINDOW_SYSTEM_DISPLAY_MANAGER:= 49,
+        NETWORK_INFORMATION_SERVICE_PLUS_DOMAIN:= 64,
+        NETWORK_INFORMATION_SERVICE_PLUS_SERVERS:= 65,
+        MOBILE_IP_HOME_AGENT:= 68,
+        SMTP_SERVER:= 69,
+        POP3_SERVER:= 70,
+        NNTP_SERVER:= 71,
+        DEFAULT_WWW_SERVER:= 72,
+        DEFAULT_FINGER_SERVER:= 73,
+        DEFAULT_IRC_SERVER:= 74,
+        STREETTALK_SERVER:= 75,
+        STDA_SERVER:= 76,
+        //DHCP Extensions
+        REQUESTED_IP_ADDRESS:= 50,
+        IP_ADDRESS_LEASE_TIME:= 51,
+        OPTION_OVERLOAD:= 52,
+        DHCP_MESSAGE_TYPE:= 53,
+        SERVER_IDENTIFIER:= 54,
+        PARAMETER_REQUEST_LIST:= 55,
+        MESSAGE:= 56,
+        MAXIMUM_DHCP_MESSAGE_SIZE:= 57,
+        RENEWAL_T1_TIME_VALUE:= 58,
+        REBINDING_T2_TIME_VALUE:= 59,
+        VENDOR_CLASS_IDENTIFIER:= 60,
+        CLIENT_IDENTIFIER:= 61,
+        TFTP_SERVER_NAME:= 66,
+        BOOTFILE_NAME:= 67,
+        //Misc
+        RELAY_AGENT_INFORMATION:= 82,
+        NDS_SERVERS:= 85,
+        NDS_TREE_NAME:= 86,
+        NDS_CONTEXT:= 87,
+        POSIX_TIMEZONE:= 100,
+        TZ_TIMEZONE:= 101,
+        DOMAIN_SEARCH:= 119,
+        CLASSLESS_STATIC_ROUTE:= 121
+    );
+    TDHCPMessageType = (
+        DISCOVER    := 1,
+        OFFER       := 2,
+        REQUEST     := 3,
+        DECLINE     := 4,
+        PACK        := 5,
+        NAK         := 6,
+        RELEASE     := 7,
+        INFORM      := 8
+    );
+
     { Callback Types }
 
     TNetSendCallback = function(p_data : void; p_len : uint16) : sint32;
@@ -197,6 +323,9 @@ type
 { Constants }
 
 const
+    { DHCP Magic }
+    DHCP_MAGIC : Array[0..3] of uint8 = ($63, $82, $53, $63);
+
     { MACs }
     BROADCAST_MAC : Array[0..5] of uint8 = ($FF, $FF, $FF, $FF, $FF, $FF);
     NULL_MAC      : Array[0..5] of uint8 = ($00, $00, $00, $00, $00, $00);

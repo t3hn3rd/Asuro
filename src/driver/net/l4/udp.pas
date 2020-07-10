@@ -13,9 +13,6 @@ uses
     ipv4, netlog, net,
     util;
 
-var
-    Ports : Array[0..65535] of PUDPBindContext;
-
 procedure register();
 function bind(bindContext : PUDPBindContext) : TUDPError;
 function unbind(bindContext : PUDPBindContext) : TUDPError;
@@ -25,6 +22,9 @@ implementation
 
 uses
     console, terminal;
+
+var
+    Ports : Array[0..65535] of PUDPBindContext;
 
 function CalculateChecksum(p_data : void; p_len : uint16; udpContext : PUDPSendContext) : uint16;
 var
@@ -59,7 +59,7 @@ begin
         pseudoBuffer:= kalloc(sizeof(TUDPPseudoHeader) + pseudoSize);
         pseudoBuffer8:= puint8(pseudoBuffer);
         pseudoBuffer16:= puint16(pseudoBuffer);
-        pseudoBuffer32:= puint32(pseudoBuffer32);
+        pseudoBuffer32:= puint32(pseudoBuffer);
         pseudoHeader:= PUDPPseudoHeader(pseudoBuffer);
         copyIPv4(puint8(@udpContext^.context^.IP.Source[0]), puint8(@pseudoBuffer8[0]));
         copyIPv4(puint8(@udpContext^.context^.IP.Destination[0]), puint8(@pseudoBuffer8[4]));
@@ -74,30 +74,24 @@ begin
         pseudoHeader^.Source_IP:= switchendian32(pseudoHeader^.Source_IP);
         pseudoHeader^.Destination_IP:= switchendian32(pseudoHeader^.Destination_IP);
 
-        //writehexln(pseudoHeader^.Source_IP);
-        //writehexln(pseudoHeader^.Destination_IP);
-        //writehexln(pseudoHeader^.Protocol);
-        //writehexln(pseudoHeader^.Length);
-        //writehexln(pseudoHeader^.UDP_Source);
-        //writehexln(pseudoHeader^.UDP_Destination);
-        //writehexln(pseudoHeader^.UDP_Length);
-
         Checksum_u:= 0;
+
         for i:=0 to (SizeOf(TUDPPseudoHeader) div 2)-1 do begin
-            //writestring('+ ');
-            //writehexln(pseudoBuffer16[i]);
             Checksum_u:= Checksum_u + pseudoBuffer16[i];
         end;
+
         for i:=(SizeOf(TUDPPseudoHeader) div 2) to ((pseudoSize + SizeOf(TUDPPseudoHeader)) div 2) - 1 do begin
-            //writestring('- ');
-            //ritehexln( switchendian16(pseudoBuffer16[i]));
             Checksum_u:= Checksum_u + switchendian16(pseudoBuffer16[i]);
         end;
+
         Checksum_f:= Checksum_u AND $FFFF;
         Checksum_c:= (Checksum_u AND $FFFF0000) SHR 16;
         Checksum_f:= Checksum_f + Checksum_c;
         Checksum_f:= not Checksum_f; 
-        CalculateChecksum:= Checksum_f;     
+        CalculateChecksum:= Checksum_f; 
+
+        kfree(pseudoBuffer);
+
 end;
 
 procedure send(p_data : void; p_len : uint16; udpContext : PUDPSendContext);
@@ -255,31 +249,18 @@ begin
     for i:=0 to 65535 do begin
         Ports[i]:= nil;
     end;
-    //context:= PUDPBindContext(kalloc(sizeof(TUDPBindContext)));
-    //context^.Port:= 22294;
-    //context^.Callback:= @TestRecv;
-    //context^.UID:= 4398724;
-    //r:= bind(context);
-    writestring('[TestBind] ');
-    //case r of
-    //    tueOK:writestringln('22294 bind OK');
-    //    tuePortInUse:writestringln('22294 port in use');
-    //    tueGenericError:writestringln('22294 generic error');
-    //    tuePortRestricted:writestringln('22294 restricted');
-    //end;
-
-    SendContext:= PUDPSendContext(kalloc(SizeOf(TUDPSendContext)));
-    BindContext:= PUDPBindContext(kalloc(SizeOf(TUDPBindContext)));
-    PacketContext:= PPacketContext(kalloc(SizeOf(TPacketContext)));
-    SendContext^.DstPort:= 10;
-    SendContext^.Socket:= BindContext;
-    SendContext^.Context:= PacketContext;
-    BindContext^.Port:= 20;
-    copyIPv4(puint8(@UDPT_S_IP[0]), puint8(@PacketContext^.IP.Source[0]));
-    copyIPv4(puint8(@UDPT_D_IP[0]), puint8(@PacketContext^.IP.Destination[0]));
-    
-    Checksum:= CalculateChecksum(void(@UDPT_DATA[0]), 2, SendContext);
-    writehexln(Checksum);
+    //writestring('[TestBind] ');
+    //SendContext:= PUDPSendContext(kalloc(SizeOf(TUDPSendContext)));
+    //BindContext:= PUDPBindContext(kalloc(SizeOf(TUDPBindContext)));
+    //PacketContext:= PPacketContext(kalloc(SizeOf(TPacketContext)));
+    //SendContext^.DstPort:= 10;
+    //SendContext^.Socket:= BindContext;
+    //SendContext^.Context:= PacketContext;
+    //BindContext^.Port:= 20;
+    //copyIPv4(puint8(@UDPT_S_IP[0]), puint8(@PacketContext^.IP.Source[0]));
+    //copyIPv4(puint8(@UDPT_D_IP[0]), puint8(@PacketContext^.IP.Destination[0]));
+    //Checksum:= CalculateChecksum(void(@UDPT_DATA[0]), 2, SendContext);
+    //writehexln(Checksum);
     //while true do begin end;
 
     ipv4.registerProtocol($11, @ProcessPacket);

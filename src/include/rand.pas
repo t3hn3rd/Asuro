@@ -12,10 +12,15 @@ implementation
 var
     next : uint32 = 1;
 
-function rand32 : uint32;
+function rand : uint32;
 begin
     next:= next * 1103515245 + 12345;
-    rand32:= (next div 65536) mod 32768;
+    rand:= (next div 65536) mod 32768;    
+end;
+
+function rand32 : uint32;
+begin
+    rand32:= (rand SHL 16) AND rand;
 end;
 
 function rand16 : uint16;
