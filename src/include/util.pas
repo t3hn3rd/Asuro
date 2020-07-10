@@ -485,6 +485,52 @@ begin
     getTSC:= (hi SHL 32) OR lo;
 end;
 
+function RolDWord(AValue : uint32; Dist : uint8) : uint32;
+var
+    result : uint32;
+    i      : uint8;    
+
+begin
+    result:= AValue;
+    asm
+        PUSH EAX
+    end;
+    for i:=0 to Dist-1 do begin
+        asm
+            MOV EAX, result
+            ROL result, 1
+            MOV result, EAX
+        end;
+    end;
+    asm
+        POP EAX
+    end;
+    RolDWord:= result;
+end;
+
+function RorDWord(AValue : uint32; Dist : uint8) : uint32;
+var
+    result : uint32;
+    i      : uint8;    
+
+begin
+    result:= AValue;
+    asm
+        PUSH EAX
+    end;
+    for i:=0 to Dist-1 do begin
+        asm
+            MOV EAX, result
+            ROR result, 1
+            MOV result, EAX
+        end;
+    end;
+    asm
+        POP EAX
+    end;
+    RorDWord:= result;
+end;
+
 procedure BSOD(fault : pchar; info : pchar);
 var
     trace : pchar;
