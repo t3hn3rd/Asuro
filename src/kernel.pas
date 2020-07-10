@@ -46,6 +46,7 @@ uses
      edit,
      udpcat,
      cpu,
+     md5,
      rand;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
@@ -98,6 +99,8 @@ var
    test            : puint8;
    fb              : puint16;
    l               : PLinkedListBase;
+   MD5_Data        : array [0..4] of Char = ('h','e','l','l','o');
+   MD5_Hash        : PMD5Digest;
    
 begin
      { Serial Init }
@@ -231,6 +234,13 @@ begin
      //tracer.push_trace('kmain.SPLASHINIT');
      //splash.init();
 
+     writestring('MD5_Hash: ');
+     MD5_Hash := MD5Buffer(puint8(@MD5_Data[0]), 5);
+     for i := 0 to 15 do begin
+        writehexpair(MD5_Hash^[i]);
+     end;
+     writestringln(' ');
+
      { End of Boot }
      tracer.push_trace('kmain.EOB');
 
@@ -241,10 +251,6 @@ begin
 
      tracer.push_trace('kmain.END');
 
-     writehexln(rand.rand32);
-     writehexln(rand.rand32);
-     writehexln(rand.rand32);
-
      tracer.push_trace('kmain.TICK');
      while true do begin
         tracer.push_trace('kmain.RedrawWindows');
@@ -252,6 +258,7 @@ begin
         tracer.push_trace('kmain.VMTick');
         vm.tick();
      end;
+
 end;
  
 end.
