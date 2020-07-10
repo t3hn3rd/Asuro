@@ -60,6 +60,10 @@ procedure resetSystem();
 
 function getESP : uint32;
 
+function RolDWord(AValue : uint32; Dist : uint8) : uint32;
+
+function RorDWord(AValue : uint32; Dist : uint8) : uint32;
+
 function MsSinceSystemBoot : uint64;
 
 var
