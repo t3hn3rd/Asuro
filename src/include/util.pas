@@ -502,7 +502,7 @@ begin
     for i:=0 to Dist-1 do begin
         asm
             MOV EAX, result
-            ROL result, 1
+            ROL EAX, 1
             MOV result, EAX
         end;
     end;
@@ -525,7 +525,7 @@ begin
     for i:=0 to Dist-1 do begin
         asm
             MOV EAX, result
-            ROR result, 1
+            ROR EAX, 1
             MOV result, EAX
         end;
     end;

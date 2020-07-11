@@ -46,7 +46,7 @@ uses
      edit,
      udpcat,
      cpu,
-     md5,
+     md5, md5sum,
      rand;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
@@ -99,8 +99,6 @@ var
    test            : puint8;
    fb              : puint16;
    l               : PLinkedListBase;
-   MD5_Data        : array [0..4] of Char = ('h','e','l','l','o');
-   MD5_Hash        : PMD5Digest;
    
 begin
      { Serial Init }
@@ -210,7 +208,7 @@ begin
      net.init;
 
      tracer.push_trace('kmain.VMINIT');
-     vm.init();
+     //vm.init();
 
      { Init Progs }
      tracer.push_trace('kmain.SHELLINIT');
@@ -228,18 +226,12 @@ begin
      tracer.push_trace('kmain.EDIT');
      edit.init();
      udpcat.init();
+     md5sum.init();
      terminal.run();
 
      { Init Splash }
      //tracer.push_trace('kmain.SPLASHINIT');
      //splash.init();
-
-     writestring('MD5_Hash: ');
-     MD5_Hash := MD5Buffer(puint8(@MD5_Data[0]), 5);
-     for i := 0 to 15 do begin
-        writehexpair(MD5_Hash^[i]);
-     end;
-     writestringln(' ');
 
      { End of Boot }
      tracer.push_trace('kmain.EOB');

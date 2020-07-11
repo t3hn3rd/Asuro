@@ -207,7 +207,6 @@ type
         Server_Hostname         : Array[0..63] of uint8;
         Boot_File               : Array[0..127] of uint8;
         Magic_Cookie            : Array[0..3] of uint8;
-        Option_start            : char;
     end;
     PDHCPHeader = ^TDHCPHeader;
     TDHCPOpCode = (

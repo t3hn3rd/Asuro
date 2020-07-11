@@ -21,7 +21,6 @@ type
     hresult = cardinal;
     dword = cardinal;
     integer = longint;
- 
     pchar = ^char;
 
     //Standard Types
