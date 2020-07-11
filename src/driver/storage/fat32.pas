@@ -110,7 +110,7 @@ end;
 
 function load(ptr : void) : boolean;
 begin
-    console.outputln('DUMMY DRIVER', 'LOADED.')
+    console.outputln('FAT32', 'LOADED.')
 end;
 
 function cleanString(str : pchar; status : puint32) : byteArray8;
@@ -754,6 +754,7 @@ end;
 procedure create_volume(disk : PStorage_Device; sectors : uint32; start : uint32; config : puint32);
 var
     buffer     : puint32;
+    bt: puint32;
     zeroBuffer : puint32;
     bootRecord : PBootRecord;
     dataStart  : uint32;
@@ -800,7 +801,7 @@ begin //maybe increase buffer size by one?
     // memset(uint32(buffer), 0, sizeof(TBootRecord));
     // bootRecord:= PBootRecord(buffer);
 
-    buffer:= puint32(kalloc(disk^.sectorSize));
+    buffer:= puint32(kalloc(disk^.sectorSize+512));
     memset(uint32(buffer), 0, disk^.sectorSize);
 
     bootRecord:= PBootRecord(buffer);
@@ -824,9 +825,41 @@ begin //maybe increase buffer size by one?
     bootRecord^.bsignature      := $29;
     bootRecord^.identString     := fatArray;
 
-    puint32(buffer)[127]:= $55AA;
 
-    disk^.writecallback(disk, start + 1, 1, buffer);
+    console.writestringWND('spc', getTerminalHWND());
+    console.writeintlnWND(config^, getTerminalHWND());
+    console.writestringWND('sectors', getTerminalHWND());
+    console.writeintlnWND(sectors, getTerminalHWND());
+    console.writestringWND('sectorsize', getTerminalHWND());
+    console.writeintlnWND(disk^.sectorsize, getTerminalHWND());
+
+    console.redrawWindows();
+
+    bt:= puint32(kalloc(512));
+
+    bt[1] := 1;
+    bt[2] := 1;
+    bt[3] := 1;
+    bt[4] := 1;
+    bt[5] := 1;
+    bt[6] := 1;
+    bt[7] := 11;
+    bt[8] := 33;
+    bt[9] := 22;
+    disk^.writecallback(disk, 3, 1, puint32(bt));
+
+
+    // puint32(buffer)[127]:= $55AA;
+
+        console.writestringlnWND('writting to bootrecord', getTerminalHWND());
+        console.writeintlnWND(start + 1, getTerminalHWND());
+    console.redrawWindows;
+
+    disk^.writecallback(disk, start + 1, 1, puint32(buffer));
+
+        console.writestringlnWND('finished writting to bootrecord', getTerminalHWND());
+
+    console.redrawWindows;
 
     fatStart:= start + 1 + bootRecord^.rsvSectors;
     dataStart:= fatStart + bootRecord^.FATSize;
@@ -844,9 +877,13 @@ begin //maybe increase buffer size by one?
     kfree(zeroBuffer);
     writestring('Frees');
     console.redrawWindows;
+        console.writestringlnWND('writting 1', getTerminalHWND());
+    console.redrawWindows;
 
     buffer:= puint32(kalloc(disk^.sectorSize));
     memset(uint32(buffer), 0, disk^.sectorSize);
+        console.writestringlnWND('writting 1', getTerminalHWND());
+    console.redrawWindows;
 
     puint32(buffer)[0]:= $FFFFFFF8; //fsinfo
     puint32(buffer)[1]:= $FFFFFFF8; //root cluster

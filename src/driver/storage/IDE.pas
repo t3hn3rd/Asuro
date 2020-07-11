@@ -303,6 +303,16 @@ begin
 
     end;
 
+    // buffer:= puint8(kalloc(512));
+    // buffer[0] := 1;
+    // buffer[1] := 2;
+    // buffer[2] := 3;
+    // buffer[3] := 4;
+    // buffer[4] := 5;
+    // buffer[5] := 6;
+    // writePIO28(0, 3, buffer);
+    // kfree(puint32(buffer));
+
     console.writestringln('[IDE] (LOAD) END');
     pop_trace();
 end;
@@ -397,7 +407,7 @@ begin
     //send write command
     port_write(ATA_REG_COMMAND, ATA_CMD_WRITE_PIO); 
 
-    console.writestringln('ide write sttart');
+        console.writestringlnWND('ide write start', getTerminalHWND());
     console.redrawWindows();
 
     //write data
@@ -407,7 +417,7 @@ begin
         i:= i + 2;
     end;
 
-    console.writestringln('ise write stop');
+        console.writestringlnWND('ide write end', getTerminalHWND());
     console.redrawWindows();
 
     //flush drive cache

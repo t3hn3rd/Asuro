@@ -138,7 +138,7 @@ begin
         drive :=  stringToInt(getParam(1, params));
         console.writeintln(drive); // works
         if stringEquals(getParam(2, params), 'fat32') then begin
-                PFilesystem(LL_Get(filesystems, 0))^.createCallback((PStorage_Device(LL_Get(storageDevices, drive))), 10000, 1, spc); //todo check fs
+                PFilesystem(LL_Get(filesystems, 0))^.createCallback((PStorage_Device(LL_Get(storageDevices, drive))), 1000, 1, spc); //todo check fs
                 console.writestring('Drive ');
                 //console.writeint(drive); // page faults
                 console.writestringln(' formatted.');
