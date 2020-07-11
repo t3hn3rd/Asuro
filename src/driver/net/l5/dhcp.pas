@@ -23,10 +23,14 @@ procedure DHCPDiscover();
 
 implementation
 
+type
+    TFlipExclude = Array[0..255] of boolean;
+    PFlipExclude = ^TFlipExclude;
+
 var
     XID         : uint32;
     Socket      : PUDPBindContext;
-    FlipExclude : bitpacked Array[0..255] of boolean;
+    FlipExclude : PFlipExclude;
 
 procedure newOption(DHCPOptions : PDHCPOptions; Opcode : TDHCPOpCode; Data : void; Length : uint32; SwapEndian : Boolean);
 var
@@ -117,7 +121,7 @@ begin
     HaveLen:= false;
     while (uint32(buffer) < uint32(bufferEnd)) do begin
         if HaveLen then begin
-            newOption(DHCPOptions, Opcode, void(buffer), Length, not FlipExclude[ord(Opcode)]);
+            newOption(DHCPOptions, Opcode, void(buffer), Length, not FlipExclude^[ord(Opcode)]);
             inc(buffer, Length);
             HaveOp:= false;
             HaveLen:= false;
@@ -160,65 +164,66 @@ var
 begin
     tracer.push_trace('dhcp.register');
     console.outputln('DHCP', 'Register begin.');
+    FlipExclude:= PFlipExclude(kalloc(sizeof(TFlipExclude)));
     for i:=0 to 255 do begin
-        FlipExclude[i]:= false;
+        FlipExclude^[i]:= false;
     end;
-    // FlipExclude[ord(PAD)]:= true;
-    // FlipExclude[ord(SUBNET_MASK)]:= true;
-    // FlipExclude[ord(ROUTER)]:= true;
-    // FlipExclude[ord(TIME_SERVER)]:= true;
-    // FlipExclude[ord(NAME_SERVER)]:= true;
-    // FlipExclude[ord(DNS_SERVER)]:= true;
-    // FlipExclude[ord(LOG_SERVER)]:= true;
-    // FlipExclude[ord(COOKIE_SERVER)]:= true;
-    // FlipExclude[ord(LPR_SERVER)]:= true;
-    // FlipExclude[ord(IMPRESS_SERVER)]:= true;
-    // FlipExclude[ord(RESOURCE_LOCATION_SERVER)]:= true;
-    // FlipExclude[ord(HOST_NAME)]:= true;
-    // FlipExclude[ord(MERIT_DUMP_FILE)]:= true;
-    // FlipExclude[ord(DOMAIN_NAME)]:= true;
-    // FlipExclude[ord(SWAP_SERVER)]:= true;
-    // FlipExclude[ord(ROOT_PATH)]:= true;
-    // FlipExclude[ord(EXTENSIONS_PATH)]:= true;
-    // FlipExclude[ord(END_VENDOR_OPTIONS)]:= true;
-    // FlipExclude[ord(BROADCAST_ADDRESS)]:= true;
-    // FlipExclude[ord(ROUTER_SOLICITATION_ADDRESS)]:= true;
-    // FlipExclude[ord(STATIC_ROUTE)]:= true;
-    // FlipExclude[ord(NETWORK_INFORMATION_SERVICE_DOMAIN)]:= true;
-    // FlipExclude[ord(NETWORK_INFORMATION_SERVERS)]:= true;
-    // FlipExclude[ord(NTP_SERVERS)]:= true;
-    // FlipExclude[ord(VENDOR_SPECIFIC_INFORMATION)]:= true;
-    // FlipExclude[ord(NETBIOS_OVER_TCP_NAME_SERVER)]:= true;
-    // FlipExclude[ord(NETBIOS_OVER_TCP_DATAGRAM_DISTRIBUTION_SERVER)]:= true;
-    // FlipExclude[ord(NETBIOS_OVER_TCP_SCOPE)]:= true;
-    // FlipExclude[ord(X_WINDOW_SYSTEM_FONT_SERVER)]:= true;
-    // FlipExclude[ord(X_WINDOW_SYSTEM_DISPLAY_MANAGER)]:= true;
-    // FlipExclude[ord(NETWORK_INFORMATION_SERVICE_PLUS_DOMAIN)]:= true;
-    // FlipExclude[ord(NETWORK_INFORMATION_SERVICE_PLUS_SERVERS)]:= true;
-    // FlipExclude[ord(MOBILE_IP_HOME_AGENT)]:= true;
-    // FlipExclude[ord(SMTP_SERVER)]:= true;
-    // FlipExclude[ord(POP3_SERVER)]:= true;
-    // FlipExclude[ord(NNTP_SERVER)]:= true;
-    // FlipExclude[ord(DEFAULT_WWW_SERVER)]:= true;
-    // FlipExclude[ord(DEFAULT_FINGER_SERVER)]:= true;
-    // FlipExclude[ord(DEFAULT_IRC_SERVER)]:= true;
-    // FlipExclude[ord(STREETTALK_SERVER)]:= true;
-    // FlipExclude[ord(STDA_SERVER)]:= true;
-    // FlipExclude[ord(REQUESTED_IP_ADDRESS)]:= true;
-    // FlipExclude[ord(SERVER_IDENTIFIER)]:= true;
-    // FlipExclude[ord(PARAMETER_REQUEST_LIST)]:= true;
-    // FlipExclude[ord(VENDOR_CLASS_IDENTIFIER)]:= true;
-    // FlipExclude[ord(CLIENT_IDENTIFIER)]:= true;
-    // FlipExclude[ord(TFTP_SERVER_NAME)]:= true;
-    // FlipExclude[ord(BOOTFILE_NAME)]:= true;
-    // FlipExclude[ord(RELAY_AGENT_INFORMATION)]:= true;
-    // FlipExclude[ord(NDS_SERVERS)]:= true;
-    // FlipExclude[ord(NDS_TREE_NAME)]:= true;
-    // FlipExclude[ord(NDS_CONTEXT)]:= true;
-    // FlipExclude[ord(POSIX_TIMEZONE)]:= true;
-    // FlipExclude[ord(TZ_TIMEZONE)]:= true;
-    // FlipExclude[ord(DOMAIN_SEARCH)]:= true;
-    // FlipExclude[ord(CLASSLESS_STATIC_ROUTE)]:= true;
+    FlipExclude^[ord(PAD)]:= true;
+    FlipExclude^[ord(SUBNET_MASK)]:= true;
+    FlipExclude^[ord(ROUTER)]:= true;
+    FlipExclude^[ord(TIME_SERVER)]:= true;
+    FlipExclude^[ord(NAME_SERVER)]:= true;
+    FlipExclude^[ord(DNS_SERVER)]:= true;
+    FlipExclude^[ord(LOG_SERVER)]:= true;
+    FlipExclude^[ord(COOKIE_SERVER)]:= true;
+    FlipExclude^[ord(LPR_SERVER)]:= true;
+    FlipExclude^[ord(IMPRESS_SERVER)]:= true;
+    FlipExclude^[ord(RESOURCE_LOCATION_SERVER)]:= true;
+    FlipExclude^[ord(HOST_NAME)]:= true;
+    FlipExclude^[ord(MERIT_DUMP_FILE)]:= true;
+    FlipExclude^[ord(DOMAIN_NAME)]:= true;
+    FlipExclude^[ord(SWAP_SERVER)]:= true;
+    FlipExclude^[ord(ROOT_PATH)]:= true;
+    FlipExclude^[ord(EXTENSIONS_PATH)]:= true;
+    FlipExclude^[ord(END_VENDOR_OPTIONS)]:= true;
+    FlipExclude^[ord(BROADCAST_ADDRESS)]:= true;
+    FlipExclude^[ord(ROUTER_SOLICITATION_ADDRESS)]:= true;
+    FlipExclude^[ord(STATIC_ROUTE)]:= true;
+    FlipExclude^[ord(NETWORK_INFORMATION_SERVICE_DOMAIN)]:= true;
+    FlipExclude^[ord(NETWORK_INFORMATION_SERVERS)]:= true;
+    FlipExclude^[ord(NTP_SERVERS)]:= true;
+    FlipExclude^[ord(VENDOR_SPECIFIC_INFORMATION)]:= true;
+    FlipExclude^[ord(NETBIOS_OVER_TCP_NAME_SERVER)]:= true;
+    FlipExclude^[ord(NETBIOS_OVER_TCP_DATAGRAM_DISTRIBUTION_SERVER)]:= true;
+    FlipExclude^[ord(NETBIOS_OVER_TCP_SCOPE)]:= true;
+    FlipExclude^[ord(X_WINDOW_SYSTEM_FONT_SERVER)]:= true;
+    FlipExclude^[ord(X_WINDOW_SYSTEM_DISPLAY_MANAGER)]:= true;
+    FlipExclude^[ord(NETWORK_INFORMATION_SERVICE_PLUS_DOMAIN)]:= true;
+    FlipExclude^[ord(NETWORK_INFORMATION_SERVICE_PLUS_SERVERS)]:= true;
+    FlipExclude^[ord(MOBILE_IP_HOME_AGENT)]:= true;
+    FlipExclude^[ord(SMTP_SERVER)]:= true;
+    FlipExclude^[ord(POP3_SERVER)]:= true;
+    FlipExclude^[ord(NNTP_SERVER)]:= true;
+    FlipExclude^[ord(DEFAULT_WWW_SERVER)]:= true;
+    FlipExclude^[ord(DEFAULT_FINGER_SERVER)]:= true;
+    FlipExclude^[ord(DEFAULT_IRC_SERVER)]:= true;
+    FlipExclude^[ord(STREETTALK_SERVER)]:= true;
+    FlipExclude^[ord(STDA_SERVER)]:= true;
+    FlipExclude^[ord(REQUESTED_IP_ADDRESS)]:= true;
+    FlipExclude^[ord(SERVER_IDENTIFIER)]:= true;
+    FlipExclude^[ord(PARAMETER_REQUEST_LIST)]:= true;
+    FlipExclude^[ord(VENDOR_CLASS_IDENTIFIER)]:= true;
+    FlipExclude^[ord(CLIENT_IDENTIFIER)]:= true;
+    FlipExclude^[ord(TFTP_SERVER_NAME)]:= true;
+    FlipExclude^[ord(BOOTFILE_NAME)]:= true;
+    FlipExclude^[ord(RELAY_AGENT_INFORMATION)]:= true;
+    FlipExclude^[ord(NDS_SERVERS)]:= true;
+    FlipExclude^[ord(NDS_TREE_NAME)]:= true;
+    FlipExclude^[ord(NDS_CONTEXT)]:= true;
+    FlipExclude^[ord(POSIX_TIMEZONE)]:= true;
+    FlipExclude^[ord(TZ_TIMEZONE)]:= true;
+    FlipExclude^[ord(DOMAIN_SEARCH)]:= true;
+    FlipExclude^[ord(CLASSLESS_STATIC_ROUTE)]:= true;
     Socket:= PUDPBindContext(Kalloc(sizeof(TUDPBindContext)));
     Socket^.Port:= 68;
     Socket^.Callback:= @processPacket;
