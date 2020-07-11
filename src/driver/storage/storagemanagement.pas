@@ -25,7 +25,7 @@ uses
 
 type 
 
-    TControllerType = (ControllerIDE, ControllerUSB, ControllerAHCI, ControllerNET);
+    TControllerType = (ControllerIDE, ControllerUSB, ControllerAHCI, ControllerNET, ControllerRAM, rsvctr1, rsvctr2, rsvctr3);
     TDirectory_Entry_Type = (directoryEntry, fileEntry, mountEntry);
     PStorage_volume = ^TStorage_Volume;
     PStorage_device = ^TStorage_Device;

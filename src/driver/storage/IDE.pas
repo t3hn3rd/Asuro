@@ -20,11 +20,13 @@ uses
     vmemorymanager,
     lmemorymanager,
     storagemanagement,
+    strings,
     tracer;
 
 type 
-    TIdentResponse = array[0..255] of uint16;
+    TPortMode = (P_READ, P_WRITE);
 
+    TIdentResponse = array[0..255] of uint16;
 
     TIDE_Channel_Registers = record
         base    : uint16;
@@ -105,7 +107,7 @@ const
     ATA_REG_DATA       = $00;
     ATA_REG_ERROR      = $01;
     ATA_REG_FEATURES   = $01;
-    ATA_REG_SECCOUNT0  = $02;
+    ATA_REG_SECCOUNT  = $02;
     ATA_REG_LBA0       = $03;
     ATA_REG_LBA1       = $04;
     ATA_REG_LBA2       = $05;
@@ -120,6 +122,11 @@ const
     ATA_REG_ALTSTATUS  = $0C;
     ATA_REG_DEVADDRESS = $0D; 
 
+    ATA_DEVICE_MASTER = $A0;
+    ATA_DEVICE_SLAVE = $B0;
+
+    ATA_PRIMARY_BASE = $1F0;
+
 var
     controller : PPCI_Device;
 
@@ -133,70 +140,106 @@ var
 
 procedure init();
 function load(ptr : void) : boolean;
-function identify_device(bus : uint8; drive : uint8) : TIdentResponse;
-procedure readPIO28(drive : uint8; LBA : uint32; sectorCount : uint8; buffer : puint32);
-procedure writePIO28(drive : uint8; LBA : uint32; sectorCount : uint8; buffer : Puint32);
+function identify_device(bus : uint8; device : uint8) : TIdentResponse;
+
+// procedure flush();
+procedure readPIO28(drive : uint8; LBA : uint32; buffer : puint8);
+procedure writePIO28(drive : uint8; LBA : uint32; buffer : puint8);
 //read/write must be capable of reading/writting any amknt of data upto disk size
 
-procedure read(device : PStorage_device; LBA : uint32; sectorCount : uint32; buffer : Puint32);
-procedure write(device : PStorage_device; LBA : uint32; sectorCount : uint32; buffer : Puint32);
+procedure read(device : PStorage_device; LBA : uint32; sectorCount : uint32; buffer : puint32);
+procedure write(device : PStorage_device; LBA : uint32; sectorCount : uint32; buffer : puint32);
 
 implementation 
 
-procedure test_command(params : PParamList);
-var
-    secotrs : uint32;
-    cpacityMB : uint32;
-    buffer : puint32;
-    i : uint32;
-    d : uint8;
+function port_read(register : uint8) : uint8;
 begin
+    port_read:= inb(ATA_PRIMARY_BASE + register);
+end;
 
-    for d:= 0 to 1 do begin
-        secotrs := IDEDevices[d].info[60];
-        secotrs := secotrs or (IDEDevices[d].info[61] shl 16);
-
-        cpacityMB :=  (secotrs * 512) DIV 1000 DIV 1000;
-
-        if d = 0 then console.writestring('HHD_Primary_MASTER -');
-        if d = 1 then console.writestring('HHD_Primary_SLAVE -');
-
-        console.writestring(' Capacity: ');
-        console.writeint(cpacityMB);
-        console.writestringln('MB');
-
-        buffer := puint32(kalloc(1024 * 2000));
-        //buffer^:= secotrs;
-
-        for i:=0 to 20 do begin
-            puint32(buffer + (i div 2))^:= $10010110;
+procedure port_write(register : uint8; data : uint8);
+var
+    i : uint8;
+begin
+    outb(ATA_PRIMARY_BASE + register, data);
+    util.psleep(1);
+    if register = ATA_REG_COMMAND then begin
+        for i:= 0 to 5 do begin 
+            port_read(ATA_REG_STATUS);
         end;
-
-        writePIO28(d, 2, 2, buffer);
-        //buffer^:= $FFFF;
-        for i:=0 to 20 do begin
-            puint32(buffer + (i div 2))^:= $FFFFFFFF;
-        end;
-        
-        readPIO28(d, 2, 2, buffer);
-
-        for i:=0 to 20 do begin
-            if puint32(buffer + (i div 2))^ <> $10010110 then begin
-                console.writestringln('Tests failed!');
-                exit;
-            end;
-        end;
-
-    // if uint32(buffer^) = secotrs then begin
-            console.writestringln('Tests successful!');
-        // end
-        // else begin
-        //     console.writestringln('Tests failed!');
-        //     console.writehexln($01101001);
-        //     console.writehexln(uint32(buffer^));
-        // end;
-        kfree(buffer);
     end;
+end;
+
+procedure no_interrupt(device : uint8);
+begin
+    outb($3F6, inb($3f6) or (1 shl 1));
+end;
+
+procedure device_select(device : uint8);
+begin
+    outb($1F6, device); //TODO clean
+end;
+
+function is_ready() : boolean;
+var 
+    status : uint8;
+    i : uint32;
+begin
+    //wait for drive to be ready
+    while true do begin 
+        status := port_read(ATA_REG_COMMAND);
+
+        if(status and ATA_SR_ERR) = ATA_SR_ERR then begin
+            console.writestringln('[IDE] (IDENTIFY_DEVICE) DRIVE ERROR!');
+            console.redrawWindows();
+            is_ready := false;
+            break;
+        end;
+
+        if (status and ATA_SR_BUSY) <> ATA_SR_BUSY then begin
+            is_ready := true;
+            break;
+        end;
+    end;
+end;
+
+function validate_28bit_address(addr : uint32) : boolean;
+begin
+    validate_28bit_address := (addr and $F0000000) = 0;
+end;
+
+function identify_device(bus : uint8; device : uint8) : TIdentResponse;
+var
+    status : uint8;
+    identResponse : TIdentResponse;
+    i : uint8;
+begin 
+    device_select(device);
+    no_interrupt(device);
+    port_write(ATA_REG_CONTROL, 0);
+
+    //check if bus is floating
+    status := port_read(ATA_REG_COMMAND);
+    if status = $FF then exit;
+
+    port_write(ATA_REG_SECCOUNT, 0);
+    port_write(ATA_REG_LBA0, 0);
+    port_write(ATA_REG_LBA1, 0);
+    port_write(ATA_REG_LBA2, 0);
+
+    port_write(ATA_REG_COMMAND, ATA_CMD_IDENTIFY);
+
+    //check if drive is present
+    status := port_read(ATA_REG_COMMAND);
+    if status = $00 then exit;
+
+    if not is_ready() then exit;
+
+    for i:=0 to 255 do begin
+        identResponse[i] := inw(ATA_PRIMARY_BASE + ATA_REG_DATA);
+    end;
+
+    identify_device := identResponse; 
 end;
 
 procedure init();  
@@ -221,306 +264,183 @@ end;
 
 function load(ptr : void) : boolean;
 var
-    storageDevice : TStorage_Device;
-    storageDevice1 : TStorage_Device;
+    controller : PPCI_Device;
+    masterDevice : TStorage_Device;
+    slaveDevice : TStorage_Device;
+    buffer : puint8;
+    i : uint8;
 begin
     push_trace('ide.load');
     console.writestringln('[IDE] (LOAD) BEGIN');
     //controller := PPCI_Device(ptr);
+    controller := PPCI_Device(ptr);
 
     console.writestringln('[IDE] (INIT) CHECK FLOATING BUS');
     //check if bus is floating and identify device
     if inb($1F7) <> $FF then begin
         //outb($3F6, inb($3f6) or (1 shl 1)); // disable interrupts
         IDEDevices[0].isMaster:= true;
-        IDEDevices[0].info := identify_device(0, $A0);
+        IDEDevices[0].info := identify_device(0, ATA_DEVICE_MASTER);
 
-        storageDevice.controller := ControllerIDE;
-        storageDevice.controllerId0:= 0;
-        storageDevice.maxSectorCount:= (IDEDevices[0].info[60] or (IDEDevices[0].info[61] shl 16) ); //LBA28 SATA
+        masterDevice.controller := ControllerIDE;
+        masterDevice.controllerId0:= 0;
+        masterDevice.maxSectorCount:= (IDEDevices[0].info[60] or (IDEDevices[0].info[61] shl 16) ); //LBA28 SATA
+        
+        if IDEDevices[0].info[1] = 0 then begin
+            console.writestringln('[IDE] (INIT) ERROR: DEVICE IDENT FAILED!');
+            exit;
+        end;
 
-        storageDevice.hpc:= uint32(IDEDevices[0].info[3] DIV IDEDevices[0].info[1]);
+        masterDevice.hpc:= uint32(IDEDevices[0].info[3] DIV IDEDevices[0].info[1]);
 
-        storageDevice.sectorSize:= 512;
-        if storageDevice.maxSectorCount <> 0 then begin
+        masterDevice.sectorSize:= 512;
+        if masterDevice.maxSectorCount <> 0 then begin
             IDEDevices[0].exists:= true;
-            storageDevice.readCallback:= @read;
-            storageDevice.writeCallback:= @write;
-            storagemanagement.register_device(@storageDevice);
+            masterDevice.readCallback:= @read;
+            masterDevice.writeCallback:= @write;
+            storagemanagement.register_device(@masterDevice);
         end;
-    end;
 
-    if inb($1F7) <> $FF then begin
-        IDEDevices[1].isMaster:= false;
-        IDEDevices[1].info := identify_device(0, $B0);
-
-        storageDevice1.controller := ControllerIDE;
-        storageDevice1.controllerId0:= 1;
-        storageDevice1.maxSectorCount:= (IDEDevices[1].info[60] or (IDEDevices[1].info[61] shl 16) ); //LBA28 SATA
-        storageDevice1.sectorSize:= 512;
-        if storageDevice1.maxSectorCount <> 0 then begin
-            IDEDevices[1].exists:= true;
-            storageDevice1.readCallback:= @read;
-            storageDevice1.writeCallback:= @write;
-            //storagemanagement.register_device(@storageDevice1);
-        end;
     end;
 
     console.writestringln('[IDE] (LOAD) END');
     pop_trace();
 end;
 
-procedure noInt(drive : uint8);
-begin
-    if drive = 0 then begin
-        outb($1F6, $A0); //drive select
-        outb($3F6, inb($3f6) or (1 shl 1)); // disable interrupts
-        //outb($1F6, $B0); //drive select
-        //outb($3F6, inb($3f6) and (0 shl 1)); // disable interrupts
-    end else begin
-        outb($1F6, $B0); //drive select
-        outb($3F6, inb($3f6) or (1 shl 1)); // disable interrupts
-        //outb($1F6, $A0); //drive select
-        //outb($3F6, inb($3f6) and (0 shl 1)); // disable interrupts
-    end;
-end;
+// procedure flush();
+// begin
+//     port_write(ATA_CMD_CACHE_FLUSH);
+//     if not is_ready() then exit;
+// end;
 
-function identify_device(bus : uint8; drive : uint8) : TIdentResponse;
-var 
-    i : uint8;
-    identResponse : TIdentResponse;
-    t : uint32 = 0;
-begin
-    push_trace('ide.identify_device');
-    console.writestringln('[IDE] (IDENTIFY_DEVICE) BEGIN');
-    if bus = 0 then begin
-
-        if drive = $A0 then noInt(0);
-        if drive = $B0 then noInt(1);
-
-        outb($1F6, drive); //drive select
-
-        outb($1F2, 0); //clear sector count and lba
-        outb($1F3, 0);
-        outb($1F4, 0);
-        outb($1F5, 0); 
-
-        outb($1F7, ATA_CMD_IDENTIFY); //send identify command//
-
-        while true do begin
-            if (inb($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
-        end;
-
-        while true do begin
-            if (inb($1f7) and (1 shl 3)) <> 0 then break;
-            if (inb($1F7) and 1) <> 0 then exit; //drive error
-            if t > 100000 then exit; //todo return false
-            t +=1;
-        end;
-
-        for i:=0 to 255 do begin
-            identResponse[i] := inb($1F0); //read all bits
-        end;
-
-        identify_device:= identResponse;
-        exit;
-    end; 
-    console.writestringln('[IDE] (IDENTIFY_DEVICE) END');
-    pop_trace();
-end;
-
-procedure writePIO28(drive : uint8; LBA : uint32; sectorCount : uint8; buffer : Puint32);
+procedure readPIO28(drive : uint8; LBA : uint32; buffer : puint8);
 var
-    i : uint8;
-    ii : uint8;
-    iii : uint32;
-begin
-    push_trace('ide.writePIO28');
-    console.writestringln('[IDE] (WRITEPIO28) BEGIN');
-    console.redrawWindows;
-    while true do if (inb($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
-
-    console.writestringln('[IDE] (WRITEPIO28) 1');
-    console.redrawWindows;
-
-    noInt(drive);
-
-    if IDEDevices[drive].isMaster then begin
-        outb($1F6, $A0); //drive select
-        outb($1F7, $E0 or ((LBA shr 24) and $0F)); //LBA command primary master
-    end
-    else begin
-        outb($1F6, $B0); //drive select
-        outb($1F7, $F0 or ((LBA shr 24) and $0F)); //LBA command primary slave
-    end;
-
-    console.writestringln('[IDE] (WRITEPIO28) 2');
-    console.redrawWindows;
-
-    outb($1F2, sectorCount);
-    outb($1F3, LBA);
-    outb($1F4, LBA shr 8);
-    outb($1F5, LBA shr 16);
-    outb($1F7, $30); //write command
-
-    console.writestringln('[IDE] (WRITEPIO28) 3');
-    console.redrawWindows;
-
-    for i:=0 to sectorCount-1 do begin
-        
-        //poll status
-        while true do if (inb($1f7) and ATA_SR_BUSY) = 0 then break; //Wait until drive not busy 
-
-        console.writestringln('[IDE] (WRITEPIO28) 4');
-        console.redrawWindows;
-
-        while true do begin
-            console.writestring('[IDE] (WRITEPIO28) inb($1f7): ');
-            writehexpair(inb($1f7));
-            if inb($1f7) = $40 then begin
-                while true do begin console.redrawWindows; end;
-            end;
-            writestringln(' ');
-            console.redrawWindows;
-            if (inb($1f7) and (1 shl 3)) <> 0 then break;
-            if (inb($1F7) and 1) <> 0 then begin
-                console.writestringln('write error');
-                console.redrawWindows;
-                exit;
-            end; //drive error
-        end;
-
-        console.writestringln('[IDE] (WRITEPIO28) 5');
-        console.redrawWindows;
-
-        for ii:=0 to 127 do begin //write data
-            outb($1F0, Puint32(buffer + ((i * 512) + (ii * 32) DIV 32) )^);
-            while true do if (inb($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
-            outb($1F7, $E7);
-            if ii <> 127 then begin
-                outb($1F0, Puint32(buffer + ((i * 512) + (ii * 32) DIV 32) )^ shr 16);
-                while true do if (inb($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
-                outb($1F7, $E7);
-            end;
-        end;
-
-        console.writestringln('[IDE] (WRITEPIO28) 6');
-        console.redrawWindows;
-
-    end;
-    console.writestringln('[IDE] (WRITEPIO28) END');
-    console.redrawWindows;
-    pop_trace();
-end;
-
-procedure readPIO28(drive : uint8; LBA : uint32; sectorCount : uint8; buffer : puint32);
-var
-    i : uint8;
-    ii : uint8;
-    iii : uint32;
+    status : uint8;
+    i: uint16;
+    device: uint8;
+    data: uint16;
 begin 
-    push_trace('ide.readPIO28');
-    console.writestringln('[IDE] (READPIO28) BEGIN');
-    while true do if (inb($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
+       if not validate_28bit_address(LBA) then begin
+        console.writestringln('IDE (writePIO28) ERROR: Invalid LBA!');
+    end;
 
-    noInt(drive);
-
+    //Add last 4 bits of LBA to device port
     if IDEDevices[drive].isMaster then begin
-        //outb($1F6, $A0); //drive select
-        outb($1F7, $E0 or ((LBA shr 24) and $0F)); //read command primary master
+        device:= ATA_DEVICE_MASTER;
+        device_select($E0 or ((LBA and $0F000000) shr 24)); //LBA primary master
     end
     else begin
-        //outb($1F6, $B0); //drive select
-        outb($1F7, $F0 or ((LBA shr 24) and $0F)); //read command primary slave
+        device:= ATA_DEVICE_SLAVE;
+        device_select($F0 or ((LBA and $0F000000) shr 24)); //LBA primary slave
     end;
 
-    outb($1F2, sectorCount);
-    outb($1F3, LBA);
-    outb($1F4, LBA shr 8);
-    outb($1F5, LBA shr 16);
-    outb($1F7, $20); //read command
+    no_interrupt(device);
+    port_write(ATA_REG_ERROR, 0);
 
+    //Write sector count and LBA
+    port_write(ATA_REG_SECCOUNT, 1);
+    port_write(ATA_REG_LBA0, (LBA and $000000FF));
+    port_write(ATA_REG_LBA1, (LBA and $0000FF00) shr 8);
+    port_write(ATA_REG_LBA2, (LBA and $00FF0000) shr 16);
 
-    for i:=0 to sectorCount-1 do begin
+    //send read command
+    port_write(ATA_REG_COMMAND, ATA_CMD_READ_PIO); 
+    if not is_ready() then exit;
 
-        //poll status
-        while true do if (inb($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
-        while true do begin
-            if (inb($1f7) and (1 shl 3)) <> 0 then break;
-            if (inb($1f7) and (1 shl 5)) <> 0 then begin
-                console.writestringln('IDE DRIVE FAULT');
-                redrawWindows();
-                exit;
-            end;
-            if (inb($1f7) and (1 shl 6)) <> 0 then begin
-                console.writestringln('IDE Spun Down');
-                redrawWindows();
-                exit;
-            end;
-            if (inb($1F7) and 1) <> 0 then begin
-                console.writestringln('IDE read ERROR');
-                redrawWindows();
-                exit;
-            end; //drive error
-        end;
+    i:=0;
+    while i < 512 do begin
+        // if not is_ready() then exit;
 
-        for ii:=0 to 127 do begin //read data
-            Puint32(buffer + ((i * 512) + (ii * 32) DIV 32))^ := uint32(inb($1F0)); 
-            while true do if (inb($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
-            if ii <> 127 then begin
-                Puint32(buffer + ((i * 512) + (ii * 32) DIV 32))^ := ((uint32(inb($1F0)) shl 16) or Puint32(buffer + ((i * 512) + (ii * 32) DIV 32))^); //wrong
-                while true do if (inb($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
-            end;
-        end;
+        data:= inw(ATA_PRIMARY_BASE + ATA_REG_DATA);
+
+        buffer[i+1] := uint8($00ff and (data shr 8));
+        buffer[i] := uint8($00ff and data);
+
+        i:= i + 2;
     end;
-    console.writestringln('[IDE] (READPIO28) END');
-    pop_trace();
 end;
 
-procedure readPIOPI(drive : uint8; LBA : uint32; buffer : Puint32);
+procedure writePIO28(drive : uint8; LBA : uint32; buffer : puint8);
 var
-    i : uint16;
+    status : uint8;
+    i: uint16;
+    device: uint8;
 begin 
-    console.writestringln('[IDE] (READPIOPI) BEGIN');
+    if not validate_28bit_address(LBA) then begin
+        console.writestringln('IDE (writePIO28) ERROR: Invalid LBA!');
+    end;
+
+    //Add last 4 bits of LBA to device port
     if IDEDevices[drive].isMaster then begin
-        outb($1F7, $E0 or ((LBA shr 24) and $0F)); // command primary master
+        device:= ATA_DEVICE_MASTER;
+        device_select($E0 or ((LBA and $0F000000) shr 24)); //LBA primary master
     end
     else begin
-        outb($1F7, $F0 or ((LBA shr 24) and $0F)); // command primary slave
+        device:= ATA_DEVICE_SLAVE;
+        device_select($F0 or ((LBA and $0F000000) shr 24)); //LBA primary slave
     end;
 
-    outb($1F2, 1);
-    outb($1F3, LBA);
-    outb($1F4, LBA shr 8);
-    outb($1F5, LBA shr 16);
-    outb($1F7, ATAPI_CMD_READ); //read command
+    no_interrupt(device);
+    port_write(ATA_REG_ERROR, 0);
+    port_write(ATA_REG_CONTROL, 0);
 
-    //poll status
-    while true do if (inb($1f7) and (1 shl 7)) = 0 then break; //Wait until drive not busy 
+    //check if bus is floating
+    status := port_read(ATA_REG_COMMAND);
+    if status = $FF then exit;
 
-    while true do begin
-        if (inb($1f7) and (1 shl 3)) <> 0 then break;
-        if (inb($1F7) and 1) <> 0 then begin
-            console.writestringln('IDE read ERROR');
-            exit;
-        end; //drive error
+    //Write sector count and LBA
+    port_write(ATA_REG_SECCOUNT, 1);
+    port_write(ATA_REG_LBA0, (LBA and $000000FF));
+    port_write(ATA_REG_LBA1, (LBA and $0000FF00) shr 8);
+    port_write(ATA_REG_LBA2, (LBA and $00FF0000) shr 16);
+
+    //send write command
+    port_write(ATA_REG_COMMAND, ATA_CMD_WRITE_PIO); 
+
+    console.writestringln('ide write sttart');
+    console.redrawWindows();
+
+    //write data
+    i:=0;
+    while i < 512 do begin
+        outw(ATA_PRIMARY_BASE + ATA_REG_DATA, uint16(buffer[i] or (buffer[i+1] shl 8)));
+        i:= i + 2;
     end;
 
-    // for i:=0 to 1023 do begin
-    //         Puint32(buffer + (i * 1))^ := inb($1F0);
-    // end;
-    console.writestringln('[IDE] (READPIOPI) END');
+    console.writestringln('ise write stop');
+    console.redrawWindows();
+
+    //flush drive cache
+    psleep(1);
+    port_write(ATA_REG_COMMAND, ATA_CMD_CACHE_FLUSH);
+    psleep(1);
+    if not is_ready() then exit;
+
+    console.writestringln('ide write end');
+    console.redrawWindows();
+
 end;
-
 
 procedure read(device : PStorage_device; LBA : uint32; sectorCount : uint32; buffer : Puint32);
+var
+    i : uint16;
 begin
-    readPIO28(device^.controllerId0, LBA, sectorCount, buffer); //need to figure out max read/write amount per operation
+    // for i:=0 to sectorCount-1 do begin
+    //     readPIO28(device^.controllerId0, LBA, puint8(@buffer[512*i])); 
+    // end;
+
+    readPIO28(device^.controllerId0, LBA, puint8(buffer)); 
+
 end;
 
 procedure write(device : PStorage_device; LBA : uint32; sectorCount : uint32; buffer : Puint32);
+var
+    i : uint16;
 begin
-    writePIO28(device^.controllerId0, LBA, sectorCount, buffer);
+    // for i:=0 to sectorCount-1 do begin
+    //     writePIO28(device^.controllerId0, LBA, puint8(@buffer[512*i]));
+    // end;
+     writePIO28(device^.controllerId0, LBA, puint8(buffer));
 end;
 
 end.

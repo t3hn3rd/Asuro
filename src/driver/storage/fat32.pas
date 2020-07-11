@@ -834,21 +834,11 @@ begin //maybe increase buffer size by one?
     zeroBuffer:= puint32(kalloc( disk^.sectorSize ));
     memset(uint32(zeroBuffer), 0, disk^.sectorSize );
 
-    {while true do begin
-        if i > FATSize then break;
-        writestring('LOOP BEGIN: ');
-        writeintln(i);
-        writeintln(bootRecord^.rsvSectors);
-        writeintln(start);
-        writeintln(fatStart);
-        writeintln(FATSize);
-        console.redrawWindows; 
-        disk^.writecallback(disk, fatStart + i, 1, zeroBuffer);
-        writestring('LOOP END: ');
-        writeintln(i);
-        console.redrawWindows;
-        i+=1;
-    end;}
+    // while true do begin
+    //     if i > FATSize then break; 
+    //     disk^.writecallback(disk, fatStart + i, 1, zeroBuffer);
+    //     i+=1;
+    // end;
 
     kfree(buffer);
     kfree(zeroBuffer);
