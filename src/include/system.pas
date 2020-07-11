@@ -54,6 +54,10 @@ type
     Void = ^uInt32;
     HWND = uint32;
 
+    yord = uInt8;
+    xord = uInt8;
+    zord = uInt16;
+
     //Alternate Types
     UBit1 =  0..(1 shl 01) - 1;
     UBit2 =  0..(1 shl 02) - 1;

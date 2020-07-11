@@ -200,8 +200,8 @@ type
         Bootp_Flags             : uint16;
         Client_IP               : TIPv4Address;
         Your_IP                 : TIPv4Address;
-        Server_IP               : TIPV4Header;
-        Relay_Agent_IP          : TIPV4Header;
+        Server_IP               : TIPv4Address;
+        Relay_Agent_IP          : TIPv4Address;
         Client_MAC              : TMACAddress;
         Padding                 : Array[0..9] of uint8;
         Server_Hostname         : Array[0..63] of uint8;
