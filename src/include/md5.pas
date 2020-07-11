@@ -1,3 +1,10 @@
+{ 
+	Include->MD5 - MD5 checksum.
+	
+    @author(Angus C <angus@actm.uk>)
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
+
 unit md5;
 
 interface

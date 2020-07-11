@@ -46,7 +46,10 @@ uses
      edit,
      udpcat,
      cpu,
-     md5, md5sum,
+     md5,
+     md5sum,
+     base64,
+     base64_prog,
      rand;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
@@ -227,6 +230,7 @@ begin
      edit.init();
      udpcat.init();
      md5sum.init();
+     base64_prog.init();
      terminal.run();
 
      { Init Splash }
