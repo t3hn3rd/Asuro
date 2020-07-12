@@ -217,6 +217,22 @@ begin
     readOption32:= read32^;
 end;
 
+function getOptionByOpcode(Options : PDHCPOptions; Opcode : TDHCPOpCode) : PDHCPOption;
+var
+    Option : PDHCPOption;
+    i      : uint16;
+
+begin
+    getOptionByOpcode:= nil;
+    for i:=0 to getOptionsCount(Options)-1 do begin
+        Option:= getOption(Options, i);
+        if Option^.Opcode = Opcode then begin
+            getOptionByOpcode:= Option;
+            break;
+        end;
+    end;
+end;
+
 function writeOptions(Header : PDHCPHeader; Options : PDHCPOptions; newLength : puint16) : PDHCPHeader;
 var
     OptionsSize : uint16;
@@ -414,10 +430,14 @@ Var
     NewSendHeader : PDHCPHeader;
     NewHeaderSize : uint32;
 
+    RequestParams : Array[0..3] of uint8;
+
     SendCtx     : PUDPSendContext;
     PacketCtx   : PPacketContext;
 
     MAC         : puint8;
+
+    Option      : PDHCPOption;
 
 begin
     console.outputln('DHCP', 'Process OFFER.');  
@@ -433,9 +453,21 @@ begin
 
         SendOptions:= newOptions();
         SendMsgType:= ord(TDHCPMessageType.REQUEST);
+        
         NewOption(SendOptions, TDHCPOpCode.DHCP_MESSAGE_TYPE, void(@SendMsgType), 1, false);
+        
         NewOption(SendOptions, TDHCPOpCode.REQUESTED_IP_ADDRESS, void(@SendHeader^.Client_IP[0]), 4, false);
-        NewOption(SendOptions, TDHCPOpCode.SERVER_IDENTIFIER, void(@SendHeader^.Server_IP[0]), 4, false);
+        
+        Option:= getOptionByOpcode(Options, TDHCPOpCode.SERVER_IDENTIFIER);
+        if Option <> nil then begin
+            NewOption(SendOptions, TDHCPOpCode.SERVER_IDENTIFIER, void(@Option^.Value[0]), 4, false);
+        end;
+        
+        RequestParams[0]:= Ord(TDHCPOpCode.SUBNET_MASK);
+        RequestParams[1]:= Ord(TDHCPOpCode.ROUTER);
+        RequestParams[2]:= Ord(TDHCPOpCode.DOMAIN_NAME);
+        RequestParams[3]:= Ord(TDHCPOpCode.DNS_SERVER);
+        NewOption(SendOptions, TDHCPOpCode.PARAMETER_REQUEST_LIST, void(@RequestParams[0]), 4, false);
         NewOption(SendOptions, TDHCPOpCode.END_VENDOR_OPTIONS, nil, 0, false);
 
         NewSendHeader:= writeOptions(SendHeader, SendOptions, @NewHeaderSize);
@@ -526,6 +558,8 @@ begin
             { Packet is intended for a DHCP server }
             Outputln('DHCP','Packet is a server packet.');
         end;
+    end else begin
+        Outputln('DHCP', 'Packet is not addressed to us.');
     end;
 
 
