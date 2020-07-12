@@ -429,6 +429,7 @@ begin
         SendHeader:= createHeader();
         CopyIPv4(puint8(@Header^.Your_IP[0]), puint8(@SendHeader^.Client_IP[0]));
         CopyIPv4(puint8(@Header^.Server_IP[0]), puint8(@SendHeader^.Server_IP[0]));
+        processHeader(Header);
 
         SendOptions:= newOptions();
         SendMsgType:= ord(TDHCPMessageType.REQUEST);
