@@ -36,7 +36,7 @@ uses
 var
     CBSend : TNetSendCallback = nil;
     CBNext : TRecvCallback    = nil;
-    MAC     : puint8          = @NULL_MAC[0];
+    MAC    : puint8           = @NULL_MAC[0];
 
 procedure writeToLog(str : pchar);
 var
@@ -92,8 +92,8 @@ end;
 
 procedure send(p_data : void; p_len : uint16);
 begin
-    push_trace('net.send');
-    writeToLogLn('L1: net.send');
+    //push_trace('net.send');
+    //writeToLogLn('L1: net.send');
     if CBSend <> nil then CBSend(p_data, p_len);
     pop_trace;
 end;
@@ -103,8 +103,8 @@ var
     context : PPacketContext;
 
 begin
-    push_trace('net.recv');
-    writeToLogLn('L1: net.recv');
+    //push_trace('net.recv');
+    //writeToLogLn('L1: net.recv');
     context:= newPacketContext;
     if CBNext <> nil then CBNext(p_data, p_len, context);
     freePacketContext(context);

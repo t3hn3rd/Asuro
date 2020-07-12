@@ -44,7 +44,6 @@ var
     buffer : void;
 
 begin
-    writeToLogLn('        L3: ipv4.send');  
     inc(CurrentID);
     Header.version:= 4;
     Header.header_len:= 5;
@@ -83,8 +82,6 @@ var
     len     : uint16;
 
 begin
-    push_trace('ipv4.recv');
-    writeToLogLn('        L3: ipv4.recv');
     Header:= PIPV4Header(p_data);
     AHeader.version:= Header^.version;
     AHeader.header_len:= Header^.header_len;
@@ -112,7 +109,7 @@ begin
     copyIPv4(@AHeader.Dst[0], @p_context^.IP.Destination[0]);
 
     if Config.UP then begin
-        if (IPEqual(@Config.Address[0], @AHeader.Dst[0])) OR (AHeader.Dst[3] = 255) then begin
+        if (IPEqual(@Config.Address[0], @AHeader.Dst[0])) OR (AHeader.Dst[3] = 255) OR (IPEqual(@Config.Address[0], @NULL_IP[0])) then begin
             if Protocols[AHeader.Protocol] <> nil then begin
                 Protocols[AHeader.Protocol](void(buf), len, p_context);
             end;
@@ -130,7 +127,6 @@ var
     i : uint32;
 
 begin
-    push_trace('ipv4.terminal_command_ifconfig');
     if paramCount(params) > 1 then begin
         Command:= GetParam(0, Params);
         if StringEquals(Command, 'set') then begin
@@ -177,7 +173,6 @@ begin
         else 
             writestringlnWND('   NetUP:   false', getTerminalHWND);
     end;
-    pop_trace;
 end;
 
 procedure register;
@@ -205,7 +200,6 @@ end;
 
 procedure registerProtocol(Protocol_ID : uint8; recv_callback : TRecvCallback);
 begin
-    push_trace('ipv4.registerProtocol');
     register;
     if Protocols[Protocol_ID] = nil then Protocols[Protocol_ID]:= recv_callback;
     pop_trace;

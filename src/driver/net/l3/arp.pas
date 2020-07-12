@@ -80,8 +80,6 @@ var
     hSize, pSize : uint8;
 
 begin
-    push_trace('arp.send');
-    writeToLogLn('        L3: arp.send');
     if p_context <> nil then begin
         buf:= kalloc(sizeof(TARPHeader));
         hdr:= PARPHeader(buf);
@@ -189,10 +187,6 @@ var
     context      : PPacketContext;
 
 begin
-    push_trace('arp.recv');
-    writeToLogLn('        L3: arp.recv');
-    console.redrawWindows;
-    
     { Get our converted Header }
     Header:= PARPHeader(p_data);
     AHeader.Hardware_Type:= (Header^.Hardware_Type_Hi SHL 8) + Header^.Hardware_Type_Lo;
@@ -219,7 +213,6 @@ begin
     if IPEqual(@AHeader.Destination_Protocol[0], @getIPv4Config^.Address[0]) then begin
         case AHeader.Operation of
             $1:begin { ARP Request }
-                writeToLogLn('            arp.recv.arp.req');
                 context:= newPacketContext;
                 copyMAC(@AHeader.Source_Hardware[0], @context^.MAC.Destination[0]);
                 copyIPv4(@AHeader.Source_Protocol[0], @context^.IP.Destination[0]);
@@ -229,28 +222,28 @@ begin
                 freePacketContext(context);
             end;
             $2:begin { ARP Reply }
-                writeToLogLn('            arp.recv.arp.rep');
+                
             end;
             $3:begin { RARP Request }
-                writeToLogLn('            arp.recv.rarp.req');
+                
             end;
             $4:begin { RARP Reply }
-                writeToLogLn('            arp.recv.rarp.rep');
+                
             end;
             $5:begin { DRARP Request }
-                writeToLogLn('            arp.recv.drarp.req');
+                
             end;
             $6:begin { DRARP Reply }
-                writeToLogLn('            arp.recv.drarp.rep');
+                
             end;
             $7:begin { DRARP Error }
-                writeToLogLn('            arp.recv.drarp.err');
+                
             end;
             $8:begin { InARP Request }
-                writeToLogLn('            arp.recv.inarp.req');
+                
             end;
             $9:begin { InARP Reply }
-                writeToLogLn('            arp.recv.inarp.rep');
+                
             end;
         end;
     end;

@@ -20,7 +20,7 @@ end;
 
 function rand32 : uint32;
 begin
-    rand32:= (rand SHL 16) AND rand;
+    rand32:= (rand SHL 16) OR rand;
 end;
 
 function rand16 : uint16;
@@ -35,7 +35,7 @@ end;
 
 procedure srand(seed : uint32);
 begin
-    next:= seed;
+    next:= next + seed;
 end;
 
 end.

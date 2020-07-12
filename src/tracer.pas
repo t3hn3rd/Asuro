@@ -20,6 +20,14 @@ implementation
 uses
     console, lmemorymanager, util, strings, serial, terminal;
 
+type
+    PTracerEntry = ^TTracerEntry;
+    TTracerEntry = record
+        Next        : PTracerEntry;
+        Data        : pchar;
+        Previous    : PTracerEntry;
+    end;
+
 const
     MAX_TRACE = 40;
 
@@ -29,6 +37,9 @@ var
     Traces      : Array[0..MAX_TRACE-1] of PChar;
     c_lock      : Boolean = false;
 
+var
+    head : PTracerEntry;
+    tail : PTracerEntry;
 
 procedure terminal_command_tracer(Params : PParamList);
 var

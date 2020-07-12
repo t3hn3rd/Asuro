@@ -19,8 +19,8 @@ uses
      tracer,
      drivermanagement,
      scheduler,
+     progmanager,
      PCI,
-     Terminal,
      strings,
      USB,
      testdriver,
@@ -35,22 +35,12 @@ uses
      fonts,
      RTC,
      serial,
-     shell,
-     memview,
-     splash,
-     themer,
-     netlog,
-     vmlog,
      vm,
-     vmstate,
-     edit,
-     udpcat,
      cpu,
      md5,
-     md5sum,
      base64,
-     base64_prog,
-     rand;
+     rand,
+     terminal;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
@@ -159,7 +149,7 @@ begin
      isrmanager.init();
      faults.init();
      RTC.init();
-     rand.srand((getDateTime.Seconds SHR 24) OR (getDateTime.Minutes SHR 16) OR (getDateTime.Hours SHR 8) OR (getDateTime.Day));     
+          
      pmemorymanager.init();
      vmemorymanager.init();
      lmemorymanager.init();
@@ -214,24 +204,7 @@ begin
      //vm.init();
 
      { Init Progs }
-     tracer.push_trace('kmain.SHELLINIT');
-     shell.init();
-     tracer.push_trace('kmain.MEMVIEWINIT');
-     memview.init();
-     tracer.push_trace('kmain.THEMERINIT');
-     themer.init();
-     tracer.push_trace('kmain.NETLOGINIT');
-     netlog.init();
-     tracer.push_trace('kmain.VMLOGINIT');
-     vmlog.init();
-     tracer.push_trace('kmain.VMSTATEINIT');
-     vmstate.init();
-     tracer.push_trace('kmain.EDIT');
-     edit.init();
-     udpcat.init();
-     md5sum.init();
-     base64_prog.init();
-     terminal.run();
+     progmanager.init();
 
      { Init Splash }
      //tracer.push_trace('kmain.SPLASHINIT');
@@ -244,8 +217,10 @@ begin
      console.setdefaultattribute(console.combinecolors($17E0, $0000));
      console.writestringln('Asuro Booted Correctly!');
      console.setdefaultattribute(console.combinecolors($FFFF, $0000));
+     writestringln(' ');
 
      tracer.push_trace('kmain.END');
+     rand.srand((getDateTime.Seconds SHR 24) OR (getDateTime.Minutes SHR 16) OR (getDateTime.Hours SHR 8) OR (getDateTime.Day));
 
      tracer.push_trace('kmain.TICK');
      while true do begin

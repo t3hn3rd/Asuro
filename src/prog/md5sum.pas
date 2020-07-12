@@ -1,5 +1,5 @@
 { 
-	Prog->VMLog - Virtual Machine Event Log.
+	Prog->MD5Sum - MD5 Checksum of a given string.
 	
 	@author(Kieron Morris <kjm@kieronmorris.me>)
 }

@@ -118,12 +118,10 @@ var
     Handle : uint8;
 
 begin
-    writeToLogLn('            L4: icmp.recv');
     Header:= PICMPHeader(p_data);
     //writehexlnWND(Header^.ICMP_Type, getTerminalHWND); 
     case Header^.ICMP_Type of
         $08:Begin //Request
-            writeToLogLn('            L4: icmp.request');
             contextMACSwitch(p_context);
             contextIPv4Switch(p_context);
             Header^.ICMP_Type:= 0;
@@ -137,7 +135,6 @@ begin
             ipv4.send(p_data, p_len, p_context);    
         end;
         $00:begin //Reply
-            writeToLogLn('            L4: icmp.reply');
             Handle:= Header^.Identifier;
             if (Handle > 0) and (Handle < 256) then begin
                 If Handlers[Handle].Active then begin

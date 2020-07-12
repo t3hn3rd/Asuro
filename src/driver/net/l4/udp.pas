@@ -123,20 +123,6 @@ begin
         memcpy(uint32(hdr), uint32(buffer), sizeof(TUDPHeader));
         memcpy(uint32(p_data), uint32(buffer) + sizeof(TUDPHeader), p_len); 
 
-        writehexln(uint32(buffer) + sizeof(TUDPHeader));
-        for i:=0 to p_len-1 do begin
-            writehexpair(puint8(p_data)[i]);
-        end;
-        writestringln(' ');
-        for i:=0 to p_len-1 do begin
-            writechar(pchar(p_data)[i]);
-        end;
-        writestringln(' ');
-        for i:=0 to size-1 do begin
-            writehexpair(puint8(buffer)[i]);
-        end;
-        writestringln(' ');
-
         udpContext^.context^.Protocol.L4:= $11;       
 
         ipv4.send(buffer, size, udpContext^.context);
@@ -203,7 +189,6 @@ var
     size    : uint16;
 
 begin
-    writeToLogLn('              L4: udp.recv');
     header:= PUDPHeader(p_data);
     if Ports[switchendian16(header^.DstPort)] <> nil then begin
         context:= PUDPPacketContext(kalloc(sizeof(TUDPPacketContext)));
