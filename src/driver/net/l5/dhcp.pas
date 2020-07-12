@@ -47,6 +47,7 @@ var
     i : uint8;
 
 begin
+    { Null the entire configuration ready for a new DISCOVER or REQUEST }
     if configuration <> nil then begin
         Configuration^.Transaction:= 0;
         for i:=0 to 255 do begin
@@ -64,6 +65,7 @@ var
     MAC    : puint8;
 
 begin
+    { Create a basic header with most values nulled, Hardware type & length is prefilled for ethernet }
     tracer.push_trace('dhcp.newHeader');
     result:= PDHCPHeader(kalloc(sizeof(TDHCPHeader)));
     result^.Message_Type:= $01;
@@ -91,6 +93,7 @@ var
     Option : PDHCPOption;
 
 begin
+    { Add an option to the Options linkedlist, copy data[size] to the Option }
     tracer.push_trace('dhcp.newOption');
     Option:= PDHCPOption(LL_Add(PLinkedListBase(DHCPOptions)));
     Option^.Opcode:= Opcode;
@@ -110,6 +113,7 @@ var
     Option : PDHCPOption;
 
 begin
+    { Remove an option from the linkedlsit }
     tracer.push_trace('dhcp.deleteOptions');
     Option:= PDHCPOption(LL_Get(PLinkedListBase(DHCPOptions), idx));
     if Option <> nil then begin
@@ -122,18 +126,21 @@ end;
 
 function getOption(DHCPOptions : PDHCPOptions; idx : uint32) : PDHCPOption;
 begin
+    { Get an option by index from the linkedlist }
     tracer.push_trace('dhcp.getOption');
     getOption:= PDHCPOption(LL_Get(PLinkedListBase(DHCPOptions),idx));
 end;
 
 function newOptions : PDHCPOptions;
 begin
+    { Create a new Options LinkedList }
     tracer.push_trace('dhcp.newOptions');
     newOptions:= PDHCPOptions(LL_New(sizeof(TDHCPOption)));
 end;
 
 procedure freeOptions(Options : PDHCPOptions);
 begin
+    { Free all options and free their underlying data buffers }
     tracer.push_trace('dhcp.freeOptions');
     if Options <> nil then begin
         while LL_Size(PLinkedListBase(Options)) > 0 do begin
@@ -145,6 +152,7 @@ end;
 
 function getOptionsCount(Options : PDHCPOptions) : uint32;
 begin
+    { Get the number of options in the linkedlist }
     tracer.push_trace('dhcp.getOptionsCount');
     getOptionsCount:= LL_Size(PLinkedListBase(Options));
 end;    
@@ -156,11 +164,19 @@ var
     OptionsSize : uint16;
 
 begin
+    { 
+        Get the size of all options in the linkedlist 
+        1 byte for the opcode
+        1 byte for the length
+        n bytes (specified by length) for the data
+        total = foreach(element):(sizeof(opcode)+sizeof(length)+length)
+    }
     tracer.push_trace('dhcp.calculateOptionsSize');
     OptionsSize := 0;
     for i:=0 to getOptionsCount(Options)-1 do begin
         Option:= PDHCPOption(LL_Get(PLinkedListBase(Options),i));
         case Option^.Opcode of
+            { PAD & END_VENDOR_OPTIONS are special cases as they are 1 byte in length with no size byte }
             PAD,END_VENDOR_OPTIONS : inc(OptionsSize,1);
             else inc(OptionsSize, 2 + Option^.Size);
         end;
@@ -173,6 +189,7 @@ var
     Value : uint16;
 
 begin
+    { Get the value from an Option as an endian corrected (if applicable) uint16 }
     tracer.push_trace('dhcp.getEndianCorrectValue16');
     Value:= PuInt16(Option^.Value)^;
     if Option^.Reverse_Endian then 
@@ -185,6 +202,7 @@ function getEndianCorrectValue32(Option : PDHCPOption) : uint32;
 var
     Value : uint32;
 begin
+    { Get the value from an Option as an endian corrected (if applicable) uint32 }
     tracer.push_trace('dhcp.getEndianCorrectValue32');
     Value:= puint32(Option^.Value)^;
     if Option^.Reverse_Endian then
@@ -197,6 +215,7 @@ function readOption8(Option : PDHCPOption) : uint8;
 var
     read8 : puint8;
 begin
+    { Read the option data as an 8-bit value }
     read8:= puint8(Option^.Value);
     readOption8:= read8^;
 end;
@@ -205,6 +224,7 @@ function readOption16(Option : PDHCPOption) : uint16;
 var
     read16 : puint16;
 begin
+    { Read the option data as an 16-bit value }
     read16:= puint16(Option^.Value);
     readOption16:= read16^;
 end;
@@ -213,6 +233,7 @@ function readOption32(Option : PDHCPOption) : uint32;
 var
     read32 : puint32;
 begin
+    { Read the option data as an 32-bit value }
     read32:= puint32(Option^.Value);
     readOption32:= read32^;
 end;
@@ -223,6 +244,7 @@ var
     i      : uint16;
 
 begin
+    { Search the linked list for a given OpCode and return if found, nil if not. }
     getOptionByOpcode:= nil;
     for i:=0 to getOptionsCount(Options)-1 do begin
         Option:= getOption(Options, i);
@@ -248,30 +270,35 @@ var
 
 begin
     tracer.push_trace('dhcp.writeOptions');
+
+    { Make room in our new packet buffer for the header + options }
     OptionsSize := calculateOptionsSize(Options);
     TotalSize:= OptionsSize + SizeOf(TDHCPHeader);
     NewBuffer:= kalloc(TotalSize);
 
-    //Copy over Header
+    { Copy the header }
     NewHeader:= PDHCPHeader(NewBuffer);
     memcpy(uint32(Header), uint32(NewHeader), sizeof(TDHCPHeader));
 
-    //Write all options
+    { Write Options }
     buffer:= puint8(NewBuffer);
     inc(buffer, SizeOf(TDHCPHeader));
     for i:=0 to getOptionsCount(Options)-1 do begin
         Option:= getOption(Options, i);
         case Option^.Opcode of
+            { PAD & END_VENDOR_OPTIONS have a length of 0 & no length byte }
             PAD,END_VENDOR_OPTIONS:begin
                 buffer^:= Ord(Option^.Opcode);
                 inc(buffer);
             end;
+            { Everything else follows the format: uint8(OpCode)->uint8(Length)->variable(Data) }
             else begin
                 buffer^:= Ord(Option^.OpCode);
                 inc(buffer);
                 buffer^:= Option^.Size;
                 inc(buffer);
                 case Option^.Size of
+                    { Try to read and write using a 16bit or 32bit pointer for speed, else do a memcpy }
                     2:begin
                         read16:= puint16(buffer);
                         read16^:= getEndianCorrectValue16(Option);
@@ -288,6 +315,7 @@ begin
             end;
         end;
     end;
+    { Return the new packet size a pointer to the packet (Header) }
     newLength^:= TotalSize;
     writeOptions:= PDHCPHeader(NewBuffer);
 end;
@@ -373,7 +401,8 @@ end;
 
 procedure processPacket_NAK(Header : PDHCPHeader; Options : PDHCPOptions);
 begin
-    console.outputln('DHCP', 'Process NAK.');  
+    console.outputln('DHCP', 'Process NAK.'); 
+    { Server provided a NAK, NULL configuration ready for next DISCOVER/Request } 
     nullConfiguration();  
 end;
 
@@ -446,23 +475,25 @@ begin
     if Header^.Transaction_ID = Configuration^.Transaction then begin
         console.outputln('DHCP', 'XID Match');
         
+        { Create a new header to the use in our DHCP REQUEST packet }
         SendHeader:= createHeader();
         CopyIPv4(puint8(@Header^.Your_IP[0]), puint8(@SendHeader^.Client_IP[0]));
         CopyIPv4(puint8(@Header^.Server_IP[0]), puint8(@SendHeader^.Server_IP[0]));
         processHeader(SendHeader);
 
+        { Setup Options }
         SendOptions:= newOptions();
+        { Create a message type option and assign it the value REQUEST }
         SendMsgType:= ord(TDHCPMessageType.REQUEST);
-        
         NewOption(SendOptions, TDHCPOpCode.DHCP_MESSAGE_TYPE, void(@SendMsgType), 1, false);
-        
+        { Create a Requested IP option and assign it the value from the OFFER packet header }
         NewOption(SendOptions, TDHCPOpCode.REQUESTED_IP_ADDRESS, void(@SendHeader^.Client_IP[0]), 4, false);
-        
+        { Create a Server Identifier Option and assign it the value from the OFFER packet options }
         Option:= getOptionByOpcode(Options, TDHCPOpCode.SERVER_IDENTIFIER);
         if Option <> nil then begin
             NewOption(SendOptions, TDHCPOpCode.SERVER_IDENTIFIER, void(@Option^.Value[0]), 4, false);
         end;
-        
+        { Create a Parameter Request List, Request the following: Netmask, Gateway, DNS Name & DNS Server }
         RequestParams[0]:= Ord(TDHCPOpCode.SUBNET_MASK);
         RequestParams[1]:= Ord(TDHCPOpCode.ROUTER);
         RequestParams[2]:= Ord(TDHCPOpCode.DOMAIN_NAME);
@@ -470,9 +501,10 @@ begin
         NewOption(SendOptions, TDHCPOpCode.PARAMETER_REQUEST_LIST, void(@RequestParams[0]), 4, false);
         NewOption(SendOptions, TDHCPOpCode.END_VENDOR_OPTIONS, nil, 0, false);
 
+        { Write the options to the header }
         NewSendHeader:= writeOptions(SendHeader, SendOptions, @NewHeaderSize);
 
-        { Setup Packet Context (IPv4 & ETH2) }
+        { Setup Packet Context (IPv4 & ETH2) & Copy in the correct details }
         MAC:= getMAC();
         packetCtx:= PPacketContext(Kalloc(sizeof(TPacketContext)));
         packetCtx^.TTL:= 128;
@@ -481,15 +513,16 @@ begin
         copyIPv4(@NULL_IP[0], @packetCtx^.IP.Source[0]);
         copyIPv4(@BROADCAST_IP[0], @packetCtx^.IP.Destination[0]);
 
-        { Setup UDPContext (UDP) }
+        { Setup UDPContext (UDP) & copy in the correct details }
         sendCtx:= PUDPSendContext(Kalloc(sizeof(TUDPSendContext)));
         sendCtx^.DstPort:= 67;
         sendCtx^.context:= packetCtx;
         sendCtx^.socket:= Socket;
 
-        { Send }
+        { Send the packet }
         udp.send(void(NewSendHeader), NewHeaderSize, sendCtx);
 
+        { Free everything we allocated }
         freeOptions(SendOptions);
         kfree(void(NewSendHeader));
         kfree(void(SendHeader));
@@ -528,8 +561,9 @@ begin
         { Check the message type is client specific }
         If Header^.Message_Type = $02 then begin
             Outputln('DHCP','Packet is a client packet.');
-            Outputln('DHCP','Searching for message type in Options');
+
             { Iterate options to find DHCP_MESSAGE_TYPE }
+            Outputln('DHCP','Searching for message type in Options');
             for i:=0 to getOptionsCount(Options)-1 do begin
                 Option:= getOption(Options, i);
                 if Option^.Opcode = DHCP_MESSAGE_TYPE then begin
@@ -539,6 +573,7 @@ begin
                 end;
             end;
             Outputln('DHCP','Done searching for message type in Options');
+
             { Did we successfully get the DHCP_MESSAGE_TYPE option? }
             if Option <> nil then begin
                 Outputln('DHCP','Found message type option.');
@@ -561,7 +596,6 @@ begin
     end else begin
         Outputln('DHCP', 'Packet is not addressed to us.');
     end;
-
 
     freeOptions(Options);
     tracer.push_trace('dhcp.processPacket.exit');
