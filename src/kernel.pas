@@ -40,7 +40,8 @@ uses
      md5,
      base64,
      rand,
-     terminal;
+     terminal,
+     hashmap;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
@@ -77,6 +78,20 @@ begin
     pop_trace; 
 end;
 
+procedure myUserLandFunction;
+var
+    i : uint32;
+
+begin
+    i:=0;
+    while true do begin 
+        i:=i+1;
+        asm
+            MOV EAX, i
+        end;
+    end;
+end;
+
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall; [public, alias: 'kmain'];   
 var
    c               : uint8;
@@ -92,6 +107,9 @@ var
    test            : puint8;
    fb              : puint16;
    l               : PLinkedListBase;
+   ulf             : pointer;
+
+   HM              : PHashMap;
    
 begin
      { Serial Init }
@@ -223,6 +241,67 @@ begin
      rand.srand((getDateTime.Seconds SHR 24) OR (getDateTime.Minutes SHR 16) OR (getDateTime.Hours SHR 8) OR (getDateTime.Day));
 
      tracer.push_trace('kmain.TICK');
+
+
+     HM:= hashmap.new(10000);
+     hashmap.add(HM, 'testificate', void(1));
+     hashmap.add(HM, 'asuro', void(10));
+     hashmap.add(HM, 'myfirstos', void(100));
+     hashmap.add(HM, 'potato', void(1000));
+     hashmap.add(HM, 'cellary', void(10000));
+     hashmap.add(HM, 'gigglewiggle', void(100000));
+     hashmap.add(HM, 'cuntwank', void(20));
+     hashmap.add(HM, 'topkekness', void(200));
+     hashmap.add(HM, 'fluffybanana', void(2000));
+     hashmap.add(HM, 'ilikecheese', void(20000));
+     hashmap.add(HM, 'Tracer', void(200000));
+     hashmap.add(HM, 'Genji', void(2000000));
+     hashmap.add(HM, 'Winston', void(30));
+     hashmap.add(HM, 'D.Va', void(300));
+     hashmap.add(HM, 'Soldier76', void(3000));
+     hashmap.add(HM, 'Brigitte', void(3000));
+     hashmap.add(HM, 'Pharah', void(30000));
+     hashmap.add(HM, 'Reinhardt', void(300000));
+     hashmap.add(HM, 'Orisa', void(30000000));
+     hashmap.add(HM, 'Mercy', void(3000000000));
+     hashmap.add(HM, 'Hamster', void(40));
+     hashmap.add(HM, 'Ana', void(400));
+     hashmap.add(HM, 'Lucio', void(4000));
+     hashmap.add(HM, 'Mei', void(40000));
+     hashmap.add(HM, 'Teemo', void(400000));
+     hashmap.add(HM, 'Vayne', void(4000000));
+     hashmap.add(HM, 'Munzo', void(40000000));
+     hashmap.add(HM, 'fasafafsdfsd', void(50));
+     hashmap.add(HM, 'Zarfdasafdsfadsfdsafadsfdasya', void(500));
+     hashmap.add(HM, 'Zafadfadsfadsfadsfdsarya', void(5000));
+     hashmap.add(HM, 'afdsafdadfsfda', void(500000));
+     hashmap.add(HM, '4rrelkjhrewrewkoy', void(5000000));
+     hashmap.add(HM, 'Laptop', void(50000000));
+     hashmap.add(HM, 'Salmon', void(500000000));
+     hashmap.add(HM, 'OnionBurger', void(60));
+
+     hashmap.printmap(HM);
+
+     writeintln(uint32(hashmap.get(HM, 'Ana')));
+
+    //  Testing getting into userspace
+    //  ulf:= Pointer(@myUserLandFunction);
+    //  asm
+    //     MOV AX, $23
+    //     MOV DS, AX
+    //     MOV ES, AX
+    //     MOV FS, AX
+    //     MOV GS, AX
+
+    //     MOV EAX, ESP
+    //     PUSH $23
+    //     PUSH EAX
+    //     PUSHF
+    //     PUSH $1B
+    //     PUSH ulf;
+    //     iret;
+    //  end;
+
      while true do begin
         tracer.push_trace('kmain.RedrawWindows');
         console.redrawWindows;

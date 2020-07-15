@@ -39,6 +39,8 @@ procedure MD5Update(context : PMD5Context; buffer : PuInt8; bufferLen : uInt32);
 function MD5Final(context : PMD5Context) : PMD5Digest;
 function MD5Buffer(buffer : PuInt8; bufferLen : uInt32) : PMD5Digest;
 
+function MD5To32(Input : PuInt128) : uint32;
+
 implementation
 
 procedure Invert(Source : PuInt8; Dest : PuInt32; Count : uInt32);
@@ -232,6 +234,15 @@ begin
     MD5Update(context, buffer, bufferLen);
     MD5Buffer := MD5Final(context);
     kfree(void(context));
+end;
+
+function MD5To32(Input : PuInt128) : uint32;
+var
+    MD5To64 : uint64;
+    i       : uint8;
+
+begin
+    MD5To32:= Input^.DWords[0] xor Input^.DWords[1] xor Input^.DWords[2] xor Input^.DWords[3];
 end;
 
 end.

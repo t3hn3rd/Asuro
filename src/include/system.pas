@@ -28,6 +28,22 @@ type
     uInt16 = WORD;
     uInt32 = DWORD;
     uInt64 = QWORD;
+    uint128 = packed record
+      case Integer of
+        0: (
+            Hi : uint64;
+            Lo : uint64;
+        );
+        1: (
+            DWords : array [0..3] of uint32;
+        );
+        2: (
+            Words : array [0..7] of uint16;
+        );
+        3: (
+            Bytes : array [0..15] of uint8;
+        );
+    end;
 
     sInt8 = shortint;
     sInt16 = smallint;
@@ -42,6 +58,7 @@ type
     PuInt16 = ^uInt16;
     PuInt32 = ^uInt32;
     PuInt64 = ^uInt64;
+    PuInt128 = ^uint128;
 
     PsInt8 = ^sInt8;
     PsInt16 = ^sInt16;

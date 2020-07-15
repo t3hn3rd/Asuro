@@ -7,7 +7,7 @@ uses
     //progs
     base64_prog, md5sum, shell, terminal, 
     edit, vmstate, vmlog, netlog, themer,
-    memview, udpcat, dhclient;
+    memview, udpcat, dhclient, vbeinfo;
 
 procedure init();
 
@@ -37,6 +37,7 @@ begin
     base64_prog.init();
     tracer.push_trace('progmanager.dhclient.init');
     dhclient.init();
+    vbeinfo.init();
 
     tracer.push_trace('progmanager.terminal.init');
     terminal.run();   

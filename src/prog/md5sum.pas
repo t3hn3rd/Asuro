@@ -20,6 +20,11 @@ var
     wordlen     : uint32;
     MD5_Hash    : PMD5Digest; 
     i           : uint32;
+    MD5_128     : puint128;
+    Result      : uint64;
+    Result32    : uint32;
+    Modulo      : uint64;
+
 
 begin
     md5word:= getParam(0, Params);

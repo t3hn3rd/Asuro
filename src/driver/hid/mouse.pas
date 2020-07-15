@@ -147,15 +147,17 @@ begin
             Packet.LMB_Down:= (f AND %00000001) = %00000001;
             Packet.x_overflow:= (f AND $40) = $40;
             Packet.y_overflow:= (f AND $80) = $80;
-            Packet.x_movement:= Mouse_Byte[1] - ((f SHL 4) AND $100);
-            Packet.y_movement:= Mouse_Byte[2] - ((f SHL 3) AND $100);
+            Packet.x_movement:= Mouse_Byte[1];// - ((f SHL 4) AND $100);
+            Packet.y_movement:= Mouse_Byte[2];// - ((f SHL 3) AND $100);
+            If Packet.x_sign then Packet.x_movement:= sint16(Packet.x_movement OR $FF00);
+            If Packet.y_sign then Packet.y_movement:= sint16(Packet.y_movement OR $FF00);
             if not(Packet.x_overflow) and not(Packet.y_overflow) then begin
                 Current.x:= Current.x + Packet.x_movement;
                 Current.y:= Current.y - Packet.y_movement;            
                 if Current.x < 0 then Current.x:= 0;
                 if Current.y < 0 then Current.y:= 0;
-                if Current.x > 1272 then Current.x:= 1272;
-                if Current.y > 1015 then Current.y:= 1015;
+                if Current.x > (Console.getConsoleProperties^.Width-8) then Current.x:= (Console.getConsoleProperties^.Width-8);
+                if Current.y > (Console.getConsoleProperties^.Height-8) then Current.y:= (Console.getConsoleProperties^.Height-8);
             end;
             Cycle:= 0;
             if Packet.LMB_Down then begin

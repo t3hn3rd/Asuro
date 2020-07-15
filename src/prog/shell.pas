@@ -63,7 +63,7 @@ begin
         end;
      end;
 
-     console.setCursorPosWND(150, 0, TaskBarHandle);
+     console.setCursorPosWND(Console.getMaxCellW() - 9, 0, TaskBarHandle);
      if DateTime.Hours < 10 then writeIntExWND(0, Takbar_Colors, TaskBarHandle);
      writeIntExWND(DateTime.Hours, Takbar_Colors, TaskBarHandle);
      writeStringExWND(':', Takbar_Colors, TaskBarHandle);
@@ -96,32 +96,32 @@ begin
     clearWNDEx(DesktopHandle, Desktop_Colors);
     if not(StringEquals(asuro.RELEASE, 'r')) then begin
         versionSize:= StringSize(asuro.VERSION) + StringSize('Asuro v');
-        versionDrawX:= 157 - versionSize;
-        setCursorPosWND(versionDrawX, 60, DesktopHandle);
+        versionDrawX:= Console.getMaxCellW() - 2 - versionSize;
+        setCursorPosWND(versionDrawX, Console.getMaxCellH() - 4, DesktopHandle);
         writestringExWND('ASURO v', Desktop_Colors, DesktopHandle);
         writestringExWND(asuro.VERSION, Desktop_Colors, DesktopHandle);
         if StringEquals(asuro.RELEASE, 'rc') then begin
             releaseSize:= StringSize('RELEASE CANDIDATE');
-            releaseDrawX:= 157 - (versionSize div 2) - (releaseSize div 2);
-            setCursorPosWND(releaseDrawX, 61, DesktopHandle);
+            releaseDrawX:= Console.getMaxCellW() - 2 - (versionSize div 2) - (releaseSize div 2);
+            setCursorPosWND(releaseDrawX, Console.getMaxCellH() - 3, DesktopHandle);
             writeStringExWND('RELEASE CANDIDATE', Desktop_Colors, DesktopHandle);
         end;
         if StringEquals(asuro.RELEASE, 'ia') then begin
             releaseSize:= StringSize('INTERNAL ALPHA');
-            releaseDrawX:= 157 - (versionSize div 2) - (releaseSize div 2);
-            setCursorPosWND(releaseDrawX, 61, DesktopHandle);
+            releaseDrawX:= Console.getMaxCellW() - 2 - (versionSize div 2) - (releaseSize div 2);
+            setCursorPosWND(releaseDrawX, Console.getMaxCellH() - 3, DesktopHandle);
             writeStringExWND('INTERNAL ALPHA', Desktop_Colors, DesktopHandle);
         end;
         if StringEquals(asuro.RELEASE, 'a') then begin
             releaseSize:= StringSize('ALPHA');
-            releaseDrawX:= 157 - (versionSize div 2) - (releaseSize div 2);
-            setCursorPosWND(releaseDrawX, 61, DesktopHandle);
+            releaseDrawX:= Console.getMaxCellW() - 2 - (versionSize div 2) - (releaseSize div 2);
+            setCursorPosWND(releaseDrawX, Console.getMaxCellH() - 3, DesktopHandle);
             writeStringExWND('ALPHA', Desktop_Colors, DesktopHandle);
         end;
         if StringEquals(asuro.RELEASE, 'b') then begin
             releaseSize:= StringSize('BETA');
-            releaseDrawX:= 157 - (versionSize div 2) - (releaseSize div 2);
-            setCursorPosWND(releaseDrawX, 61, DesktopHandle);
+            releaseDrawX:= Console.getMaxCellW() - 2 - (versionSize div 2) - (releaseSize div 2);
+            setCursorPosWND(releaseDrawX, Console.getMaxCellH() - 3, DesktopHandle);
             writeStringExWND('BETA', Desktop_Colors, DesktopHandle);
         end;
     end;
@@ -210,9 +210,9 @@ begin
     Desktop_Colors:= console.combinecolors($FFFF, $34DB);
 
     tracer.push_trace('shell.init.4');
-    DesktopHandle:= Console.newWindow(0, 0, 159, 63, 'DESKTOP');
+    DesktopHandle:= Console.newWindow(0, 0, Console.getMaxCellW(), Console.getMaxCellH(), 'DESKTOP');
     tracer.push_trace('shell.init.5');
-    TaskBarHandle:= Console.newWindow(0, 63, 159, 1, 'SHELL');
+    TaskBarHandle:= Console.newWindow(0, Console.getMaxCellH(), Console.getMaxCellW(), 1, 'SHELL');
 
     tracer.push_trace('shell.init.6');
     console.bordersEnabled(TaskBarHandle, false);

@@ -63,8 +63,8 @@ dd 0
 dd 0
 dd 0
 dd 0
-dd 1280
 dd 1024
+dd 768
 dd 16
 
 ;

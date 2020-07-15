@@ -45,8 +45,16 @@ type
                    EVENT_FOCUS,
                    EVENT_LOSE_FOCUS );
 
-
-
+    { Properties pertaining to the raw screen matrix. }
+    TConsoleProperties = record
+      Default_Attribute : uint32; //< Attribute (Colors) to use when no override defined.
+      Width : uint32;
+      Height : uint32;
+      BitsPerPixel : uint8;
+      MAX_CELL_X : uint32;
+      MAX_CELL_Y : uint32;
+    end;
+    PConsoleProperties = ^TConsoleProperties;
 
 {! Default Buffer Specific }
 
@@ -808,20 +816,20 @@ procedure setWindowColors(colors : uint32);
 }
 function getWindowColorPtr : puint32;
 
+function getMaxCellW : uint32;
+function getMaxCellH : uint32;
+function getConsoleProperties : PConsoleProperties;
+
 const
 	MAX_WINDOWS = 255; //< Maximum number of Windows open.
     DefaultWND  = 0;   //< The Window assigned for output when no Window is specified. (Default).
 
 implementation
+
 uses
     lmemorymanager, strings, keyboard, serial, terminal;
 
 type
-	{ Properties pertaining to the raw screen matrix. }
-    TConsoleProperties = record
-      Default_Attribute : uint32; //< Attribute (Colors) to use when no override defined.
-    end;
-
 	{ Unrasterized representation of a character. }
     TCharacter = bitpacked record
       Character  : Char;         //< ASCII Character
@@ -844,7 +852,6 @@ type
 	{ Pointer to 2D Unrasterized Matrix }
     P2DVideoMemory = ^T2DVideoMemory;
 
-	
     TMouseCoord = record
         X : sint32;
         Y : sint32;
@@ -936,6 +943,21 @@ var
    UnhandledClickLeft : Boolean = false;
    MouseCursorEnabled : Boolean = true;
    OpenTerminal       : Boolean = false;
+
+function getMaxCellW : uint32;
+begin
+    getMaxCellW:= Console_Properties.MAX_CELL_X;
+end;
+
+function getMaxCellH : uint32;
+begin
+    getMaxCellH:= Console_Properties.MAX_CELL_Y;
+end;
+
+function getConsoleProperties : PConsoleProperties;
+begin
+    getConsoleProperties:= PConsoleProperties(@Console_Properties);
+end;
 
 function getWindowColorPtr : puint32;
 begin
@@ -1092,8 +1114,8 @@ var
 begin
      Window:= WindowManager.Windows[WND];
      if Window <> nil then begin
-        while x > 159 do dec(x);
-        while y > 63 do dec(y);
+        while x > Console_Properties.MAX_CELL_X-1 do dec(x);
+        while y > Console_Properties.MAX_CELL_Y-1 do dec(y);
         Window^.Cursor.x:= x;
         Window^.Cursor.y:= y;
      end;
@@ -1112,19 +1134,19 @@ begin
         if Window^.Border then begin
             if nx < 2 then nx:= 2;
             if ny < 1 then ny:= 1;
-            while (nx + Window^.WND_W + 2) > 159 do begin
+            while (nx + Window^.WND_W + 2) > Console_Properties.MAX_CELL_X do begin
                 dec(nx);
             end;
-            while (ny + Window^.WND_H + 1) > 63 do begin
+            while (ny + Window^.WND_H + 1) > Console_Properties.MAX_CELL_Y do begin
                 dec(ny);
             end;
         end else begin
             if nx < 0 then nx:= 0;
             if ny < 0 then ny:= 0;
-            while (nx + Window^.WND_W) > 159 do begin
+            while (nx + Window^.WND_W) > Console_Properties.MAX_CELL_X do begin
                 dec(nx);
             end;
-            while (ny + Window^.WND_H) > 63 do begin
+            while (ny + Window^.WND_H) > Console_Properties.MAX_CELL_Y do begin
                 dec(ny);
             end;
         end;
@@ -1197,6 +1219,9 @@ begin
         FocusZOrder(newWindow);
     end;
 end;
+
+//If Packet.x_sign then Packet.x_movement:= sint16(Packet.x_movement OR $FF00);
+            //If Packet.y_sign then Packet.y_movement:= sint16(Packet.y_movement OR $FF00);
 
 procedure forceQuitAll;
 var
@@ -1288,8 +1313,8 @@ begin
     mouse_dirt.BottomRight.y:= (MY div 16) + 2;
     if mouse_dirt.TopLeft.x < 0 then mouse_dirt.TopLeft.x:= 0;
     if mouse_dirt.TopLeft.y < 0 then mouse_dirt.TopLeft.y:= 0;
-    if mouse_dirt.BottomRight.x > 159 then mouse_dirt.BottomRight.x:= 159;
-    if mouse_dirt.BottomRight.y > 63 then mouse_dirt.BottomRight.y:= 63;
+    if mouse_dirt.BottomRight.x > Console_Properties.MAX_CELL_X then mouse_dirt.BottomRight.x:= Console_Properties.MAX_CELL_X;
+    if mouse_dirt.BottomRight.y > Console_Properties.MAX_CELL_Y then mouse_dirt.BottomRight.y:= Console_Properties.MAX_CELL_Y;
     MouseDrawActive:= false;
 end;
 
@@ -1306,8 +1331,8 @@ begin
         end;
         drawMouse;
     end;
-    for y:=0 to 63 do begin
-        for x:=0 to 159 do begin
+    for y:=0 to Console_Properties.MAX_CELL_Y do begin
+        for x:=0 to Console_Properties.MAX_CELL_X do begin
             if (Console_Matrix[y][x].character <> Console_Real[y][x].character) or (Console_Matrix[y][x].attributes <> Console_Real[y][x].attributes) then begin
                 OutputChar(Console_Matrix[y][x].Character, x, y, Console_Matrix[y][x].Attributes SHR 16, Console_Matrix[y][x].Attributes AND $FFFF);
                 Console_Real[y][x]:= Console_Matrix[y][x];
@@ -1341,8 +1366,8 @@ begin
     end;
 
     { Clear the Console_Matrix }
-    for y:=0 to 63 do begin
-        for x:=0 to 159 do begin
+    for y:=0 to Console_Properties.MAX_CELL_Y do begin
+        for x:=0 to Console_Properties.MAX_CELL_X do begin
             Console_Matrix[y][x]:= Default_Char;
         end;
     end;
@@ -1392,9 +1417,9 @@ begin
                     end;
                 end;
                 for y:=WindowManager.Windows[WindowManager.Z_Order[w]]^.WND_Y to WindowManager.Windows[WindowManager.Z_Order[w]]^.WND_Y + WindowManager.Windows[WindowManager.Z_Order[w]]^.WND_H do begin
-                    if y > 63 then break;
+                    if y > Console_Properties.MAX_CELL_Y then break;
                     for x:=WindowManager.Windows[WindowManager.Z_Order[w]]^.WND_X to WindowManager.Windows[WindowManager.Z_Order[w]]^.WND_X + WindowManager.Windows[WindowManager.Z_Order[w]]^.WND_W do begin
-                        if x > 159 then break;
+                        if x > Console_Properties.MAX_CELL_X then break;
                         Console_Matrix[y][x]:= WindowManager.Windows[WindowManager.Z_Order[w]]^.buffer[y - WindowManager.Windows[WindowManager.Z_Order[w]]^.WND_Y][x - WindowManager.Windows[WindowManager.Z_Order[w]]^.WND_X];
                         WindowTitleMask[y][x]:= 0;
                         WindowMask[y][x]:= WindowManager.Z_Order[w];
@@ -1537,8 +1562,8 @@ begin
     WND^.WND_NAME:= 'Asuro';
     WND^.WND_X:= 0;
     WND^.WND_Y:= 0;
-    WND^.WND_W:= 159;
-    WND^.WND_H:= 63;
+    WND^.WND_W:= Console_Properties.MAX_CELL_X;
+    WND^.WND_H:= Console_Properties.MAX_CELL_Y;
     WND^.Cursor.x:= 0;
     WND^.Cursor.y:= 0;
     WND^.visible:= true;
@@ -1567,7 +1592,7 @@ var
 begin
     if not ready then exit;
     dest:= puint16(multibootinfo^.framebuffer_addr);
-    dest:= dest + (y * 1280) + x;
+    dest:= dest + (y * Console_Properties.Width) + x;
     getPixel:= dest^;
 end;
 
@@ -1578,7 +1603,7 @@ var
 begin
     if not ready then exit;
     dest:= puint16(multibootinfo^.framebuffer_addr);
-    dest:= dest + (y * 1280) + x;
+    dest:= dest + (y * Console_Properties.Width) + x;
     dest^:= color;
 end;
 
@@ -1590,7 +1615,7 @@ var
 begin
     if not ready then exit;
     dest:= puint16(multibootinfo^.framebuffer_addr);
-    dest:= dest + (y * 1280) + x;
+    dest:= dest + (y * Console_Properties.Width) + x;
     dest32:= puint32(dest);
     getPixel32:= dest32[0];
 end;
@@ -1603,7 +1628,7 @@ var
 begin
     if not ready then exit;
     dest:= puint16(multibootinfo^.framebuffer_addr);
-    dest:= dest + (y * 1280) + x;
+    dest:= dest + (y * Console_Properties.Width) + x;
     dest32:= puint32(dest);
     dest32[0]:= pixel;
 end;
@@ -1616,7 +1641,7 @@ var
 begin
     if not ready then exit;
     dest:= puint16(multibootinfo^.framebuffer_addr);
-    dest:= dest + (y * 1280) + x;
+    dest:= dest + (y * Console_Properties.Width) + x;
     dest64:= puint64(dest);
     getPixel64:= dest64^;
 end;
@@ -1629,7 +1654,7 @@ var
 begin
     if not ready then exit;
     dest:= puint16(multibootinfo^.framebuffer_addr);
-    dest:= dest + (y * 1280) + x;
+    dest:= dest + (y * Console_Properties.Width) + x;
     dest64:= puint64(dest);
     dest64^:= pixel;
 end;
@@ -1648,13 +1673,13 @@ begin
     mask:= puint32(@Std_Mask[uint32(c) * (16 * 8)]);
     dest:= puint16(multibootinfo^.framebuffer_addr);
     //dest:= puint16(windowmanager.getBuffer(0));
-    dest:= dest + (y * 1280) + x;
+    dest:= dest + (y * Console_Properties.Width) + x;
     dest32:= puint32(dest);
     for i:=0 to 15 do begin
-        dest32[(i*640)+0]:= (dest32[(i*640)+0] AND NOT(mask[(i*4)+0])) OR (fgcolor32 AND mask[(i*4)+0]);
-        dest32[(i*640)+1]:= (dest32[(i*640)+1] AND NOT(mask[(i*4)+1])) OR (fgcolor32 AND mask[(i*4)+1]);
-        dest32[(i*640)+2]:= (dest32[(i*640)+2] AND NOT(mask[(i*4)+2])) OR (fgcolor32 AND mask[(i*4)+2]);
-        dest32[(i*640)+3]:= (dest32[(i*640)+3] AND NOT(mask[(i*4)+3])) OR (fgcolor32 AND mask[(i*4)+3]);
+        dest32[(i*(Console_Properties.Width div 2))+0]:= (dest32[(i*(Console_Properties.Width div 2))+0] AND NOT(mask[(i*4)+0])) OR (fgcolor32 AND mask[(i*4)+0]);
+        dest32[(i*(Console_Properties.Width div 2))+1]:= (dest32[(i*(Console_Properties.Width div 2))+1] AND NOT(mask[(i*4)+1])) OR (fgcolor32 AND mask[(i*4)+1]);
+        dest32[(i*(Console_Properties.Width div 2))+2]:= (dest32[(i*(Console_Properties.Width div 2))+2] AND NOT(mask[(i*4)+2])) OR (fgcolor32 AND mask[(i*4)+2]);
+        dest32[(i*(Console_Properties.Width div 2))+3]:= (dest32[(i*(Console_Properties.Width div 2))+3] AND NOT(mask[(i*4)+3])) OR (fgcolor32 AND mask[(i*4)+3]);
     end;
     //windowmanager.redraw;
 end;
@@ -1673,13 +1698,13 @@ begin
     mask:= puint32(@Std_Mask[uint32(c) * (16 * 8)]);
     dest:= puint16(multibootinfo^.framebuffer_addr);
     //dest:= puint16(windowmanager.getBuffer(0));
-    dest:= dest + (y*(1280 * 16)) + (x * 8);
+    dest:= dest + (y*(Console_Properties.Width * 16)) + (x * 8);
     dest32:= puint32(dest);
     for i:=0 to 15 do begin
-        dest32[(i*640)+0]:= (dest32[(i*640)+0] AND NOT(mask[(i*4)+0])) OR (fgcolor32 AND mask[(i*4)+0]);
-        dest32[(i*640)+1]:= (dest32[(i*640)+1] AND NOT(mask[(i*4)+1])) OR (fgcolor32 AND mask[(i*4)+1]);
-        dest32[(i*640)+2]:= (dest32[(i*640)+2] AND NOT(mask[(i*4)+2])) OR (fgcolor32 AND mask[(i*4)+2]);
-        dest32[(i*640)+3]:= (dest32[(i*640)+3] AND NOT(mask[(i*4)+3])) OR (fgcolor32 AND mask[(i*4)+3]);
+        dest32[(i*(Console_Properties.Width div 2))+0]:= (dest32[(i*(Console_Properties.Width div 2))+0] AND NOT(mask[(i*4)+0])) OR (fgcolor32 AND mask[(i*4)+0]);
+        dest32[(i*(Console_Properties.Width div 2))+1]:= (dest32[(i*(Console_Properties.Width div 2))+1] AND NOT(mask[(i*4)+1])) OR (fgcolor32 AND mask[(i*4)+1]);
+        dest32[(i*(Console_Properties.Width div 2))+2]:= (dest32[(i*(Console_Properties.Width div 2))+2] AND NOT(mask[(i*4)+2])) OR (fgcolor32 AND mask[(i*4)+2]);
+        dest32[(i*(Console_Properties.Width div 2))+3]:= (dest32[(i*(Console_Properties.Width div 2))+3] AND NOT(mask[(i*4)+3])) OR (fgcolor32 AND mask[(i*4)+3]);
     end;
     //windowmanager.redraw;
 end;
@@ -1699,13 +1724,13 @@ begin
     mask:= puint32(@Std_Mask[uint32(c) * (16 * 8)]);
     dest:= puint16(multibootinfo^.framebuffer_addr);
     //dest:= puint16(windowmanager.getBuffer(0));
-    dest:= dest + (y*(1280 * 16)) + (x * 8);
+    dest:= dest + (y*(Console_Properties.Width * 16)) + (x * 8);
     dest32:= puint32(dest);
     for i:=0 to 15 do begin
-        dest32[(i*640)+0]:= (bgcolor32 AND NOT(mask[(i*4)+0])) OR (fgcolor32 AND mask[(i*4)+0]);
-        dest32[(i*640)+1]:= (bgcolor32 AND NOT(mask[(i*4)+1])) OR (fgcolor32 AND mask[(i*4)+1]);
-        dest32[(i*640)+2]:= (bgcolor32 AND NOT(mask[(i*4)+2])) OR (fgcolor32 AND mask[(i*4)+2]);
-        dest32[(i*640)+3]:= (bgcolor32 AND NOT(mask[(i*4)+3])) OR (fgcolor32 AND mask[(i*4)+3]);
+        dest32[(i*(Console_Properties.Width div 2))+0]:= (bgcolor32 AND NOT(mask[(i*4)+0])) OR (fgcolor32 AND mask[(i*4)+0]);
+        dest32[(i*(Console_Properties.Width div 2))+1]:= (bgcolor32 AND NOT(mask[(i*4)+1])) OR (fgcolor32 AND mask[(i*4)+1]);
+        dest32[(i*(Console_Properties.Width div 2))+2]:= (bgcolor32 AND NOT(mask[(i*4)+2])) OR (fgcolor32 AND mask[(i*4)+2]);
+        dest32[(i*(Console_Properties.Width div 2))+3]:= (bgcolor32 AND NOT(mask[(i*4)+3])) OR (fgcolor32 AND mask[(i*4)+3]);
     end;
     //windowmanager.redraw;
 end;
@@ -1738,6 +1763,14 @@ var
 
 Begin
      fb:= puint32(uint32(multibootinfo^.framebuffer_addr));
+     Console_Properties.Width:= multibootinfo^.framebuffer_width;
+     Console_Properties.Height:= multibootinfo^.framebuffer_height;
+     Console_Properties.BitsPerPixel:= multibootinfo^.framebuffer_bpp;
+     Console_Properties.MAX_CELL_X:= (Console_Properties.Width div 8) - 1;
+     Console_Properties.MAX_CELL_Y:= (Console_Properties.Height div 16) - 1;
+     If Console_Properties.BitsPerPixel <> 16 then while true do begin
+
+     end;
      kpalloc(uint32(fb));
      keyboard.hook(@keyhook);
      initWindows;
@@ -1754,8 +1787,8 @@ var
 
 begin
      if WindowManager.Windows[DefaultWND] <> nil then begin
-        for y:=0 to 63 do begin
-            for x:=0 to 159 do begin
+        for y:=0 to Console_Properties.MAX_CELL_Y do begin
+            for x:=0 to Console_Properties.MAX_CELL_X do begin
                 WindowManager.Windows[DefaultWND]^.Buffer[y][x].Character:= ' ';
                 WindowManager.Windows[DefaultWND]^.Buffer[y][x].Attributes:= Console_Properties.Default_Attribute;
                 WindowManager.Windows[DefaultWND]^.row_dirty[y]:= true;
@@ -2211,8 +2244,8 @@ var
 
 begin
      if WindowManager.Windows[WND] <> nil then begin
-        for y:=0 to 63 do begin
-            for x:=0 to 159 do begin
+        for y:=0 to Console_Properties.MAX_CELL_Y do begin
+            for x:=0 to Console_Properties.MAX_CELL_X do begin
                 WindowManager.Windows[WND]^.Buffer[y][x].Character:= ' ';
                 WindowManager.Windows[WND]^.Buffer[y][x].Attributes:= Console_Properties.Default_Attribute;
                 WindowManager.Windows[WND]^.row_dirty[y]:= true;
@@ -2235,8 +2268,8 @@ var
 
 begin
      if WindowManager.Windows[WND] <> nil then begin
-        for y:=0 to 63 do begin
-            for x:=0 to 159 do begin
+        for y:=0 to Console_Properties.MAX_CELL_Y do begin
+            for x:=0 to Console_Properties.MAX_CELL_X do begin
                 WindowManager.Windows[WND]^.Buffer[y][x].Character:= ' ';
                 WindowManager.Windows[WND]^.Buffer[y][x].Attributes:= attributes;
                 WindowManager.Windows[WND]^.row_dirty[y]:= true;
