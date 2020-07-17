@@ -127,6 +127,8 @@ type
     end;
     PRGB565Pair = ^TRGB565Pair;
 
+    PText = ^Text;
+
 implementation
 
 end.

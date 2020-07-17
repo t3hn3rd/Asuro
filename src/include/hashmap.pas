@@ -11,6 +11,7 @@ type
     THashItem = record
         Next : PHashItem;
         Key  : pchar;
+        Hash : uint32;
         Data : void;
     end;
     PHashMap = ^THashMap;
@@ -28,20 +29,25 @@ procedure printMap(map : PHashMap);
 
 implementation
 
-function hashIndex(size : uint32; key : pchar) : uint32;
+function KeyHash(key : pchar) : uint32;
 var
     KeyLength  : uint32;
-    Hash       : PMD5Digest;
+    MD5_Hash   : PMD5Digest;
     Hash128    : puint128;
     Hash32     : uint32;
 
 begin
     KeyLength:= StringSize(key);
-    Hash:= MD5Buffer(puint8(key), KeyLength);
-    Hash128:= puint128(Hash);
+    MD5_Hash:= MD5Buffer(puint8(key), KeyLength);
+    Hash128:= puint128(MD5_Hash);
     Hash32:= MD5To32(Hash128);
-    hashIndex:= Hash32 mod size;
-    kfree(void(Hash));
+    KeyHash:= Hash32;
+    kfree(void(MD5_Hash));
+end;
+
+function hashIndex(size : uint32; hash : uint32) : uint32;
+begin
+    hashIndex:= hash mod size;
 end;
 
 function newItem : PHashItem;
@@ -49,18 +55,21 @@ begin
     newItem:= PHashItem(kalloc(sizeof(THashItem)));
     newItem^.Next:= nil;
     newItem^.Key:= nil;
-    newItem^.Data:= nil;    
+    newItem^.Data:= nil; 
+    newItem^.Hash:= 0;   
 end;
 
 procedure add(map : PHashMap; key : pchar; value : void);
 var
     Idx     : uint32;
+    hash    : uint32;
     Item    : PHashItem;
     nItem   : PHashItem;
 
 begin
     if (map <> nil) and (key <> nil) then begin
-        Idx:= hashIndex(map^.size, key);
+        hash:= KeyHash(key);
+        Idx:= hashIndex(map^.size, hash);
         if map^.Table[Idx] = nil then begin
             Item:= newItem;
             Item^.Next:= nil;
@@ -82,18 +91,21 @@ begin
         end;
         if Item^.Key = nil then Item^.Key:= stringCopy(key);
         Item^.Data:= value;
+        Item^.Hash:= hash;
     end;
 end;
 
 function get(map : PHashMap; key : pchar) : void;
 var
     Idx  : uint32;
+    hash : uint32;
     Item : PHashItem;
 
 begin
     get:= nil;
     if (map <> nil) and (key <> nil) then begin
-        Idx:= hashIndex(map^.size, key);
+        hash:= KeyHash(key);
+        Idx:= hashIndex(map^.size, hash);
         Item:= map^.table[Idx];
         if Item = nil then exit;
         while not StringEquals(Item^.key, key) do begin
@@ -122,13 +134,15 @@ end;
 procedure deleteAndFree(map : PHashMap; key : pchar);
 var
     Idx  : uint32;
+    hash : uint32;
     Item : PHashItem;
     Prev : PHashItem;
 
 begin
     Prev:= nil;
     if (map <> nil) and (key <> nil) then begin
-        Idx:= hashIndex(map^.size, key);
+        hash:= KeyHash(key);
+        Idx:= hashIndex(map^.size, hash);
         Item:= map^.table[Idx];
         while not StringEquals(Item^.key, key) do begin
             Prev:= Item;
@@ -153,13 +167,15 @@ end;
 procedure delete(map : PHashMap; key : pchar);
 var
     Idx  : uint32;
+    hash : uint32;
     Item : PHashItem;
     Prev : PHashItem;
 
 begin
     Prev:= nil;
     if (map <> nil) and (key <> nil) then begin
-        Idx:= hashIndex(map^.size, key);
+        hash:= KeyHash(key);
+        Idx:= hashIndex(map^.size, hash);
         Item:= map^.table[Idx];
         while not StringEquals(Item^.key, key) do begin
             Prev:= Item;
