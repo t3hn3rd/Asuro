@@ -2040,6 +2040,7 @@ begin
      writestring(identifier);
      writestring('] ');
      writestring(str);
+     redrawWindows;
 end;
 
 procedure Outputln(identifier : PChar; str : PChar);

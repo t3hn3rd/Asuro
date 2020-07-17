@@ -262,6 +262,21 @@ begin
     printCapabilities(getTerminalHWND);
 end;
 
+procedure enableSSE();
+begin
+    If CPUID.Capabilities0^.SSE then begin
+        asm
+            MOV EAX, CR0
+            AND AX, $FFFB
+            OR AX, $2
+            MOV CR0, EAX
+            MOV EAX, CR4
+            OR AX, 3 shl 9
+            MOV CR4, EAX
+        end;
+    end;
+end;
+
 procedure init();
 begin
     terminal.registerCommand('CPU', @Terminal_Command_CPU, 'CPU Info.');
@@ -270,6 +285,7 @@ begin
     getCPUIdentifier;
     getCPUCapabilities;
     getCPUClockSpeed;
+    enableSSE;
 end;
 
 end.

@@ -178,7 +178,9 @@ begin
      console.init();
 
      { CPUID }
+     console.outputln('CPU', 'Init begin');
      cpu.init();
+     console.outputln('CPU', 'Init end');
 
      { Call Tracer }
      tracer.init();
@@ -242,8 +244,7 @@ begin
 
      tracer.push_trace('kmain.TICK');
 
-
-     HM:= hashmap.new(10000);
+     HM:= hashmap.new(16);
      hashmap.add(HM, 'testificate', void(1));
      hashmap.add(HM, 'asuro', void(10));
      hashmap.add(HM, 'myfirstos', void(100));

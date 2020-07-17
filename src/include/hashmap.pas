@@ -3,7 +3,7 @@ unit hashmap;
 interface
 
 uses
-    md5, util, strings, lmemorymanager, console;
+    md5, util, strings, lmemorymanager, console, tracer;
 
 type
     DPHashItem = ^PHashItem;
@@ -16,15 +16,16 @@ type
     end;
     PHashMap = ^THashMap;
     THashMap = record
-        Size    : uint32;
-        Table   : DPHashItem;
+        Size        : uint32;
+        LoadFactor  : Single;
+        Count       : uint32;
+        Table       : DPHashItem;
     end;
 
 function  new(size : uint32) : PHashMap;
 procedure add(map : PHashMap; key : pchar; value : void);
 function  get(map : PHashMap; key : pchar) : void;
-procedure delete(map : PHashMap; key : pchar);
-procedure deleteAndFree(map : PHashMap; key : pchar);
+procedure delete(map : PHashMap; key : pchar; freeItem : boolean);
 procedure printMap(map : PHashMap);
 
 implementation
@@ -57,6 +58,69 @@ begin
     newItem^.Key:= nil;
     newItem^.Data:= nil; 
     newItem^.Hash:= 0;   
+end;
+
+procedure putItem(table : DPHashItem; item : PHashItem; idx : uint32);
+var
+    ExistingItem : PHashItem;
+    c            : uint32;
+
+begin
+    tracer.push_trace('hashmap.putItem.1');
+    ExistingItem:= table[idx];
+    tracer.push_trace('hashmap.putItem.2');
+    if ExistingItem = nil then begin
+        tracer.push_trace('hashmap.putItem.3');
+        table[idx]:= item;
+    end else begin
+        tracer.push_trace('hashmap.putItem.4');
+        c:=0;
+        while ExistingItem^.Next <> nil do begin
+            tracer.push_trace('hashmap.putItem.5');
+            ExistingItem:= ExistingItem^.Next;
+        end;
+        tracer.push_trace('hashmap.putItem.6');
+        ExistingItem^.Next:= item;
+        tracer.push_trace('hashmap.putItem.6');
+    end;
+end;
+
+procedure checkAndRebase(map : PHashMap);
+var
+    size        : Single;
+    loadFactor  : Single;
+    max_load    : Single;
+    NewTable    : DPHashItem;
+    NewSize     : uint32;
+    i           : uint32;
+    Item        : PHashItem;
+    Next        : PHashItem;
+
+begin
+    size:= map^.size;
+    loadFactor:= map^.LoadFactor;
+    max_load:= size * loadFactor;
+    if map^.count > max_load then begin
+        NewSize:= map^.Size * 2;
+        NewTable:= DPHashItem(kalloc(sizeof(PHashItem) * NewSize));
+        for i:=0 to NewSize-1 do begin
+            NewTable[i]:= nil;
+        end;
+        If NewTable <> nil then begin
+            for i:=0 to map^.size-1 do begin
+                item:= map^.table[i];
+                while item <> nil do begin
+                    Next:= item^.Next;
+                    item^.Next:= nil;
+                    putItem(NewTable, item, hashIndex(NewSize, item^.hash));
+                    item:= Next;
+                end;
+            end;
+            kfree(void(map^.table));
+            map^.table:= NewTable;
+            map^.size:= NewSize;
+        end;
+    end;
 end;
 
 procedure add(map : PHashMap; key : pchar; value : void);
@@ -92,6 +156,8 @@ begin
         if Item^.Key = nil then Item^.Key:= stringCopy(key);
         Item^.Data:= value;
         Item^.Hash:= hash;
+        inc(map^.count);
+        checkAndRebase(map);
     end;
 end;
 
@@ -125,13 +191,15 @@ begin
     Map:= PHashMap(kalloc(sizeof(THashMap)));
     Map^.size:= size;
     Map^.Table:= DPHashItem(Kalloc(sizeof(PHashItem) * Size));
+    Map^.LoadFactor:= 0.75;
+    Map^.Count:= 0;
     for i:=0 to size-1 do begin
         Map^.Table[i]:= nil;
     end;
     new:= Map;
 end;
 
-procedure deleteAndFree(map : PHashMap; key : pchar);
+procedure delete(map : PHashMap; key : pchar; freeItem : boolean);
 var
     Idx  : uint32;
     hash : uint32;
@@ -144,54 +212,25 @@ begin
         hash:= KeyHash(key);
         Idx:= hashIndex(map^.size, hash);
         Item:= map^.table[Idx];
-        while not StringEquals(Item^.key, key) do begin
-            Prev:= Item;
-            Item:= Item^.Next;
-            if Item = nil then break;
-        end;
         if Item <> nil then begin
-            If Prev <> nil then Prev^.Next:= Item^.Next;
-            If Prev = nil then begin
-                if Item^.Next <> nil then
-                    map^.table[Idx]:= Item^.Next
-                else
-                    map^.table[Idx]:= nil;
+            while not StringEquals(Item^.key, key) do begin
+                Prev:= Item;
+                Item:= Item^.Next;
+                if Item = nil then break;
             end;
-            kfree(void(Item^.Key));
-            kfree(void(Item^.Data));
-            kfree(void(Item));
-        end;
-    end;
-end;
-
-procedure delete(map : PHashMap; key : pchar);
-var
-    Idx  : uint32;
-    hash : uint32;
-    Item : PHashItem;
-    Prev : PHashItem;
-
-begin
-    Prev:= nil;
-    if (map <> nil) and (key <> nil) then begin
-        hash:= KeyHash(key);
-        Idx:= hashIndex(map^.size, hash);
-        Item:= map^.table[Idx];
-        while not StringEquals(Item^.key, key) do begin
-            Prev:= Item;
-            Item:= Item^.Next;
-            if Item = nil then break;
-        end;
-        if Item <> nil then begin
-            If Prev <> nil then Prev^.Next:= Item^.Next;
-            If Prev = nil then begin
-                if Item^.Next <> nil then 
-                    map^.table[Idx]:= Item^.Next
-                else
-                    map^.table[Idx]:= nil;
+            if Item <> nil then begin
+                If Prev <> nil then Prev^.Next:= Item^.Next;
+                If Prev = nil then begin
+                    if Item^.Next <> nil then
+                        map^.table[Idx]:= Item^.Next
+                    else
+                        map^.table[Idx]:= nil;
+                end;
+                kfree(void(Item^.Key));
+                if freeItem then kfree(void(Item^.Data));
+                kfree(void(Item));
+                dec(map^.count);
             end;
-            kfree(void(Item^.Key));
-            kfree(void(Item));
         end;
     end;
 end;
