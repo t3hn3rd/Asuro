@@ -75,7 +75,7 @@ begin
     //writeintlnWND(info.key_code, getTerminalHWND());
     if (info.CTRL_DOWN and (info.key_code = 115)) then begin 
         //SAVE FILE
-        storagemanagement.writeNewFile(fileName, extension, puint32(chars), stringSize(chars));
+        // storagemanagement.writeNewFile(fileName, extension, puint32(chars), stringSize(chars));
         writestringlnWND('saved', getTerminalHWND());
         //writeintlnWND(stringSize(chars), getTerminalHWND());
     end else begin
@@ -125,7 +125,7 @@ begin
     bytes := puint32(kalloc(4));
     bytes^ := 0;
     buffer := kalloc(4);
-    error := storagemanagement.readfile(fileName, extension, buffer, bytes);
+    // error := storagemanagement.readfile(fileName, extension, buffer, bytes);
 
     if error^ = 1 then begin
         //file doesn't exists, make new

@@ -357,7 +357,7 @@ begin
         for i:= 0 to LL_Size(list) - 1 do begin
             dir := PDirectory(LL_get(list, i));
             entry^.fileName:= pchar(dir^.fileName);
-            entry^.extension:= pchar(dir^.fileExtension);
+            // entry^.extension:= pchar(dir^.fileExtension);
 
             if dir^.attributes = $10 then begin
                 entry^.entryType:= TDirectory_Entry_Type.directoryEntry;
@@ -578,10 +578,10 @@ begin
 
     for i:=0 to LL_size(directories) - 1 do begin
         dir:= PDirectory(LL_get(directories, i));
-        if (dir^.fileName = entry^.fileName) and (dir^.fileExtension = entry^.extension) then begin
-            exists:= true; 
-            break;
-        end;
+        // if (dir^.fileName = entry^.fileName) and (dir^.fileExtension = entry^.extension) then begin
+        //     exists:= true; 
+        //     break;
+        // end;
     end;
 
     push_trace('writefile.1');
@@ -613,7 +613,7 @@ begin
     end else begin
         push_trace('writefile.1.2.1');
 
-        startCluster:= writeDirectory(volume, directory, entry^.fileName, 0, status, entry^.extension);
+        // startCluster:= writeDirectory(volume, directory, entry^.fileName, 0, status, entry^.extension);
         clusterDifference:= (byteCount div bootRecord^.sectorsize) div 4; //-1 is that needed?
             push_trace('writefile.1.2.2');
 
