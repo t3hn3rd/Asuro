@@ -9,7 +9,8 @@ interface
 
 uses 
     util, 
-    lmemorymanager;
+    lmemorymanager,
+    lists;
 
 function stringToUpper(str : pchar) : pchar;
 function stringToLower(str : pchar) : pchar;

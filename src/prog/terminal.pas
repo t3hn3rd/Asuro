@@ -17,7 +17,7 @@ uses
     tracer,
     asuro,
     serial,
-    netutils, nettypes;
+    netutils, nettypes, vfs;
 
 type
     THaltCallback = procedure();
@@ -115,13 +115,13 @@ end;
 
 function getWorkingDirectory : pchar;
 begin
-    getWorkingDirectory:= Working_Directory;
+    getWorkingDirectory:= vfs.getWorkingDirectory;
 end;
 
 procedure setWorkingDirectory(str : pchar);
 begin
     if str <> nil then begin
-        Working_Directory:= stringCopy(str);
+        vfs.changeDirectory(str);
     end;
 end;
 
@@ -425,7 +425,7 @@ begin
     if not Halted then begin
         { Reset the terminal ready for the next command }
         console.writestringWND('Asuro#', TERMINAL_HWND);
-        console.writestringWND(Working_Directory, TERMINAL_HWND);
+        console.writestringWND(vfs.getWorkingDirectory, TERMINAL_HWND);
         console.writestringWND('> ', TERMINAL_HWND);
         bIndex:= 0;
         memset(uint32(@buffer[0]), 0, 1024);

@@ -41,7 +41,7 @@ uses
      base64,
      rand,
      terminal,
-     hashmap;
+     hashmap, vfs;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
@@ -184,6 +184,9 @@ begin
 
      { Call Tracer }
      tracer.init();
+
+     { VFS Init }
+     vfs.init();
 
      { Management Interfaces }
      tracer.push_trace('kmain.DRVMGMT');

@@ -11,7 +11,6 @@ uses
     console,
     lmemorymanager,
     util,
-    strings,
     tracer;
 
 type
@@ -54,6 +53,9 @@ procedure LL_Free(LinkedList : PLinkedListBase);
 function  LL_FromString(str : pchar; delimter : char) : PLinkedListBase;
 
 implementation
+
+uses
+    strings;
 
 { Managed Linked List }
 

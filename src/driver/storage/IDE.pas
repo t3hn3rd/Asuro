@@ -296,8 +296,8 @@ begin
         masterDevice.sectorSize:= 512;
         if masterDevice.maxSectorCount <> 0 then begin
             IDEDevices[0].exists:= true;
-            masterDevice.readCallback:= @read;
-            masterDevice.writeCallback:= @write;
+            masterDevice.readCallback:= @IDE.read;
+            masterDevice.writeCallback:= @IDE.write;
             storagemanagement.register_device(@masterDevice);
         end;
 
