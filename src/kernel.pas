@@ -212,7 +212,7 @@ begin
      { Bus Drivers }
      tracer.push_trace('kmain.BUSDRV');
      console.outputln('KERNEL', 'BUS DRIVERS: INIT BEGIN.');
-     //USB.init();
+     USB.init();
      pci.init();
      console.outputln('KERNEL', 'BUS DRIVERS: INIT END.');
 
@@ -240,11 +240,11 @@ begin
      writestringln(' ');
 
      tracer.push_trace('kmain.END');
-     rand.srand((getDateTime.Seconds SHR 24) OR (getDateTime.Minutes SHR 16) OR (getDateTime.Hours SHR 8) OR (getDateTime.Day));
+     rand.srand((getDateTime.Seconds SHL 24) OR (getDateTime.Minutes SHL 16) OR (getDateTime.Hours SHL 8) OR (getDateTime.Day));
 
      tracer.push_trace('kmain.TICK');
 
-     HM:= hashmap.new(16);
+     HM:= hashmap.newEx(16, 0.1);
      hashmap.add(HM, 'testificate', void(1));
      hashmap.add(HM, 'asuro', void(10));
      hashmap.add(HM, 'myfirstos', void(100));
@@ -280,9 +280,7 @@ begin
      hashmap.add(HM, 'Laptop', void(50000000));
      hashmap.add(HM, 'Salmon', void(500000000));
      hashmap.add(HM, 'OnionBurger', void(60));
-
      hashmap.printmap(HM);
-
      writeintln(uint32(hashmap.get(HM, 'Ana')));
 
     //  Testing getting into userspace

@@ -22,7 +22,12 @@ type
         Table       : DPHashItem;
     end;
 
-function  new(size : uint32) : PHashMap;
+const
+    HASHMAP_DEFAULT_SIZE = 16;
+    HASHMAP_DEFAULT_LOADFACTOR = 0.75;
+
+function  new : PHashMap;
+function  newEx(size : uint32; loadFactor : Single) : PHashMap;
 procedure add(map : PHashMap; key : pchar; value : void);
 function  get(map : PHashMap; key : pchar) : void;
 procedure delete(map : PHashMap; key : pchar; freeItem : boolean);
@@ -66,22 +71,15 @@ var
     c            : uint32;
 
 begin
-    tracer.push_trace('hashmap.putItem.1');
     ExistingItem:= table[idx];
-    tracer.push_trace('hashmap.putItem.2');
     if ExistingItem = nil then begin
-        tracer.push_trace('hashmap.putItem.3');
         table[idx]:= item;
     end else begin
-        tracer.push_trace('hashmap.putItem.4');
         c:=0;
         while ExistingItem^.Next <> nil do begin
-            tracer.push_trace('hashmap.putItem.5');
             ExistingItem:= ExistingItem^.Next;
         end;
-        tracer.push_trace('hashmap.putItem.6');
         ExistingItem^.Next:= item;
-        tracer.push_trace('hashmap.putItem.6');
     end;
 end;
 
@@ -182,7 +180,7 @@ begin
     end;
 end;
 
-function new(size : uint32) : PHashMap;
+function newEx(size : uint32; loadFactor : Single) : PHashMap;
 var
     Map : PHashMap;
     i   : uint32;
@@ -191,12 +189,17 @@ begin
     Map:= PHashMap(kalloc(sizeof(THashMap)));
     Map^.size:= size;
     Map^.Table:= DPHashItem(Kalloc(sizeof(PHashItem) * Size));
-    Map^.LoadFactor:= 0.75;
+    Map^.LoadFactor:= loadFactor;
     Map^.Count:= 0;
     for i:=0 to size-1 do begin
         Map^.Table[i]:= nil;
     end;
-    new:= Map;
+    newEx:= Map;
+end;
+
+function new : PHashMap;
+begin
+    new:= newEx(HASHMAP_DEFAULT_SIZE, HASHMAP_DEFAULT_LOADFACTOR);
 end;
 
 procedure delete(map : PHashMap; key : pchar; freeItem : boolean);
