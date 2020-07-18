@@ -147,8 +147,8 @@ procedure readPIO28(drive : uint8; LBA : uint32; buffer : puint8);
 procedure writePIO28(drive : uint8; LBA : uint32; buffer : puint8);
 //read/write must be capable of reading/writting any amknt of data upto disk size
 
-procedure read(device : PStorage_device; LBA : uint32; sectorCount : uint32; buffer : puint32);
-procedure write(device : PStorage_device; LBA : uint32; sectorCount : uint32; buffer : puint32);
+procedure dread(device : PStorage_device; LBA : uint32; sectorCount : uint32; buffer : puint32);
+procedure dwrite(device : PStorage_device; LBA : uint32; sectorCount : uint32; buffer : puint32);
 
 implementation 
 
@@ -214,6 +214,7 @@ var
     identResponse : TIdentResponse;
     i : uint8;
 begin 
+    push_trace('IDE.Identify_Device');
     device_select(device);
     no_interrupt(device);
     port_write(ATA_REG_CONTROL, 0);
@@ -256,10 +257,7 @@ begin
     devID.id4:= idANY;
     devID.ex:= nil;
     drivermanagement.register_driver('IDE ATA Driver', @devID, @load);
-    //terminal.registerCommand('IDE', @test_command, 'TEST IDE DRIVER');
-    buffer := Puint32(kalloc(1024*2));
     console.writestringln('[IDE] (INIT) END');
-    pop_trace();
 end;
 
 function load(ptr : void) : boolean;
@@ -272,7 +270,6 @@ var
 begin
     push_trace('ide.load');
     console.writestringln('[IDE] (LOAD) BEGIN');
-    //controller := PPCI_Device(ptr);
     controller := PPCI_Device(ptr);
 
     console.writestringln('[IDE] (INIT) CHECK FLOATING BUS');
@@ -296,8 +293,8 @@ begin
         masterDevice.sectorSize:= 512;
         if masterDevice.maxSectorCount <> 0 then begin
             IDEDevices[0].exists:= true;
-            masterDevice.readCallback:= @IDE.read;
-            masterDevice.writeCallback:= @IDE.write;
+            masterDevice.readCallback:= @dread;
+            masterDevice.writeCallback:= @dwrite;
             storagemanagement.register_device(@masterDevice);
         end;
 
@@ -311,17 +308,20 @@ begin
     // buffer[4] := 5;
     // buffer[5] := 6;
     // writePIO28(0, 3, buffer);
+    // writePIO28(0, 3, buffer);
+    // writePIO28(0, 3, buffer);
+    // writePIO28(0, 4, buffer);
+    // writePIO28(0, 5, buffer);
+    // writePIO28(0, 5, buffer);
+    // writePIO28(0, 5, buffer);
+    // psleep(1000);
+    // writePIO28(0, 5, buffer);
+    // writePIO28(0, 5, buffer);
+    // writePIO28(0, 5, buffer);
     // kfree(puint32(buffer));
 
     console.writestringln('[IDE] (LOAD) END');
-    pop_trace();
 end;
-
-// procedure flush();
-// begin
-//     port_write(ATA_CMD_CACHE_FLUSH);
-//     if not is_ready() then exit;
-// end;
 
 procedure readPIO28(drive : uint8; LBA : uint32; buffer : puint8);
 var
@@ -376,9 +376,13 @@ var
     i: uint16;
     device: uint8;
 begin 
+    push_trace('IDE.WritePIO28');
     if not validate_28bit_address(LBA) then begin
         console.writestringln('IDE (writePIO28) ERROR: Invalid LBA!');
     end;
+
+    console.writeintln(uint32(drive));
+    console.writeintln(LBA);
 
     //Add last 4 bits of LBA to device port
     if IDEDevices[drive].isMaster then begin
@@ -390,11 +394,12 @@ begin
         device_select($F0 or ((LBA and $0F000000) shr 24)); //LBA primary slave
     end;
 
-    no_interrupt(device);
+    // no_interrupt(device);
+
     port_write(ATA_REG_ERROR, 0);
     port_write(ATA_REG_CONTROL, 0);
 
-    //check if bus is floating
+    // check if bus is floating
     status := port_read(ATA_REG_COMMAND);
     if status = $FF then exit;
 
@@ -407,9 +412,6 @@ begin
     //send write command
     port_write(ATA_REG_COMMAND, ATA_CMD_WRITE_PIO); 
 
-        console.writestringlnWND('ide write start', getTerminalHWND());
-    console.redrawWindows();
-
     //write data
     i:=0;
     while i < 512 do begin
@@ -417,40 +419,30 @@ begin
         i:= i + 2;
     end;
 
-        console.writestringlnWND('ide write end', getTerminalHWND());
-    console.redrawWindows();
-
     //flush drive cache
     psleep(1);
     port_write(ATA_REG_COMMAND, ATA_CMD_CACHE_FLUSH);
     psleep(1);
     if not is_ready() then exit;
-
-    console.writestringln('ide write end');
-    console.redrawWindows();
-
 end;
 
-procedure read(device : PStorage_device; LBA : uint32; sectorCount : uint32; buffer : Puint32);
+procedure dread(device : PStorage_device; LBA : uint32; sectorCount : uint32; buffer : Puint32);
 var
     i : uint16;
 begin
-    // for i:=0 to sectorCount-1 do begin
-    //     readPIO28(device^.controllerId0, LBA, puint8(@buffer[512*i])); 
-    // end;
-
-    readPIO28(device^.controllerId0, LBA, puint8(buffer)); 
-
+    for i:=0 to sectorCount-1 do begin
+        readPIO28(device^.controllerId0, LBA, puint8(@buffer[512*i])); 
+    end;
 end;
 
-procedure write(device : PStorage_device; LBA : uint32; sectorCount : uint32; buffer : Puint32);
+procedure dwrite(device : PStorage_device; LBA : uint32; sectorCount : uint32; buffer : Puint32);
 var
     i : uint16;
 begin
-    // for i:=0 to sectorCount-1 do begin
-    //     writePIO28(device^.controllerId0, LBA, puint8(@buffer[512*i]));
-    // end;
-     writePIO28(device^.controllerId0, LBA, puint8(buffer));
+    for i:=0 to sectorCount-1 do begin
+        writePIO28(device^.controllerId0, LBA, puint8(@buffer[512*i]));
+    end;
+    // writePIO28(device^.controllerId0, LBA, puint8(buffer));
 end;
 
 end.

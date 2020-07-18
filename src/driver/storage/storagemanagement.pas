@@ -118,7 +118,7 @@ end;
 
 { Disk subcommand for listing drives }
 procedure ls_command(params : PParamList);
-var
+var 
     i : uint16;
 begin
     push_trace('storagemanagment.ls_command');
@@ -152,15 +152,26 @@ end;
 procedure format_command(params : PParamList);
 var
     driveIndex : uint16;
+    drive : PStorage_Device;
+
     filesystemString : pchar;
     filesystem : PFileSystem;
+    spc : puint32;
 begin
-    // driveIndex:= stringToInt( getParam(params, 1) );
 
-    // PFilesystem(LL_Get(filesystems, 0))^.createCallback(
-    //     (PStorage_Device(LL_Get(storageDevices, drive))), 10000, 1, spc); //todo fs
+    spc:= puint32(kalloc(4));
+    spc^:= 4;
 
+    driveIndex:= stringToInt( getParam(1, params) );
+    drive:= PStorage_Device(LL_Get(storageDevices, driveIndex));
 
+    //todo change b4 adding in aniother filesytem
+    PFilesystem(LL_Get(filesystems, 0))^.createCallback(drive, drive^.maxSectorCount-1, 1, spc); 
+
+    writestringWnd('Drive ', getTerminalHWND);
+    writeintWnd(driveIndex, getTerminalHWND);
+    writestringlnWnd(' formatted.', getTerminalHWND);
+    
 end;
 
 
@@ -172,6 +183,12 @@ var
     subcmd : pchar;
 begin
     push_trace('StorageManagment.disk_command');
+
+    //check if params wehre supplied
+    if paramCount(params) = 0 then begin
+        writestringlnWnd('Incorrect number of params.', getTerminalHWND);
+        exit;
+    end;
     
     subcmd:= getParam(0, params);
 
@@ -183,6 +200,7 @@ begin
 
     //format command for clearing a disk and make a new volume
     if stringEquals(subcmd, 'format') then begin
+        format_command(params);
     end;
 
     //lsfs command for listing filesystems

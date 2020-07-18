@@ -833,33 +833,7 @@ begin //maybe increase buffer size by one?
     console.writestringWND('sectorsize', getTerminalHWND());
     console.writeintlnWND(disk^.sectorsize, getTerminalHWND());
 
-    console.redrawWindows();
-
-    bt:= puint32(kalloc(512));
-
-    bt[1] := 1;
-    bt[2] := 1;
-    bt[3] := 1;
-    bt[4] := 1;
-    bt[5] := 1;
-    bt[6] := 1;
-    bt[7] := 11;
-    bt[8] := 33;
-    bt[9] := 22;
-    disk^.writecallback(disk, 3, 1, puint32(bt));
-
-
-    // puint32(buffer)[127]:= $55AA;
-
-        console.writestringlnWND('writting to bootrecord', getTerminalHWND());
-        console.writeintlnWND(start + 1, getTerminalHWND());
-    console.redrawWindows;
-
     disk^.writecallback(disk, start + 1, 1, puint32(buffer));
-
-        console.writestringlnWND('finished writting to bootrecord', getTerminalHWND());
-
-    console.redrawWindows;
 
     fatStart:= start + 1 + bootRecord^.rsvSectors;
     dataStart:= fatStart + bootRecord^.FATSize;
@@ -867,39 +841,27 @@ begin //maybe increase buffer size by one?
     zeroBuffer:= puint32(kalloc( disk^.sectorSize ));
     memset(uint32(zeroBuffer), 0, disk^.sectorSize );
 
-    // while true do begin
-    //     if i > FATSize then break; 
-    //     disk^.writecallback(disk, fatStart + i, 1, zeroBuffer);
-    //     i+=1;
-    // end;
+    while true do begin
+        if i > FATSize then break; 
+        disk^.writecallback(disk, fatStart + i, 1, zeroBuffer);
+        i+=1;
+    end;
 
     kfree(buffer);
     kfree(zeroBuffer);
-    writestring('Frees');
-    console.redrawWindows;
-        console.writestringlnWND('writting 1', getTerminalHWND());
-    console.redrawWindows;
 
     buffer:= puint32(kalloc(disk^.sectorSize));
     memset(uint32(buffer), 0, disk^.sectorSize);
-        console.writestringlnWND('writting 1', getTerminalHWND());
-    console.redrawWindows;
 
     puint32(buffer)[0]:= $FFFFFFF8; //fsinfo
     puint32(buffer)[1]:= $FFFFFFF8; //root cluster
-    writestring('Buffer Alloc');
-    console.redrawWindows;
 
     disk^.writecallback(disk, fatStart, 1, buffer);
-    writestring('WriteCB1');
-    console.redrawWindows;
 
     kfree(buffer);
 
     buffer:= puint32(kalloc(disk^.sectorsize));
     memset(uint32(buffer), 0, disk^.sectorsize);
-    writestring('Buffer Alloc 2');
-    console.redrawWindows;
 
     PDirectory(buffer)[0].fileName   := thisArray;
     PDirectory(buffer)[0].attributes := $08;
@@ -910,12 +872,8 @@ begin //maybe increase buffer size by one?
     PDirectory(buffer)[1].clusterLow := 1;
     
     disk^.writecallback(disk, dataStart + (config^ * rootCluster), 1, buffer);
-    writestring('WriteCB2');
-    console.redrawWindows;
 
     kfree(buffer);
-    writestring('Free');
-    console.redrawWindows;
 
 end;
 

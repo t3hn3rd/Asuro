@@ -42,7 +42,7 @@ end;
 procedure register();
 begin
     memset(uint32(@Hooks[0]), 0, sizeof(pp_hook_method)*MAX_HOOKS);
-    isrmanager.registerISR(76, @Main);
+    //isrmanager.registerISR(76, @Main);
     //IDT.set_gate(76, uint32(@Main), $08, ISR_RING_0);
 end;
 

@@ -267,6 +267,7 @@ begin
      switchendian:= (lo(b) SHL 4) OR hi(b);
 end;
 
+//Was broken, now does nothing.
 procedure psleep(t : uint16);
 var
     t1, t2 : uint16;
@@ -275,6 +276,7 @@ begin
     t1:= BDA^.Ticks;
     t2:= BDA^.Ticks;
     while t2-t1 < t do begin
+        break;
         t2:= BDA^.Ticks;
         if t2 < t1 then break;
     end;
