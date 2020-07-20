@@ -138,8 +138,37 @@ begin
 end;
 
 function stringContains(str : pchar; sub : pchar) : boolean;
+var
+    strEnd, subEnd, i, j, count : uint32;
+
 begin
-    stringContains:= false;    
+    stringContains:= false;
+    if stringEquals(str,sub) then begin
+        stringContains:= true;
+        exit;
+    end;
+    strEnd:= stringSize(str)-1;
+    subEnd:= stringSize(sub)-1;
+    if strEnd < subEnd then exit;
+    for i:=0 to strEnd do begin
+        if str[i] = sub[0] then begin 
+            count:= 0;
+            for j:=0 to subEnd do begin
+                if (i+j) > strEnd then 
+                    exit;
+                if str[i+j] = sub[j] then begin
+                    inc(count)
+                end else begin
+                    count:= 0;
+                    break;
+                end;
+            end;
+            if count > 0 then begin
+                stringContains:= true;
+                exit;
+            end;
+        end;
+    end;
 end;
 
 function stringToInt(str : pchar) : uint32;
