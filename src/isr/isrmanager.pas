@@ -76,7 +76,8 @@ end;
 procedure ISR_3; interrupt;
 begin
     asm
-		MOV IntReg, EBP	end;
+		MOV IntReg, EBP	
+    end;
 	ISR_N(3);
 end;
  

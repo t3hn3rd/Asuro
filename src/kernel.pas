@@ -202,9 +202,6 @@ begin
      { Filsystems }
      fat32.init();
 
-     i:= 0;
-     i:= i div i;
-
      { Device Drivers }
      tracer.push_trace('kmain.DEVDRV');
      console.outputln('KERNEL', 'DEVICE DRIVERS: INIT BEGIN.');

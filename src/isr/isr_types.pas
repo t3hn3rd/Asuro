@@ -20,10 +20,10 @@ type
         EDX    : uint32;
         ESI    : uint32;
         EDI    : uint32;
-        DS     : uint32;
-        ES     : uint32;
-        FS     : uint32;
-        GS     : uint32;
+        DS     : uint16;
+        ES     : uint16;
+        FS     : uint16;
+        GS     : uint16;
     end;
     PInterruptRegisters = ^TInterruptRegisters;
     
@@ -63,10 +63,10 @@ procedure correctInterruptRegisters(Errorcode : boolean);
 begin
     if IntReg <> nil then begin
         If errorcode then begin
-            IntSpec:= PInterruptSpecialRegisters(uint32(IntReg) + uint32(SizeOf(TInterruptRegisters)) + uint32(Sizeof(TError)));
-            IntErr:= PError(uint32(IntReg) + uint32(sizeof(TInterruptRegisters)));
+            IntSpec:= PInterruptSpecialRegisters(uint32(IntReg) + sizeof(TInterruptRegisters) + uint32(4));
+            IntErr:= PError(uint32(IntReg) + sizeof(TInterruptRegisters));
         end else begin
-            IntSpec:= PInterruptSpecialRegisters(uint32(IntReg) + uint32(SizeOf(TInterruptRegisters)));
+            IntSpec:= PInterruptSpecialRegisters(uint32(IntReg) + sizeof(TInterruptRegisters));
             IntErr:= PError(@ZeroError);
         end;
     end;
