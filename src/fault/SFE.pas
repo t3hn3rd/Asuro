@@ -24,6 +24,7 @@ var
     
 begin
     CLI;
+    correctInterruptRegisters(true);
     BSOD('SF', 'Stack Fault Exception.');
     console.writestringln('Stack Fault Exception.');
     util.halt_and_catch_fire;

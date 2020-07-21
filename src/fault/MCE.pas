@@ -24,6 +24,7 @@ var
     
 begin
     CLI;
+    correctInterruptRegisters(false);
     BSOD('MC', 'Machine Check Exception.');
     console.writestringln('Machine Check Exception.');
     util.halt_and_catch_fire;

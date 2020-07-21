@@ -24,6 +24,7 @@ var
     
 begin
     CLI;
+    correctInterruptRegisters(false);
     BSOD('BE', 'Breakpoint Exception.');
     console.writestringln('Breakpoint Exception');
     util.halt_and_catch_fire;

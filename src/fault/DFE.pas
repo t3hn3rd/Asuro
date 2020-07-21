@@ -24,6 +24,7 @@ var
     
 begin
     CLI;
+    correctInterruptRegisters(true);
     BSOD('DF', 'Double Fault.');
     console.writestringln('Double Fault.');
     util.halt_and_catch_fire;

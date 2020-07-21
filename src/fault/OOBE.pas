@@ -24,6 +24,7 @@ var
     
 begin
     CLI;
+    correctInterruptRegisters(false);
     BSOD('OOB', 'Out of Bouunds Exception.');
     console.writestringln('OOB Exception.');
     util.halt_and_catch_fire;

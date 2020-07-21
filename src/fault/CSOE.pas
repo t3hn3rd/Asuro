@@ -24,6 +24,7 @@ var
     
 begin
     CLI;
+    correctInterruptRegisters(false);
     BSOD('CSO', 'Coprocessor Seg Overrun Exception.');
     console.writestringln('Coprocessor Seg Overrun Exception.');
     util.halt_and_catch_fire;

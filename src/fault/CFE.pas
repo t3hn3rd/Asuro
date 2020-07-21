@@ -24,6 +24,7 @@ var
     
 begin
     CLI;
+    correctInterruptRegisters(false);
     BSOD('CF', 'Coprocessor Fault Exception.');
     console.writestringln('Coprocessor Fault Exception.');
     util.halt_and_catch_fire;

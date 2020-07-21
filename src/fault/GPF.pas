@@ -25,20 +25,9 @@ var
 
 begin
     CLI;
-    asm
-        MOV EAX, EBP
-        MOV Regs, EAX
-    end;
+    correctInterruptRegisters(true);
     BSOD('GPF', 'General Protection Fault.');
     console.writestringln('General Protection Fault.');
-    console.writestring('Flags: ');
-    console.writehexln(Regs^.EFlags);
-    console.writestring('EIP: ');
-    console.writehexln(Regs^.EIP);
-    console.writestring('CS: ');
-    console.writehexln(Regs^.CS);
-    console.writestring('Error Code: ');
-    console.writehexln(Regs^.ErrorCode);
     util.halt_and_catch_fire;
 end;
 

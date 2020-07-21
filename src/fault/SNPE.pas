@@ -24,6 +24,7 @@ var
     
 begin
     CLI;
+    correctInterruptRegisters(true);
     BSOD('SNS', 'Segment Not Present Exception.');
     console.writestringln('Segment Not Present Exception.');
     util.halt_and_catch_fire;

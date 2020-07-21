@@ -24,6 +24,7 @@ var
     
 begin
     CLI;
+    correctInterruptRegisters(true);
     BSOD('PF', 'Page Fault.');
     console.writestringln('Page Fault.');
     util.halt_and_catch_fire;

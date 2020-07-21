@@ -24,6 +24,7 @@ var
     
 begin
     CLI;
+    correctInterruptRegisters(true);
     BSOD('AC', 'Alignment Check Exception.');
     console.writestringln('Alignment Check Exception.');
     util.halt_and_catch_fire;

@@ -24,6 +24,7 @@ var
     
 begin
     CLI;
+    correctInterruptRegisters(false);
     BSOD('IDO', 'Into Detected Overflow Exception.');
     console.writestringln('IDO Exception.');
     util.halt_and_catch_fire;

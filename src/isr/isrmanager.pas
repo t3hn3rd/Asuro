@@ -50,1283 +50,2050 @@ begin
 end;
 
 procedure ISR_0; interrupt;
-begin
-    ISR_N(0);
+begin   
+	asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(0);
 end;
  
 procedure ISR_1; interrupt;
 begin
-    ISR_N(1);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(1);
 end;
  
 procedure ISR_2; interrupt;
 begin
-    ISR_N(2);
+    asm
+		MOV IntReg, EBP	
+    end;
+	ISR_N(2);
 end;
  
 procedure ISR_3; interrupt;
 begin
-    ISR_N(3);
+    asm
+		MOV IntReg, EBP	end;
+	ISR_N(3);
 end;
  
 procedure ISR_4; interrupt;
 begin
-    ISR_N(4);
+    asm
+		MOV IntReg, EBP	
+	end;
+	ISR_N(4);
 end;
  
 procedure ISR_5; interrupt;
 begin
-    ISR_N(5);
+    asm
+		MOV IntReg, EBP	
+	end;
+	ISR_N(5);
 end;
  
 procedure ISR_6; interrupt;
 begin
-    ISR_N(6);
+    asm
+		MOV IntReg, EBP	
+	end;
+	ISR_N(6);
 end;
  
 procedure ISR_7; interrupt;
 begin
-    ISR_N(7);
+    asm
+		MOV IntReg, EBP	
+	end;
+	ISR_N(7);
 end;
  
 procedure ISR_8; interrupt;
 begin
-    ISR_N(8);
+    asm
+		MOV IntReg, EBP	
+	end;
+	ISR_N(8);
 end;
  
 procedure ISR_9; interrupt;
 begin
-    ISR_N(9);
+    asm
+		MOV IntReg, EBP	
+	end;
+	ISR_N(9);
 end;
  
 procedure ISR_10; interrupt;
 begin
-    ISR_N(10);
+    asm
+		MOV IntReg, EBP	
+	end;
+	ISR_N(10);
 end;
  
 procedure ISR_11; interrupt;
 begin
-    ISR_N(11);
+    asm
+		MOV IntReg, EBP	
+	end;
+	ISR_N(11);
 end;
  
 procedure ISR_12; interrupt;
 begin
-    ISR_N(12);
+    asm
+		MOV IntReg, EBP	
+	end;
+	ISR_N(12);
 end;
  
 procedure ISR_13; interrupt;
 begin
-    ISR_N(13);
+    asm
+		MOV IntReg, EBP	
+	end;
+	ISR_N(13);
 end;
  
 procedure ISR_14; interrupt;
 begin
-    ISR_N(14);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(14);
 end;
  
 procedure ISR_15; interrupt;
 begin
-    ISR_N(15);
+    asm
+		MOV IntReg, EBP	
+	end;
+	ISR_N(15);
 end;
  
 procedure ISR_16; interrupt;
 begin
-    ISR_N(16);
+    asm
+		MOV IntReg, EBP	
+	end;
+	ISR_N(16);
 end;
  
 procedure ISR_17; interrupt;
 begin
-    ISR_N(17);
+    asm
+		MOV IntReg, EBP	
+	end;
+	ISR_N(17);
 end;
  
 procedure ISR_18; interrupt;
 begin
-    ISR_N(18);
+    asm
+		MOV IntReg, EBP	
+	end;
+	ISR_N(18);
 end;
  
 procedure ISR_19; interrupt;
 begin
-    ISR_N(19);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(19);
 end;
  
 procedure ISR_20; interrupt;
 begin
-    ISR_N(20);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(20);
 end;
  
 procedure ISR_21; interrupt;
 begin
-    ISR_N(21);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(21);
 end;
  
 procedure ISR_22; interrupt;
 begin
-    ISR_N(22);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(22);
 end;
  
 procedure ISR_23; interrupt;
 begin
-    ISR_N(23);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(23);
 end;
  
 procedure ISR_24; interrupt;
 begin
-    ISR_N(24);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(24);
 end;
  
 procedure ISR_25; interrupt;
 begin
-    ISR_N(25);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(25);
 end;
  
 procedure ISR_26; interrupt;
 begin
-    ISR_N(26);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(26);
 end;
  
 procedure ISR_27; interrupt;
 begin
-    ISR_N(27);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(27);
 end;
  
 procedure ISR_28; interrupt;
 begin
-    ISR_N(28);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(28);
 end;
  
 procedure ISR_29; interrupt;
 begin
-    ISR_N(29);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(29);
 end;
  
 procedure ISR_30; interrupt;
 begin
-    ISR_N(30);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(30);
 end;
  
 procedure ISR_31; interrupt;
 begin
-    ISR_N(31);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(31);
 end;
  
 procedure ISR_32; interrupt;
 begin
-    ISR_N(32);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(32);
 end;
  
 procedure ISR_33; interrupt;
 begin
-    ISR_N(33);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(33);
 end;
  
 procedure ISR_34; interrupt;
 begin
-    ISR_N(34);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(34);
 end;
  
 procedure ISR_35; interrupt;
 begin
-    ISR_N(35);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(35);
 end;
  
 procedure ISR_36; interrupt;
 begin
-    ISR_N(36);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(36);
 end;
  
 procedure ISR_37; interrupt;
 begin
-    ISR_N(37);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(37);
 end;
  
 procedure ISR_38; interrupt;
 begin
-    ISR_N(38);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(38);
 end;
  
 procedure ISR_39; interrupt;
 begin
-    ISR_N(39);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(39);
 end;
  
 procedure ISR_40; interrupt;
 begin
-    ISR_N(40);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(40);
 end;
  
 procedure ISR_41; interrupt;
 begin
-    ISR_N(41);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(41);
 end;
  
 procedure ISR_42; interrupt;
 begin
-    ISR_N(42);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(42);
 end;
  
 procedure ISR_43; interrupt;
 begin
-    ISR_N(43);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(43);
 end;
  
 procedure ISR_44; interrupt;
 begin
-    ISR_N(44);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(44);
 end;
  
 procedure ISR_45; interrupt;
 begin
-    ISR_N(45);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(45);
 end;
  
 procedure ISR_46; interrupt;
 begin
-    ISR_N(46);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(46);
 end;
  
 procedure ISR_47; interrupt;
 begin
-    ISR_N(47);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(47);
 end;
  
 procedure ISR_48; interrupt;
 begin
-    ISR_N(48);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(48);
 end;
  
 procedure ISR_49; interrupt;
 begin
-    ISR_N(49);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(49);
 end;
  
 procedure ISR_50; interrupt;
 begin
-    ISR_N(50);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(50);
 end;
  
 procedure ISR_51; interrupt;
 begin
-    ISR_N(51);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(51);
 end;
  
 procedure ISR_52; interrupt;
 begin
-    ISR_N(52);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(52);
 end;
  
 procedure ISR_53; interrupt;
 begin
-    ISR_N(53);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(53);
 end;
  
 procedure ISR_54; interrupt;
 begin
-    ISR_N(54);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(54);
 end;
  
 procedure ISR_55; interrupt;
 begin
-    ISR_N(55);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(55);
 end;
  
 procedure ISR_56; interrupt;
 begin
-    ISR_N(56);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(56);
 end;
  
 procedure ISR_57; interrupt;
 begin
-    ISR_N(57);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(57);
 end;
  
 procedure ISR_58; interrupt;
 begin
-    ISR_N(58);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(58);
 end;
  
 procedure ISR_59; interrupt;
 begin
-    ISR_N(59);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(59);
 end;
  
 procedure ISR_60; interrupt;
 begin
-    ISR_N(60);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(60);
 end;
  
 procedure ISR_61; interrupt;
 begin
-    ISR_N(61);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(61);
 end;
  
 procedure ISR_62; interrupt;
 begin
-    ISR_N(62);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(62);
 end;
  
 procedure ISR_63; interrupt;
 begin
-    ISR_N(63);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(63);
 end;
  
 procedure ISR_64; interrupt;
 begin
-    ISR_N(64);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(64);
 end;
  
 procedure ISR_65; interrupt;
 begin
-    ISR_N(65);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(65);
 end;
  
 procedure ISR_66; interrupt;
 begin
-    ISR_N(66);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(66);
 end;
  
 procedure ISR_67; interrupt;
 begin
-    ISR_N(67);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(67);
 end;
  
 procedure ISR_68; interrupt;
 begin
-    ISR_N(68);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(68);
 end;
  
 procedure ISR_69; interrupt;
 begin
-    ISR_N(69);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(69);
 end;
  
 procedure ISR_70; interrupt;
 begin
-    ISR_N(70);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(70);
 end;
  
 procedure ISR_71; interrupt;
 begin
-    ISR_N(71);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(71);
 end;
  
 procedure ISR_72; interrupt;
 begin
-    ISR_N(72);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(72);
 end;
  
 procedure ISR_73; interrupt;
 begin
-    ISR_N(73);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(73);
 end;
  
 procedure ISR_74; interrupt;
 begin
-    ISR_N(74);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(74);
 end;
  
 procedure ISR_75; interrupt;
 begin
-    ISR_N(75);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(75);
 end;
  
 procedure ISR_76; interrupt;
 begin
-    ISR_N(76);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(76);
 end;
  
 procedure ISR_77; interrupt;
 begin
-    ISR_N(77);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(77);
 end;
  
 procedure ISR_78; interrupt;
 begin
-    ISR_N(78);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(78);
 end;
  
 procedure ISR_79; interrupt;
 begin
-    ISR_N(79);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(79);
 end;
  
 procedure ISR_80; interrupt;
 begin
-    ISR_N(80);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(80);
 end;
  
 procedure ISR_81; interrupt;
 begin
-    ISR_N(81);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(81);
 end;
  
 procedure ISR_82; interrupt;
 begin
-    ISR_N(82);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(82);
 end;
  
 procedure ISR_83; interrupt;
 begin
-    ISR_N(83);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(83);
 end;
  
 procedure ISR_84; interrupt;
 begin
-    ISR_N(84);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(84);
 end;
  
 procedure ISR_85; interrupt;
 begin
-    ISR_N(85);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(85);
 end;
  
 procedure ISR_86; interrupt;
 begin
-    ISR_N(86);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(86);
 end;
  
 procedure ISR_87; interrupt;
 begin
-    ISR_N(87);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(87);
 end;
  
 procedure ISR_88; interrupt;
 begin
-    ISR_N(88);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(88);
 end;
  
 procedure ISR_89; interrupt;
 begin
-    ISR_N(89);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(89);
 end;
  
 procedure ISR_90; interrupt;
 begin
-    ISR_N(90);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(90);
 end;
  
 procedure ISR_91; interrupt;
 begin
-    ISR_N(91);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(91);
 end;
  
 procedure ISR_92; interrupt;
 begin
-    ISR_N(92);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(92);
 end;
  
 procedure ISR_93; interrupt;
 begin
-    ISR_N(93);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(93);
 end;
  
 procedure ISR_94; interrupt;
 begin
-    ISR_N(94);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(94);
 end;
  
 procedure ISR_95; interrupt;
 begin
-    ISR_N(95);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(95);
 end;
  
 procedure ISR_96; interrupt;
 begin
-    ISR_N(96);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(96);
 end;
  
 procedure ISR_97; interrupt;
 begin
-    ISR_N(97);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(97);
 end;
  
 procedure ISR_98; interrupt;
 begin
-    ISR_N(98);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(98);
 end;
  
 procedure ISR_99; interrupt;
 begin
-    ISR_N(99);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(99);
 end;
  
 procedure ISR_100; interrupt;
 begin
-    ISR_N(100);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(100);
 end;
  
 procedure ISR_101; interrupt;
 begin
-    ISR_N(101);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(101);
 end;
  
 procedure ISR_102; interrupt;
 begin
-    ISR_N(102);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(102);
 end;
  
 procedure ISR_103; interrupt;
 begin
-    ISR_N(103);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(103);
 end;
  
 procedure ISR_104; interrupt;
 begin
-    ISR_N(104);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(104);
 end;
  
 procedure ISR_105; interrupt;
 begin
-    ISR_N(105);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(105);
 end;
  
 procedure ISR_106; interrupt;
 begin
-    ISR_N(106);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(106);
 end;
  
 procedure ISR_107; interrupt;
 begin
-    ISR_N(107);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(107);
 end;
  
 procedure ISR_108; interrupt;
 begin
-    ISR_N(108);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(108);
 end;
  
 procedure ISR_109; interrupt;
 begin
-    ISR_N(109);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(109);
 end;
  
 procedure ISR_110; interrupt;
 begin
-    ISR_N(110);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(110);
 end;
  
 procedure ISR_111; interrupt;
 begin
-    ISR_N(111);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(111);
 end;
  
 procedure ISR_112; interrupt;
 begin
-    ISR_N(112);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(112);
 end;
  
 procedure ISR_113; interrupt;
 begin
-    ISR_N(113);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(113);
 end;
  
 procedure ISR_114; interrupt;
 begin
-    ISR_N(114);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(114);
 end;
  
 procedure ISR_115; interrupt;
 begin
-    ISR_N(115);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(115);
 end;
  
 procedure ISR_116; interrupt;
 begin
-    ISR_N(116);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(116);
 end;
  
 procedure ISR_117; interrupt;
 begin
-    ISR_N(117);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(117);
 end;
  
 procedure ISR_118; interrupt;
 begin
-    ISR_N(118);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(118);
 end;
  
 procedure ISR_119; interrupt;
 begin
-    ISR_N(119);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(119);
 end;
  
 procedure ISR_120; interrupt;
 begin
-    ISR_N(120);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(120);
 end;
  
 procedure ISR_121; interrupt;
 begin
-    ISR_N(121);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(121);
 end;
  
 procedure ISR_122; interrupt;
 begin
-    ISR_N(122);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(122);
 end;
  
 procedure ISR_123; interrupt;
 begin
-    ISR_N(123);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(123);
 end;
  
 procedure ISR_124; interrupt;
 begin
-    ISR_N(124);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(124);
 end;
  
 procedure ISR_125; interrupt;
 begin
-    ISR_N(125);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(125);
 end;
  
 procedure ISR_126; interrupt;
 begin
-    ISR_N(126);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(126);
 end;
  
 procedure ISR_127; interrupt;
 begin
-    ISR_N(127);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(127);
 end;
  
 procedure ISR_128; interrupt;
 begin
-    ISR_N(128);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(128);
 end;
  
 procedure ISR_129; interrupt;
 begin
-    ISR_N(129);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(129);
 end;
  
 procedure ISR_130; interrupt;
 begin
-    ISR_N(130);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(130);
 end;
  
 procedure ISR_131; interrupt;
 begin
-    ISR_N(131);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(131);
 end;
  
 procedure ISR_132; interrupt;
 begin
-    ISR_N(132);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(132);
 end;
  
 procedure ISR_133; interrupt;
 begin
-    ISR_N(133);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(133);
 end;
  
 procedure ISR_134; interrupt;
 begin
-    ISR_N(134);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(134);
 end;
  
 procedure ISR_135; interrupt;
 begin
-    ISR_N(135);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(135);
 end;
  
 procedure ISR_136; interrupt;
 begin
-    ISR_N(136);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(136);
 end;
  
 procedure ISR_137; interrupt;
 begin
-    ISR_N(137);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(137);
 end;
  
 procedure ISR_138; interrupt;
 begin
-    ISR_N(138);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(138);
 end;
  
 procedure ISR_139; interrupt;
 begin
-    ISR_N(139);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(139);
 end;
  
 procedure ISR_140; interrupt;
 begin
-    ISR_N(140);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(140);
 end;
  
 procedure ISR_141; interrupt;
 begin
-    ISR_N(141);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(141);
 end;
  
 procedure ISR_142; interrupt;
 begin
-    ISR_N(142);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(142);
 end;
  
 procedure ISR_143; interrupt;
 begin
-    ISR_N(143);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(143);
 end;
  
 procedure ISR_144; interrupt;
 begin
-    ISR_N(144);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(144);
 end;
  
 procedure ISR_145; interrupt;
 begin
-    ISR_N(145);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(145);
 end;
  
 procedure ISR_146; interrupt;
 begin
-    ISR_N(146);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(146);
 end;
  
 procedure ISR_147; interrupt;
 begin
-    ISR_N(147);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(147);
 end;
  
 procedure ISR_148; interrupt;
 begin
-    ISR_N(148);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(148);
 end;
  
 procedure ISR_149; interrupt;
 begin
-    ISR_N(149);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(149);
 end;
  
 procedure ISR_150; interrupt;
 begin
-    ISR_N(150);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(150);
 end;
  
 procedure ISR_151; interrupt;
 begin
-    ISR_N(151);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(151);
 end;
  
 procedure ISR_152; interrupt;
 begin
-    ISR_N(152);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(152);
 end;
  
 procedure ISR_153; interrupt;
 begin
-    ISR_N(153);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(153);
 end;
  
 procedure ISR_154; interrupt;
 begin
-    ISR_N(154);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(154);
 end;
  
 procedure ISR_155; interrupt;
 begin
-    ISR_N(155);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(155);
 end;
  
 procedure ISR_156; interrupt;
 begin
-    ISR_N(156);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(156);
 end;
  
 procedure ISR_157; interrupt;
 begin
-    ISR_N(157);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(157);
 end;
  
 procedure ISR_158; interrupt;
 begin
-    ISR_N(158);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(158);
 end;
  
 procedure ISR_159; interrupt;
 begin
-    ISR_N(159);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(159);
 end;
  
 procedure ISR_160; interrupt;
 begin
-    ISR_N(160);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(160);
 end;
  
 procedure ISR_161; interrupt;
 begin
-    ISR_N(161);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(161);
 end;
  
 procedure ISR_162; interrupt;
 begin
-    ISR_N(162);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(162);
 end;
  
 procedure ISR_163; interrupt;
 begin
-    ISR_N(163);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(163);
 end;
  
 procedure ISR_164; interrupt;
 begin
-    ISR_N(164);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(164);
 end;
  
 procedure ISR_165; interrupt;
 begin
-    ISR_N(165);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(165);
 end;
  
 procedure ISR_166; interrupt;
 begin
-    ISR_N(166);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(166);
 end;
  
 procedure ISR_167; interrupt;
 begin
-    ISR_N(167);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(167);
 end;
  
 procedure ISR_168; interrupt;
 begin
-    ISR_N(168);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(168);
 end;
  
 procedure ISR_169; interrupt;
 begin
-    ISR_N(169);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(169);
 end;
  
 procedure ISR_170; interrupt;
 begin
-    ISR_N(170);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(170);
 end;
  
 procedure ISR_171; interrupt;
 begin
-    ISR_N(171);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(171);
 end;
  
 procedure ISR_172; interrupt;
 begin
-    ISR_N(172);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(172);
 end;
  
 procedure ISR_173; interrupt;
 begin
-    ISR_N(173);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(173);
 end;
  
 procedure ISR_174; interrupt;
 begin
-    ISR_N(174);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(174);
 end;
  
 procedure ISR_175; interrupt;
 begin
-    ISR_N(175);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(175);
 end;
  
 procedure ISR_176; interrupt;
 begin
-    ISR_N(176);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(176);
 end;
  
 procedure ISR_177; interrupt;
 begin
-    ISR_N(177);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(177);
 end;
  
 procedure ISR_178; interrupt;
 begin
-    ISR_N(178);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(178);
 end;
  
 procedure ISR_179; interrupt;
 begin
-    ISR_N(179);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(179);
 end;
  
 procedure ISR_180; interrupt;
 begin
-    ISR_N(180);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(180);
 end;
  
 procedure ISR_181; interrupt;
 begin
-    ISR_N(181);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(181);
 end;
  
 procedure ISR_182; interrupt;
 begin
-    ISR_N(182);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(182);
 end;
  
 procedure ISR_183; interrupt;
 begin
-    ISR_N(183);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(183);
 end;
  
 procedure ISR_184; interrupt;
 begin
-    ISR_N(184);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(184);
 end;
  
 procedure ISR_185; interrupt;
 begin
-    ISR_N(185);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(185);
 end;
  
 procedure ISR_186; interrupt;
 begin
-    ISR_N(186);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(186);
 end;
  
 procedure ISR_187; interrupt;
 begin
-    ISR_N(187);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(187);
 end;
  
 procedure ISR_188; interrupt;
 begin
-    ISR_N(188);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(188);
 end;
  
 procedure ISR_189; interrupt;
 begin
-    ISR_N(189);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(189);
 end;
  
 procedure ISR_190; interrupt;
 begin
-    ISR_N(190);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(190);
 end;
  
 procedure ISR_191; interrupt;
 begin
-    ISR_N(191);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(191);
 end;
  
 procedure ISR_192; interrupt;
 begin
-    ISR_N(192);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(192);
 end;
  
 procedure ISR_193; interrupt;
 begin
-    ISR_N(193);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(193);
 end;
  
 procedure ISR_194; interrupt;
 begin
-    ISR_N(194);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(194);
 end;
  
 procedure ISR_195; interrupt;
 begin
-    ISR_N(195);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(195);
 end;
  
 procedure ISR_196; interrupt;
 begin
-    ISR_N(196);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(196);
 end;
  
 procedure ISR_197; interrupt;
 begin
-    ISR_N(197);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(197);
 end;
  
 procedure ISR_198; interrupt;
 begin
-    ISR_N(198);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(198);
 end;
  
 procedure ISR_199; interrupt;
 begin
-    ISR_N(199);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(199);
 end;
  
 procedure ISR_200; interrupt;
 begin
-    ISR_N(200);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(200);
 end;
  
 procedure ISR_201; interrupt;
 begin
-    ISR_N(201);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(201);
 end;
  
 procedure ISR_202; interrupt;
 begin
-    ISR_N(202);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(202);
 end;
  
 procedure ISR_203; interrupt;
 begin
-    ISR_N(203);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(203);
 end;
  
 procedure ISR_204; interrupt;
 begin
-    ISR_N(204);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(204);
 end;
  
 procedure ISR_205; interrupt;
 begin
-    ISR_N(205);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(205);
 end;
  
 procedure ISR_206; interrupt;
 begin
-    ISR_N(206);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(206);
 end;
  
 procedure ISR_207; interrupt;
 begin
-    ISR_N(207);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(207);
 end;
  
 procedure ISR_208; interrupt;
 begin
-    ISR_N(208);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(208);
 end;
  
 procedure ISR_209; interrupt;
 begin
-    ISR_N(209);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(209);
 end;
  
 procedure ISR_210; interrupt;
 begin
-    ISR_N(210);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(210);
 end;
  
 procedure ISR_211; interrupt;
 begin
-    ISR_N(211);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(211);
 end;
  
 procedure ISR_212; interrupt;
 begin
-    ISR_N(212);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(212);
 end;
  
 procedure ISR_213; interrupt;
 begin
-    ISR_N(213);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(213);
 end;
  
 procedure ISR_214; interrupt;
 begin
-    ISR_N(214);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(214);
 end;
  
 procedure ISR_215; interrupt;
 begin
-    ISR_N(215);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(215);
 end;
  
 procedure ISR_216; interrupt;
 begin
-    ISR_N(216);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(216);
 end;
  
 procedure ISR_217; interrupt;
 begin
-    ISR_N(217);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(217);
 end;
  
 procedure ISR_218; interrupt;
 begin
-    ISR_N(218);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(218);
 end;
  
 procedure ISR_219; interrupt;
 begin
-    ISR_N(219);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(219);
 end;
  
 procedure ISR_220; interrupt;
 begin
-    ISR_N(220);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(220);
 end;
  
 procedure ISR_221; interrupt;
 begin
-    ISR_N(221);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(221);
 end;
  
 procedure ISR_222; interrupt;
 begin
-    ISR_N(222);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(222);
 end;
  
 procedure ISR_223; interrupt;
 begin
-    ISR_N(223);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(223);
 end;
  
 procedure ISR_224; interrupt;
 begin
-    ISR_N(224);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(224);
 end;
  
 procedure ISR_225; interrupt;
 begin
-    ISR_N(225);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(225);
 end;
  
 procedure ISR_226; interrupt;
 begin
-    ISR_N(226);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(226);
 end;
  
 procedure ISR_227; interrupt;
 begin
-    ISR_N(227);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(227);
 end;
  
 procedure ISR_228; interrupt;
 begin
-    ISR_N(228);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(228);
 end;
  
 procedure ISR_229; interrupt;
 begin
-    ISR_N(229);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(229);
 end;
  
 procedure ISR_230; interrupt;
 begin
-    ISR_N(230);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(230);
 end;
  
 procedure ISR_231; interrupt;
 begin
-    ISR_N(231);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(231);
 end;
  
 procedure ISR_232; interrupt;
 begin
-    ISR_N(232);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(232);
 end;
  
 procedure ISR_233; interrupt;
 begin
-    ISR_N(233);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(233);
 end;
  
 procedure ISR_234; interrupt;
 begin
-    ISR_N(234);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(234);
 end;
  
 procedure ISR_235; interrupt;
 begin
-    ISR_N(235);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(235);
 end;
  
 procedure ISR_236; interrupt;
 begin
-    ISR_N(236);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(236);
 end;
  
 procedure ISR_237; interrupt;
 begin
-    ISR_N(237);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(237);
 end;
  
 procedure ISR_238; interrupt;
 begin
-    ISR_N(238);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(238);
 end;
  
 procedure ISR_239; interrupt;
 begin
-    ISR_N(239);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(239);
 end;
  
 procedure ISR_240; interrupt;
 begin
-    ISR_N(240);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(240);
 end;
  
 procedure ISR_241; interrupt;
 begin
-    ISR_N(241);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(241);
 end;
  
 procedure ISR_242; interrupt;
 begin
-    ISR_N(242);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(242);
 end;
  
 procedure ISR_243; interrupt;
 begin
-    ISR_N(243);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(243);
 end;
  
 procedure ISR_244; interrupt;
 begin
-    ISR_N(244);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(244);
 end;
  
 procedure ISR_245; interrupt;
 begin
-    ISR_N(245);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(245);
 end;
  
 procedure ISR_246; interrupt;
 begin
-    ISR_N(246);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(246);
 end;
  
 procedure ISR_247; interrupt;
 begin
-    ISR_N(247);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(247);
 end;
  
 procedure ISR_248; interrupt;
 begin
-    ISR_N(248);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(248);
 end;
  
 procedure ISR_249; interrupt;
 begin
-    ISR_N(249);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(249);
 end;
  
 procedure ISR_250; interrupt;
 begin
-    ISR_N(250);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(250);
 end;
  
 procedure ISR_251; interrupt;
 begin
-    ISR_N(251);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(251);
 end;
  
 procedure ISR_252; interrupt;
 begin
-    ISR_N(252);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(252);
 end;
  
 procedure ISR_253; interrupt;
 begin
-    ISR_N(253);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(253);
 end;
  
 procedure ISR_254; interrupt;
 begin
-    ISR_N(254);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(254);
 end;
  
 procedure ISR_255; interrupt;
 begin
-    ISR_N(255);
+    asm
+		MOV IntReg, EBP
+	end;
+	ISR_N(255);
 end;
 
 procedure init;

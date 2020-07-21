@@ -24,6 +24,7 @@ var
     
 begin
     CLI;
+    correctInterruptRegisters(false);
     BSOD('NMI', 'Non-Maskable Interrupt Exception.');
     console.writestringln('NMI Exception.');
     util.halt_and_catch_fire;

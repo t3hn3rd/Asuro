@@ -24,6 +24,7 @@ var
     
 begin
     CLI;
+    correctInterruptRegisters(true);
     BSOD('TSS', 'Bad TSS Exception.');
     console.writestringln('Bad TSS Exception.');
     util.halt_and_catch_fire;

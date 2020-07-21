@@ -73,7 +73,7 @@ var
 implementation
 
 uses
-    console, RTC, cpu, serial, strings;
+    console, RTC, cpu, serial, strings, isr_types;
 
 function MsSinceSystemBoot : uint64;
 begin
@@ -580,12 +580,21 @@ begin
     console.writestring('    Fault Info: ');
     console.writestringln(info);
     console.writestringln(' ');
+    if IntReg <> nil then begin
+        console.writestringln('    Processor Info: ');
+        console.writestring('       EBP: '); console.writehex(IntReg^.EBP);  console.writestring('      EAX: '); console.writehex(IntReg^.EAX);  console.writestring('      EBX: '); console.writehexln(IntReg^.EBX);
+        console.writestring('       ECX: '); console.writehex(IntReg^.ECX);  console.writestring('      EDX: '); console.writehex(IntReg^.EDX);  console.writestring('      ESI: '); console.writehexln(IntReg^.ESI);
+        console.writestring('       EDI: '); console.writehex(IntReg^.EDI);  console.writestring('       DS: '); console.writehex(IntReg^.DS);   console.writestring('       ES: '); console.writehexln(IntReg^.ES);
+        console.writestring('        FS: '); console.writehex(IntReg^.FS);   console.writestring('       GS: '); console.writehex(IntReg^.GS);   console.writestring('    ERROR: '); console.writehexln(IntErr^.Error);
+        console.writestring('       EIP: '); console.writehex(IntSpec^.EIP); console.writestring('       CS: '); console.writehex(IntSpec^.CS);  console.writestring('   EFLAGS: '); console.writehexln(IntSpec^.EFLAGS);
+        console.writestringln(' ');
+    end;
     console.writestring('    Call Stack: ');
     trace:= tracer.get_last_trace;
     if trace <> nil then begin
         console.writestring('[-0] ');
         console.writestringln(trace);
-        for i:=1 to tracer.get_trace_count-1 do begin
+        for i:=1 to tracer.get_trace_count-7 do begin
             trace:= tracer.get_trace_N(i);
             if trace <> nil then begin
                 console.writestring('                [');

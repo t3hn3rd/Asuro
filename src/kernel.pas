@@ -202,6 +202,9 @@ begin
      { Filsystems }
      fat32.init();
 
+     i:= 0;
+     i:= i div i;
+
      { Device Drivers }
      tracer.push_trace('kmain.DEVDRV');
      console.outputln('KERNEL', 'DEVICE DRIVERS: INIT BEGIN.');
@@ -303,6 +306,7 @@ begin
     //     PUSH ulf;
     //     iret;
     //  end;
+
 
      while true do begin
         tracer.push_trace('kmain.RedrawWindows');

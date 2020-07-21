@@ -24,6 +24,7 @@ var
     
 begin
     CLI;
+    correctInterruptRegisters(false);
     BSOD('IO', 'Invalid OPCode Exception.');
     console.writestringln('Invalid OPCode Exception.');
     util.halt_and_catch_fire;

@@ -24,6 +24,7 @@ var
 
 begin
     CLI;
+    correctInterruptRegisters(false);
     BSOD('DBZ', 'Divide By Zero Exception.');
     console.writestringln('Divide by Zero Exception.');
     util.halt_and_catch_fire;

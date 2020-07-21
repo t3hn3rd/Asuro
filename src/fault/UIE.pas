@@ -24,6 +24,7 @@ var
     
 begin
     CLI;
+    correctInterruptRegisters(false);
     BSOD('UI', 'Unknown Interrupt Exception.');
     console.writestringln('Unknown Interrupt Exception.');
     util.halt_and_catch_fire;

@@ -172,6 +172,7 @@ var
     elm : pchar;
 
 begin
+    tracer.push_trace('vfs.evaluatePath.enter');
     List:= STRLL_FromString(Path, '/');
     if STRLL_Size(List) > 0 then begin
         for i:=STRLL_Size(List)-1 downto 0 do begin
@@ -186,6 +187,7 @@ begin
     end;
     evaluatePath:= CombineToAbsolutePath(List, STRLL_Size(List));
     STRLL_Free(List);
+    tracer.push_trace('vfs.evaluatePath.exit');
 end;
 
 function getAbsolutePath(Obj : PVFSObject) : pchar;
@@ -225,6 +227,7 @@ var
     TempPath : pchar;
 
 begin
+    tracer.push_trace('vfs.MakeAbsolutePath.enter');
     if Path[0] = '/' then AbsPath:= stringCopy(Path) else begin
         if CurrentDirectory[StringSize(CurrentDirectory)-1] <> '/' then
             TempPath:= StringConcat(CurrentDirectory, '/')
@@ -234,6 +237,7 @@ begin
         kfree(void(TempPath));
     end;
     MakeAbsolutePath:= AbsPath;
+    tracer.push_trace('vfs.MakeAbsolutePath.exit');
 end;
 
 function GetObjectFromPath(path : pchar) : PVFSObject;
@@ -367,8 +371,13 @@ var
     Obj : PVFSObject;
     ObjPath : pchar;
     RelPath : pchar;
+    AbsPath : pchar;
+    CopyPath : pchar;
+    MntPath  : pchar;
+    ValidCallback : TPathValid;
 
 begin
+    tracer.push_trace('vfs.PathValid.enter');
     PathValid:= pvInvalid;
     Obj:= GetObjectFromPath(Path);
     if Obj <> nil then begin
@@ -379,14 +388,22 @@ begin
             otDRIVE:begin
                 ObjPath:= getAbsolutePath(Obj);
                 RelPath:= makeRelative(Path, ObjPath);
-                PathValid:= PVFSDrive(Obj^.Reference)^.PathValid(PVFSDrive(Obj^.Reference)^.DriveHandle, RelPath); //Fix this to be relative path!!!
+                ValidCallback:= PVFSDrive(Obj^.Reference)^.PathValid;
+                if ValidCallback <> nil then
+                    PathValid:= ValidCallback(PVFSDrive(Obj^.Reference)^.DriveHandle, RelPath)
+                else
+                    PathValid:= pvInvalid;
                 kfree(void(ObjPath));
                 kfree(void(RelPath));
             end; 
             otDEVICE:begin
                 ObjPath:= getAbsolutePath(Obj);
                 RelPath:= makeRelative(Path, ObjPath);
-                PathValid:= PVFSDevice(Obj^.Reference)^.PathValid(PVFSDevice(Obj^.Reference)^.DeviceHandle, RelPath); //Fix this to be the relative path
+                ValidCallback:= PVFSDevice(Obj^.Reference)^.PathValid;
+                if ValidCallback <> nil then
+                    PathValid:= ValidCallback(PVFSDevice(Obj^.Reference)^.DeviceHandle, RelPath)
+                else
+                    PathValid:= pvInvalid;
                 kfree(void(ObjPath));
                 kfree(void(RelPath));
             end;
@@ -394,10 +411,30 @@ begin
                 PathValid:= pvFile;
             end; 
             otMOUNT:begin
-                PathValid:= PathValid(PVFSMount(Obj^.Reference)^.Path);
+                { Get the absolute path of this object, i.e. /mnt/mount1 }
+                ObjPath:= getAbsolutePath(Obj);                      
+                { Make our path relative, i.e. /mnt/mount1/myfile becomes /myfile }
+                RelPath:= makeRelative(Path, ObjPath);
+                { Grab the Redirect Path i.e. /disk/disk1 }
+                MntPath:= PVFSMount(Obj^.Reference)^.Path;
+                { Ensure that if there isn't a '/' between the RelPath & MntPath we add one }
+                If (MntPath[StringSize(MntPath)-1] <> '/') AND (RelPath[0] <> '/') then
+                    CopyPath:= StringConcat(MntPath, '/')
+                else
+                    CopyPath:= StringCopy(MntPath);
+                { Concat MntPath + RelPath, i.e. above examples would become /disk/disk1/myfile }
+                AbsPath:= StringConcat(MntPath, RelPath);
+                { Recursively call PathValid on our new path }
+                PathValid:= PathValid(AbsPath);
+                { Free everything we allocated }
+                kfree(void(AbsPath));
+                kfree(void(RelPath));
+                kfree(void(CopyPath));
+                kfree(void(ObjPath));
             end;
         end;
     end;
+    tracer.push_trace('vfs.PathValid.exit');
 end;
 
 function changeDirectory(Path : pchar) : TIsPathValid;
@@ -407,6 +444,7 @@ var
     Validity : TIsPathValid;
 
 begin
+    tracer.push_trace('vfs.changeDirectory.enter');
     TempPath:= MakeAbsolutePath(Path);
     AbsPath:= evaluatePath(TempPath);
     kfree(void(TempPath));
@@ -416,6 +454,7 @@ begin
     end;
     changeDirectory:= Validity;
     kfree(void(AbsPath));
+    tracer.push_trace('vfs.changeDirectory.exit');
 end;
 
 { VFS Functions }
@@ -470,7 +509,9 @@ end;
 
 function getWorkingDirectory : pchar;
 begin
+    tracer.push_trace('vfs.getWorkingDirectory.enter');
     getWorkingDirectory:= CurrentDirectory;
+    tracer.push_trace('vfs.getWorkingDirectory.exit');
 end;
 
 { Terminal Commands }
@@ -520,6 +561,7 @@ var
     i : uint32;
 
 begin
+    tracer.push_trace('vfs.VFS_COMMAND_CD.enter');
     if ParamCount(Params) > 0 then begin
         for i:=0 to ParamCount(Params)-1 do begin
             if i = 0 then begin
@@ -549,6 +591,7 @@ begin
         end;
         kfree(void(Path));
     end;
+    tracer.push_trace('vfs.VFS_COMMAND_CD.exit');
 end;
 
 { Init }
@@ -573,10 +616,12 @@ begin
     newVirtualDirectory('/disk');
     newVirtualDirectory('/disk/test');
     newVirtualDirectory('/disk/test/myfolder');
+    newVirtualDirectory('/disk/test/mytest');
 
     // rel:= makeRelative('/disk/SDA/mydirectory/myfile', '/disk/SDA');
     // if rel <> nil then outputln('VFS', rel) else outputln('VFS', 'REL IS NULL!');
 
+    //outputln('VFS', makeRelative('/test/mydisk/mything', '/test/mydisk'));
     //while true do begin end;
 
     terminal.registerCommand('LS', @VFS_COMMAND_LS, 'List directory contents.');
