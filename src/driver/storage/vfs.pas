@@ -8,7 +8,7 @@ uses
 type
     TOpenMode       = (omReadOnly, omWriteOnly, omReadWrite);
     TWriteMode      = (wmRewrite, wmAppend, wmNew);
-    TError          = (eNone, eUnknown, eFileInUse, eWriteOnly, eReadOnly, eFileDoesNotExist, eDirectoryDoesNotExist, eDirectoryAlreadyExists, eNotADirectory);
+    TError          = (eNone, eUnknown, eFileInUse, eWriteOnly, eReadOnly, eFileDoesNotExist, eDirectoryDoesNotExist, eDirectoryAlreadyExists, eNotADirectory, eDiskFull, eFilenameTooLong, eDirectoryFull);
     PError          = ^TError;
     TIsPathValid    = (pvInvalid, pvFile, pvDirectory);
 
@@ -80,8 +80,8 @@ function CloseFile(Filehandle : TFileHandle) : boolean;
 function FileSize(Filename : pchar; error : puint8) : uint32;
 function CreateDirectory(Handle : uint32; Path : pchar) : TError;
 function GetDirectories(Handle : uint32; Path : pchar) : PHashMap;
-function PathValid(Handle : uint32; Path : pchar) : TPathValid;
-function changeDirectory(Path : pchar) : TPathValid;
+function PathValid(Path : pchar) : TIsPathValid;
+function changeDirectory(Path : pchar) : TIsPathValid;
 function getWorkingDirectory : pchar;
 
 //VFS Functions
@@ -165,6 +165,29 @@ begin
     tracer.push_trace('vfs.CombineToAbsolutePath.exit');
 end;
 
+function evaluatePath(Path : pchar) : pchar;
+var
+    List : PLinkedListBase;
+    i : uint32;
+    elm : pchar;
+
+begin
+    List:= STRLL_FromString(Path, '/');
+    if STRLL_Size(List) > 0 then begin
+        for i:=STRLL_Size(List)-1 downto 0 do begin
+            elm:= STRLL_Get(List, i);
+            if elm <> nil then begin
+                if StringEquals(elm,'..') then begin
+                    STRLL_Delete(List, i);
+                    if (i > 0) then STRLL_Delete(List, i-1);
+                end;
+            end;
+        end;
+    end;
+    evaluatePath:= CombineToAbsolutePath(List, STRLL_Size(List));
+    STRLL_Free(List);
+end;
+
 function getAbsolutePath(Obj : PVFSObject) : pchar;
 var
     buf, new, delim : pchar;
@@ -196,6 +219,23 @@ begin
     tracer.push_trace('vfs.getAbsolutePath.exit');
 end;
 
+function MakeAbsolutePath(Path : PChar) : pchar;
+var
+    AbsPath : pchar;
+    TempPath : pchar;
+
+begin
+    if Path[0] = '/' then AbsPath:= stringCopy(Path) else begin
+        if CurrentDirectory[StringSize(CurrentDirectory)-1] <> '/' then
+            TempPath:= StringConcat(CurrentDirectory, '/')
+        else
+            TempPath:= stringCopy(CurrentDirectory);
+        AbsPath:= StringConcat(TempPath, Path);
+        kfree(void(TempPath));
+    end;
+    MakeAbsolutePath:= AbsPath;
+end;
+
 function GetObjectFromPath(path : pchar) : PVFSObject;
 var
     Obj         : PVFSObject;
@@ -216,7 +256,7 @@ begin
             NewObj:= PVFSObject(hashmap.get(ht, item));                                            
             if NewObj = nil then begin                                                              
                 GetObjectFromPath:= nil;
-                tracer.push_trace('vfs.GetObjectFromPath.shortexit');
+                tracer.push_trace('vfs.GetObjectFromPath.shortexit_1');
                 exit;
             end;                                                                                    
             Case NewObj^.ObjectType of
@@ -225,7 +265,7 @@ begin
                 end;
                 else begin                                                                         
                     Obj:= NewObj;
-                    tracer.push_trace('vfs.GetObjectFromPath.shortexit');
+                    tracer.push_trace('vfs.GetObjectFromPath.shortexit_2');
                     Break;
                 end;
             end;
@@ -322,20 +362,67 @@ begin
 
 end;
 
-function PathValid(Handle : uint32; Path : pchar) : TPathValid;
-begin
+function PathValid(Path : pchar) : TIsPathValid;
+var
+    Obj : PVFSObject;
+    ObjPath : pchar;
+    RelPath : pchar;
 
+begin
+    PathValid:= pvInvalid;
+    Obj:= GetObjectFromPath(Path);
+    if Obj <> nil then begin
+        Case Obj^.ObjectType of
+            otVDIRECTORY:begin
+                PathValid:= pvDirectory;
+            end;
+            otDRIVE:begin
+                ObjPath:= getAbsolutePath(Obj);
+                RelPath:= makeRelative(Path, ObjPath);
+                PathValid:= PVFSDrive(Obj^.Reference)^.PathValid(PVFSDrive(Obj^.Reference)^.DriveHandle, RelPath); //Fix this to be relative path!!!
+                kfree(void(ObjPath));
+                kfree(void(RelPath));
+            end; 
+            otDEVICE:begin
+                ObjPath:= getAbsolutePath(Obj);
+                RelPath:= makeRelative(Path, ObjPath);
+                PathValid:= PVFSDevice(Obj^.Reference)^.PathValid(PVFSDevice(Obj^.Reference)^.DeviceHandle, RelPath); //Fix this to be the relative path
+                kfree(void(ObjPath));
+                kfree(void(RelPath));
+            end;
+            otFILE, otVFILE:begin
+                PathValid:= pvFile;
+            end; 
+            otMOUNT:begin
+                PathValid:= PathValid(PVFSMount(Obj^.Reference)^.Path);
+            end;
+        end;
+    end;
 end;
 
-function changeDirectory(Path : pchar) : TPathValid;
-begin
+function changeDirectory(Path : pchar) : TIsPathValid;
+var
+    TempPath : pchar;
+    AbsPath : pchar;
+    Validity : TIsPathValid;
 
+begin
+    TempPath:= MakeAbsolutePath(Path);
+    AbsPath:= evaluatePath(TempPath);
+    kfree(void(TempPath));
+    Validity:= PathValid(AbsPath);
+    if (Validity = pvDirectory) then begin
+        ChangeCurrentDirectoryValue(AbsPath);
+    end;
+    changeDirectory:= Validity;
+    kfree(void(AbsPath));
 end;
 
 { VFS Functions }
 
 function newVirtualDirectory(Path : pchar) : TError;
 var
+    TempPath              : pchar;
     AbsPath               : pchar;   
     SplitPath             : PLinkedListBase;
     SplitParentPath       : PLinkedListBase;
@@ -350,9 +437,7 @@ var
 begin
     tracer.push_trace('vfs.newVirtualDirectory.enter');
     newVirtualDirectory:= eUnknown;
-    if Path[0] = '/' then AbsPath:= stringCopy(Path) else begin
-        AbsPath:= StringConcat(CurrentDirectory, Path);
-    end;
+    AbsPath:= MakeAbsolutePath(Path);
     SplitPath:= STRLL_FromString(AbsPath, '/');
     ObjectName:= STRLL_Get(SplitPath, STRLL_Size(SplitPath)-1);
     ParentDirectoryPath:= CombineToAbsolutePath(SplitPath, STRLL_Size(SplitPath)-1);
@@ -429,13 +514,41 @@ end;
 
 procedure VFS_COMMAND_CD(params : PParamList);
 var
-    obj : PVFSObject;
+    Path : pchar;
+    Temp1, Temp2 : pchar;
+    Result : TIsPathValid;
+    i : uint32;
 
 begin
-    tracer.push_trace('vfs.VFS_COMMAND_CD.enter');
-    obj:= GetObjectFromPath('/disk/test/myfolder');
-    if obj <> nil then writestringlnWND(getAbsolutePath(obj),getTerminalHWND);
-    tracer.push_trace('vfs.VFS_COMMAND_CD.exit');
+    if ParamCount(Params) > 0 then begin
+        for i:=0 to ParamCount(Params)-1 do begin
+            if i = 0 then begin
+                Temp1:= StringCopy(GetParam(i, params));
+                Path:= StringCopy(Temp1);
+                kfree(void(Temp1));
+            end else begin
+                Temp1:= StringConcat(' ', GetParam(i, Params));
+                Temp2:= StringConcat(Path, Temp1);
+                kfree(void(Temp1));
+                kfree(void(Path));
+                Path:= Temp2;
+            end;
+        end;
+        Result:= changeDirectory(Path);
+        case Result of
+            pvInvalid:begin
+                writestringWND('"', getTerminalHWND);
+                writestringWND(Path, getTerminalHWND);
+                writestringlnWND('" is not a valid path.', getTerminalHWND);
+            end;
+            pvFile:begin
+                writestringWND('"', getTerminalHWND);
+                writestringWND(Path, getTerminalHWND);
+                writestringlnWND('" is not a directory.', getTerminalHWND);
+            end;
+        end;
+        kfree(void(Path));
+    end;
 end;
 
 { Init }
@@ -458,25 +571,25 @@ begin
     newVirtualDirectory('/dev');
     newVirtualDirectory('/home');
     newVirtualDirectory('/disk');
-    // newVirtualDirectory('/disk/test');
-    // newVirtualDirectory('/disk/test/myfolder');
+    newVirtualDirectory('/disk/test');
+    newVirtualDirectory('/disk/test/myfolder');
 
     // rel:= makeRelative('/disk/SDA/mydirectory/myfile', '/disk/SDA');
     // if rel <> nil then outputln('VFS', rel) else outputln('VFS', 'REL IS NULL!');
 
-    // while true do begin end;
+    //while true do begin end;
 
     terminal.registerCommand('LS', @VFS_COMMAND_LS, 'List directory contents.');
     terminal.registerCommand('CD', @VFS_COMMAND_CD, 'Set working directory');
 
-    {ht:= PHashMap(Root^.Reference);
-    hashmap.add(ht, 'VDirectory', void(newDummyObject(otVDIRECTORY)));
-    hashmap.add(ht, 'Drive', void(newDummyObject(otDRIVE)));
-    hashmap.add(ht, 'Device', void(newDummyObject(otDEVICE)));
-    hashmap.add(ht, 'VFile', void(newDummyObject(otVFILE)));
-    hashmap.add(ht, 'Mount', void(newDummyObject(otMOUNT)));
-    hashmap.add(ht, 'Directory', void(newDummyObject(otDIRECTORY)));
-    hashmap.add(ht, 'File', void(newDummyObject(otFILE)));}
+    ht:= PHashMap(Root^.Reference);
+    //hashmap.add(ht, 'VDirectory', void(newDummyObject(otVDIRECTORY)));
+    //hashmap.add(ht, 'Drive', void(newDummyObject(otDRIVE)));
+    //hashmap.add(ht, 'Device', void(newDummyObject(otDEVICE)));
+    hashmap.add(ht, 'virtualFile', void(createDummyObject(otVFILE)));
+    //hashmap.add(ht, 'Mount', void(newDummyObject(otMOUNT)));
+    //hashmap.add(ht, 'Directory', void(newDummyObject(otDIRECTORY)));
+    //hashmap.add(ht, 'File', void(newDummyObject(otFILE)));}
     //otVDIRECTORY, otDRIVE, otDEVICE, otVFILE, otMOUNT, otDIRECTORY, otFILE)
     tracer.push_trace('vfs.init.exit');
 end;
