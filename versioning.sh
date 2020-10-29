@@ -12,7 +12,7 @@ done <"$file"
 linecount=$(./loc.sh | awk '{print $1}')
 sourcecount=$(find src -type f | wc -l)
 drivercount=$(find src/driver -type f | wc -l)
-revision=$(git rev-list --count HEAD)
+revision=$(git rev-list --all --count)
 fpcversion=$(fpc -h | grep -m 1 version | awk '{print $5}')
 makeversion=$(make -v | grep GNU | awk '{print $3}' | grep -v GNU)
 nasmversion=$(nasm -v | awk '{print $3'})
