@@ -108,5 +108,5 @@ checksum=$(md5sum release/Asuro.iso | awk '{print $1}')
 wget -q https://img.shields.io/badge/checksum-$checksum-important.svg -O release/checksum.svg	
 cd release
 touch *
-svn commit -m "Versioning Auto-Commit"
+#svn commit -m "Versioning Auto-Commit"
 cd ..
