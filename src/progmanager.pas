@@ -6,7 +6,7 @@ uses
     tracer, console,
     //progs
     base64_prog, md5sum, shell, terminal, 
-    edit, vmstate, vmlog, netlog, themer,
+    edit, netlog, themer,
     memview, udpcat, dhclient, vbeinfo;
 
 procedure init();
@@ -23,10 +23,6 @@ begin
     themer.init();
     tracer.push_trace('progmanager.netlog.init');
     netlog.init();
-    tracer.push_trace('progmanager.vmlog.init');
-    vmlog.init();
-    tracer.push_trace('progmanager.vmstate.init');
-    vmstate.init();
     tracer.push_trace('progmanager.edit.init');
     edit.init();
     tracer.push_trace('progmanager.udpcat.init');

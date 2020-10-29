@@ -35,7 +35,6 @@ uses
      fonts,
      RTC,
      serial,
-     vm,
      cpu,
      md5,
      base64,
@@ -308,8 +307,6 @@ begin
      while true do begin
         tracer.push_trace('kmain.RedrawWindows');
         console.redrawWindows;
-        tracer.push_trace('kmain.VMTick');
-        vm.tick();
      end;
 
 end;
