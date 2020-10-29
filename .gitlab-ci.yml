@@ -18,7 +18,7 @@ build:
   artifacts:
     paths:
       - release/Asuro.iso
-      - Image.img
+      - iso/boot/asuro.bin
       - release/*.svg
 
 .test1:
