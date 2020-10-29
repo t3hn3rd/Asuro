@@ -14,11 +14,11 @@ build:
   stage: build
   script:
     - ./compile.sh
-    - artifacts:
-        paths:
-            - release/Asuro.iso
-            - Image.img
-            - release/*.svg
+    artifacts:
+      paths:
+        - release/Asuro.iso
+          - Image.img
+          - release/*.svg
 
 .test1:
   stage: test
