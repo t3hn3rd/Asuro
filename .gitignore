@@ -1,0 +1,11 @@
+/lib/*.ppu
+/lib/*.a
+/lib/*.o
+/release/*.svg
+/release/*.iso
+/bin/*.bin
+/iso/boot/asuro.bin
+/*.iso
+/*.md5
+/*.sh~
+/*.img
