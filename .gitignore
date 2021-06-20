@@ -9,3 +9,5 @@
 /*.md5
 /*.sh~
 /*.img
+.vscode/launch.json
+.vscode
