@@ -707,11 +707,6 @@ end;
 
 { Init }
 
-function fake_drive_path_valid(Handle : uint32; Path : pchar) : TIsPathValid;
-begin
-    fake_drive_path_valid:= pvDirectory;
-end;
-
 procedure init();
 var
     ht : PHashMap;
@@ -721,16 +716,21 @@ var
 begin
     tracer.push_trace('vfs.init.enter');
 
+    { VFS Root Creation }
     Root:= createVirtualDirectory();
     Root^.Parent:= nil;
     Root^.ObjectName:= stringCopy('/');
 
+    { Init Push/Pop Stack for PUSHD & POPD }
     PushPopDirectory:= STRLL_New;
 
+    { Move to root of VFS }
     ChangeCurrentDirectoryValue('/');
 
+    { Create the Default VFS Directories }
     newVirtualDirectory('/dev');
     newVirtualDirectory('/disk');
+    newVirtualDirectory('/cfg');
 
     // rel:= makeRelative('/disk/SDA/mydirectory/myfile', '/disk/SDA');
     // if rel <> nil then outputln('VFS', rel) else outputln('VFS', 'REL IS NULL!');
@@ -738,10 +738,11 @@ begin
     //outputln('VFS', makeRelative('/test/mydisk/mything', '/test/mydisk'));
     //while true do begin end;
 
-    terminal.registerCommand('LS', @VFS_COMMAND_LS, 'List directory contents.');
-    terminal.registerCommand('CD', @VFS_COMMAND_CD, 'Set working directory.');
-    terminal.registerCommand('PUSHD', @VFS_COMMAND_PUSHD, 'Push the working directory.');
-    terminal.registerCommand('POPD', @VFS_COMMAND_POPD, 'Pop the working directory.');
+    { Register Terminal Commands }
+    terminal.registerCommand('LS',      @VFS_COMMAND_LS,    'List directory contents.');
+    terminal.registerCommand('CD',      @VFS_COMMAND_CD,    'Set working directory.');
+    terminal.registerCommand('PUSHD',   @VFS_COMMAND_PUSHD, 'Push the working directory.');
+    terminal.registerCommand('POPD',    @VFS_COMMAND_POPD,  'Pop the working directory.');
 
     //ht:= PHashMap(Root^.Reference);
     //hashmap.add(ht, 'VDirectory', void(newDummyObject(otVDIRECTORY)));
@@ -753,7 +754,7 @@ begin
     //hashmap.add(ht, 'File', void(newDummyObject(otFILE)));}
     //otVDIRECTORY, otDRIVE, otDEVICE, otVFILE, otMOUNT, otDIRECTORY, otFILE)
 
-    registerDrive(1337, 'TestDrive', nil, nil, nil, nil, nil, nil, nil, @fake_drive_path_valid);
+    //registerDrive(1337, 'TestDrive', nil, nil, nil, nil, nil, nil, nil, @fake_drive_path_valid);
 
     tracer.push_trace('vfs.init.exit');
 end;
