@@ -11,6 +11,7 @@ type
     TError          = (eNone, eUnknown, eFileInUse, eWriteOnly, eReadOnly, eFileDoesNotExist, eDirectoryDoesNotExist, eDirectoryAlreadyExists, eNotADirectory, eDiskFull, eFilenameTooLong, eDirectoryFull);
     PError          = ^TError;
     TIsPathValid    = (pvInvalid, pvFile, pvDirectory);
+    TRegError       = (pvUnknown, pvNotRegistered, pvRegistered, pvUnregistered);
 
     TFileHandle = uint32;
 
@@ -71,6 +72,7 @@ type
 var
     Root              : PVFSObject;
     CurrentDirectory  : pchar = nil;
+    PushPopDirectory  : PLinkedListBase;
 
 procedure init();
 Function OpenFile(Filename : pchar; OpenMode : TOpenMode; WriteMode : TWriteMode; Lock : Boolean; Error : PError) : TFileHandle;
@@ -86,6 +88,10 @@ function getWorkingDirectory : pchar;
 
 //VFS Functions
 function newVirtualDirectory(Path : pchar) : TError;
+
+//Driver Functions
+function registerDrive(DriveHandle : uint32; DriveName : PChar; CBMakeDirectory : TMakeDirectory; CBGetDirectories : TGetDirectories; CBOpenFile : TOpenFile; CBCloseFile : TCloseFile; CBReadFile : TReadFile; CBWriteFile : TWriteFile; CBFileSize : TFileSize; CBPathValid : TPathValid) : TRegError;
+function registerDevice(DeviceHandle : uint32; DeviceName : PChar; CBMakeDirectory : TMakeDirectory; CBGetDirectories : TGetDirectories; CBOpenFile : TOpenFile; CBCloseFile : TCloseFile; CBReadFile : TReadFile; CBWriteFile : TWriteFile; CBFileSize : TFileSize; CBPathValid : TPathValid) : TRegError;
 
 implementation
 
@@ -181,6 +187,9 @@ begin
                 if StringEquals(elm,'..') then begin
                     STRLL_Delete(List, i);
                     if (i > 0) then STRLL_Delete(List, i-1);
+                end;
+                if StringEquals(elm,'.') then begin
+                    STRLL_Delete(List, i);
                 end;
             end;
         end;
@@ -327,6 +336,72 @@ begin
         GetDirectoryListing:= nil;
     end;
     tracer.push_trace('vfs.GetDirectoryListing.exit');
+end;
+
+{ Driver Functions }
+
+function registerDrive(DriveHandle : uint32; DriveName : PChar; CBMakeDirectory : TMakeDirectory; CBGetDirectories : TGetDirectories; CBOpenFile : TOpenFile; CBCloseFile : TCloseFile; CBReadFile : TReadFile; CBWriteFile : TWriteFile; CBFileSize : TFileSize; CBPathValid : TPathValid) : TRegError;
+var
+    Drive    : PVFSObject;
+    ht       : PHashMap;
+    NewObj   : PVFSObject;
+    NewDrive : PVFSDrive;
+
+begin
+    Drive:= GetObjectFromPath('/disk');
+    ht:= PHashMap(Drive^.Reference);
+    
+    NewObj:= PVFSObject(kalloc(sizeof(TVFSObject)));
+    NewObj^.Parent:= Drive;
+    NewObj^.ObjectName:= stringCopy(DriveName);
+    NewObj^.ObjectType:= otDRIVE;
+    
+    NewDrive:= PVFSDrive(kalloc(sizeof(TVFSDrive)));
+    NewDrive^.DriveHandle:= DriveHandle;
+    NewDrive^.MakeDirectory:= CBMakeDirectory;
+    NewDrive^.GetDirectories:= CBGetDirectories;
+    NewDrive^.OpenFile:= CBOpenFile;
+    NewDrive^.CloseFile:= CBCloseFile;
+    NewDrive^.ReadFile:= CBReadFile;
+    NewDrive^.WriteFile:= CBWriteFile;
+    NewDrive^.FileSize:= CBFileSize;
+    NewDrive^.PathValid:= CBPathValid;
+
+    NewObj^.Reference:= void(NewDrive);
+    
+    hashmap.add(ht, stringCopy(DriveName), void(NewObj));
+end;
+
+function registerDevice(DeviceHandle : uint32; DeviceName : PChar; CBMakeDirectory : TMakeDirectory; CBGetDirectories : TGetDirectories; CBOpenFile : TOpenFile; CBCloseFile : TCloseFile; CBReadFile : TReadFile; CBWriteFile : TWriteFile; CBFileSize : TFileSize; CBPathValid : TPathValid) : TRegError;
+var
+    Dev    : PVFSObject;
+    ht     : PHashMap;
+    NewObj : PVFSObject;
+    NewDev : PVFSDevice;
+
+begin
+    Dev:= GetObjectFromPath('/dev');
+    ht:= PHashMap(Dev^.Reference);
+
+    NewObj:= PVFSObject(kalloc(sizeof(TVFSObject)));
+    NewObj^.Parent:= Dev;
+    NewObj^.ObjectName:= stringCopy(DeviceName);
+    NewObj^.ObjectType:= otDEVICE;
+    
+    NewDev:= PVFSDevice(kalloc(sizeof(TVFSDevice)));
+    NewDev^.DeviceHandle:= DeviceHandle;
+    NewDev^.MakeDirectory:= CBMakeDirectory;
+    NewDev^.GetDirectories:= CBGetDirectories;
+    NewDev^.OpenFile:= CBOpenFile;
+    NewDev^.CloseFile:= CBCloseFile;
+    NewDev^.ReadFile:= CBReadFile;
+    NewDev^.WriteFile:= CBWriteFile;
+    NewDev^.FileSize:= CBFileSize;
+    NewDev^.PathValid:= CBPathValid;
+
+    NewObj^.Reference:= void(NewDev);
+
+    hashmap.add(ht, stringCopy(DeviceName), void(NewDev));
 end;
 
 { Filesystem Functions }
@@ -516,6 +591,42 @@ end;
 
 { Terminal Commands }
 
+procedure VFS_COMMAND_PUSHD(params : PParamList);
+var
+    Output : pchar;
+    WD     : pchar;
+
+begin
+    WD:= StringCopy(CurrentDirectory);
+    STRLL_Add(PushPopDirectory, WD);
+    Output:= StringConcat(WD, ' saved to stack.');
+    WritestringlnWND(Output, getTerminalHWND);
+    kfree(void(Output));
+end;
+
+procedure VFS_COMMAND_POPD(params : PParamList);
+var
+    Output : pchar;
+    WD     : pchar;
+
+begin
+    if STRLL_Size(PushPopDirectory) > 0 then begin
+        WD:= STRLL_Get(PushPopDirectory, STRLL_Size(PushPopDirectory)-1);
+        if changeDirectory(WD) = pvDirectory then begin
+            Output:= StringConcat(WD, ' popped from the stack.');
+            WritestringlnWND(Output, getTerminalHWND);
+            kfree(void(Output));
+        end else begin
+            Output:= StringConcat(WD, ' popped, but was invalid!');
+            WritestringlnWND(Output, getTerminalHWND);
+            kfree(void(Output));
+        end;
+        STRLL_Delete(PushPopDirectory, STRLL_Size(PushPopDirectory)-1);
+    end else begin
+        WritestringlnWND('No working directory in the stack!', getTerminalHWND);
+    end;
+end;
+
 procedure VFS_COMMAND_LS(params : PParamList);
 var
     Map  : PHashMap;
@@ -596,6 +707,11 @@ end;
 
 { Init }
 
+function fake_drive_path_valid(Handle : uint32; Path : pchar) : TIsPathValid;
+begin
+    fake_drive_path_valid:= pvDirectory;
+end;
+
 procedure init();
 var
     ht : PHashMap;
@@ -609,14 +725,12 @@ begin
     Root^.Parent:= nil;
     Root^.ObjectName:= stringCopy('/');
 
+    PushPopDirectory:= STRLL_New;
+
     ChangeCurrentDirectoryValue('/');
 
     newVirtualDirectory('/dev');
-    newVirtualDirectory('/home');
     newVirtualDirectory('/disk');
-    newVirtualDirectory('/disk/test');
-    newVirtualDirectory('/disk/test/myfolder');
-    newVirtualDirectory('/disk/test/mytest');
 
     // rel:= makeRelative('/disk/SDA/mydirectory/myfile', '/disk/SDA');
     // if rel <> nil then outputln('VFS', rel) else outputln('VFS', 'REL IS NULL!');
@@ -625,17 +739,22 @@ begin
     //while true do begin end;
 
     terminal.registerCommand('LS', @VFS_COMMAND_LS, 'List directory contents.');
-    terminal.registerCommand('CD', @VFS_COMMAND_CD, 'Set working directory');
+    terminal.registerCommand('CD', @VFS_COMMAND_CD, 'Set working directory.');
+    terminal.registerCommand('PUSHD', @VFS_COMMAND_PUSHD, 'Push the working directory.');
+    terminal.registerCommand('POPD', @VFS_COMMAND_POPD, 'Pop the working directory.');
 
-    ht:= PHashMap(Root^.Reference);
+    //ht:= PHashMap(Root^.Reference);
     //hashmap.add(ht, 'VDirectory', void(newDummyObject(otVDIRECTORY)));
     //hashmap.add(ht, 'Drive', void(newDummyObject(otDRIVE)));
     //hashmap.add(ht, 'Device', void(newDummyObject(otDEVICE)));
-    hashmap.add(ht, 'virtualFile', void(createDummyObject(otVFILE)));
+    //hashmap.add(ht, 'virtualFile', void(createDummyObject(otVFILE)));
     //hashmap.add(ht, 'Mount', void(newDummyObject(otMOUNT)));
     //hashmap.add(ht, 'Directory', void(newDummyObject(otDIRECTORY)));
     //hashmap.add(ht, 'File', void(newDummyObject(otFILE)));}
     //otVDIRECTORY, otDRIVE, otDEVICE, otVFILE, otMOUNT, otDIRECTORY, otFILE)
+
+    registerDrive(1337, 'TestDrive', nil, nil, nil, nil, nil, nil, nil, @fake_drive_path_valid);
+
     tracer.push_trace('vfs.init.exit');
 end;
 

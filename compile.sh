@@ -101,7 +101,7 @@ echo " "
 echo "======================="
 echo " "
 
-cp Asuro.iso ~/host/Asuro.iso
+#cp Asuro.iso ~/host/Asuro.iso
 cp Asuro.iso release/Asuro.iso
 
 checksum=$(md5sum release/Asuro.iso | awk '{print $1}')
