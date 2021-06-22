@@ -1,3 +1,17 @@
+//  Copyright 2021 Kieron Morris & Aaron Hance
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//  http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+
 { 
 	Kernel Main - Main Kernel Entry Point.
 	
@@ -245,65 +259,7 @@ begin
      rand.srand((getDateTime.Seconds SHL 24) OR (getDateTime.Minutes SHL 16) OR (getDateTime.Hours SHL 8) OR (getDateTime.Day));
 
      tracer.push_trace('kmain.TICK');
-
-     HM:= hashmap.newEx(16, 0.1);
-     hashmap.add(HM, 'testificate', void(1));
-     hashmap.add(HM, 'asuro', void(10));
-     hashmap.add(HM, 'myfirstos', void(100));
-     hashmap.add(HM, 'potato', void(1000));
-     hashmap.add(HM, 'cellary', void(10000));
-     hashmap.add(HM, 'gigglewiggle', void(100000));
-     hashmap.add(HM, 'cuntwank', void(20));
-     hashmap.add(HM, 'topkekness', void(200));
-     hashmap.add(HM, 'fluffybanana', void(2000));
-     hashmap.add(HM, 'ilikecheese', void(20000));
-     hashmap.add(HM, 'Tracer', void(200000));
-     hashmap.add(HM, 'Genji', void(2000000));
-     hashmap.add(HM, 'Winston', void(30));
-     hashmap.add(HM, 'D.Va', void(300));
-     hashmap.add(HM, 'Soldier76', void(3000));
-     hashmap.add(HM, 'Brigitte', void(3000));
-     hashmap.add(HM, 'Pharah', void(30000));
-     hashmap.add(HM, 'Reinhardt', void(300000));
-     hashmap.add(HM, 'Orisa', void(30000000));
-     hashmap.add(HM, 'Mercy', void(3000000000));
-     hashmap.add(HM, 'Hamster', void(40));
-     hashmap.add(HM, 'Ana', void(400));
-     hashmap.add(HM, 'Lucio', void(4000));
-     hashmap.add(HM, 'Mei', void(40000));
-     hashmap.add(HM, 'Teemo', void(400000));
-     hashmap.add(HM, 'Vayne', void(4000000));
-     hashmap.add(HM, 'Munzo', void(40000000));
-     hashmap.add(HM, 'fasafafsdfsd', void(50));
-     hashmap.add(HM, 'Zarfdasafdsfadsfdsafadsfdasya', void(500));
-     hashmap.add(HM, 'Zafadfadsfadsfadsfdsarya', void(5000));
-     hashmap.add(HM, 'afdsafdadfsfda', void(500000));
-     hashmap.add(HM, '4rrelkjhrewrewkoy', void(5000000));
-     hashmap.add(HM, 'Laptop', void(50000000));
-     hashmap.add(HM, 'Salmon', void(500000000));
-     hashmap.add(HM, 'OnionBurger', void(60));
-     hashmap.printmap(HM);
-     writeintln(uint32(hashmap.get(HM, 'Ana')));
-
-    //  Testing getting into userspace
-    //  ulf:= Pointer(@myUserLandFunction);
-    //  asm
-    //     MOV AX, $23
-    //     MOV DS, AX
-    //     MOV ES, AX
-    //     MOV FS, AX
-    //     MOV GS, AX
-
-    //     MOV EAX, ESP
-    //     PUSH $23
-    //     PUSH EAX
-    //     PUSHF
-    //     PUSH $1B
-    //     PUSH ulf;
-    //     iret;
-    //  end;
-
-
+     
      while true do begin
         tracer.push_trace('kmain.RedrawWindows');
         console.redrawWindows;
