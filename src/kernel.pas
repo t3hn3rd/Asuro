@@ -54,7 +54,7 @@ uses
      base64,
      rand,
      terminal,
-     hashmap, vfs;
+     hashmap, vfs, video;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
@@ -131,6 +131,8 @@ begin
      { Store Multiboot info }
      multibootinfo:= mbinfo;
      multibootmagic:= mbmagic;
+
+    //video.init();
 
      { Ensure tracer is frozen }
      tracer.freeze();
@@ -260,6 +262,8 @@ begin
 
      tracer.push_trace('kmain.TICK');
      
+     video.init();
+
      while true do begin
         tracer.push_trace('kmain.RedrawWindows');
         console.redrawWindows;

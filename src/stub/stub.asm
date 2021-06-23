@@ -77,9 +77,9 @@ dd 0
 dd 0
 dd 0
 dd 0
-dd 1280
-dd 1024
-dd 16
+dd 1600
+dd 1200
+dd 32
 
 ;
 ; Entrypoint
