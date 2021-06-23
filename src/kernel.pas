@@ -203,6 +203,8 @@ begin
      { Call Tracer }
      tracer.init();
 
+     video.init();
+
      { VFS Init }
      vfs.init();
 
@@ -264,8 +266,6 @@ begin
      rand.srand((getDateTime.Seconds SHL 24) OR (getDateTime.Minutes SHL 16) OR (getDateTime.Hours SHL 8) OR (getDateTime.Day));
 
      tracer.push_trace('kmain.TICK');
-     
-     video.init();
 
      while true do begin
         tracer.push_trace('kmain.RedrawWindows');
