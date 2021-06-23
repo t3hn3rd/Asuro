@@ -58,7 +58,7 @@ var
 procedure init;
 function kalloc(size : uint32) : void;
 function klalloc(size : uint32) : void;
-function klfree(size : uint32); //Todo ??? Profit?
+procedure klfree(size : uint32); //Todo ??? Profit?
 function kpalloc(address : uint32) : void;
 procedure kfree(area : void);
 
@@ -131,7 +131,7 @@ begin
     //pop_trace;
 end;
 
-function klfree(size : uint32);
+procedure klfree(size : uint32);
 begin
     //Todo Implement
     //Nahhhhhhhhhhhh
