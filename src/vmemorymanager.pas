@@ -53,6 +53,7 @@ var
 
 procedure init;
 function new_page(page_number : uint16) : boolean;
+function page_mappable(page_number : uint16) : boolean;
 function map_page(page_number : uint16; block : uint16) : boolean;
 function map_page_ex(page_number : uint16; block : uint16; PD : PPageDirectory) : boolean;
 function new_page_at_address(address : uint32) : boolean;
@@ -202,7 +203,7 @@ begin
     push_trace('vmemorymanager.new_page');
     new_page:= false;
     if not PageDirectory^[page_number].Present then begin
-        if not PageDirectory^[page_number].Reserved then begin;
+        if not PageDirectory^[page_number].Reserved then begin
             block:= pmemorymanager.new_block(uint32(PageDirectory));
             if block < 2 then begin
                 GPF;
@@ -212,6 +213,20 @@ begin
         end;
     end;
     pop_trace;
+end;
+
+function page_mappable(page_number : uint16) : boolean;
+var
+    block : uint16;
+
+begin
+    push_trace('vmemorymanager.page_mappable');
+    page_mappable:= false;
+    if not PageDirectory^[page_number].Present then begin
+        if not PageDirectory^[page_number].Reserved then begin
+            page_mappable:= true;
+        end;
+    end;
 end;
 
 function new_page_at_address(address : uint32) : boolean;
