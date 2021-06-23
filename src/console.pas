@@ -1776,14 +1776,15 @@ var
    fb: puint32;
 
 Begin
+     Ready:= False;
      fb:= puint32(uint32(multibootinfo^.framebuffer_addr));
      Console_Properties.Width:= multibootinfo^.framebuffer_width;
      Console_Properties.Height:= multibootinfo^.framebuffer_height;
      Console_Properties.BitsPerPixel:= multibootinfo^.framebuffer_bpp;
      Console_Properties.MAX_CELL_X:= (Console_Properties.Width div 8) - 1;
      Console_Properties.MAX_CELL_Y:= (Console_Properties.Height div 16) - 1;
-     If Console_Properties.BitsPerPixel <> 16 then while true do begin
-
+     If Console_Properties.BitsPerPixel <> 16 then begin
+        exit;
      end;
      kpalloc(uint32(fb));
      keyboard.hook(@keyhook);
