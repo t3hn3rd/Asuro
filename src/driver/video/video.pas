@@ -41,7 +41,7 @@ function allocateBackBuffer(Width : uint32; Height : uint32; BitsPerPixel : uint
 begin
     Outputln('VIDEO','Start Kalloc Backbuffer');
     //This doesn't currently work... Needs a rework of lmemorymanager
-    allocateBackBuffer:= uint64(kalloc((Width * Height) * BitsPerPixel));
+    allocateBackBuffer:= uint64(klalloc((Width * Height) * BitsPerPixel));
     Outputln('VIDEO','End Kalloc Backbuffer');
 end;
 
@@ -93,7 +93,7 @@ begin
     console.Outputln('VIDEO', 'Init VESA Framebuffer');
     initVESAFrameBuffer(@VESA, multiboot.multibootinfo^.framebuffer_addr, multiboot.multibootinfo^.framebuffer_width, multiboot.multibootinfo^.framebuffer_height, multiboot.multibootinfo^.framebuffer_bpp);        
     console.Outputln('VIDEO', 'Init VESA Backbuffer');
-    //initBackBuffer(@VESA, multiboot.multibootinfo^.framebuffer_width, multiboot.multibootinfo^.framebuffer_height, multiboot.multibootinfo^.framebuffer_bpp);
+    initBackBuffer(@VESA, multiboot.multibootinfo^.framebuffer_width, multiboot.multibootinfo^.framebuffer_height, multiboot.multibootinfo^.framebuffer_bpp);
 
     console.Outputln('VIDEO', 'Start Test Draw Loop');
     srand(98354754397);
@@ -106,10 +106,8 @@ begin
                 Inc(RGB.B);
             end;
         end;
-        console.Outputln('VIDEO', 'Call flush');
         Flush();
     end;
-    
     tracer.push_trace('video.init.exit');
 end;
 
@@ -130,7 +128,6 @@ var
     Back,Front : PuInt32;
 
 begin
-    writestringln('Flush Start');
     if not(VESA.BackBuffer.Initialized) then exit;
     Back:= PUint32(VESA.BackBuffer.Location);
     Front:= PuInt32(VESA.Framebuffer.Location);
@@ -139,7 +136,6 @@ begin
             Front[(Y * VESA.Framebuffer.Width)+X]:= Back[(Y * VESA.Framebuffer.Width)+X];
         end;
     end;
-    writestringln('Flush End');
 end;
 
 end.
