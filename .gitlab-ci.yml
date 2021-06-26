@@ -15,7 +15,7 @@ stages:
 
 chmod_step:
   stage: chmod
-  script: chmod +x ./*.sh
+  script: ls && chmod +x ./*.sh
 
 compile_stub:
   stage: compile_stub
