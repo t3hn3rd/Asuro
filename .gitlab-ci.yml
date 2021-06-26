@@ -1,12 +1,12 @@
 stages:
-  - Compile Stub & Generate Version Files
+  - Genrate Stub and Versions
   - Generate Version Files
   - Compile Sources
   - Link
   - Generate ISO
 
 compile_stub:
-  stage: Compile Stub & Generate Version Files
+  stage: Genrate Stub and Versions
   script: 
     - chmod +x ./compile_stub.sh
     - ./compile_stub.sh
@@ -15,7 +15,7 @@ compile_stub:
       - lib/stub.o
 
 vergen:
-  stage: Compile Stub & Generate Version Files
+  stage: Genrate Stub and Versions
   script: 
     - chmod +x ./compile_vergen.sh
     - ./compile_vergen.sh
