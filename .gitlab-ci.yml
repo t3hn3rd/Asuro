@@ -5,7 +5,6 @@ stages:
   - compile_sources
   - link
   - isogen
-  - finish
 
 compile_stub:
   stage: compile_stub
@@ -59,15 +58,3 @@ isogen:
       - ./Asuro.iso
   dependencies:
     - link
-
-finish:
-  stage: finish
-  when: always
-  script: 
-    - chmod +x ./compile_finish.sh
-    - ./compile_finish.sh $CI_JOB_STATUS
-  artifacts:
-    paths:
-      - release/build.svg
-  dependencies:
-    - isogen
