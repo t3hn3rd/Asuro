@@ -1,7 +1,7 @@
 .after_script:
   script: 
     - chmod +x ./compile_check.sh
-    - ./compile_check.sh "$CI_JOB_STATUS"
+    - ./compile_check.sh $CI_JOB_STATUS
   artifacts:
     paths:
       - release/*.svg
@@ -72,7 +72,7 @@ finish:
   stage: finish
   script: 
     - chmod +x ./compile_finish.sh
-    - ./compile_finish.sh "$CI_JOB_STATUS"
+    - ./compile_finish.sh $CI_JOB_STATUS
   artifacts:
     paths:
       - release/*.svg
