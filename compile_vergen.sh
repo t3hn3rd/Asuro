@@ -4,6 +4,7 @@ echo "======================="
 echo " "
 echo "Generating Versioning Info..."
 echo " "
+chmod +x ./compile_checksum.sh
 ./compile_checksum.sh
 outfile="src/include/asuro.pas"
 file="version"

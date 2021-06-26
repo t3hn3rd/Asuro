@@ -35,6 +35,9 @@ compile_sources:
   script:
     - chmod +x ./compile_sources.sh
     - ./compile_sources.sh
+  dependencies:
+    - compile_stub
+    - vergen
 
 link:
   stage: link
@@ -44,6 +47,10 @@ link:
   artifacts:
     paths:
       - bin/kernel.bin
+  dependencies:
+    - compile_stub
+    - vergen
+    - compile_sources
 
 isogen:
   stage: isogen
@@ -53,6 +60,8 @@ isogen:
   artifacts:
     paths:
       - ./Asuro.iso
+  dependencies:
+    - link
 
 finish:
   stage: finish
@@ -62,3 +71,5 @@ finish:
   artifacts:
     paths:
       - release/*.svg
+  dependencies:
+    - isogen
