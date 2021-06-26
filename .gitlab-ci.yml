@@ -1,6 +1,3 @@
-.before_script:
-  script: chmod +x ./*.sh
-  
 .after_script:
   script: ./compile_check.sh "$CI_JOB_STATUS"
   artifacts:
@@ -8,12 +5,17 @@
       - release/*.svg
 
 stages:
+  - chmod
   - compile_stub
   - vergen
   - compile_sources
   - link
   - isogen
   - finish
+
+chmod_step:
+  stage: chmod
+  script: chmod +x ./*.sh
 
 compile_stub:
   stage: compile_stub
