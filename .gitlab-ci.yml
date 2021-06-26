@@ -19,7 +19,7 @@ chmod_step:
 
 compile_stub:
   stage: compile_stub
-  script: ./compile_stub.sh
+  script: ls && ./compile_stub.sh
       
 vergen:
   stage: vergen
