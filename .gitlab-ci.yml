@@ -1,8 +1,5 @@
 .after_script:
-  script: ./compile_finish.sh "$CI_JOB_STATUS"
-  rules:
-    - if: '$CI_JOB_STATUS == "failed"'
-    - when: never
+  script: ./compile_check.sh "$CI_JOB_STATUS"
   artifacts:
     paths:
       - release/*.svg
