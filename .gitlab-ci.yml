@@ -75,6 +75,6 @@ finish:
     - ./compile_finish.sh $CI_JOB_STATUS
   artifacts:
     paths:
-      - release/*.svg
+      - release/build.svg
   dependencies:
     - isogen
