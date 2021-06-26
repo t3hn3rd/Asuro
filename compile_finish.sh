@@ -2,7 +2,6 @@
 echo " "
 echo "======================="
 echo " "
-echo $1
 if [ "$1" == "failed" ]
 then
 	echo "Errors Occurred, please review."
