@@ -1,6 +1,6 @@
 .after_script:
   script: 
-     - chmod +x ./compile_check.sh
+    - chmod +x ./compile_check.sh
     - ./compile_check.sh "$CI_JOB_STATUS"
   artifacts:
     paths:
