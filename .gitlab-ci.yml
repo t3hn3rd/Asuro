@@ -20,7 +20,10 @@ compile_stub:
   script: 
     - chmod +x ./compile_stub.sh
     - ./compile_stub.sh
-      
+  artifacts:
+    paths:
+      - lib/stub.o
+
 vergen:
   stage: vergen
   script: 
@@ -29,12 +32,16 @@ vergen:
   artifacts:
     paths:
       - release/*.svg
+      - src/include/asuro.pas
 
 compile_sources:
   stage: compile_sources
   script:
     - chmod +x ./compile_sources.sh
     - ./compile_sources.sh
+  artifacts:
+    paths:
+      - lib/*.o
   dependencies:
     - compile_stub
     - vergen
@@ -48,8 +55,6 @@ link:
     paths:
       - bin/kernel.bin
   dependencies:
-    - compile_stub
-    - vergen
     - compile_sources
 
 isogen:
