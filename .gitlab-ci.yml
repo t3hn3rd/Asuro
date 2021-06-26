@@ -1,5 +1,7 @@
 .after_script:
-  script: ./compile_check.sh "$CI_JOB_STATUS"
+  script: 
+     - chmod +x ./compile_check.sh
+    - ./compile_check.sh "$CI_JOB_STATUS"
   artifacts:
     paths:
       - release/*.svg
@@ -13,42 +15,50 @@ stages:
   - isogen
   - finish
 
-chmod_step:
-  stage: chmod
-  script: ls && chmod +x ./*.sh
-
 compile_stub:
   stage: compile_stub
-  script: ls && ./compile_stub.sh
+  script: 
+    - chmod +x ./compile_stub.sh
+    - ./compile_stub.sh
       
 vergen:
   stage: vergen
-  script: ./compile_vergen.sh
+  script: 
+    - chmod +x ./compile_vergen.sh
+    - ./compile_vergen.sh
   artifacts:
     paths:
       - release/*.svg
 
 compile_sources:
   stage: compile_sources
-  script: ./compile_sources.sh
+  script:
+    - chmod +x ./compile_sources.sh
+    - ./compile_sources.sh
 
 link:
   stage: link
-  script: ./compile_link.sh
+  script:
+    - chmod +x ./compile_link.sh
+    - ./compile_link.sh
   artifacts:
     paths:
       - bin/kernel.bin
 
 isogen:
   stage: isogen
-  script: ./compile_isogen.sh
+  script:
+    - chmod +x ./compile_isogen.sh
+    - ./compile_isogen.sh
   artifacts:
     paths:
       - ./Asuro.iso
 
 finish:
   stage: finish
-  script: ./compile_finish.sh "$CI_JOB_STATUS"
+  script: 
+    - chmod +x ./compile_finish.sh
+    - ./compile_finish.sh "$CI_JOB_STATUS"
   artifacts:
     paths:
       - release/*.svg
