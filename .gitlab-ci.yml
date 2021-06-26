@@ -1,3 +1,6 @@
+.before_script:
+  script: chmod +x ./*.sh
+  
 .after_script:
   script: ./compile_check.sh "$CI_JOB_STATUS"
   artifacts:
