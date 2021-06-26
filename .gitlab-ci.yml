@@ -1,12 +1,12 @@
 stages:
-  - Compile Stub
+  - Compile Stub & Generate Version Files
   - Generate Version Files
   - Compile Sources
   - Link
   - Generate ISO
 
 compile_stub:
-  stage: Compile Stub
+  stage: Compile Stub & Generate Version Files
   script: 
     - chmod +x ./compile_stub.sh
     - ./compile_stub.sh
@@ -15,7 +15,7 @@ compile_stub:
       - lib/stub.o
 
 vergen:
-  stage: Generate Version Files
+  stage: Compile Stub & Generate Version Files
   script: 
     - chmod +x ./compile_vergen.sh
     - ./compile_vergen.sh
@@ -35,6 +35,9 @@ compile_sources:
   dependencies:
     - compile_stub
     - vergen
+  needs:
+    - vergen
+    - compile_stub
 
 link:
   stage: Link
@@ -46,6 +49,8 @@ link:
       - bin/kernel.bin
   dependencies:
     - compile_sources
+  needs:
+    - compile_sources
 
 isogen:
   stage: Generate ISO
@@ -56,4 +61,6 @@ isogen:
     paths:
       - ./Asuro.iso
   dependencies:
+    - link
+  needs:
     - link
