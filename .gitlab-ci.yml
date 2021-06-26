@@ -1,13 +1,12 @@
 stages:
-  - chmod
-  - compile_stub
-  - vergen
-  - compile_sources
-  - link
-  - isogen
+  - Compile Stub
+  - Generate Version Files
+  - Compile Sources
+  - Link
+  - Generate ISO
 
 compile_stub:
-  stage: compile_stub
+  stage: Compile Stub
   script: 
     - chmod +x ./compile_stub.sh
     - ./compile_stub.sh
@@ -16,7 +15,7 @@ compile_stub:
       - lib/stub.o
 
 vergen:
-  stage: vergen
+  stage: Generate Version Files
   script: 
     - chmod +x ./compile_vergen.sh
     - ./compile_vergen.sh
@@ -26,7 +25,7 @@ vergen:
       - src/include/asuro.pas
 
 compile_sources:
-  stage: compile_sources
+  stage: Compile Sources
   script:
     - chmod +x ./compile_sources.sh
     - ./compile_sources.sh
@@ -38,7 +37,7 @@ compile_sources:
     - vergen
 
 link:
-  stage: link
+  stage: Link
   script:
     - chmod +x ./compile_link.sh
     - ./compile_link.sh
@@ -49,7 +48,7 @@ link:
     - compile_sources
 
 isogen:
-  stage: isogen
+  stage: Generate ISO
   script:
     - chmod +x ./compile_isogen.sh
     - ./compile_isogen.sh
