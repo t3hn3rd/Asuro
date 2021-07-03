@@ -291,6 +291,28 @@ begin
     end;
 end;
 
+procedure enableAVX();
+begin
+    if CPUID.Capabilities1^.AVX then begin
+        asm
+            PUSH EAX
+            PUSH ECX
+            PUSH EDX
+            XOR ECX, ECX
+            db $0F
+            db $01
+            db $D0
+            OR EAX, 7
+            db $0F
+            db $01
+            db $D1
+            POP EDX
+            POP ECX
+            POP EAX
+        end;
+    end;
+end;
+
 procedure init();
 begin
     terminal.registerCommand('CPU', @Terminal_Command_CPU, 'CPU Info.');
@@ -300,6 +322,7 @@ begin
     getCPUCapabilities;
     getCPUClockSpeed;
     enableSSE;
+    enableAVX;
 end;
 
 end.

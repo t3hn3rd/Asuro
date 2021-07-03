@@ -125,14 +125,14 @@ end;
 procedure Flush();
 var
     x,y : uint32;
-    Back,Front : PuInt32;
+    Back,Front : PuInt64;
 
 begin
     if not(VESA.BackBuffer.Initialized) then exit;
-    Back:= PUint32(VESA.BackBuffer.Location);
-    Front:= PuInt32(VESA.Framebuffer.Location);
-    for x:=0 to VESA.Framebuffer.Width-1 do begin
-        for y:=0 to VESA.Framebuffer.Height-1 do begin
+    Back:= PUint64(VESA.BackBuffer.Location);
+    Front:= PuInt64(VESA.Framebuffer.Location);
+    for x:=0 to (VESA.Framebuffer.Width-1) div 2 do begin
+        for y:=0 to (VESA.Framebuffer.Height-1) div 2 do begin
             Front[(Y * VESA.Framebuffer.Width)+X]:= Back[(Y * VESA.Framebuffer.Width)+X];
         end;
     end;
