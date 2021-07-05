@@ -2,18 +2,12 @@
 ERRCOUNT=0
 echo " "
 echo "======================="
-echo "== ASURO COMPILATION =="
-echo "======================="
 echo " "
-echo "Checking out latest VM Source..."
+echo "Asuro Compilation"
 echo " "
-./updatevm.sh
-echo " "
-echo "Compiling ASM Stub..."
-echo " "
-rm lib/*
 
-nasm -f elf src/stub/stub.asm -o lib/stub.o
+#Compile Stub.asm
+./compile_stub.sh
 if [ $? -ne 0 ]
 then
 	echo "Failed to compile stub!"
@@ -22,47 +16,23 @@ else
 	echo "Success."
 fi
 
-echo " "
-echo "======================="
-echo " "
+#Generate .pas with versioning headers.
+./compile_vergen.sh
 
-./versioning.sh
-
-if [ "$1" = "-d" ]
-then
-	echo "Compiling Debug FPC Sources..."
-	echo " "
-	fpc -Aelf -gw -n -va -O3 -Op3 -Si -Sc -Sg -Xd -CX -XXs -CfSSE -CfSSE2 -Rintel -Pi386 -Tlinux -FElib/ -Fusrc/* -Fusrc/driver/* src/kernel.pas
-else
-	echo "Compiling FPC Sources..."
-	echo " "
-	fpc -Aelf -gw -n -va -O3 -Op3 -Si -Sc -Sg -Xd -CX -XXs -CfSSE -CfSSE2 -Rintel -Pi386 -Tlinux -FElib/ -Fusrc/* -Fusrc/driver/* -Fusrc/driver/net/* src/kernel.pas
-fi
-
+#Compile all .pas sources
+./compile_sources.sh
 if [ $? -ne 0 ]
 then
+	echo " "
 	echo "Failed to compile FPC Sources!"
 	ERRCOUNT=$((ERRCOUNT+1))	
 else
+	echo " "
 	echo "Success."
 fi
 
-echo " "
-echo "======================="
-echo " "
-echo "Linking..."
-echo " "
-objstring=""; 
-for object in `find lib/ -name "*.o"`; do
-	if [ "$object" != "lib/stub.o" ]
-	then
-		objstring=$objstring$object" ";
-	fi
-done;
-objstring=lib/stub.o" "$objstring 
-echo "Object Files: "$objstring
-echo " "
-ld -m elf_i386 -s --gc-sections -Tlinker.script -o bin/kernel.bin $objstring
+#Link into a binary.
+./compile_link.sh
 if [ $? -ne 0 ]
 then
 	echo "Failed linking!"
@@ -71,13 +41,8 @@ else
 	echo "Success."
 fi
 
-echo " "
-echo "======================="
-echo " "
-echo "Creating ISO..."
-echo " "
-cp bin/kernel.bin iso/boot/asuro.bin
-grub-mkrescue -o Asuro.iso iso
+#Generate an ISO with GRUB as the Bootloader.
+./compile_isogen.sh
 if [ $? -ne 0 ]
 then
 	echo "Failed to create ISO!"
@@ -86,27 +51,12 @@ else
 	echo "Success."
 fi
 
-echo " "
-echo "======================="
-echo " "
+#Call generate final artifacts based on failure or success of the above.
 if [ "$ERRCOUNT" -ne "0" ]
 then
-	echo "$ERRCOUNT Errors Occurred, please review."
-	wget -q https://img.shields.io/badge/build-failed-red.svg -O release/build.svg
+	./compile_finish.sh "failed"
 else
-	echo "No errors."
-	wget -q https://img.shields.io/badge/build-succeeded-green.svg -O release/build.svg	
+	./compile_finish.sh "success"
 fi
-echo " "
-echo "======================="
-echo " "
 
-#cp Asuro.iso ~/host/Asuro.iso
-cp Asuro.iso release/Asuro.iso
-
-checksum=$(md5sum release/Asuro.iso | awk '{print $1}')
-wget -q https://img.shields.io/badge/checksum-$checksum-important.svg -O release/checksum.svg	
-cd release
-touch *
-#svn commit -m "Versioning Auto-Commit"
 cd ..

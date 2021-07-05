@@ -25,6 +25,7 @@ interface
 uses
     lmemorymanager,
     strings,
+    tracer,
     util;
 
 const
@@ -135,7 +136,6 @@ begin
         dtable[uInt8(base64_enc_map[i])] := uInt8(i);
     end;
     dtable[uInt8('=')] := 0;
-
     count := 0;
     for i := 0 to (len - 1) do begin
         if dtable[uInt8(src[i])] <> $80 then begin
@@ -185,7 +185,9 @@ begin
                 end;
             end;
         end;
-        out_len^ := uInt32(b64pos) - uInt32(output);
+        if out_len <> nil then begin
+            out_len^ := uInt32(b64pos) - uInt32(output);
+        end;
     end;
     b64_decode := output;
 end;
@@ -195,7 +197,9 @@ var
     src_len : uInt32;
 begin
     src_len := stringSize(src);
+    tracer.push_trace('base64_prog.base64.begin.encode');
     b64_encode_str := PChar(b64_encode(PuInt8(src), src_len, nil));
+    tracer.push_trace('base64_prog.base64.return.encode');
 end;
 
 function b64_decode_str(src : PChar) : PChar;
@@ -203,7 +207,9 @@ var
     src_len : uInt32;
 begin
     src_len := stringSize(src);
+    tracer.push_trace('base64_prog.base64.begin.decode');
     b64_decode_str := PChar(b64_decode(PuInt8(src), src_len, nil));
+    tracer.push_trace('base64_prog.base64.return.decode');
 end;
 
 end.

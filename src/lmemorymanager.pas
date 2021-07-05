@@ -57,6 +57,8 @@ var
 
 procedure init;
 function kalloc(size : uint32) : void;
+function klalloc(size : uint32) : void;
+procedure klfree(size : uint32); //Todo ??? Profit?
 function kpalloc(address : uint32) : void;
 procedure kfree(area : void);
 
@@ -127,6 +129,45 @@ begin
     map_page(block, block);
     kpalloc:= void(block SHL 22);
     //pop_trace;
+end;
+
+procedure klfree(size : uint32);
+begin
+    //Todo Implement
+    //Nahhhhhhhhhhhh
+end;
+
+function klalloc(size : uint32) : void;
+var
+    Pages : uint16;
+    Address : void;
+    Found : boolean;
+    CurrPage : uint16;
+    i : uint16;
+    Miss : boolean;
+
+begin
+    Pages:= (size div 4000000);
+    Found:= false;
+    CurrPage:= 4;
+    Address:= Void(nil);
+    while not Found do begin
+        inc(CurrPage);
+        if CurrPage > 1024 then break;
+        Miss:= false;
+        for i:=0 to Pages do begin
+            if not page_mappable(CurrPage + i) then Miss:= true;
+            if miss then break;
+        end;
+        if not Miss then begin
+            for i:=0 to Pages do begin
+                new_page(CurrPage + i);
+            end;
+            Address:= Void(CurrPage SHL 22);
+            break;
+        end;
+    end;
+    klalloc:= Address;
 end;
 
 function kalloc(size : uint32) : void;
