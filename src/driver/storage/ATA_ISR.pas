@@ -12,15 +12,11 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 
-{ ************************************************
-  * Asuro
-  * Unit: Drivers/ISR46
-  * Description: Primary ATA IRQ
-  ************************************************
-  * Author: Aaron Hance
-  * Contributors: 
-  ************************************************ }
-
+{ 
+	Drivers->Storage->ATA_ISR - Primary ATA IRQ.
+	
+	@author(Aaron Hance <ah@aaronhance.me>)
+}
 unit ATA_ISR;
 
 interface
