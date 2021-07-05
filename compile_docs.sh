@@ -13,6 +13,6 @@ mkdir ./doc
 echo "Removing old docs"
 rm -rf ./doc/*
 echo "Generating Docs..."
-./pasdoc/bin/pasdoc -N "Asuro" -T "Asuro OS Documentation" -O "html" -E ./doc/ -S sources.list
+./pasdoc/bin/pasdoc -N "Asuro" -T "Asuro OS Documentation" -O "html" -E ./doc/ -S sources.list --use-tipue-search
 echo "Docgen finished."
 exit 0
