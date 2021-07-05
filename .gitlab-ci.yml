@@ -86,7 +86,7 @@ docgen:
     - ./compile_docs.sh
   artifacts:
     paths:
-      ./doc/*
+      - ./doc/*
   dependencies:
     - vergen
     - sourcelist_gen
