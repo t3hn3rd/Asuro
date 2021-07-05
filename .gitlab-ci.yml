@@ -67,6 +67,15 @@ isogen:
   needs:
     - link
 
+isosum:
+  stage: Generate ISO
+  script:
+    - chmod +x ./compile_sumgen.sh
+    - ./compile_sumgen.sh
+  artifacts:
+    paths:
+      - release/checksum.svg
+
 sourcelist:
   stage: Generate Sources List
   script:
