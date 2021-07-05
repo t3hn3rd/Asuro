@@ -59,22 +59,16 @@ isogen:
   script:
     - chmod +x ./compile_isogen.sh
     - ./compile_isogen.sh
-  artifacts:
-    paths:
-      - ./Asuro.iso
-  dependencies:
-    - link
-  needs:
-    - link
-
-isosum:
-  stage: Generate ISO
-  script:
     - chmod +x ./compile_sumgen.sh
     - ./compile_sumgen.sh
   artifacts:
     paths:
-      - release/checksum.svg
+      - ./Asuro.iso
+      - ./release/checksum.svg
+  dependencies:
+    - link
+  needs:
+    - link
 
 sourcelist:
   stage: Generate Sources List
