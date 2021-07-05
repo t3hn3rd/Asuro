@@ -4,6 +4,7 @@ stages:
   - Compile Sources
   - Link
   - Generate ISO
+  - Generate Documentation
 
 compile_stub:
   stage: Generate Stub and Versions
@@ -64,3 +65,31 @@ isogen:
     - link
   needs:
     - link
+
+sourcelist_gen:
+  stage: Generate Documentation
+  script:
+    - chmod +x ./compile_sourcelist.sh
+    - ./compile_sourcelist.sh
+  artifacts:
+    paths:
+      - ./sources.list
+  dependencies:
+    - vergen
+  needs:
+    - vergen
+
+docgen:
+  stage: Generate Documentation
+  script:
+    - chmod +x ./compile_docs.sh
+    - ./compile_docs.sh
+  artifacts:
+    paths:
+      ./doc/*
+  dependencies:
+    - vergen
+    - sourcelist_gen
+  needs:
+    - vergen
+    - sourcelist_gen

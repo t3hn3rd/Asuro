@@ -751,7 +751,7 @@ procedure closeAllWindows;
 	@param(Width 32-bit Width of the Window in Cells.)
 	@param(Height 32-bit Height of the Window in Cells.)
 	@param(Title NULL Terminated String used as the Title for the Window.)
-	@retruns(A 32-bit Handle for the new Window.)
+	@returns(A 32-bit Handle for the new Window.)
 }
 function  newWindow(x : uint32; y : uint32; Width : uint32; Height : uint32; Title : PChar) : HWND;
 
