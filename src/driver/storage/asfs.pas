@@ -12,16 +12,11 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 
-{ ************************************************
-  * Asuro
-  * Unit: Drivers/storage/asfs
-  * Description: asfs file system driver
-  * 
-  ************************************************
-  * Author: Aaron Hance
-  * Contributors: 
-  ************************************************ }
-
+{ 
+	Drivers->Storage->ASFS - Asuro Filesystem Driver.
+	
+	@author(Aaron Hance <ah@aaronhance.me>)
+}
 unit asfs;
 
 interface
