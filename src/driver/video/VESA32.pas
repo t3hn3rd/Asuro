@@ -13,18 +13,19 @@
 //  limitations under the License.
 
 { 
-	Driver->Video->VESA32 - Implementation of VESA 32bpp draw routines.
+	Driver->Video->VESA32 - Implementation of VESA 32bpp draw routines for the VESA Driver.
 	
 	@author(Kieron Morris <kjm@kieronmorris.me>)
 }
-unit VESA32;
+unit vesa32;
 
 interface
 
 uses
-    Video, VESA;
+    videotypes, vesa, tracer, color;
 
-procedure init();
+//Init the draw routines by providing what we support through the DrawRoutines struct.
+procedure init(DrawRoutines : PDrawRoutines);
 
 implementation
 
@@ -34,14 +35,18 @@ var
     LocationIndex : Uint32;
 
 begin
+    tracer.push_trace('vesa32.DrawPixel.enter');
     Location:= Puint32(Buffer^.Location);
     LocationIndex:= (Y * Buffer^.Width) + X;
     Location[LocationIndex]:= uint32(Pixel);
+    tracer.push_trace('vesa32.DrawPixel.exit');
 end;
 
-procedure init();
+procedure init(DrawRoutines : PDrawRoutines);
 begin
-    
+    tracer.push_trace('vesa32.init.enter');
+    DrawRoutines^.DrawPixel:= @DrawPixel;
+    tracer.push_trace('vesa32.init.exit');
 end;
 
 end.
