@@ -1,41 +1,84 @@
+//  Copyright 2021 Kieron Morris
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//  http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+
+{ 
+	Driver->Video->Video - Provides abstract rasterization/drawing functions.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit video;
 
 interface
 
 uses
-    multiboot, lmemorymanager, tracer, color, rand, console;
+    lmemorymanager, tracer, color, rand;
 
 procedure init();
 procedure DrawPixel(X : uint32; Y : uint32; Pixel : TRGB32);
 procedure Flush();
 
 type
+    //Arbitrary pointer to a video buffer in memory
     VideoBuffer = uint64;
-    TVESALinearBuffer = record
+
+    //Struct representing a Memory Mapped Video Buffer
+    TVideoBuffer = record
+        //Has this buffer been initialized? Has it been paged/created in memory?
         Initialized     : Boolean;
+        //Location of the video buffer in memory as a QWORD.
         Location        : VideoBuffer;
+        //How many bits per pixel?
         BitsPerPixel    : uint8;
+        //Width of the buffer.
         Width           : uint32;
+        //Height of the buffer.
         Height          : uint32;
     end;
-    TBackBuffer = record
-        Initialized     : Boolean;
-        Location        : VideoBuffer;
-        BitsPerPixel    : uint8;
-        Width           : uint32;
-        Height          : uint32;
+    //Pointer to a video buffer
+    PVideoBuffer = ^TVideoBuffer;
+
+    //Routines for drawing to the screen
+    TDrawRoutines = record
+        DrawPixel : FDrawPixel;
+        Flush     : FFlush;
     end;
-    TVESA = record
-        DefaultBuffer   : VideoBuffer;
-        Framebuffer     : TVESALinearBuffer;
-        BackBuffer      : TBackBuffer;
+    //Pointer to drawing routines
+    PDrawRoutines = ^TDrawRoutines;
+
+    //Struct representing the whole video driver.
+    TVideoDriver = record
+        //Default buffer to be used when rendering, front buffer for no double buffering, back buffer otherwise.
+        DefaultBuffer   : PVideoBuffer;
+        //Memory Mapped IO Buffer for raw rasterization.
+        MMIOBuffer      : TVideoBuffer;
+        //Back buffer used for double buffering, this is flushed to MMIOBuffer with flush();
+        BackBuffer      : TVideoBuffer;
+        //Drawing Routines
+        DrawRoutines    : TDrawRoutines;
     end;
-    PVESA = ^TVESA;
+    //Pointer to a video driver struct.
+    PVideoDriver = ^TVideoDriver;
+
+    //Draw a pixel to screenspace
+    FDrawPixel = procedure(Buffer : PVideoBuffer; X : uint32; Y : uint32; Pixel : TRGB32);
+    //Flush backbuffer to MMIO Buffer
+    FFlush     = procedure(FrontBuffer : PVideoBuffer; BackBuffer : PVideoBuffer);
 
 implementation
 
 var
-    VESA : TVESA;
+    VideoDriver : TVideoDriver;
 
 function allocateBackBuffer(Width : uint32; Height : uint32; BitsPerPixel : uint8) : uint64;
 begin
@@ -45,41 +88,15 @@ begin
     Outputln('VIDEO','End Kalloc Backbuffer');
 end;
 
-procedure initBackBuffer(VESAInfo : PVESA; Width : uint32; Height : uint32; BitsPerPixel : uint8);
+procedure initBackBuffer(DriverInfo : PVideoDriver; Width : uint32; Height : uint32; BitsPerPixel : uint8);
 begin
-    VESAInfo^.BackBuffer.Width:= Width;
-    VESAInfo^.BackBuffer.Height:= Height;
-    VESAInfo^.BackBuffer.BitsPerPixel:= BitsPerPixel;
-    VESAInfo^.BackBuffer.Location:= allocateBackBuffer(VESAInfo^.BackBuffer.Width, VESAInfo^.BackBuffer.Height, VESAInfo^.BackBuffer.BitsPerPixel);
-    VESAInfo^.DefaultBuffer:= VESAInfo^.BackBuffer.Location;
-    VESAInfo^.BackBuffer.Initialized:= True;
-end;
-
-procedure allocateVESAFrameBuffer(Address : uint32; Width : uint32; Height : uint32);
-var
-    LowerAddress, UpperAddress : uint32;
-    Block : uint32;
-
-begin
-    tracer.push_trace('video.allocateFrameBuffer.enter');
-    LowerAddress:= ((Address) SHR 22)-1;
-    UpperAddress:= ((Address + (Width * Height)) SHR 22)+1;
-    For Block:=LowerAddress to UpperAddress do begin
-        kpalloc(Block SHL 22);
-    end;
-    tracer.push_trace('video.allocateFrameBuffer.enter');
-end;
-
-procedure initVESAFrameBuffer(VESAInfo : PVESA; Location : uint64; Width : uint32; Height : uint32; BitsPerPixel : uint8);
-begin
-    if not(VESAInfo^.Framebuffer.Initialized) then begin
-        VESAInfo^.Framebuffer.Location:= Location;
-        VESAInfo^.Framebuffer.BitsPerPixel:= BitsPerPixel;
-        VESAInfo^.Framebuffer.Width:= Width;
-        VESAInfo^.Framebuffer.Height:= Height;
-        allocateVESAFrameBuffer(VESAInfo^.Framebuffer.Location, VESAInfo^.Framebuffer.Width, VESAInfo^.Framebuffer.Height);
-        VESAInfo^.DefaultBuffer:= VESAInfo^.Framebuffer.Location;
-        VESAInfo^.Framebuffer.Initialized:= True;
+    if not(DriverInfo^.BackBuffer.Initialized) then begin
+        DriverInfo^.BackBuffer.Width:= Width;
+        DriverInfo^.BackBuffer.Height:= Height;
+        DriverInfo^.BackBuffer.BitsPerPixel:= BitsPerPixel;
+        DriverInfo^.BackBuffer.Location:= allocateBackBuffer(DriverInfo^.BackBuffer.Width, DriverInfo^.BackBuffer.Height, DriverInfo^.BackBuffer.BitsPerPixel);
+        DriverInfo^.DefaultBuffer:= DriverInfo^.BackBuffer.Location;
+        DriverInfo^.BackBuffer.Initialized:= True;
     end;
 end;
 
@@ -90,52 +107,23 @@ var
 
 begin
     tracer.push_trace('video.init.enter');
-    console.Outputln('VIDEO', 'Init VESA Framebuffer');
-    initVESAFrameBuffer(@VESA, multiboot.multibootinfo^.framebuffer_addr, multiboot.multibootinfo^.framebuffer_width, multiboot.multibootinfo^.framebuffer_height, multiboot.multibootinfo^.framebuffer_bpp);        
-    console.Outputln('VIDEO', 'Init VESA Backbuffer');
-    initBackBuffer(@VESA, multiboot.multibootinfo^.framebuffer_width, multiboot.multibootinfo^.framebuffer_height, multiboot.multibootinfo^.framebuffer_bpp);
+    
+    console.Outputln('VIDEO', 'Init VideoDriver MMIOBuffer');
+       
+    console.Outputln('VIDEO', 'Init VideoDriver Backbuffer');
+    //initBackBuffer(@VideoDriver, multiboot.multibootinfo^.framebuffer_width, multiboot.multibootinfo^.framebuffer_height, multiboot.multibootinfo^.framebuffer_bpp);
 
-    console.Outputln('VIDEO', 'Start Test Draw Loop');
-    srand(98354754397);
-    while true do begin
-        Inc(RGB.R);
-        for x:=0 to VESA.Framebuffer.Width-1 do begin
-            Inc(RGB.G);
-            for y:=0 to VESA.Framebuffer.Height-1 do begin
-                DrawPixel(x,y,RGB);
-                Inc(RGB.B);
-            end;
-        end;
-        Flush();
-    end;
     tracer.push_trace('video.init.exit');
 end;
 
 procedure DrawPixel(X : uint32; Y : uint32; Pixel : TRGB32);
-var
-    Location : PuInt32;
-    LocationIndex : Uint32;
-
 begin
-    Location:= Puint32(VESA.DefaultBuffer);
-    LocationIndex:= (Y * VESA.Framebuffer.Width) + X;
-    Location[LocationIndex]:= uint32(Pixel);
+
 end;
 
 procedure Flush();
-var
-    x,y : uint32;
-    Back,Front : PuInt64;
-
 begin
-    if not(VESA.BackBuffer.Initialized) then exit;
-    Back:= PUint64(VESA.BackBuffer.Location);
-    Front:= PuInt64(VESA.Framebuffer.Location);
-    for x:=0 to (VESA.Framebuffer.Width-1) div 2 do begin
-        for y:=0 to (VESA.Framebuffer.Height-1) div 2 do begin
-            Front[(Y * VESA.Framebuffer.Width)+X]:= Back[(Y * VESA.Framebuffer.Width)+X];
-        end;
-    end;
+
 end;
 
 end.
