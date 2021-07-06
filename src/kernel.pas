@@ -54,7 +54,8 @@ uses
      base64,
      rand,
      terminal,
-     hashmap, vfs, video;
+     hashmap, vfs, 
+     video, vesa, doublebuffer, color;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
@@ -123,6 +124,8 @@ var
    ulf             : pointer;
 
    HM              : PHashMap;
+
+   colour          : TRGB32;
    
 begin
      { Init the base system unit }
@@ -204,6 +207,27 @@ begin
      tracer.init();
 
      video.init();
+     vesa.init(@video.register);
+     doublebuffer.init(@video.register);
+     video.enable('VESA');
+     video.enable('BASIC_DOUBLE_BUFFER');
+     colour:= color.red;
+     while true do begin
+        for i:=0 to video.frontBufferWidth-1 do begin
+            for z:=0 to video.frontBufferHeight-1 do begin
+                video.DrawPixel(i, z, colour);
+            end;
+        end;
+        
+        if uint32(colour) = uint32(color.red) then
+            colour:= color.green
+        else if uint32(colour) = uint32(color.green) then
+            colour:= color.blue
+        else if uint32(colour) = uint32(color.blue) then
+            colour:= color.red;
+
+        video.Flush();
+     end;
 
      { VFS Init }
      vfs.init();

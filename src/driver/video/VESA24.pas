@@ -13,18 +13,19 @@
 //  limitations under the License.
 
 { 
-	Driver->Video->VESA24 - Implementation of VESA 24bpp draw routines.
+	Driver->Video->VESA24 - Implementation of VESA 24bpp draw routines for the VESA Driver.
 	
 	@author(Kieron Morris <kjm@kieronmorris.me>)
 }
-unit VESA24;
+unit vesa24;
 
 interface
 
 uses
-    Video, VESA;
+    videotypes, vesa, tracer, color;
 
-procedure init();
+//Init the draw routines by providing what we support through the DrawRoutines struct.
+procedure init(DrawRoutines : PDrawRoutines);
 
 implementation
 
@@ -33,9 +34,10 @@ begin
 
 end;
 
-procedure init();
+procedure init(DrawRoutines : PDrawRoutines);
 begin
-    
+	tracer.push_trace('vesa24.init.enter');
+	tracer.push_trace('vesa24.init.exit');
 end;
 
 end.

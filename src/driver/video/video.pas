@@ -13,7 +13,7 @@
 //  limitations under the License.
 
 { 
-	Driver->Video->Video - Provides abstract rasterization/drawing functions.
+	Driver->Video->Video - Provides an abstract rasterization/drawing interface.
 	
 	@author(Kieron Morris <kjm@kieronmorris.me>)
 }
@@ -22,83 +22,37 @@ unit video;
 interface
 
 uses
-    lmemorymanager, tracer, color, rand;
+    lmemorymanager, tracer, color, videotypes, hashmap;
 
 procedure init();
 procedure DrawPixel(X : uint32; Y : uint32; Pixel : TRGB32);
 procedure Flush();
-
-type
-    //Arbitrary pointer to a video buffer in memory
-    VideoBuffer = uint64;
-
-    //Struct representing a Memory Mapped Video Buffer
-    TVideoBuffer = record
-        //Has this buffer been initialized? Has it been paged/created in memory?
-        Initialized     : Boolean;
-        //Location of the video buffer in memory as a QWORD.
-        Location        : VideoBuffer;
-        //How many bits per pixel?
-        BitsPerPixel    : uint8;
-        //Width of the buffer.
-        Width           : uint32;
-        //Height of the buffer.
-        Height          : uint32;
-    end;
-    //Pointer to a video buffer
-    PVideoBuffer = ^TVideoBuffer;
-
-    //Routines for drawing to the screen
-    TDrawRoutines = record
-        DrawPixel : FDrawPixel;
-        Flush     : FFlush;
-    end;
-    //Pointer to drawing routines
-    PDrawRoutines = ^TDrawRoutines;
-
-    //Struct representing the whole video driver.
-    TVideoDriver = record
-        //Default buffer to be used when rendering, front buffer for no double buffering, back buffer otherwise.
-        DefaultBuffer   : PVideoBuffer;
-        //Memory Mapped IO Buffer for raw rasterization.
-        MMIOBuffer      : TVideoBuffer;
-        //Back buffer used for double buffering, this is flushed to MMIOBuffer with flush();
-        BackBuffer      : TVideoBuffer;
-        //Drawing Routines
-        DrawRoutines    : TDrawRoutines;
-    end;
-    //Pointer to a video driver struct.
-    PVideoDriver = ^TVideoDriver;
-
-    //Draw a pixel to screenspace
-    FDrawPixel = procedure(Buffer : PVideoBuffer; X : uint32; Y : uint32; Pixel : TRGB32);
-    //Flush backbuffer to MMIO Buffer
-    FFlush     = procedure(FrontBuffer : PVideoBuffer; BackBuffer : PVideoBuffer);
+function register(DriverIdentifier : pchar; EnableCallback : FEnableDriver) : boolean;
+function enable(DriverIdentifier : pchar) : boolean;
+function frontBufferWidth : uint32;
+function frontBufferHeight : uint32;
+function frontBufferBpp : uint8;
+function backBufferWidth : uint32;
+function backBufferHeight : uint32;
+function backBufferBpp : uint8;
 
 implementation
 
+Procedure dummyFDrawPixel(Buffer : PVideoBuffer; X : uint32; Y : uint32; Pixel : TRGB32);
+begin
+    tracer.push_trace('video.dummyFDrawPixel.enter');
+    //Do nothing
+end;
+
+Procedure dummyFFlush(FrontBuffer : PVideoBuffer; BackBuffer : PVideoBuffer);
+begin
+    tracer.push_trace('video.dummyFFlush.enter');
+    //Do nothing
+end;
+
 var
-    VideoDriver : TVideoDriver;
-
-function allocateBackBuffer(Width : uint32; Height : uint32; BitsPerPixel : uint8) : uint64;
-begin
-    Outputln('VIDEO','Start Kalloc Backbuffer');
-    //This doesn't currently work... Needs a rework of lmemorymanager
-    allocateBackBuffer:= uint64(klalloc((Width * Height) * BitsPerPixel));
-    Outputln('VIDEO','End Kalloc Backbuffer');
-end;
-
-procedure initBackBuffer(DriverInfo : PVideoDriver; Width : uint32; Height : uint32; BitsPerPixel : uint8);
-begin
-    if not(DriverInfo^.BackBuffer.Initialized) then begin
-        DriverInfo^.BackBuffer.Width:= Width;
-        DriverInfo^.BackBuffer.Height:= Height;
-        DriverInfo^.BackBuffer.BitsPerPixel:= BitsPerPixel;
-        DriverInfo^.BackBuffer.Location:= allocateBackBuffer(DriverInfo^.BackBuffer.Width, DriverInfo^.BackBuffer.Height, DriverInfo^.BackBuffer.BitsPerPixel);
-        DriverInfo^.DefaultBuffer:= DriverInfo^.BackBuffer.Location;
-        DriverInfo^.BackBuffer.Initialized:= True;
-    end;
-end;
+    VideoInterface : TVideoInterface;
+    DriverMap      : PHashMap;
 
 procedure init();
 var
@@ -107,23 +61,86 @@ var
 
 begin
     tracer.push_trace('video.init.enter');
-    
-    console.Outputln('VIDEO', 'Init VideoDriver MMIOBuffer');
-       
-    console.Outputln('VIDEO', 'Init VideoDriver Backbuffer');
-    //initBackBuffer(@VideoDriver, multiboot.multibootinfo^.framebuffer_width, multiboot.multibootinfo^.framebuffer_height, multiboot.multibootinfo^.framebuffer_bpp);
-
+    VideoInterface.FrontBuffer.Initialized:= false;
+    VideoInterface.BackBuffer.Initialized:= false;
+    VideoInterface.DefaultBuffer:= @VideoInterface.FrontBuffer;
+    VideoInterface.DrawRoutines.DrawPixel:= @dummyFDrawPixel;
+    VideoInterface.DrawRoutines.Flush:= @dummyFFlush;
+    DriverMap:= hashmap.new;
     tracer.push_trace('video.init.exit');
+end;
+
+function register(DriverIdentifier : pchar; EnableCallback : FEnableDriver) : boolean;
+var
+    Value : Void;
+
+begin
+    tracer.push_trace('video.register.enter');
+    register:= false;
+    Value:= Hashmap.get(DriverMap, DriverIdentifier);
+    if (Value = nil) then begin
+        Hashmap.add(DriverMap, DriverIdentifier, void(EnableCallback));
+        register:= true;
+    end;
+    tracer.push_trace('video.register.exit');
+end;
+
+function enable(DriverIdentifier : pchar) : boolean;
+var
+    Value : Void;
+
+begin
+    tracer.push_trace('video.enable.enter');
+    enable:= false;
+    Value:= Hashmap.get(DriverMap, DriverIdentifier);
+    if (Value <> nil) then begin
+        enable:= FEnableDriver(Value)(@VideoInterface);
+    end;
+    tracer.push_trace('video.enable.exit');
 end;
 
 procedure DrawPixel(X : uint32; Y : uint32; Pixel : TRGB32);
 begin
-
+    tracer.push_trace('video.DrawPixel.enter');
+    VideoInterface.DrawRoutines.DrawPixel(VideoInterface.DefaultBuffer, X, Y, Pixel);
+    tracer.push_trace('video.DrawPixel.exit');
 end;
 
 procedure Flush();
 begin
+    tracer.push_trace('video.Flush.enter');
+    VideoInterface.DrawRoutines.Flush(@VideoInterface.FrontBuffer, @VideoInterface.BackBuffer);
+    tracer.push_trace('video.Flush.exit');
+end;
 
+function frontBufferWidth : uint32;
+begin
+    frontBufferWidth:= VideoInterface.FrontBuffer.Width;
+end;
+
+function frontBufferHeight : uint32;
+begin
+    frontBufferHeight:= VideoInterface.FrontBuffer.Height;
+end;
+
+function frontBufferBpp : uint8;
+begin
+    frontBufferBpp:= VideoInterface.FrontBuffer.BitsPerPixel;
+end;
+
+function backBufferWidth : uint32;
+begin
+    backBufferWidth:= VideoInterface.BackBuffer.Width;
+end;
+
+function backBufferHeight : uint32;
+begin
+    backBufferHeight:= VideoInterface.BackBuffer.Height;
+end;
+
+function backBufferBpp : uint8;
+begin
+    backBufferBpp:= VideoInterface.BackBuffer.BitsPerPixel;
 end;
 
 end.
