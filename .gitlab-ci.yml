@@ -61,11 +61,13 @@ docgen:
   script:
     - ./compile_sourcelist.sh
     - ./compile_docs.sh
-    - ln -s doc public
+    # Remove comments when we want to use gitlab pages.
+    #- cp doc public
   allow_failure: true
   artifacts:
     paths:
-      - public
-      - ./sources.list
+      - doc
+      #- public/*
+      #- ./sources.list
   needs:
     - versions
