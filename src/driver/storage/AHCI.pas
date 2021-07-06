@@ -12,15 +12,11 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 
-{ ************************************************
-  * Asuro
-  * Unit: Drivers/AHCI
-  * Description: AHCI SATA Driver
-  ************************************************
-  * Author: Aaron Hance
-  * Contributors: 
-  ************************************************ }
-
+{ 
+	Drivers->Storage->AHCI - AHCI SATA Driver.
+	
+	@author(Aaron Hance <ah@aaronhance.me>)
+}
 unit AHCI;
 
 interface

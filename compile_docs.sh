@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 echo " "
 echo "======================="
 echo " "
@@ -15,4 +15,3 @@ rm -rf ./doc/*
 echo "Generating Docs..."
 ./pasdoc/bin/pasdoc -N "Asuro" -T "Asuro OS Documentation" -O "html" -E ./doc/ -S sources.list --use-tipue-search
 echo "Docgen finished."
-exit 0

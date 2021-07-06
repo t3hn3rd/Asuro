@@ -12,6 +12,11 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 
+{ 
+	ProgManager - Central initialization for terminal registered, baked-in programs.
+	
+	@author(Kieron Morris <kjm@kieronmorris.me>)
+}
 unit progmanager;
 
 interface
@@ -23,6 +28,7 @@ uses
     edit, netlog, themer,
     memview, udpcat, dhclient, vbeinfo;
 
+{ Initialize all baked-in programs }
 procedure init();
 
 implementation
