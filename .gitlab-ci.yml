@@ -1,25 +1,23 @@
 stages:
-  - Generate Stub and Versions
-  - Generate Version Files
+  - Compile Versions
   - Compile Sources
   - Link
-  - Generate ISO
-  - Generate Sources List
   - Generate Documentation
+  - Deploy
 
-compile_stub:
-  stage: Generate Stub and Versions
-  script: 
-    - chmod +x ./compile_stub.sh
-    - ./compile_stub.sh
-  artifacts:
+cache:
+  - key: ${CI_COMMIT_REF_SLUG}
     paths:
-      - lib/stub.o
+      - lib/*.o
+      - bin/kernel.bin
+      - doc
 
-vergen:
-  stage: Generate Stub and Versions
-  script: 
-    - chmod +x ./compile_vergen.sh
+before_script:
+  - chmod +x *.sh
+
+versions:
+  stage: Compile Versions
+  script:
     - ./compile_vergen.sh
   artifacts:
     paths:
@@ -29,71 +27,45 @@ vergen:
 compile_sources:
   stage: Compile Sources
   script:
-    - chmod +x ./compile_sources.sh
+    - rm -f lib/*.so
     - ./compile_sources.sh
-  artifacts:
-    paths:
-      - lib/*.o
-  dependencies:
-    - compile_stub
-    - vergen
   needs:
-    - vergen
-    - compile_stub
+    - versions
 
 link:
   stage: Link
   script:
-    - chmod +x ./compile_link.sh
+    - ./compile_stub.sh
     - ./compile_link.sh
-  artifacts:
-    paths:
-      - bin/kernel.bin
-  dependencies:
-    - compile_sources
   needs:
+    - versions
     - compile_sources
 
 isogen:
-  stage: Generate ISO
+  stage: Deploy
   script:
-    - chmod +x ./compile_isogen.sh
     - ./compile_isogen.sh
-    - chmod +x ./compile_sumgen.sh
     - ./compile_sumgen.sh
   artifacts:
     paths:
       - ./Asuro.iso
       - ./release/checksum.svg
-  dependencies:
-    - link
   needs:
     - link
-
-sourcelist:
-  stage: Generate Sources List
-  script:
-    - chmod +x ./compile_sourcelist.sh
-    - ./compile_sourcelist.sh
-  artifacts:
-    paths:
-      - ./sources.list
-  dependencies:
-    - vergen
-  needs:
-    - vergen
 
 docgen:
   stage: Generate Documentation
+  only:
+    - master
+    - develop
   script:
-    - chmod +x ./compile_docs.sh
+    - ./compile_sourcelist.sh
     - ./compile_docs.sh
+    - ln -s doc public
+  allow_failure: true
   artifacts:
     paths:
-      - ./doc/*
-  dependencies:
-    - vergen
-    - sourcelist
+      - public
+      - ./sources.list
   needs:
-    - vergen
-    - sourcelist
+    - versions

@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 echo > checksums.md5
 for directory in $(find src/ -maxdepth 10 -type d); do
 	for filename in $directory/*.pas; do

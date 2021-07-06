@@ -1,8 +1,7 @@
-#!/bin/sh
+#!/usr/bin/env bash
 echo " "
 echo "======================="
 echo " "
 echo "Compiling Stub..."
 echo " "
-rm lib/*
 nasm -f elf src/stub/stub.asm -o lib/stub.o
