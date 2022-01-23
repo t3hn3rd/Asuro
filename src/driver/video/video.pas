@@ -22,13 +22,18 @@ unit video;
 interface
 
 uses
-    lmemorymanager, tracer, color, videotypes, hashmap;
+    lmemorymanager, tracer, color, videotypes, hashmap, util;
 
 procedure init();
 procedure DrawPixel(X : uint32; Y : uint32; Pixel : TRGB32);
+procedure DrawLine(x1,y1,x2,y2 : uint32; thickness : uint32; Color : TRGB32);
+procedure DrawRect(x1,y1,x2,y2 : uint32; line_thickness : uint32; Color : TRGB32);
+procedure FillRect(x1,y1,x2,y2 : uint32; line_thickness : uint32; Line_Color : TRGB32; Fill_Color : TRGB32);
 procedure Flush();
+
 function register(DriverIdentifier : pchar; EnableCallback : FEnableDriver) : boolean;
 function enable(DriverIdentifier : pchar) : boolean;
+
 function frontBufferWidth : uint32;
 function frontBufferHeight : uint32;
 function frontBufferBpp : uint8;
@@ -41,13 +46,125 @@ implementation
 Procedure dummyFDrawPixel(Buffer : PVideoBuffer; X : uint32; Y : uint32; Pixel : TRGB32);
 begin
     tracer.push_trace('video.dummyFDrawPixel.enter');
-    //Do nothing
+    //Do nothing, this is the most basic function that must be implemented by a driver.
 end;
 
-Procedure dummyFFlush(FrontBuffer : PVideoBuffer; BackBuffer : PVideoBuffer);
+Procedure basicFFlush(FrontBuffer : PVideoBuffer; BackBuffer : PVideoBuffer);
+var
+    x, y : uint32;
+    Back,Front : puint32;
+
 begin
-    tracer.push_trace('video.dummyFFlush.enter');
-    //Do nothing
+    tracer.push_trace('video.basicFFlush.enter');
+    If not(FrontBuffer^.Initialized and BackBuffer^.Initialized) then exit;
+    if (BackBuffer^.Width > FrontBuffer^.Width) or (BackBuffer^.Height > FrontBuffer^.Height) then exit;
+    Back:= puint32(BackBuffer^.Location);
+    Front:= puint32(FrontBuffer^.Location);
+    for x:=0 to BackBuffer^.Width-1 do begin
+        for y:=0 to BackBuffer^.Height-1 do begin
+            Front[(Y * BackBuffer^.Width) + X]:= Back[(Y * BackBuffer^.Width) + X];
+        end;
+    end;
+end;
+
+procedure basicFDrawLine(Buffer : PVideoBuffer; x1,y1,x2,y2 : uint32; thickness : uint32; Color : TRGB32);
+var
+    X, Y, DX, DY, DX1, DY1, PX, PY, XE, YE, I : sint32;
+
+begin
+    tracer.push_trace('video.basicFDrawLine.enter');
+
+    if(x1 = x2) then begin
+        for Y:=Y1 to Y2 do begin
+            DrawPixel(X1,Y,Color);
+        end;
+    end else if (y1 = y2) then begin
+        for X:=X1 to X2 do begin
+            DrawPixel(X,Y1,Color);
+        end;
+    end else begin
+        DX:= X2 - X1;
+        DY:= Y2 - Y1;
+
+        DX1:= util.abs(DX);
+        DY1:= util.abs(DY);
+
+        PX:= 2 * DY1 - DX1;
+        PY:= 2 * DX1 - DY1;
+
+        if (DY1 <= DX1) then begin
+            if (dx >= 0) then begin
+                X:= X1; Y:= Y1; XE:= X2;
+            end else begin
+                X:= X2; Y:= Y2; XE:= X1;
+            end;
+
+            DrawPixel(X, Y, Color);
+
+            I:=0;
+            while (x < xe) do begin
+                X:= X + 1;
+                if (PX < 0) then begin
+                    PX:= PX + 2 + DY1; 
+                end else begin
+                    if(((dx < 0) and (dy < 0)) OR ((dx > 0) and (dy > 0))) then begin
+                        Y:= Y + 1;  
+                    end else begin
+                        Y:= Y - 1;
+                    end;
+                    PX:= PX + 2 * (DY1 - DX1);
+                end;
+                DrawPixel(X,Y,Color);
+                I:= I + 1;
+            end;
+        end else begin
+            if (DY >= 0) then begin
+                X:= X1; Y:= Y1; YE:= Y2; 
+            end else begin
+                X:= X2; Y:= Y2; YE:= Y1;
+            end;
+
+            DrawPixel(X, Y, Color);
+
+            I:=0;
+            while (Y < YE) do begin
+                Y:= Y + 1;
+                if (PY <= 0) then begin
+                    PY:= PY + 2 * DX1;
+                end else begin
+                    if (((dx < 0) and (dy < 0)) OR ((dx > 0) and (dy > 0))) then begin
+                        X:= X + 1; 
+                    end else begin
+                        X:= X - 1;
+                    end;
+                    PY:= PY + 2 * (dx1 - dy1);
+                end;
+                DrawPixel(X,Y,Color);
+                I:= I + 1;
+            end;
+        end;
+    end;
+end;
+
+procedure basicFDrawRect(Buffer : PVideoBuffer; x1,y1,x2,y2 : uint32; line_thickness : uint32; Color : TRGB32);
+begin
+    tracer.push_trace('video.basicFDrawRect.enter');
+    DrawLine(x1,y1,x2,y1,line_thickness,Color);
+    DrawLine(x1,y2,x2,y2,line_thickness,Color);
+    DrawLine(x1,y1,x1,y2,line_thickness,Color);
+    DrawLine(x2,y1,x2,y2,line_thickness,Color);
+end;
+
+procedure basicFFillRect(Buffer : PVideoBuffer; x1,y1,x2,y2 : uint32; line_thickness : uint32; Line_Color : TRGB32; Fill_Color : TRGB32);
+var
+    Y : uint32;
+
+begin
+    tracer.push_trace('video.basicFFillRect.enter');   
+    for Y:=y1 to y2 do begin
+        DrawLine(x1,y,x2,y,line_thickness,Fill_Color);
+    end;
+    DrawRect(x1,y1,x2,y2,line_thickness,Line_Color);
 end;
 
 var
@@ -61,12 +178,34 @@ var
 
 begin
     tracer.push_trace('video.init.enter');
+    //Ensure the frontbuffer is empty & nil, ready for initialization by a driver.
     VideoInterface.FrontBuffer.Initialized:= false;
+    VideoInterface.FrontBuffer.Width:= 0;
+    VideoInterface.FrontBuffer.Height:= 0;
+    VideoInterface.FrontBuffer.BitsPerPixel:= 0;
+    VideoInterface.FrontBuffer.Location:= 0;
+
+    //Ensure the backbuffer is empty & nil, ready for initialization by a driver.
     VideoInterface.BackBuffer.Initialized:= false;
+    VideoInterface.BackBuffer.Width:= 0;
+    VideoInterface.BackBuffer.Height:= 0;
+    VideoInterface.BackBuffer.BitsPerPixel:= 0;
+    VideoInterface.BackBuffer.Location:= 0;
+
+    //Set the default buffer to be the FrontBuffer, assume no double buffering to begin with.
     VideoInterface.DefaultBuffer:= @VideoInterface.FrontBuffer;
+
+    { Set the draw routines to point to dummy/empty routines.
+      Calls will still succeed but do nothing until a driver has registered. }
     VideoInterface.DrawRoutines.DrawPixel:= @dummyFDrawPixel;
-    VideoInterface.DrawRoutines.Flush:= @dummyFFlush;
+    VideoInterface.DrawRoutines.Flush:= @basicFFlush;
+    VideoInterface.DrawRoutines.DrawLine:= @basicFDrawLine;
+    VideoInterface.DrawRoutines.DrawRect:= @basicFDrawRect;
+    VideoInterface.DrawRoutines.FillRect:= @basicFFillRect;
+
+    //Initialize our 'DriverMap', a hashmap of loadable display drivers.
     DriverMap:= hashmap.new;
+
     tracer.push_trace('video.init.exit');
 end;
 
@@ -101,16 +240,31 @@ end;
 
 procedure DrawPixel(X : uint32; Y : uint32; Pixel : TRGB32);
 begin
-    tracer.push_trace('video.DrawPixel.enter');
+    //tracer.push_trace('video.DrawPixel.enter');
     VideoInterface.DrawRoutines.DrawPixel(VideoInterface.DefaultBuffer, X, Y, Pixel);
-    tracer.push_trace('video.DrawPixel.exit');
+    //tracer.push_trace('video.DrawPixel.exit');
 end;
 
 procedure Flush();
 begin
-    tracer.push_trace('video.Flush.enter');
+    //tracer.push_trace('video.Flush.enter');
     VideoInterface.DrawRoutines.Flush(@VideoInterface.FrontBuffer, @VideoInterface.BackBuffer);
-    tracer.push_trace('video.Flush.exit');
+    //tracer.push_trace('video.Flush.exit');
+end;
+
+procedure DrawLine(x1,y1,x2,y2 : uint32; thickness : uint32; Color : TRGB32);
+begin
+    VideoInterface.DrawRoutines.DrawLine(VideoInterface.DefaultBuffer,x1,y1,x2,y2,thickness,Color);
+end;
+
+procedure DrawRect(x1,y1,x2,y2 : uint32; line_thickness : uint32; Color : TRGB32);
+begin
+    VideoInterface.DrawRoutines.DrawRect(VideoInterface.DefaultBuffer,x1,y1,x2,y2,line_thickness,color);
+end;
+
+procedure FillRect(x1,y1,x2,y2 : uint32; line_thickness : uint32; Line_Color : TRGB32; Fill_Color : TRGB32);
+begin
+    VideoInterface.DrawRoutines.FillRect(VideoInterface.DefaultBuffer,x1,y1,x2,y2,line_thickness,Line_Color,Fill_Color);
 end;
 
 function frontBufferWidth : uint32;

@@ -25,7 +25,7 @@ uses
     color;
 
 type
-    //Arbitrary pointer to a video buffer in memory
+    //Arbitrary pointer to a raw video buffer in memory
     VideoBuffer = uint32;
 
     //Struct representing a Memory Mapped Video Buffer
@@ -48,11 +48,20 @@ type
     FDrawPixel = procedure(Buffer : PVideoBuffer; X : uint32; Y : uint32; Pixel : TRGB32);
     //(Abstract) Flush backbuffer to MMIO Buffer
     FFlush     = procedure(FrontBuffer : PVideoBuffer; BackBuffer : PVideoBuffer);
+    //(Abstract) Draw a line to the screen
+    FDrawLine = procedure(Buffer : PVideoBuffer; x1,y1,x2,y2 : uint32; thickness : uint32; Color : TRGB32);
+    //(Abstract) Draw a rect to the screen
+    FDrawRect = procedure(Buffer : PVideoBuffer; x1,y1,x2,y2 : uint32; line_thickness : uint32; Color : TRGB32);
+    //(Abstract) Draw a filled rect to the screen
+    FFillRect = procedure(Buffer : PVideoBuffer; x1,y1,x2,y2 : uint32; line_thickness : uint32; Line_Color : TRGB32; Fill_Color : TRGB32);
 
     //Routines for drawing to the screen
     TDrawRoutines = record
         DrawPixel : FDrawPixel;
         Flush     : FFlush;
+        DrawLine  : FDrawLine;
+        DrawRect  : FDrawRect;
+        FillRect  : FFillRect;
     end;
     //Pointer to drawing routines
     PDrawRoutines = ^TDrawRoutines;

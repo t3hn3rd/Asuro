@@ -80,6 +80,8 @@ function RorDWord(AValue : uint32; Dist : uint8) : uint32;
 
 function MsSinceSystemBoot : uint64;
 
+function abs(x : sint32) : uint32;
+
 var
     endptr : uint32; external name '__end';
     stack  : uint32; external name 'KERNEL_STACK';
@@ -88,6 +90,15 @@ implementation
 
 uses
     console, RTC, cpu, serial, strings, isr_types;
+
+function abs(x : sint32) : uint32;
+var
+    y : uint32;
+
+begin
+    y:= x SHR 31;
+    abs:= (x XOR y) - y;
+end;
 
 function MsSinceSystemBoot : uint64;
 begin

@@ -35,11 +35,11 @@ var
     LocationIndex : Uint32;
 
 begin
-    tracer.push_trace('vesa32.DrawPixel.enter');
+    //tracer.push_trace('vesa32.DrawPixel.enter');
     Location:= Puint32(Buffer^.Location);
     LocationIndex:= (Y * Buffer^.Width) + X;
     Location[LocationIndex]:= uint32(Pixel);
-    tracer.push_trace('vesa32.DrawPixel.exit');
+    //tracer.push_trace('vesa32.DrawPixel.exit');
 end;
 
 procedure init(DrawRoutines : PDrawRoutines);
