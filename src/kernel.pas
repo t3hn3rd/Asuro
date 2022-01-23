@@ -208,23 +208,21 @@ begin
      doublebuffer.init(@video.register);
      video.enable('VESA');
      video.enable('BASIC_DOUBLE_BUFFER');
-     colour:= color.red;
-     while true do begin
-        for i:=0 to video.frontBufferWidth-1 do begin
-            for z:=0 to video.frontBufferHeight-1 do begin
-                video.DrawPixel(i, z, colour);
-            end;
-        end;
-        
-        if uint32(colour) = uint32(color.red) then
-            colour:= color.green
-        else if uint32(colour) = uint32(color.green) then
-            colour:= color.blue
-        else if uint32(colour) = uint32(color.blue) then
-            colour:= color.red;
+     colour:= color.white;
 
-        video.Flush();
+     for i:=0 to video.frontBufferWidth-1 do begin
+        for z:=0 to video.frontBufferHeight-1 do begin
+            video.DrawPixel(i, z, colour);
+        end;
      end;
+
+     video.DrawLine(50,50,100,100,1,color.black);
+     video.DrawRect(50,150,100,200,1,color.black);
+     video.FillRect(50,250,100,300,1,color.black,color.red);
+     video.DrawLine(50,350,100,350,1,color.black);
+     video.Flush();
+
+     while true do begin end;
 
      { VFS Init }
      vfs.init();
