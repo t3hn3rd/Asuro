@@ -51,19 +51,22 @@ end;
 
 Procedure basicFFlush(FrontBuffer : PVideoBuffer; BackBuffer : PVideoBuffer);
 var
-    x, y : uint32;
+    idx : uint32;
     Back,Front : puint32;
+    BufferSize : uint32;
+
+const
+    COPY_WIDTH = 32;
 
 begin
-    tracer.push_trace('video.basicFFlush.enter');
+    //tracer.push_trace('video.basicFFlush.enter');
     If not(FrontBuffer^.Initialized and BackBuffer^.Initialized) then exit;
     if (BackBuffer^.Width > FrontBuffer^.Width) or (BackBuffer^.Height > FrontBuffer^.Height) then exit;
     Back:= puint32(BackBuffer^.Location);
     Front:= puint32(FrontBuffer^.Location);
-    for x:=0 to BackBuffer^.Width-1 do begin
-        for y:=0 to BackBuffer^.Height-1 do begin
-            Front[(Y * BackBuffer^.Width) + X]:= Back[(Y * BackBuffer^.Width) + X];
-        end;
+    BufferSize:= ( (BackBuffer^.Width * BackBuffer^.Height * BackBuffer^.BitsPerPixel ) div COPY_WIDTH ) - 1;
+    for idx:=0 to BufferSize do begin
+        Front[idx]:= Back[idx];
     end;
 end;
 
