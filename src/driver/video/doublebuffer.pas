@@ -22,7 +22,7 @@ unit doublebuffer;
 interface
 
 uses
-    lmemorymanager, tracer, videotypes;
+    lmemorymanager, tracer, videotypes, serial, util;
 
 //Init the driver, and register with the video interface in a state ready for execution.
 procedure init(Register : FRegisterDriver);
@@ -54,21 +54,28 @@ end;
 
 procedure Flush(FrontBuffer : PVideoBuffer; BackBuffer : PVideoBuffer);
 var
-    X,Y : uint32;
+    idx : uint32;
     Back,Front : PuInt64;
+    BufferSize : uint32;
+
+const
+    COPY_WIDTH = 64;
 
 begin
-    tracer.push_trace('doublebuffer.Flush.enter');
+    //tracer.push_trace('doublebuffer.Flush.enter');
     if not(BackBuffer^.Initialized) then exit;
     if ((FrontBuffer^.Width > BackBuffer^.Width) or (FrontBuffer^.Height > BackBuffer^.Height)) then exit;
     Back:= PUint64(BackBuffer^.Location);
     Front:= PuInt64(FrontBuffer^.Location);
-    for X:=0 to (BackBuffer^.Width-1) div 2 do begin
-        for Y:=0 to (BackBuffer^.Height-1) div 2 do begin
-            Front[(Y * BackBuffer^.Width) + X]:= Back[(Y * BackBuffer^.Width) + X];
-        end;
+    BufferSize:= ( ( BackBuffer^.Width * BackBuffer^.Height * BackBuffer^.BitsPerPixel) div COPY_WIDTH ) - 1;
+    for idx:=0 to BufferSize do begin
+        Front[idx]:= Back[idx];
+        // -- TODO: Get SSE working here for 128bit copies --
+        // __SSE_128_memcpy(uint32(Front), uint32(Back));
+        // Front:= PUint64(uint32(Front) + 16);
+        // Back:= PUint64(uint32(Back) + 16);     
     end;
-    tracer.push_trace('doublebuffer.Flush.exit');
+    //tracer.push_trace('doublebuffer.Flush.exit');
 end;
 
 function enable(VideoInterface : PVideoInterface) : boolean;

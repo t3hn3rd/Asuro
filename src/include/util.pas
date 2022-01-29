@@ -49,6 +49,7 @@ procedure io_wait;
 
 procedure memset(location : uint32; value : uint8; size : uint32);
 procedure memcpy(source : uint32; dest : uint32; size : uint32);
+procedure __SSE_128_memcpy(source : uint32; dest : uint32);
 
 procedure printmemory(source : uint32; length : uint32; col : uint32; delim : PChar; offset_row : boolean);
 procedure printmemoryWND(source : uint32; length : uint32; col : uint32; delim : PChar; offset_row : boolean; WND : HWND);
@@ -125,6 +126,14 @@ begin
         POPAD
     end;
     div6432:= (r0 SHL 32) OR r4;
+end;
+
+procedure __SSE_128_memcpy(source : uint32; dest : uint32); assembler;
+asm
+    MOV EAX, Source
+    MOV ECX, Dest
+    MOVUPS XMM0, [EAX]
+    MOVUPS [ECX], XMM0
 end;
 
 function switchendian16(b : uint16) : uint16;
