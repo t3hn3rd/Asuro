@@ -31,11 +31,11 @@ We welcome everyone to give building/breaking/fixing/shooting Asuro a go, feel f
 7. Clone this repository.
 8. Run the following command in the root of the repo to build the docker image:
     ```powershell
-    docker-compose build builder
+    docker compose build builder
     ```
 9. Run the following command to compile Asuro:
     ```powershell
-    docker-compose run builder
+    docker compose run builder
     ```
 10. Create a new virtual machine in Virtualbox and mount the `Asuro.iso` generated in step 9 as a boot image.
 11. Add the virtualbox installation directory to your `%PATH%` environment variable, usually:
