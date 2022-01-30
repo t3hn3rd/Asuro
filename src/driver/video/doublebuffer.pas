@@ -55,25 +55,24 @@ end;
 procedure Flush(FrontBuffer : PVideoBuffer; BackBuffer : PVideoBuffer);
 var
     idx : uint32;
-    Back,Front : PuInt64;
+    Back,Front : uint32;
     BufferSize : uint32;
 
 const
-    COPY_WIDTH = 64;
+    //COPY_WIDTH = 64; //Use this for 64bit copies
+    COPY_WIDTH = 128; //Use this for SSE copies
 
 begin
     //tracer.push_trace('doublebuffer.Flush.enter');
     if not(BackBuffer^.Initialized) then exit;
     if ((FrontBuffer^.Width > BackBuffer^.Width) or (FrontBuffer^.Height > BackBuffer^.Height)) then exit;
-    Back:= PUint64(BackBuffer^.Location);
-    Front:= PuInt64(FrontBuffer^.Location);
+    Back:= BackBuffer^.Location;
+    Front:= FrontBuffer^.Location;
     BufferSize:= ( ( BackBuffer^.Width * BackBuffer^.Height * BackBuffer^.BitsPerPixel) div COPY_WIDTH ) - 1;
     for idx:=0 to BufferSize do begin
-        Front[idx]:= Back[idx];
+        //Front[idx]:= Back[idx];
         // -- TODO: Get SSE working here for 128bit copies --
-        // __SSE_128_memcpy(uint32(Front), uint32(Back));
-        // Front:= PUint64(uint32(Front) + 16);
-        // Back:= PUint64(uint32(Back) + 16);     
+        __SSE_128_memcpy(Back + (idx * 16), Front + (idx * 16));  
     end;
     //tracer.push_trace('doublebuffer.Flush.exit');
 end;
