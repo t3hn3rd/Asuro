@@ -126,6 +126,9 @@ var
    HM              : PHashMap;
 
    colour          : TRGB32;
+
+   array1          : Array[0..255] of char;
+   array2          : Array[0..255] of char;
    
 begin
      { Init the base system unit }
@@ -212,6 +215,32 @@ begin
      video.enable('VESA');
      video.enable('BASIC_DOUBLE_BUFFER');
      colour:= color.white;
+
+    //  serial.sendHex(uint32(@array1[8]));
+    //  serial.sendHex(uint32(@array2[8]));
+    //  for i:=8 to 23 do begin
+    //     array2[i]:= '?';
+    //  end;
+    //  array2[24]:= #0;
+
+    //  array1[8]:= 'H';
+    //  array1[9]:= 'e';
+    //  array1[10]:= 'l';
+    //  array1[11]:= 'l';
+    //  array1[12]:= 'o';
+    //  array1[13]:= 'w';
+    //  array1[14]:= 'o';
+    //  array1[15]:= 'r';
+    //  array1[16]:= 'l';
+    //  array1[17]:= 'd';
+    //  array1[18]:= '1';
+    //  array1[19]:= '2';
+    //  array1[20]:= '3';
+    //  array1[21]:= '4';
+    //  array1[22]:= '5';
+    //  array1[23]:= '!';
+    //  __SSE_128_memcpy(uint32(@array1[8]), uint32(@array2[8]));
+    //  serial.sendString(pchar(@array2[8]));
 
      for i:=0 to video.frontBufferWidth-1 do begin
         for z:=0 to video.frontBufferHeight-1 do begin

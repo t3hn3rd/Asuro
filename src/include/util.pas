@@ -131,9 +131,9 @@ end;
 procedure __SSE_128_memcpy(source : uint32; dest : uint32); assembler;
 asm
     MOV EAX, Source
-    MOV ECX, Dest
-    MOVUPS XMM0, [EAX]
-    MOVUPS [ECX], XMM0
+    MOVAPS XMM1, [EAX]
+    MOV EAX, Dest
+    MOVAPS [EAX], XMM1
 end;
 
 function switchendian16(b : uint16) : uint16;
