@@ -16,6 +16,7 @@
 	Include->Strings - String Manipulation.
 	
 	@author(Kieron Morris <kjm@kieronmorris.me>)
+    @author(Aaron Hance <ah@aaronhance.me>)
 }
 unit strings;
 
@@ -33,6 +34,10 @@ function stringCopy(str : pchar) : pchar;
 function stringNew(size : uint32) : pchar;
 function stringSize(str : pchar) : uint32;
 function stringConcat(str1, str2 : pchar) : pchar;
+function stringTrim(str : pchar; length : uint32) : pchar;
+function stringSub(str : pchar; start, size : uint32) : pchar;
+function stringReplace(str, find, replace : pchar) : pchar;
+function stringIndexOf(str, find : pchar) : sint32;
 function stringContains(str : pchar; sub : pchar) : boolean;
 function stringToInt(str : pchar) : uint32;
 function hexStringToInt(str : pchar) : uint32;
@@ -149,6 +154,94 @@ begin
     memcpy(uint32(str1), uint32(result), stringSize(str1));
     memcpy(uint32(str2), uint32(result+stringSize(str1)), stringSize(str2));
     stringConcat:= result;
+end;
+
+// Trim the string to the specified length.
+function stringTrim(str : pchar; length : uInt32) : pchar;
+var
+    result : pchar;
+begin
+    result:= stringNew(length);
+    memcpy(uint32(str), uint32(result), length);
+    stringTrim:= result;
+end;
+
+// Return a substring of the string.
+function stringSub(str : pchar; start, size : uint32) : pchar;
+var
+    result : pchar;
+begin
+    result:= stringNew(size);
+    memcpy(uint32(str)+start, uint32(result), size);
+    stringSub:= result;
+end;
+
+// Replace first instance of a string with another.
+function stringReplace(str, find, replace : pchar) : pchar;
+var
+    result : pchar;
+    i, j, k : uint32;
+    found : boolean;
+begin
+
+    // Find the first instance of the find string.
+    i:= 0;
+    found:= false;
+    while (i < stringSize(str)) and (not found) do begin
+        if stringEquals(str+i, find) then begin
+            found:= true;
+        end else begin
+            inc(i);
+        end;
+    end;
+
+    // If we found the find string, replace it.
+    if found then begin
+        result:= stringNew(stringSize(str) - stringSize(find) + stringSize(replace));
+        j:= 0;
+        k:= 0;
+        while i < stringSize(str) do begin
+            if stringEquals(str+i, find) then begin
+                memcpy(uint32(replace), uint32(result+j), stringSize(replace));
+                j:= j + stringSize(replace);
+                inc(i, stringSize(find));
+            end else begin
+                result[j]:= str[i];
+                inc(j);
+                inc(i);
+            end;
+        end;
+        stringReplace:= result;
+    end else begin
+        stringReplace:= stringCopy(str);
+    end;
+
+    // Return the result.
+    stringReplace:= result;
+
+end;
+
+
+// Find the index of the first instance of a string.
+function stringIndexOf(str, find : pchar) : sint32;
+var 
+    i : uint32;
+    found : boolean;
+begin
+    i:= 0;
+    found:= false;
+    while (i < stringSize(str)) and (not found) do begin
+        if stringEquals(str+i, find) then begin
+            found:= true;
+        end else begin
+            inc(i);
+        end;
+    end;
+    if found then begin
+        stringIndexOf:= i;
+    end else begin
+        stringIndexOf:= -1;
+    end;
 end;
 
 function stringContains(str : pchar; sub : pchar) : boolean;
