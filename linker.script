@@ -2,7 +2,7 @@ ENTRY(loader)
 SECTIONS
 {
   . = 0xC0100000;
-
+  kernel_start = .;
   .text : AT(ADDR(.text) - 0xC0000000)
   {
     text = .; _text = .; __text = .;
@@ -33,4 +33,5 @@ SECTIONS
     . = ALIGN(4096);
   }
   end = .; _end = .; __end = .;
+  kernel_end = .;
 }
