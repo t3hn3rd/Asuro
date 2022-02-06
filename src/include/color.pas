@@ -28,24 +28,28 @@ type
         R : uint8;
         A : uint8;
     end;
+    PRGB32 = ^TRGB32;
 
     TRGB24 = bitpacked record
         B : uint8;
         G : uint8;
         R : uint8;
     end;
+    PRGB23 = ^TRGB24;
 
     TRGB16 = bitpacked record
         B : UBit5;
         G : UBit6;
         R : UBit5;
     end;
+    PRGB16 = ^TRGB16;
 
     TRGB8 = bitpacked record
         B : UBit2;
         G : UBit4;
         R : UBit2;
     end;
+    PRGB8 = ^TRGB8;
 
 const
     black : TRGB32 = (B: 000; G: 000; R: 000; A: 000);
