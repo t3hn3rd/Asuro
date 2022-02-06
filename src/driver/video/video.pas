@@ -22,7 +22,7 @@ unit video;
 interface
 
 uses
-    lmemorymanager, tracer, color, videotypes, hashmap, util;
+    lmemorymanager, tracer, color, videotypes, hashmap, util, texture;
 
 procedure init();
 procedure DrawPixel(X : uint32; Y : uint32; Pixel : TRGB32);
@@ -40,6 +40,8 @@ function frontBufferBpp : uint8;
 function backBufferWidth : uint32;
 function backBufferHeight : uint32;
 function backBufferBpp : uint8;
+
+Procedure basicFDrawTexture(Buffer : PVideoBuffer; X : uint32; Y : uint32; Texture : PTexture);
 
 implementation
 
@@ -67,6 +69,19 @@ begin
     BufferSize:= ( (BackBuffer^.Width * BackBuffer^.Height * BackBuffer^.BitsPerPixel ) div COPY_WIDTH ) - 1;
     for idx:=0 to BufferSize do begin
         Front[idx]:= Back[idx];
+    end;
+end;
+
+Procedure basicFDrawTexture(Buffer : PVideoBuffer; X : uint32; Y : uint32; Texture : PTexture);
+var
+    i, j : uint32;
+
+begin
+    //Draw texture to Buffer at x and y
+    for i:=0 to Texture^.Height - 1 do begin
+        for j:=0 to Texture^.Width - 1 do begin
+            DrawPixel(X + j, Y + i, Texture^.Pixels[(i * Texture^.Width) + j]);
+        end;
     end;
 end;
 
