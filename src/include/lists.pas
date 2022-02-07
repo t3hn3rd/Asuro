@@ -44,6 +44,19 @@ type
         ElementSize : uint32;
     end;
 
+    { Dynamic List }
+
+    PDList = ^TDList;
+    TDList = record
+        Count : uint32;
+        Data : void;
+        ElementSize : uint32;
+        DataSize : uint32;
+
+    end;
+    
+    { Dynamic List Iterator } 
+
 { String Linked List }
 
 procedure  STRLL_Add(LinkedList : PLinkedListBase; str : pchar);
@@ -65,6 +78,17 @@ function  LL_Insert(LinkedList : PLinkedListBase; idx : uint32) : Void;
 function  LL_Get(LinkedList : PLinkedListBase; idx : uint32) : Void;
 procedure LL_Free(LinkedList : PLinkedListBase);
 function  LL_FromString(str : pchar; delimter : char) : PLinkedListBase;
+
+    
+{ Dynamic List }
+
+function  DL_New(ElementSize : uint32) : PDList;
+function  DL_Add(DList : PDList) : Void;
+function  DL_Delete(DList : PDList; idx : uint32) : boolean;
+function  DL_Size(DList : PDList) : uint32;
+function  DL_Set(DList : PDList; idx : uint32; elm : puint32) : boolean;
+function  DL_Get(DList : PDList; idx : uint32) : Void;
+procedure DL_Free(DList : PDList);
 
 implementation
 
@@ -349,6 +373,142 @@ begin
         end;
         inc(head);
     end;
+end;
+
+{ Dynamic List }
+
+function  DL_New(ElementSize : uint32) : PDList;
+var 
+    DL : PDList;
+begin
+
+    DL := PDList(kalloc(sizeof(DL)));
+    DL^.ElementSize:= ElementSize;
+    DL^.count := 0;
+
+    if ElementSize > 128 then begin
+        DL^.data := kalloc(ElementSize * 4);
+        Dl^.DataSize:= ElementSize * 4;
+
+    end else if ElementSize > 64 then begin
+        DL^.data := kalloc(ElementSize * 8);
+        Dl^.DataSize:= ElementSize * 8;
+        
+    end else if ElementSize > 32 then begin
+        DL^.data := kalloc(ElementSize * 16);
+        Dl^.DataSize:= ElementSize * 16;
+
+    end else if ElementSize > 16 then begin
+      DL^.data := kalloc(ElementSize * 32);
+      Dl^.DataSize:= ElementSize * 32;
+
+    end;
+
+    DL_New := DL;
+end;
+
+function  DL_Add(DList : PDList) : Void;
+var 
+    elm : puint32;
+    tempList : puint32;
+begin
+
+    //check if we need to resize
+    if (DList^.count + 2) * DList^.ElementSize > DList^.DataSize then begin
+        tempList := DList^.Data;
+        DList^.Data := kalloc(DList^.DataSize * 2);
+
+        memcpy(uint32(tempList), uint32(DList^.Data), DList^.DataSize);
+
+        DList^.DataSize:= DList^.DataSize * 2;
+
+        kfree(void(tempList));
+    end;
+
+    DList^.count := DList^.count + 1;
+    elm := puint32(@puint8(DList^.Data)[(DList^.count * DList^.ElementSize)]);
+    elm^ := 0;
+
+    DL_Add := elm;
+end;
+
+function  DL_Delete(DList : PDList; idx : uint32) : boolean;
+var 
+    elm : puint32;
+    tempList : puint32;
+begin
+    if idx >= DList^.count then begin
+        DL_Delete := false;
+        exit;
+    end;
+
+    elm := puint32(DList^.Data + (idx * DList^.ElementSize));
+    memcpy(uint32(elm + DList^.ElementSize), uInt32(elm), (DList^.count - idx) * DList^.ElementSize);
+
+    DList^.count := DList^.count - 1;
+
+    if (DList^.count * DList^.ElementSize) < DList^.DataSize DIV 2 then begin
+        tempList := DList^.Data;
+        DList^.DataSize:= DList^.DataSize DIV 2;
+
+        DList^.Data := kalloc(DList^.DataSize);
+        memcpy(uint32(tempList), uint32(DList^.Data), DList^.DataSize);
+
+        kfree(void(tempList));
+    end;
+
+    DL_Delete := true;
+end;
+
+function  DL_Get(DList : PDList; idx : uint32) : Void;
+var 
+    elm : puint32;
+begin
+    if idx >= DList^.count then begin
+        DL_Get := nil;
+        exit;
+    end;
+
+    elm := puint32(DList^.Data + (idx * DList^.ElementSize));
+    DL_Get := elm;
+end;
+
+function DL_Set(DList : PDList; idx : uint32; elm : puint32) : boolean;
+var
+    tempList : PuInt32;
+    size : uint32;
+begin
+    if idx >= DList^.count then begin
+        DL_Set := false;
+        exit;
+    end;
+
+    //check if we need to resize
+    if (idx + 1) * Dlist^.ElementSize > DList^.DataSize then begin
+        size := idx * DList^.ElementSize * 2;
+
+        tempList := DList^.Data;
+        DList^.Data := kalloc(size);
+        memcpy(uint32(tempList), uint32(DList^.Data), DList^.DataSize);
+
+        DList^.DataSize := size;
+
+        kfree(void(tempList));
+    end;
+
+    memcpy(uint32(elm), uint32(DList^.Data + (idx * DList^.ElementSize)), DList^.ElementSize);
+    DL_Set := true;
+end;
+
+function DL_Size(DList : PDList) : uint32;
+begin
+    DL_Size := DList^.count;
+end;
+
+procedure DL_Free(DList : PDList);
+begin
+    kfree(void(DList^.Data));
+    kfree(void(DList));
 end;
 
 end.
