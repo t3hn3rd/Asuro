@@ -125,6 +125,9 @@ var
    HM              : PHashMap;
    
 begin
+     { Init the base system unit }
+     System.init();
+
      { Serial Init }
      serial.init();
 
