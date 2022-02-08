@@ -89,6 +89,13 @@ function  DL_Size(DList : PDList) : uint32;
 function  DL_Set(DList : PDList; idx : uint32; elm : puint32) : boolean;
 function  DL_Get(DList : PDList; idx : uint32) : Void;
 procedure DL_Free(DList : PDList);
+function  DL_IndexOf(DList : PDList; elm : puint32) : uint32;
+function  DL_Contains(DList : PDList; elm : puint32) : boolean;
+function DL_Concat(DList1 : PDList; DList2 : PDList) : PDList;
+
+
+{ Dynamic List Iterator }
+
 
 implementation
 
@@ -401,7 +408,9 @@ begin
     end else if ElementSize > 16 then begin
       DL^.data := kalloc(ElementSize * 32);
       Dl^.DataSize:= ElementSize * 32;
-
+    end else begin
+      DL^.data := kalloc(ElementSize * 64);
+      Dl^.DataSize:= ElementSize * 64;
     end;
 
     DL_New := DL;
@@ -414,10 +423,12 @@ var
 begin
 
     //check if we need to resize
-    if (DList^.count + 2) * DList^.ElementSize > DList^.DataSize then begin
+    if (DList^.count + 1) * DList^.ElementSize > DList^.DataSize then begin
+        push_trace('lists.DL_Add: Resizing');
         tempList := DList^.Data;
         DList^.Data := kalloc(DList^.DataSize * 2);
-
+        
+        memset(uint32(DList^.Data), 0, DList^.DataSize * 2);
         memcpy(uint32(tempList), uint32(DList^.Data), DList^.DataSize);
 
         DList^.DataSize:= DList^.DataSize * 2;
@@ -425,9 +436,15 @@ begin
         kfree(void(tempList));
     end;
 
-    DList^.count := DList^.count + 1;
+    push_trace('lists.DL_Add');
+
+
     elm := puint32(@puint8(DList^.Data)[(DList^.count * DList^.ElementSize)]);
     elm^ := 0;
+
+    push_trace('lists.DL_Add: Adding');
+
+    DList^.count := DList^.count + 1;
 
     DL_Add := elm;
 end;
@@ -442,8 +459,8 @@ begin
         exit;
     end;
 
-    elm := puint32(DList^.Data + (idx * DList^.ElementSize));
-    memcpy(uint32(elm + DList^.ElementSize), uInt32(elm), (DList^.count - idx) * DList^.ElementSize);
+    elm := puint32( puint8(DList^.Data) + (idx * DList^.ElementSize));
+    memcpy(uint32( puint8(elm) + DList^.ElementSize), uInt32(elm), (DList^.count - idx) * DList^.ElementSize);
 
     DList^.count := DList^.count - 1;
 
@@ -485,10 +502,14 @@ begin
 
     //check if we need to resize
     if (idx + 1) * Dlist^.ElementSize > DList^.DataSize then begin
+                console.writestring('resising thisthinghere');
+
         size := idx * DList^.ElementSize * 2;
 
         tempList := DList^.Data;
         DList^.Data := kalloc(size);
+        memset(uint32(DList^.Data), 0, size);
+
         memcpy(uint32(tempList), uint32(DList^.Data), DList^.DataSize);
 
         DList^.DataSize := size;
@@ -496,7 +517,13 @@ begin
         kfree(void(tempList));
     end;
 
-    memcpy(uint32(elm), uint32(DList^.Data + (idx * DList^.ElementSize)), DList^.ElementSize);
+    console.writeString('offset: ');
+    console.writeintln(idx * DList^.ElementSize);
+    memcpy(uint32(elm), uint32( PuInt8(DList^.Data) + (idx * DList^.ElementSize)), DList^.ElementSize);
+
+    //check if count is smaller than idx and if so, increase count
+    if DList^.count < idx then DList^.count := idx;
+
     DL_Set := true;
 end;
 
@@ -509,6 +536,73 @@ procedure DL_Free(DList : PDList);
 begin
     kfree(void(DList^.Data));
     kfree(void(DList));
+end;
+
+function DL_IndexOf(DList : PDList; elm : puint32) : uint32;
+var 
+    i : uint32;
+    temp : puint32;
+begin
+    for i := 0 to DList^.count - 1 do begin
+        temp := puint32( puint8(DList^.Data) + (i * DList^.ElementSize));
+        if temp = elm then begin
+            DL_IndexOf := i;
+            exit;
+        end;
+    end;
+
+    DL_IndexOf := -1;
+end;
+
+function DL_Contains(DList : PDList; elm : puint32) : boolean;
+var 
+    i : uint32;
+begin
+    i := DL_IndexOf(DList, elm);
+
+    if i = -1 then begin
+        DL_Contains := false;
+        exit;
+    end;
+
+    DL_Contains := true;
+end;
+
+function DL_Concat(DList1 : PDList; DList2 : PDList) : PDList;
+var 
+    i : uint32;
+    temp : puint32;
+begin
+
+    //check element size
+    if DList1^.ElementSize <> DList2^.ElementSize then begin
+        DL_Concat := nil;
+        exit;
+    end;
+
+    //check if we need to resize
+    while true do begin
+          if (DList1^.count + DList2^.count) * DList1^.ElementSize > DList1^.DataSize then begin
+
+            temp := DList1^.Data;
+            DList1^.Data := kalloc(DList1^.DataSize * 2);
+            
+            memset(uint32(DList1^.Data), 0, DList1^.DataSize * 2);
+            memcpy(uint32(temp), uint32(DList1^.Data), DList1^.DataSize);
+
+            DList1^.DataSize:= DList1^.DataSize * 2;
+
+            kfree(void(temp));
+        end else Break;
+    end;
+
+
+    for i := 0 to DList2^.count - 1 do begin
+        temp := DL_Add(DList1);
+        memcpy(uint32(DL_Get(DList2, i)), uint32(temp), DList1^.ElementSize);
+    end;
+
+    DL_Concat := DList1;
 end;
 
 end.
