@@ -143,6 +143,22 @@ type
 
     PText = ^Text;
 
+var
+  AK_START : uint32; external name 'kernel_start';
+  AK_END   : uint32; external name 'kernel_end';
+  ASURO_KERNEL_START : uint32;
+  ASURO_KERNEL_END   : uint32;
+  ASURO_KERNEL_SIZE  : uint32;
+
+procedure init();
+
 implementation
+
+procedure init();
+begin
+    ASURO_KERNEL_START := uint32(@AK_START);
+    ASURO_KERNEL_END := uint32(@AK_END);
+    ASURO_KERNEL_SIZE:= ASURO_KERNEL_END - ASURO_KERNEL_START;
+end;
 
 end.
