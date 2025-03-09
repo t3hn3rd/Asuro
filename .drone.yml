@@ -29,9 +29,9 @@ steps:
     image: alpine/git
     depends_on:
       - compile
-    # when:
-    #   branch:
-    #     - master
+    when:
+      branch:
+        - master
     environment:
       GITEA_TOKEN:
         from_secret: gitea_token
