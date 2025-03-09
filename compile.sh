@@ -21,18 +21,20 @@ runOrFail() {
 }
 
 declare -a run_steps=(
-	'compile_stub.sh "Failed to compile stub!"'
-	'compile_vergen.sh "Versions failed to compile"'
-	'compile_sources.sh "Failed to compile FPC Sources!"'
-	'compile_link.sh "Failed linking!"'
-	'compile_isogen.sh "Failed to create ISO!"'
+	"compile_stub.sh" "Failed to compile stub!"
+	"compile_vergen.sh" "Versions failed to compile"
+	"compile_sources.sh" "Failed to compile FPC Sources!"
+	"compile_link.sh" "Failed linking!"
+	"compile_isogen.sh" "Failed to create ISO!"
 )
 
-for command in "${run_steps[@]}"
+for ((i=0; i<${#run_steps[@]}; i+=2))
 do
 	if [ "$ERRCOUNT" -eq "0" ]
 	then
-		runOrFail $(pwd)/$command
+			script=$(pwd)/"${run_steps[$i]}"
+			message="${run_steps[$i+1]}"
+			runOrFail "$script" "$message"
 	fi
 done
 
