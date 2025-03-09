@@ -46,16 +46,16 @@ steps:
       # Upload commit-specific ISO
       - |
         echo "Uploading ${ISO_NAME} to Gitea Packages..."
-        curl -X POST "https://gitea.spexeah.com/api/packages/Spexeah/generic/asuro-iso/${BUILD_VERSION}" \
+        curl -X PUT "https://gitea.spexeah.com/api/packages/Spexeah/generic/asuro-iso/${BUILD_VERSION}/Asuro.iso" \
           -H "Authorization: token $GITEA_TOKEN" \
-          -F "file=@$ISO_NAME"
+          --upload-file $ISO_NAME
 
       # Update the "latest" alias (delete old latest, re-upload)
       - |
         echo "Updating latest ISO reference..."
-        curl -X DELETE "https://gitea.example.com/api/packages/Spexeah/generic/asuro-iso/latest" \
+        curl -X DELETE "https://gitea.spexeah.com/api/packages/Spexeah/generic/asuro-iso/latest/Asuro.iso" \
           -H "Authorization: token $GITEA_TOKEN" || echo "No previous latest version found."
           
-        curl -X POST "https://gitea.example.com/api/packages/Spexeah/generic/asuro-iso/latest" \
+        curl -X POST "https://gitea.spexeah.com/api/packages/Spexeah/generic/asuro-iso/latest/Asuro.iso" \
           -H "Authorization: token $GITEA_TOKEN" \
-          -F "file=@$ISO_NAME"
+          --upload-file $ISO_NAME
