@@ -1,0 +1,52 @@
+kind: pipeline
+type: docker
+name: build
+
+steps:
+  - name: build-image
+    image: plugins/docker
+    settings:
+      repo: t3hn3rd/asuro-build
+      tags: latest
+      dockerfile: Dockerfile
+      registry: docker.io
+      username:
+        from_secret: docker_username
+      password:
+        from_secret: docker_password
+
+  - name: compile
+    image: t3hn3rd/asuro-build:latest
+    depends_on:
+      - build-image
+    commands:
+      - git fetch --tags
+      - find . -type f -print0 | xargs -0 dos2unix
+      - chmod +x /drone/src/*.sh
+      - /drone/src/compile.sh
+
+  - name: upload-iso-artifact
+    image: alpine/git
+    depends_on:
+      - compile
+    when:
+      branch:
+        - master
+    environment:
+      GITEA_TOKEN:
+        from_secret: gitea_token
+    commands:
+      - apk add --no-cache curl
+      - chmod +w Asuro.iso
+      - cp Asuro.iso "Asuro-$(git rev-parse --short HEAD).iso"
+      - echo "Uploading Asuro-$(git rev-parse --short HEAD).iso to Gitea Packages..."
+      - |
+         curl -X PUT "https://gitea.spexeah.com/api/packages/Spexeah/generic/asuro-iso/$(git rev-parse --short HEAD)/Asuro.iso" \
+         -H "Authorization: token $GITEA_TOKEN" --upload-file "Asuro-$(git rev-parse --short HEAD).iso"
+      - echo "Updating latest ISO reference..."
+      - |
+        curl -X DELETE https://gitea.spexeah.com/api/packages/Spexeah/generic/asuro-iso/latest/Asuro.iso \
+        -H "Authorization: token $GITEA_TOKEN" || echo "No previous latest version found."
+      - |
+        curl -X PUT https://gitea.spexeah.com/api/packages/Spexeah/generic/asuro-iso/latest/Asuro.iso \
+        -H "Authorization: token $GITEA_TOKEN" --upload-file "Asuro-$(git rev-parse --short HEAD).iso"

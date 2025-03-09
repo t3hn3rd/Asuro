@@ -16,7 +16,7 @@ RUN curl -sL https://sourceforge.net/projects/freepascal/files/Linux/$FPC_VERSIO
 
 COPY compile.sh /compile.sh
 ADD https://raw.githubusercontent.com/fsaintjacques/semver-tool/master/src/semver /usr/bin/semver
-RUN mkdir /code && chmod +x /usr/bin/semver
+RUN chmod +x /usr/bin/semver
 WORKDIR /code
 RUN find . -type f -print0 | xargs -0 dos2unix
 ENTRYPOINT ["/bin/bash", "-c"]
