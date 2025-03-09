@@ -5,3 +5,4 @@ echo " "
 echo "Compiling Stub..."
 echo " "
 nasm -f elf src/stub/stub.asm -o lib/stub.o
+exit 1
