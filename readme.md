@@ -50,23 +50,26 @@ We welcome everyone to give building/breaking/fixing/shooting Asuro a go, feel f
     ```xml
     <Machine uuid="{7d395c96-891c-4139-b77d-9b6b144b0b93}" name="Asuro" OSType="Linux" snapshotFolder="Snapshots" lastStateChange="2021-06-20T20:33:07Z">
     ```
-    Copy the uuid, in our case `7d395c96-891c-4139-b77d-9b6b144b0b93` and replace the uuid found in `.vscode\launch.json` under `args`, so that it looks something like this:
+    Copy the uuid, in our case `7d395c96-891c-4139-b77d-9b6b144b0b93` & create a `localenv.json` file in the project root with the following content:
     ```json
     {
-        "configurations": [
-            {
-                "name":"Run",
-                "request": "launch",
-                "type": "PowerShell",
-                "preLaunchTask": "Build",
-                "script": "${workspaceFolder}/virtualbox-wrapper.ps1",
-                "args": ["-MachineName", "7d395c96-891c-4139-b77d-9b6b144b0b93"],
-                "cwd": "${workspaceFolder}",
-            }
-        ]
+        "VirtualBox":{
+            "MachineName":"<YOUR_UUID_OR_MACHINE_NAME>"
+        }
     }
     ```
     This will allow VSCode to automatically launch VirtualBox once Asuro has been compiled.
+    
+    You can also enable the serial adapter "COM1" in mode "Raw File", give it a path, and provide this path in the `localenv.json` as follows:
+    ```json
+    {
+        "VirtualBox" : {
+            "MachineName": "<YOUR_UUID_OR_MACHINE_NAME>",
+            "LogLocation": "Fully\\Qualified\\Path\\To\\Your\\Log\\File"
+        }
+    }
+    ```
+    This will allow you to see the console output from Asuro in your host terminal.
 13. Open your project folder in VSCode, use CTRL+SHIFT+B to build & F5 to build + run in VBox.
 14. Congratulations! You can now play with Asuro!
 
