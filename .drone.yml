@@ -17,9 +17,11 @@ steps:
 
   - name: compile
     image: t3hn3rd/asuro-build:latest
+    volumes:
+      - name: /code
+        path: /drone/src
     depends_on:
       - build-image
     commands:
-      - cp -r /drone/src/* /code/
+      - find . -type f -print0 | xargs -0 dos2unix
       - chmod +x /code/*.sh
-      - /compile.sh
