@@ -20,6 +20,6 @@ steps:
     depends_on:
       - build-image
     commands:
-      - ln -s /drone/src /code
       - find . -type f -print0 | xargs -0 dos2unix
-      - chmod +x /code/*.sh
+      - chmod +x /drone/src/*.sh
+      - /drone/src/compile.sh
