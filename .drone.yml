@@ -42,13 +42,11 @@ steps:
       - echo "Uploading Asuro-$(git rev-parse --short HEAD).iso to Gitea Packages..."
       - |
          curl -X PUT "https://gitea.spexeah.com/api/packages/Spexeah/generic/asuro-iso/$(git rev-parse --short HEAD)/Asuro.iso" \
-         -H 'Authorization: token $GITEA_TOKEN' \
-         --upload-file "Asuro-$(git rev-parse --short HEAD).iso"
+         -H "Authorization: token $GITEA_TOKEN" --upload-file "Asuro-$(git rev-parse --short HEAD).iso"
       - echo "Updating latest ISO reference..."
       - |
-        curl -X DELETE https://gitea.spexeah.com/api/packages/Spexeah/generic/asuro-iso/latest/Asuro.iso 
+        curl -X DELETE https://gitea.spexeah.com/api/packages/Spexeah/generic/asuro-iso/latest/Asuro.iso \
         -H "Authorization: token $GITEA_TOKEN" || echo "No previous latest version found."
       - |
         curl -X PUT https://gitea.spexeah.com/api/packages/Spexeah/generic/asuro-iso/latest/Asuro.iso \
-        -H "Authorization: token $GITEA_TOKEN" \
-        --upload-file "Asuro-$(git rev-parse --short HEAD).iso"
+        -H "Authorization: token $GITEA_TOKEN" --upload-file "Asuro-$(git rev-parse --short HEAD).iso"
