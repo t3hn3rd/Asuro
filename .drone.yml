@@ -38,7 +38,7 @@ steps:
     commands:
       - export BUILD_VERSION=$(git rev-parse --short HEAD)
       - export ISO_NAME="Asuro-${BUILD_VERSION}.iso"
-      - mv Asuro.iso "$ISO_NAME"
+      - cp Asuro.iso "$ISO_NAME"
       
       # Upload commit-specific ISO
       - |
