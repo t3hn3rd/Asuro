@@ -24,3 +24,35 @@ steps:
       - find . -type f -print0 | xargs -0 dos2unix
       - chmod +x /drone/src/*.sh
       - /drone/src/compile.sh
+
+  - name: upload-iso-artifact
+    image: curlimages/curl:latest
+    depends_on:
+      - compile
+    # when:
+    #   branch:
+    #     - master
+    environment:
+      GITEA_TOKEN:
+        from_secret: gitea_token
+    commands:
+      - export BUILD_VERSION=$(git rev-parse --short HEAD)
+      - export ISO_NAME="Asuro-${BUILD_VERSION}.iso"
+      - mv Asuro.iso "$ISO_NAME"
+      
+      # Upload commit-specific ISO
+      - |
+        echo "Uploading ${ISO_NAME} to Gitea Packages..."
+        curl -X POST "https://gitea.spexeah.com/api/packages/Spexeah/generic/asuro-iso/${BUILD_VERSION}" \
+          -H "Authorization: token $GITEA_TOKEN" \
+          -F "file=@$ISO_NAME"
+
+      # Update the "latest" alias (delete old latest, re-upload)
+      - |
+        echo "Updating latest ISO reference..."
+        curl -X DELETE "https://gitea.example.com/api/packages/Spexeah/generic/asuro-iso/latest" \
+          -H "Authorization: token $GITEA_TOKEN" || echo "No previous latest version found."
+          
+        curl -X POST "https://gitea.example.com/api/packages/Spexeah/generic/asuro-iso/latest" \
+          -H "Authorization: token $GITEA_TOKEN" \
+          -F "file=@$ISO_NAME"
