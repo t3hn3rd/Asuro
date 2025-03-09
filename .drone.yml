@@ -38,20 +38,17 @@ steps:
     commands:
       - apk add --no-cache curl
       - chmod +w Asuro.iso
-      - git rev-parse --short HEAD > commit_hash.txt
-      - COMMIT_HASH=$(cat commit_hash.txt) && cp Asuro.iso "Asuro-${COMMIT_HASH}.iso"
-      - COMMIT_HASH=$(cat commit_hash.txt) && echo "Uploading Asuro-${COMMIT_HASH}.iso to Gitea Packages..."
+      - cp Asuro.iso "Asuro-$(git rev-parse --short HEAD).iso"
+      - echo "Uploading Asuro-$(git rev-parse --short HEAD).iso to Gitea Packages..."
       - |
-         COMMIT_HASH=$(cat commit_hash.txt) && \
-         curl -X PUT "https://gitea.spexeah.com/api/packages/Spexeah/generic/asuro-iso/${COMMIT_HASH}/Asuro.iso" \
+         curl -X PUT "https://gitea.spexeah.com/api/packages/Spexeah/generic/asuro-iso/$(git rev-parse --short HEAD)/Asuro.iso" \
          -H 'Authorization: token $GITEA_TOKEN' \
-         --upload-file "Asuro-${COMMIT_HASH}.iso"
+         --upload-file "Asuro-$(git rev-parse --short HEAD).iso"
       - echo "Updating latest ISO reference..."
       - |
         curl -X DELETE https://gitea.spexeah.com/api/packages/Spexeah/generic/asuro-iso/latest/Asuro.iso 
         -H "Authorization: token $GITEA_TOKEN" || echo "No previous latest version found."
       - |
-        COMMIT_HASH=$(cat commit_hash.txt) && \
         curl -X PUT https://gitea.spexeah.com/api/packages/Spexeah/generic/asuro-iso/latest/Asuro.iso \
         -H "Authorization: token $GITEA_TOKEN" \
-        --upload-file "Asuro-${COMMIT_HASH}.iso"
+        --upload-file "Asuro-$(git rev-parse --short HEAD).iso"
