@@ -14,8 +14,6 @@ file="version"
 	wget -q https://raw.githubusercontent.com/fsaintjacques/semver-tool/master/src/semver -O bin/semver && chmod +x bin/semver
 	export PATH="$(pwd)/bin:$PATH"
 }
-pwd
-ls
 tagref=$(git describe --tags)
 revision=$(git rev-parse --short=8 HEAD)
 major=$(semver get major $tagref)
