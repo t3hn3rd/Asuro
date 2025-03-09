@@ -20,4 +20,6 @@ steps:
     depends_on:
       - build-image
     commands:
+      - cp -r /drone/src/* /code/
+      - chmod +x /code/*.sh
       - /compile.sh
