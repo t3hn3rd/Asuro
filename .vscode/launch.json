@@ -6,7 +6,7 @@
             "type": "PowerShell",
             "preLaunchTask": "Build",
             "script": "${workspaceFolder}/virtualbox-wrapper.ps1",
-            "args": ["-MachineName", "7d395c96-891c-4139-b77d-9b6b144b0b93"],
+            "args": ["-Command", "up"],
             "cwd": "${workspaceFolder}",
         }
     ]

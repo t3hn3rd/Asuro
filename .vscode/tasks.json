@@ -9,14 +9,18 @@
             "command": "docker-compose",
             "args": [
                 "run",
-                "builder"
+                "builder",
             ],
             "type": "shell",
             "problemMatcher": [],
             "group": {
                 "kind": "build",
                 "isDefault": true
-            }
+            },
+            "dependsOn": [
+                "Close VirtualBox",
+                "Clean"
+            ]
         },
         {
             "label": "Build (Builder)",
@@ -24,6 +28,24 @@
             "args": [
                 "build",
                 "builder"
+            ],
+            "type": "shell"
+        },
+        {
+            "label": "Clean",
+            "command": "docker-compose",
+            "args": [
+                "down",
+                "--remove-orphans"
+            ],
+            "type": "shell"
+        },
+        {
+            "label": "Close VirtualBox",
+            "command": "./virtualbox-wrapper.ps1",
+            "args": [
+                "-Command", 
+                "down"
             ],
             "type": "shell"
         }
