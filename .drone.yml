@@ -41,7 +41,17 @@ steps:
       - git rev-parse --short HEAD > commit_hash.txt
       - COMMIT_HASH=$(cat commit_hash.txt) && cp Asuro.iso "Asuro-${COMMIT_HASH}.iso"
       - COMMIT_HASH=$(cat commit_hash.txt) && echo "Uploading Asuro-${COMMIT_HASH}.iso to Gitea Packages..."
-      - COMMIT_HASH=$(cat commit_hash.txt) && curl -X PUT "https://gitea.spexeah.com/api/packages/Spexeah/generic/asuro-iso/${COMMIT_HASH}/Asuro.iso" -H "Authorization: token $GITEA_TOKEN" --upload-file "Asuro-${COMMIT_HASH}.iso"
+      - |
+         COMMIT_HASH=$(cat commit_hash.txt) && \
+         curl -X PUT "https://gitea.spexeah.com/api/packages/Spexeah/generic/asuro-iso/${COMMIT_HASH}/Asuro.iso" \
+         -H 'Authorization: token $GITEA_TOKEN' \
+         --upload-file "Asuro-${COMMIT_HASH}.iso"
       - echo "Updating latest ISO reference..."
-      - curl -X DELETE https://gitea.spexeah.com/api/packages/Spexeah/generic/asuro-iso/latest/Asuro.iso -H "Authorization: token $GITEA_TOKEN" || echo "No previous latest version found."
-      - COMMIT_HASH=$(cat commit_hash.txt) && curl -X PUT https://gitea.spexeah.com/api/packages/Spexeah/generic/asuro-iso/latest/Asuro.iso -H "Authorization: token $GITEA_TOKEN" --upload-file "Asuro-${COMMIT_HASH}.iso"
+      - |
+        curl -X DELETE https://gitea.spexeah.com/api/packages/Spexeah/generic/asuro-iso/latest/Asuro.iso 
+        -H "Authorization: token $GITEA_TOKEN" || echo "No previous latest version found."
+      - |
+        COMMIT_HASH=$(cat commit_hash.txt) && \
+        curl -X PUT https://gitea.spexeah.com/api/packages/Spexeah/generic/asuro-iso/latest/Asuro.iso \
+        -H "Authorization: token $GITEA_TOKEN" \
+        --upload-file "Asuro-${COMMIT_HASH}.iso"
