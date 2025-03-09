@@ -10,5 +10,4 @@
 /*.sh~
 /*.img
 src/include/asuro.pas
-.vscode/launch.json
-.vscode
+localenv.json

@@ -3,18 +3,11 @@
         {
             "name":"Run",
             "request": "launch",
-            "type": "coreclr",
+            "type": "PowerShell",
             "preLaunchTask": "Build",
-            "program": "VBoxSDL",
-            "args": [
-                "--comment", 
-                "Asuro", 
-                "--startvm", 
-                "7d395c96-891c-4139-b77d-9b6b144b0b93"
-            ],
+            "script": "${workspaceFolder}/virtualbox-wrapper.ps1",
+            "args": ["-Command", "up"],
             "cwd": "${workspaceFolder}",
-            "console": "internalConsole",
-            "internalConsoleOptions": "neverOpen"
         }
     ]
 }

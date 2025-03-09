@@ -13,8 +13,8 @@ We welcome everyone to give building/breaking/fixing/shooting Asuro a go, feel f
     I don't think this needs an explaination.
 * [VSCode (Optional, but highly recommended)](https://code.visualstudio.com/)
     Visual Studio code is our IDE of choice, and we have a number of recommended plugins.
-    * [C# Plugin by Microsoft](https://marketplace.visualstudio.com/items?itemName=ms-dotnettools.csharp)
-        This plugin gives you the ability to use the 'coreclr' task type, allowing the automatic launching of virtualbox with the resulting image generated during compilation of Asuro.
+    * [PowerShell Plugin by Microsoft](https://marketplace.visualstudio.com/items?itemName=ms-vscode.powershell)
+        This plugin gives you the ability to use the 'PowerShell' task type, allowing the automatic launching of virtualbox with the resulting image generated during compilation of Asuro.
 * [VirtualBox](https://www.virtualbox.org/)
     Virtualbox is our Virtualisation environment of choice, don't ask why, it just is.
 
@@ -27,7 +27,7 @@ We welcome everyone to give building/breaking/fixing/shooting Asuro a go, feel f
 3. Install Docker for Windows.
 4. Install Git for Windows.
 5. Install VSCode & the listed plugins.
-6. Install VirtualBox.
+6. Install VirtualBox (v7+).
 7. Clone this repository.
 8. Run the following command in the root of the repo to build the docker image:
     ```powershell
@@ -50,32 +50,29 @@ We welcome everyone to give building/breaking/fixing/shooting Asuro a go, feel f
     ```xml
     <Machine uuid="{7d395c96-891c-4139-b77d-9b6b144b0b93}" name="Asuro" OSType="Linux" snapshotFolder="Snapshots" lastStateChange="2021-06-20T20:33:07Z">
     ```
-    Copy the uuid, in our case `7d395c96-891c-4139-b77d-9b6b144b0b93` and replace the uuid found in `.vscode\launch.json` under `args`, so that it looks something like this:
+    Copy the uuid, in our case `7d395c96-891c-4139-b77d-9b6b144b0b93` & create a `localenv.json` file in the project root with the following content:
     ```json
     {
-        "configurations": [
-            {
-                "name":"Run",
-                "request": "launch",
-                "type": "coreclr",
-                "preLaunchTask": "Build",
-                "program": "VBoxSDL",
-                "args": [
-                    "--comment", 
-                    "Asuro", 
-                    "--startvm", 
-                    "<YOUR UUID HERE>"
-                ],
-                "cwd": "${workspaceFolder}",
-                "console": "internalConsole",
-                "internalConsoleOptions": "neverOpen"
-            }
-        ]
+        "VirtualBox":{
+            "MachineName":"<YOUR_UUID_OR_MACHINE_NAME>"
+        }
     }
     ```
     This will allow VSCode to automatically launch VirtualBox once Asuro has been compiled.
+    
+    You can also enable the serial adapter "COM1" in mode "Raw File", give it a path, and provide this path in the `localenv.json` as follows:
+    ```json
+    {
+        "VirtualBox" : {
+            "MachineName": "<YOUR_UUID_OR_MACHINE_NAME>",
+            "LogLocation": "Fully\\Qualified\\Path\\To\\Your\\Log\\File"
+        }
+    }
+    ```
+    This will allow you to see the console output from Asuro in your host terminal.
 13. Open your project folder in VSCode, use CTRL+SHIFT+B to build & F5 to build + run in VBox.
 14. Congratulations! You can now play with Asuro!
 
-### Gotchas
+### Notes & Gotchas
+- The above process has been updated to be compatible with VirtualBox 7+, in which VBoxSDL was removed and vboxmanage should be used in its place. A small wrapper powershell script is used to achieve this.
 - It was noted that Windows builds above `20H2` seem to have issues installing WSL2. We may have to wait for a patch from Microsoft to fix this. Our devs are currently using build `20H2`.
