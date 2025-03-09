@@ -9,7 +9,7 @@ steps:
       repo: t3hn3rd/asuro-build
       tags: latest
       dockerfile: Dockerfile
-      registry: t3hn3rd
+      registry: docker.io
       username:
         from_secret: docker_username
       password:
