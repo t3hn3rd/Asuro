@@ -24,7 +24,7 @@ steps:
       - find . -type f -print0 | xargs -0 dos2unix
       - chmod +x /drone/src/*.sh
       - /drone/src/compile.sh
-
+      
   - name: upload-iso-artifact
     image: alpine/git
     depends_on:
@@ -50,3 +50,25 @@ steps:
       - |
         curl -X PUT https://gitea.spexeah.com/api/packages/Spexeah/generic/asuro-iso/latest/Asuro.iso \
         -H "Authorization: token $GITEA_TOKEN" --upload-file "Asuro-$(git rev-parse --short HEAD).iso"
+
+  - name: msg status
+    image: appleboy/drone-discord
+    when:
+      status: [success, failure, changed]
+    settings:
+      webhook_id:
+        from_secret: discord_webhook_id
+      webhook_token:
+        from_secret: discord_webhook_secret
+      message: >
+        **Drone CI - Asuro Build**
+        {{#success build.status}}
+        ✅ Build successful!
+        {{else}}
+        ❌ Build failed!
+        {{/success}}
+        Repository: `[{{repo.namespace}}/{{repo.name}}]`
+        Branch: {{build.branch}}
+        Commit: {{build.commit}}
+        Author: `[{{commit.author}} / {{commit.email}}]`
+        Message: {{commit.message}}
