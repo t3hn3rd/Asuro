@@ -53,6 +53,8 @@ steps:
 
   - name: msg status
     image: appleboy/drone-discord
+    depends_on:
+      - compile
     when:
       status: [success, failure, changed]
     settings:
@@ -61,14 +63,17 @@ steps:
       webhook_token:
         from_secret: discord_webhook_secret
       message: >
-        **Drone CI - Asuro Build**
+        **Drone CI - Asuro Build**\n
         {{#success build.status}}
-        ✅ Build successful!
+        ✅ Build successful!\n
         {{else}}
-        ❌ Build failed!
+        ❌ Build failed!\n
         {{/success}}
-        Repository: `[{{repo.namespace}}/{{repo.name}}]`
-        Branch: {{build.branch}}
-        Commit: {{build.commit}}
-        Author: `[{{commit.author}} / {{commit.email}}]`
-        Message: {{commit.message}}
+        Repository: `{{repo.namespace}}/{{repo.name}}`\n
+        Branch: `{{commit.branch}}`\n
+        Commit: `{{commit.sha}} ({{commit.link}})`\n
+        Author: `{{commit.author}} <{{commit.email}}>`\n
+        Message: 
+        ```\n
+        {{commit.message}}\n
+        ```
