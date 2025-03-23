@@ -62,18 +62,4 @@ steps:
         from_secret: discord_webhook_id
       webhook_token:
         from_secret: discord_webhook_secret
-      message: >
-        **Drone CI - Asuro Build**\n
-        {{#success build.status}}
-        ✅ Build successful!\n
-        {{else}}
-        ❌ Build failed!\n
-        {{/success}}
-        Repository: `{{repo.namespace}}/{{repo.name}}`\n
-        Branch: `{{commit.branch}}`\n
-        Commit: `{{commit.sha}} ({{commit.link}})`\n
-        Author: `{{commit.author}} <{{commit.email}}>`\n
-        Message: 
-        ```\n
-        {{commit.message}}\n
-        ```
+      message: "**Drone CI - Asuro Build**\n{{#success build.status}}✅ Build successful!\n{{else}}❌ Build failed!\n{{/success}}Repository: `{{repo.namespace}}/{{repo.name}}`\nBranch: `{{commit.branch}}`\nCommit: `{{commit.sha}} ({{commit.link}})`\nAuthor: `{{commit.author}} <{{commit.email}}>`\nMessage: ```\n{{commit.message}}\n```"
