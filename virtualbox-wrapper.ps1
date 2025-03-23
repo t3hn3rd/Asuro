@@ -52,6 +52,7 @@ if ($Command -eq 'up') {
     }
     Receive-Job $MonitorJob
   }
+  Get-Job | Stop-Job | Remove-Job -Force
 } elseif ($Command -eq 'down') {
   Write-Output "Stopping $MachineName"
   VBoxManage.exe controlvm $MachineName poweroff
