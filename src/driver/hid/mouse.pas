@@ -49,8 +49,12 @@ type
         y : sint32;
     end;
 
+    { Mouse hook callback: receives absolute position and button states }
+    TMouseHook = procedure(x, y: sint32; lmb, rmb, mmb: boolean);
+
 procedure init();
 procedure DrawCursor;
+procedure setHook(h: TMouseHook);
 
 implementation
 
@@ -67,6 +71,7 @@ var
     LMouseDownPos : TMousePos;
     LMouseDown : Boolean;
     RMouseDown : Boolean;
+    MouseHookCB : TMouseHook = nil;
 
 procedure DrawCursor;
 var
@@ -174,43 +179,38 @@ begin
                 if Current.y > (Console.getConsoleProperties^.Height-8) then Current.y:= (Console.getConsoleProperties^.Height-8);
             end;
             Cycle:= 0;
-            if Packet.LMB_Down then begin
-                if not LMouseDown then begin
-                    LMouseDown:= true;
-                    LMouseDownPos.x:= Current.x;
-                    LMouseDownPos.y:= Current.y;
-                    //MouseDownEvent
-                    console._mouseDown();
-                end;
+            { Track button transitions }
+            if Packet.LMB_Down and (not LMouseDown) then begin
+                LMouseDown:= true;
+                LMouseDownPos.x:= Current.x;
+                LMouseDownPos.y:= Current.y;
             end;
-            if not Packet.LMB_Down then begin
-                if LMouseDown then begin
-                    If (Current.x = LMouseDownPos.x) and (Current.y = LMouseDownPos.y) then begin
-                        Console._MouseClick(true);
-                    end;
-                    //MouseUpEvent
-                    Console._MouseUp();
-                    LMouseDown:= false;
-                end;
+            if (not Packet.LMB_Down) and LMouseDown then
+                LMouseDown:= false;
+            if Packet.RMB_Down and (not RMouseDown) then begin
+                RMouseDown:= true;
+                RMouseDownPos.x:= Current.x;
+                RMouseDownPos.y:= Current.y;
             end;
-            if Packet.RMB_Down then begin
-                if not RMouseDown then begin
-                    RMouseDown:= true;
-                    RMouseDownPos.x:= Current.x;
-                    RMouseDownPos.y:= Current.y;
-                end;
-            end;
-            
-            if not Packet.RMB_Down then begin
-                if RMouseDown then begin
-                    if (Current.x = RMouseDownPos.x) and (Current.y = RMouseDownPos.y) then begin
-                        Console._MouseClick(false);
-                    end;
-                end;
+            if (not Packet.RMB_Down) and RMouseDown then
                 RMouseDown:= false;
+
+            { Dispatch to hook or console }
+            if MouseHookCB <> nil then
+                MouseHookCB(Current.x, Current.y, Packet.LMB_Down, Packet.RMB_Down, Packet.MMB_Down)
+            else begin
+                if Packet.LMB_Down and (not LMouseDown) then console._mouseDown();
+                if (not Packet.LMB_Down) and LMouseDown then begin
+                    if (Current.x = LMouseDownPos.x) and (Current.y = LMouseDownPos.y) then
+                        Console._MouseClick(true);
+                    Console._MouseUp();
+                end;
+                if (not Packet.RMB_Down) and RMouseDown then begin
+                    if (Current.x = RMouseDownPos.x) and (Current.y = RMouseDownPos.y) then
+                        Console._MouseClick(false);
+                end;
+                console.setMousePosition(Current.x, Current.y);
             end;
-            
-            console.setMousePosition(Current.x, Current.y);
         end;
     end;
 end;
@@ -240,6 +240,11 @@ begin
     console.writehexln(uint32(@current));
     load:= true;
     pop_trace;
+end;
+
+procedure setHook(h: TMouseHook);
+begin
+    MouseHookCB := h;
 end;
 
 procedure init();

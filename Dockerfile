@@ -5,8 +5,11 @@ VOLUME ["/code"]
 ENV DEBIAN_FRONTEND=noninteractive
 RUN dpkg --add-architecture i386
 RUN apt-get update && apt-get install -y \
-	curl dos2unix wget git make nasm binutils:i386 xorriso grub-pc-bin && \
+	curl dos2unix wget git make nasm binutils xorriso grub-pc-bin \
+	gcc-multilib g++-multilib && \
 	apt-get clean my room
+
+RUN git clone --depth=1 --recurse-submodules https://github.com/cimgui/cimgui.git /cimgui
 
 SHELL ["/bin/bash", "-c"]
 ARG FPC_VERSION=2.6.4

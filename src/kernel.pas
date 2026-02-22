@@ -27,6 +27,7 @@ uses
      util,
      gdt, idt, isr, irq, tss,
      TMR_0_ISR,
+     PS2_KEYBOARD_ISR,
      console,
      keyboard, mouse,
      vmemorymanager, pmemorymanager, lmemorymanager,
@@ -55,7 +56,8 @@ uses
      rand,
      terminal,
      hashmap, vfs, 
-     video, vesa, doublebuffer, color;
+     video, vesa, doublebuffer, color,
+     imgui, imguitypes;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
@@ -106,6 +108,27 @@ begin
     end;
 end;
 
+var
+    tick_count : uint32 = 0;
+
+procedure tick_handler(data : void);
+begin
+    Inc(tick_count);
+end;
+
+procedure imgui_scancode_hook(scan_code : void);
+begin
+    imgui_handle_scancode(uint32(scan_code));
+end;
+
+procedure imgui_mouse_hook(x, y: sint32; lmb, rmb, mmb: boolean);
+begin
+    imgui_feed_mouse_pos(Single(x), Single(y));
+    imgui_feed_mouse_button(0, lmb);
+    imgui_feed_mouse_button(1, rmb);
+    imgui_feed_mouse_button(2, mmb);
+end;
+
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall; [public, alias: 'kmain'];   
 var
    c               : uint8;
@@ -129,6 +152,9 @@ var
 
    array1          : Array[0..255] of char;
    array2          : Array[0..255] of char;
+   ticks           : uint32;
+   dt_ticks        : uint32;
+   last_tick_count : uint32;
    
 begin
      { Init the base system unit }
@@ -242,87 +268,64 @@ begin
     //  __SSE_128_memcpy(uint32(@array1[8]), uint32(@array2[8]));
     //  serial.sendString(pchar(@array2[8]));
 
+     { Clear screen to dark grey }
+     colour.R := 40; colour.G := 40; colour.B := 40; colour.A := 0;
      for i:=0 to video.frontBufferWidth-1 do begin
         for z:=0 to video.frontBufferHeight-1 do begin
             video.DrawPixel(i, z, colour);
         end;
      end;
-
-     video.DrawLine(50,50,100,100,1,color.black);
-     video.DrawRect(50,150,100,200,1,color.black);
-     video.FillRect(50,250,100,300,1,color.black,color.red);
-     video.DrawLine(50,350,100,350,1,color.black);
      video.Flush();
 
-     while true do begin end;
+     { Initialize ImGui }
+     console.outputln('KERNEL', 'ImGui: INIT BEGIN.');
+     imgui_init(video.frontBufferWidth, video.frontBufferHeight);
+     console.outputln('KERNEL', 'ImGui: INIT END.');
 
-     { VFS Init }
-     vfs.init();
-
-     { Management Interfaces }
-     tracer.push_trace('kmain.DRVMGMT');
-     drivermanagement.init();
-     tracer.push_trace('kmain.STRMGMT');
-     storagemanagement.init();
-
-     { Hook Timer for Ticks }
-     tracer.push_trace('kmain.TMR');
-     STI;
-     TMR_0_ISR.hook(uint32(@bios_data_area.tick_update));
-
-     { Filsystems }
-     fat32.init();
-
-     { Device Drivers }
-     tracer.push_trace('kmain.DEVDRV');
-     console.outputln('KERNEL', 'DEVICE DRIVERS: INIT BEGIN.');
+     { Initialize input drivers }
+     console.outputln('KERNEL', 'Input: INIT BEGIN.');
      keyboard.init(keyboard_layout);
      mouse.init();
-     testdriver.init();
-     E1000.init();
-     IDE.init();
-     console.outputln('KERNEL', 'DEVICE DRIVERS: INIT END.');
+     console.outputln('KERNEL', 'Input: INIT END.');
 
-     { Bus Drivers }
-     tracer.push_trace('kmain.BUSDRV');
-     console.outputln('KERNEL', 'BUS DRIVERS: INIT BEGIN.');
-     USB.init();
-     pci.init();
-     console.outputln('KERNEL', 'BUS DRIVERS: INIT END.');
+     { Enable interrupts }
+     STI;
 
-     { Network Stack }
-     tracer.push_trace('kmain.NETDRV');
-     net.init;
+     { Hook timer for delta time }
+     TMR_0_ISR.hook(uint32(@tick_handler));
 
-     tracer.push_trace('kmain.VMINIT');
-     //vm.init();
+     { Hook PS2 keyboard ISR for raw scancodes -> ImGui keys }
+     PS2_KEYBOARD_ISR.hook(uint32(@imgui_scancode_hook));
 
-     { Init Progs }
-     progmanager.init();
+     { Hook mouse -> ImGui }
+     mouse.setHook(@imgui_mouse_hook);
 
-     { Init Splash }
-     //tracer.push_trace('kmain.SPLASHINIT');
-     //splash.init();
+     { Warm-up frames: ImGui needs 2+ frames for window layout }
+     imgui_new_frame;
+     imgui_test_window;
+     imgui_render;
+     imgui_new_frame;
+     imgui_test_window;
+     imgui_render;
 
-     { End of Boot }
-     tracer.push_trace('kmain.EOB');
-
-     console.writestringln('');
-     console.setdefaultattribute(console.combinecolors($17E0, $0000));
-     console.writestringln('Asuro Booted Correctly!');
-     console.setdefaultattribute(console.combinecolors($FFFF, $0000));
-     writestringln(' ');
-
-     tracer.push_trace('kmain.END');
-     rand.srand((getDateTime.Seconds SHL 24) OR (getDateTime.Minutes SHL 16) OR (getDateTime.Hours SHL 8) OR (getDateTime.Day));
-
-     tracer.push_trace('kmain.TICK');
-
+     { Main interactive render loop }
+     console.outputln('KERNEL', 'ImGui: Entering render loop.');
+     last_tick_count := tick_count;
      while true do begin
-        tracer.push_trace('kmain.RedrawWindows');
-        console.redrawWindows;
+         { Compute delta time from ~1024 Hz timer ticks }
+         ticks := tick_count;
+         dt_ticks := ticks - last_tick_count;
+         last_tick_count := ticks;
+         if dt_ticks > 0 then
+             imgui_feed_delta_time(Single(dt_ticks) * Single(0.0009765625))  { 1/1024 }
+         else
+             imgui_feed_delta_time(Single(0.001));
+
+         imgui_new_frame;
+         imgui_test_window;
+         imgui_render;
      end;
 
 end;
- 
+
 end.

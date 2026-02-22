@@ -152,7 +152,37 @@ var
 
 procedure init();
 
+{ 64-bit multiply compilerproc required by FPC on i386 when
+  any int64/uint64 arithmetic occurs (e.g. sint32 * uint32 promotion).
+  Must live in the system unit so the compiler can resolve it. }
+function fpc_mul_int64(f1, f2: int64): int64; compilerproc;
+
 implementation
+
+function fpc_mul_int64(f1, f2: int64): int64; [public, alias: 'FPC_MUL_INT64']; compilerproc;
+{ 64×64→64 multiply using three 32-bit MUL instructions.
+  We only keep the low 64 bits of the 128-bit product. }
+var
+  res: int64;
+begin
+    asm
+        MOV  EAX, DWORD [f1]        { f1_lo }
+        MUL  DWORD [f2]             { EDX:EAX = f1_lo * f2_lo }
+        MOV  DWORD [res], EAX       { result_lo }
+        MOV  ECX, EDX               { carry = high(f1_lo * f2_lo) }
+
+        MOV  EAX, DWORD [f1]        { f1_lo }
+        MUL  DWORD [f2+4]           { EDX:EAX = f1_lo * f2_hi }
+        ADD  ECX, EAX               { carry += low(f1_lo * f2_hi) }
+
+        MOV  EAX, DWORD [f1+4]      { f1_hi }
+        MUL  DWORD [f2]             { EDX:EAX = f1_hi * f2_lo }
+        ADD  ECX, EAX               { carry += low(f1_hi * f2_lo) }
+
+        MOV  DWORD [res+4], ECX     { result_hi }
+    end;
+    fpc_mul_int64 := res;
+end;
 
 procedure init();
 begin

@@ -35,10 +35,26 @@ implementation
 procedure Main();
 var
     i : integer;
+    faulting_addr : uint32;
     
 begin
     CLI;
+    { Read CR2 — the linear address that caused the page fault }
+    asm
+        MOV EAX, CR2
+        MOV faulting_addr, EAX
+    end;
     correctInterruptRegisters(true);
+    console.writestring('[PF] Faulting address: ');
+    console.writehexln(faulting_addr);
+    if IntSpec <> nil then begin
+        console.writestring('[PF] Faulting EIP: ');
+        console.writehexln(IntSpec^.EIP);
+    end;
+    if IntErr <> nil then begin
+        console.writestring('[PF] Error code: ');
+        console.writehexln(IntErr^.Error);
+    end;
     BSOD('PF', 'Page Fault.');
     console.writestringln('Page Fault.');
     util.halt_and_catch_fire;

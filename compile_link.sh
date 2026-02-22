@@ -14,4 +14,6 @@ done;
 objstring=lib/stub.o" "$objstring 
 echo "Object Files: "$objstring
 echo " "
-ld -m elf_i386 -s --gc-sections -Tlinker.script -o bin/kernel.bin $objstring
+LIBGCC=$(gcc -m32 -print-libgcc-file-name)
+ld -m elf_i386 -s --gc-sections -Tlinker.script -o bin/kernel.bin $objstring \
+    --start-group lib/cimgui.a $LIBGCC --end-group
