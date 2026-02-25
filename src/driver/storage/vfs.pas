@@ -92,6 +92,7 @@ var
     Root              : PVFSObject;
     CurrentDirectory  : pchar = nil;
     PushPopDirectory  : PLinkedListBase;
+    MountDepth        : uint32 = 0;
 
 procedure init();
 Function OpenFile(Filename : pchar; OpenMode : TOpenMode; WriteMode : TWriteMode; Lock : Boolean; Error : PError) : TFileHandle;
@@ -104,6 +105,7 @@ function GetDirectories(Handle : uint32; Path : pchar) : PHashMap;
 function PathValid(Path : pchar) : TIsPathValid;
 function changeDirectory(Path : pchar) : TIsPathValid;
 function getWorkingDirectory : pchar;
+function GetDirectoryListing(Path : pchar) : PHashMap;
 
 //VFS Functions
 function newVirtualDirectory(Path : pchar) : TError;
@@ -288,6 +290,7 @@ begin
             NewObj:= PVFSObject(hashmap.get(ht, item));                                            
             if NewObj = nil then begin                                                              
                 GetObjectFromPath:= nil;
+                STRLL_Free(SplitPath);
                 tracer.push_trace('vfs.GetObjectFromPath.shortexit_1');
                 exit;
             end;                                                                                    
@@ -304,6 +307,7 @@ begin
         end;
     end;                                                                                           
     GetObjectFromPath:= Obj;
+    STRLL_Free(SplitPath);
     tracer.push_trace('vfs.GetObjectFromPath.exit');
 end;
 
@@ -348,7 +352,17 @@ begin
                 GetDirectoryListing:= nil;
             end; 
             otMOUNT:begin
-                GetDirectoryListing:= GetDirectoryListing(PVFSMount(Obj^.Reference)^.Path);
+                { Safety: cap mount-follow depth to prevent infinite recursion
+                  from circular mounts.  Use a simple static counter. }
+                if MountDepth < 16 then begin
+                    Inc(MountDepth);
+                    GetDirectoryListing:= GetDirectoryListing(PVFSMount(Obj^.Reference)^.Path);
+                    Dec(MountDepth);
+                end else
+                    GetDirectoryListing:= nil;
+            end;
+            else begin
+                GetDirectoryListing:= nil;
             end;
         end;
     end else begin
@@ -420,7 +434,7 @@ begin
 
     NewObj^.Reference:= void(NewDev);
 
-    hashmap.add(ht, stringCopy(DeviceName), void(NewDev));
+    hashmap.add(ht, stringCopy(DeviceName), void(NewObj));
 end;
 
 { Filesystem Functions }

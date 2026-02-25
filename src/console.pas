@@ -838,6 +838,18 @@ const
 	MAX_WINDOWS = 255; //< Maximum number of Windows open.
     DefaultWND  = 0;   //< The Window assigned for output when no Window is specified. (Default).
 
+type
+    TWNDCaptureCallback = procedure(s: pchar);
+
+var
+    WND_CaptureActive   : boolean = false;
+    WND_CaptureHWND     : uint32 = 0;
+    WND_CaptureBuf      : array[0..511] of char;
+    WND_CaptureBufIdx   : uint32 = 0;
+    WND_CaptureCallback : TWNDCaptureCallback = nil;
+
+procedure flushCapture;
+
 implementation
 
 uses
@@ -2259,6 +2271,7 @@ var
    x,y: Byte;
 
 begin
+     if WND_CaptureActive and (WND = WND_CaptureHWND) then exit;
      if WindowManager.Windows[WND] <> nil then begin
         for y:=0 to Console_Properties.MAX_CELL_Y do begin
             for x:=0 to Console_Properties.MAX_CELL_X do begin
@@ -2419,8 +2432,26 @@ begin
      console.writeintlnexWND(i, Console_Properties.Default_Attribute, WND);
 end;
 
+procedure flushCapture;
+begin
+    if WND_CaptureActive and (WND_CaptureCallback <> nil) and (WND_CaptureBufIdx > 0) then begin
+        WND_CaptureBuf[WND_CaptureBufIdx] := #0;
+        WND_CaptureCallback(@WND_CaptureBuf[0]);
+        WND_CaptureBufIdx := 0;
+        WND_CaptureBuf[0] := #0;
+    end;
+end;
+
 procedure writecharexWND(character: char; attributes: uint32; WND : uint32); 
 begin
+    if WND_CaptureActive and (WND = WND_CaptureHWND) and (WND_CaptureCallback <> nil) then begin
+        if WND_CaptureBufIdx < 511 then begin
+            WND_CaptureBuf[WND_CaptureBufIdx] := character;
+            inc(WND_CaptureBufIdx);
+            WND_CaptureBuf[WND_CaptureBufIdx] := #0;
+        end;
+        exit;
+    end;
     if WindowManager.Windows[WND] <> nil then begin
         WindowManager.Windows[WND]^.Buffer[WindowManager.Windows[WND]^.Cursor.Y][WindowManager.Windows[WND]^.Cursor.X].Character:= character;
         WindowManager.Windows[WND]^.Buffer[WindowManager.Windows[WND]^.Cursor.Y][WindowManager.Windows[WND]^.Cursor.X].Attributes:= attributes;
@@ -2603,6 +2634,13 @@ end;
 
 procedure backspaceWND(WND : uint32);
 begin
+     if WND_CaptureActive and (WND = WND_CaptureHWND) then begin
+        if WND_CaptureBufIdx > 0 then begin
+            dec(WND_CaptureBufIdx);
+            WND_CaptureBuf[WND_CaptureBufIdx] := #0;
+        end;
+        exit;
+     end;
      if WindowManager.Windows[WND] <> nil then begin
         Dec(WindowManager.Windows[WND]^.Cursor.X);
         writecharWND(' ', WND);
@@ -2659,6 +2697,13 @@ end;
 
 procedure _safeincrement_y_WND(WND : uint32);
 begin
+     if WND_CaptureActive and (WND = WND_CaptureHWND) and (WND_CaptureCallback <> nil) then begin
+        WND_CaptureBuf[WND_CaptureBufIdx] := #0;
+        WND_CaptureCallback(@WND_CaptureBuf[0]);
+        WND_CaptureBufIdx := 0;
+        WND_CaptureBuf[0] := #0;
+        exit;
+     end;
      if WindowManager.Windows[WND] <> nil then begin
         WindowManager.Windows[WND]^.Cursor.Y:= WindowManager.Windows[WND]^.Cursor.Y+1;
         if WindowManager.Windows[WND]^.Cursor.Y > WindowManager.Windows[WND]^.WND_H-1 then begin

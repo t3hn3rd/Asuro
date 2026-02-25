@@ -71,6 +71,24 @@ extern void imgui_pascal_render_triangle(
     float x2, float y2, float u2, float v2, unsigned int c2,
     float clip_x0, float clip_y0, float clip_x1, float clip_y1);
 
+extern void imgui_pascal_fill_rect(
+    float rx0, float ry0, float rx1, float ry1,
+    unsigned int col, float tex_u, float tex_v,
+    float cx0, float cy0, float cx1, float cy1);
+
+extern void imgui_pascal_fill_rect_gradient(
+    float rx0, float ry0, float rx1, float ry1,
+    unsigned int col_tl, unsigned int col_tr,
+    unsigned int col_br, unsigned int col_bl,
+    float tex_u, float tex_v,
+    float cx0, float cy0, float cx1, float cy1);
+
+extern void imgui_pascal_fill_rect_textured(
+    float rx0, float ry0, float rx1, float ry1,
+    float u_left, float v_top, float u_right, float v_bottom,
+    unsigned int col,
+    float cx0, float cy0, float cx1, float cy1);
+
 /* Debug helper: write to serial via Pascal console */
 /* FPC uses register calling convention: first param in EAX.
    regparm(3) tells GCC to pass first 3 params in EAX,EDX,ECX. */
@@ -98,6 +116,10 @@ int imgui_dbg_triangles = 0;
 int imgui_dbg_texcount  = 0;
 int imgui_dbg_font_w    = 0;
 int imgui_dbg_font_h    = 0;
+int imgui_dbg_quads_solid    = 0;
+int imgui_dbg_quads_gradient = 0;
+int imgui_dbg_quads_textured = 0;
+int imgui_dbg_tris_fallback  = 0;
 
 /* ---- Texture management (ImGui 1.91+ ImTextureData API) ---- */
 
@@ -161,6 +183,10 @@ void imgui_render_frame(void) {
 
     imgui_dbg_triangles = 0;
     imgui_dbg_texcount  = 0;
+    imgui_dbg_quads_solid    = 0;
+    imgui_dbg_quads_gradient = 0;
+    imgui_dbg_quads_textured = 0;
+    imgui_dbg_tris_fallback  = 0;
 
     igRender();
     draw_data = igGetDrawData();
@@ -204,17 +230,142 @@ void imgui_render_frame(void) {
             vtx_off    = pcmd->VtxOffset;
 
             for (i = 0; i + 2 < elem_count; i += 3) {
-                ImDrawVert* v0 = &vtx_buf[vtx_off + idx_buf[idx_off + i + 0]];
-                ImDrawVert* v1 = &vtx_buf[vtx_off + idx_buf[idx_off + i + 1]];
-                ImDrawVert* v2 = &vtx_buf[vtx_off + idx_buf[idx_off + i + 2]];
+                /* ---- Quad detection: try to merge consecutive triangle pairs
+                   into fast axis-aligned rect fills.  ImGui tessellates rects as
+                   4 vertices with indices 0,1,2, 0,2,3 (shared diagonal 0-2).
+                   Detecting these and using REP STOSD scanline fills gives a
+                   massive speedup over per-pixel FP barycentric rasterization. ---- */
+                if (i + 5 < elem_count) {
+                    unsigned int i0 = idx_buf[idx_off + i + 0];
+                    unsigned int i1 = idx_buf[idx_off + i + 1];
+                    unsigned int i2 = idx_buf[idx_off + i + 2];
+                    unsigned int i3 = idx_buf[idx_off + i + 3];
+                    unsigned int i4 = idx_buf[idx_off + i + 4];
+                    unsigned int i5 = idx_buf[idx_off + i + 5];
 
-                imgui_dbg_triangles++;
+                    /* Standard ImGui quad winding: shared diagonal i0==i3, i2==i4 */
+                    if (i0 == i3 && i2 == i4) {
+                        ImDrawVert* va = &vtx_buf[vtx_off + i0];
+                        ImDrawVert* vb = &vtx_buf[vtx_off + i1];
+                        ImDrawVert* vc = &vtx_buf[vtx_off + i2];
+                        ImDrawVert* vd = &vtx_buf[vtx_off + i5];
 
-                imgui_pascal_render_triangle(
-                    v0->pos.x, v0->pos.y, v0->uv.x, v0->uv.y, v0->col,
-                    v1->pos.x, v1->pos.y, v1->uv.x, v1->uv.y, v1->col,
-                    v2->pos.x, v2->pos.y, v2->uv.x, v2->uv.y, v2->col,
-                    cx0, cy0, cx1, cy1);
+                        /* Check axis-aligned quad in EITHER vertex arrangement:
+                           Arrangement 1: va-vb horizontal, va-vd vertical
+                             xa==xd, xb==xc, ya==yb, yc==yd
+                           Arrangement 2: va-vb vertical, va-vd horizontal (rotated)
+                             xa==xb, xc==xd, ya==yd, yb==yc                        */
+                        if ((va->pos.x == vd->pos.x && vb->pos.x == vc->pos.x &&
+                             va->pos.y == vb->pos.y && vc->pos.y == vd->pos.y) ||
+                            (va->pos.x == vb->pos.x && vc->pos.x == vd->pos.x &&
+                             va->pos.y == vd->pos.y && vb->pos.y == vc->pos.y)) {
+
+                            float qx0 = va->pos.x; float qy0 = va->pos.y;
+                            float qx1 = va->pos.x; float qy1 = va->pos.y;
+                            /* Compute AABB from all 4 vertices */
+                            if (vb->pos.x < qx0) qx0 = vb->pos.x; if (vb->pos.x > qx1) qx1 = vb->pos.x;
+                            if (vc->pos.x < qx0) qx0 = vc->pos.x; if (vc->pos.x > qx1) qx1 = vc->pos.x;
+                            if (vd->pos.x < qx0) qx0 = vd->pos.x; if (vd->pos.x > qx1) qx1 = vd->pos.x;
+                            if (vb->pos.y < qy0) qy0 = vb->pos.y; if (vb->pos.y > qy1) qy1 = vb->pos.y;
+                            if (vc->pos.y < qy0) qy0 = vc->pos.y; if (vc->pos.y > qy1) qy1 = vc->pos.y;
+                            if (vd->pos.y < qy0) qy0 = vd->pos.y; if (vd->pos.y > qy1) qy1 = vd->pos.y;
+
+                            /* All UVs identical (no texture variation) → solid or gradient fill */
+                            if (va->uv.x == vb->uv.x && va->uv.x == vc->uv.x && va->uv.x == vd->uv.x &&
+                                va->uv.y == vb->uv.y && va->uv.y == vc->uv.y && va->uv.y == vd->uv.y) {
+
+                                /* All same color → solid fill (REP STOSD per scanline) */
+                                if (va->col == vb->col && vb->col == vc->col && vc->col == vd->col) {
+                                    imgui_pascal_fill_rect(
+                                        qx0, qy0, qx1, qy1,
+                                        va->col, va->uv.x, va->uv.y,
+                                        cx0, cy0, cx1, cy1);
+                                    imgui_dbg_triangles += 2;
+                                    imgui_dbg_quads_solid++;
+                                    i += 3; /* skip second triangle; loop does i+=3 for first */
+                                    continue;
+                                }
+
+                                /* Different colors → gradient fill (integer lerp) */
+                                {
+                                    /* Map vertex colors to corners by actual position */
+                                    unsigned int c_tl = 0, c_tr = 0, c_br = 0, c_bl = 0;
+                                    int vi;
+                                    ImDrawVert* verts[4]; verts[0]=va; verts[1]=vb; verts[2]=vc; verts[3]=vd;
+                                    for (vi = 0; vi < 4; vi++) {
+                                        int is_left = (verts[vi]->pos.x == qx0);
+                                        int is_top  = (verts[vi]->pos.y == qy0);
+                                        if (is_left && is_top)  c_tl = verts[vi]->col;
+                                        if (!is_left && is_top) c_tr = verts[vi]->col;
+                                        if (!is_left && !is_top) c_br = verts[vi]->col;
+                                        if (is_left && !is_top) c_bl = verts[vi]->col;
+                                    }
+                                    imgui_pascal_fill_rect_gradient(
+                                        qx0, qy0, qx1, qy1,
+                                        c_tl, c_tr, c_br, c_bl,
+                                        va->uv.x, va->uv.y,
+                                        cx0, cy0, cx1, cy1);
+                                    imgui_dbg_triangles += 2;
+                                    imgui_dbg_quads_gradient++;
+                                    i += 3;
+                                    continue;
+                                }
+                            }
+
+                            /* Axis-aligned UV mapping with uniform color → textured rect
+                               (text glyphs, icons, etc.) — integer fixed-point UV stepping.
+                               UV must map left/right and top/bottom consistently. */
+                            if (va->col == vb->col && vb->col == vc->col && vc->col == vd->col) {
+                                /* Find UV at each corner by position */
+                                float u_l = 0, u_r = 0, v_t = 0, v_b = 0;
+                                int uv_ok = 1, vj;
+                                ImDrawVert* vs[4]; vs[0]=va; vs[1]=vb; vs[2]=vc; vs[3]=vd;
+                                for (vj = 0; vj < 4; vj++) {
+                                    if (vs[vj]->pos.x == qx0 && vs[vj]->pos.y == qy0)
+                                        { u_l = vs[vj]->uv.x; v_t = vs[vj]->uv.y; }
+                                    if (vs[vj]->pos.x == qx1 && vs[vj]->pos.y == qy1)
+                                        { u_r = vs[vj]->uv.x; v_b = vs[vj]->uv.y; }
+                                }
+                                /* Verify the other two corners are consistent */
+                                for (vj = 0; vj < 4 && uv_ok; vj++) {
+                                    if (vs[vj]->pos.x == qx1 && vs[vj]->pos.y == qy0) {
+                                        if (vs[vj]->uv.x != u_r || vs[vj]->uv.y != v_t) uv_ok = 0;
+                                    }
+                                    if (vs[vj]->pos.x == qx0 && vs[vj]->pos.y == qy1) {
+                                        if (vs[vj]->uv.x != u_l || vs[vj]->uv.y != v_b) uv_ok = 0;
+                                    }
+                                }
+                                if (uv_ok && !(u_l == u_r && v_t == v_b)) {
+                                    imgui_pascal_fill_rect_textured(
+                                        qx0, qy0, qx1, qy1,
+                                        u_l, v_t, u_r, v_b,
+                                        va->col,
+                                        cx0, cy0, cx1, cy1);
+                                    imgui_dbg_triangles += 2;
+                                    imgui_dbg_quads_textured++;
+                                    i += 3;
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                /* Fallback: general triangle rasterizer */
+                {
+                    ImDrawVert* v0 = &vtx_buf[vtx_off + idx_buf[idx_off + i + 0]];
+                    ImDrawVert* v1 = &vtx_buf[vtx_off + idx_buf[idx_off + i + 1]];
+                    ImDrawVert* v2 = &vtx_buf[vtx_off + idx_buf[idx_off + i + 2]];
+
+                    imgui_dbg_triangles++;
+                    imgui_dbg_tris_fallback++;
+
+                    imgui_pascal_render_triangle(
+                        v0->pos.x, v0->pos.y, v0->uv.x, v0->uv.y, v0->col,
+                        v1->pos.x, v1->pos.y, v1->uv.x, v1->uv.y, v1->col,
+                        v2->pos.x, v2->pos.y, v2->uv.x, v2->uv.y, v2->col,
+                        cx0, cy0, cx1, cy1);
+                }
             }
         }
     }
@@ -260,6 +411,115 @@ void imgui_add_key_event(int key, int down) {
 void imgui_add_input_char(unsigned int c) {
     ImGuiIO* io = igGetIO_Nil();
     ImGuiIO_AddInputCharacter(io, c);
+}
+
+float imgui_get_framerate(void) {
+    ImGuiIO* io = igGetIO_Nil();
+    return io->Framerate;
+}
+
+/* ---------------------------------------------------------------------------
+ * imgui_apply_desktop_style  –  set style struct fields directly (no push/pop)
+ * Called once from desktop_init.  Safe to call before any frame.
+ * ------------------------------------------------------------------------- */
+void imgui_apply_desktop_style(void) {
+    ImGuiStyle* s = igGetStyle();
+
+    /* Apply built-in dark palette first */
+    igStyleColorsDark(s);
+
+    /* Rounding — all zero to eliminate triangle fans (everything
+       becomes axis-aligned quads that hit the fast rect-fill paths) */
+    s->WindowRounding    = 0.0f;
+    s->ChildRounding     = 0.0f;
+    s->FrameRounding     = 0.0f;
+    s->GrabRounding      = 0.0f;
+    s->TabRounding       = 0.0f;
+    s->PopupRounding     = 0.0f;
+    s->ScrollbarRounding = 0.0f;
+    s->WindowPadding     = (ImVec2){12, 10};
+    s->FramePadding      = (ImVec2){10, 6};
+    s->ItemSpacing       = (ImVec2){8, 6};
+    s->ItemInnerSpacing  = (ImVec2){6, 4};
+    s->ScrollbarSize     = 11.0f;
+    s->GrabMinSize       = 8.0f;
+    s->WindowBorderSize  = 0.0f;
+    s->FrameBorderSize   = 0.0f;
+    s->TabBorderSize     = 0.0f;
+    s->WindowTitleAlign  = (ImVec2){0.04f, 0.50f};
+    s->SeparatorTextBorderSize = 1.0f;
+
+    /* Disable anti-aliasing — software rasterizer is too slow for AA fringes */
+    s->AntiAliasedLines       = false;
+    s->AntiAliasedLinesUseTex = false;
+    s->AntiAliasedFill        = false;
+    s->CircleTessellationMaxError = 1.2f;  /* coarser arcs = fewer tris */
+
+    /* --- Deep blue-grey palette with vivid accents --- */
+    s->Colors[ImGuiCol_WindowBg]             = (ImVec4){0.09f, 0.09f, 0.13f, 0.96f};
+    s->Colors[ImGuiCol_PopupBg]              = (ImVec4){0.08f, 0.08f, 0.12f, 0.97f};
+    s->Colors[ImGuiCol_ChildBg]              = (ImVec4){0.00f, 0.00f, 0.00f, 0.00f};
+
+    /* Title bars — slate blue */
+    s->Colors[ImGuiCol_TitleBg]              = (ImVec4){0.08f, 0.09f, 0.14f, 1.0f};
+    s->Colors[ImGuiCol_TitleBgActive]        = (ImVec4){0.12f, 0.20f, 0.38f, 1.0f};
+    s->Colors[ImGuiCol_TitleBgCollapsed]     = (ImVec4){0.06f, 0.06f, 0.10f, 0.70f};
+
+    /* Borders — subtle */
+    s->Colors[ImGuiCol_Border]               = (ImVec4){0.18f, 0.20f, 0.30f, 0.45f};
+    s->Colors[ImGuiCol_Separator]            = (ImVec4){0.18f, 0.20f, 0.30f, 0.45f};
+
+    /* Buttons — vivid blue */
+    s->Colors[ImGuiCol_Button]               = (ImVec4){0.16f, 0.22f, 0.38f, 1.0f};
+    s->Colors[ImGuiCol_ButtonHovered]        = (ImVec4){0.24f, 0.36f, 0.60f, 1.0f};
+    s->Colors[ImGuiCol_ButtonActive]         = (ImVec4){0.14f, 0.22f, 0.42f, 1.0f};
+
+    /* Headers (collapsing, selectable) */
+    s->Colors[ImGuiCol_Header]               = (ImVec4){0.16f, 0.22f, 0.36f, 0.70f};
+    s->Colors[ImGuiCol_HeaderHovered]        = (ImVec4){0.24f, 0.34f, 0.56f, 0.80f};
+    s->Colors[ImGuiCol_HeaderActive]         = (ImVec4){0.18f, 0.28f, 0.48f, 1.0f};
+
+    /* Tabs */
+    s->Colors[ImGuiCol_Tab]                  = (ImVec4){0.10f, 0.12f, 0.20f, 1.0f};
+    s->Colors[ImGuiCol_TabHovered]           = (ImVec4){0.24f, 0.36f, 0.60f, 1.0f};
+    s->Colors[ImGuiCol_TabSelected]          = (ImVec4){0.16f, 0.26f, 0.46f, 1.0f};
+
+    /* Scrollbar */
+    s->Colors[ImGuiCol_ScrollbarBg]          = (ImVec4){0.06f, 0.06f, 0.10f, 0.50f};
+    s->Colors[ImGuiCol_ScrollbarGrab]        = (ImVec4){0.24f, 0.26f, 0.36f, 1.0f};
+    s->Colors[ImGuiCol_ScrollbarGrabHovered] = (ImVec4){0.34f, 0.38f, 0.50f, 1.0f};
+    s->Colors[ImGuiCol_ScrollbarGrabActive]  = (ImVec4){0.44f, 0.48f, 0.60f, 1.0f};
+
+    /* Input frames */
+    s->Colors[ImGuiCol_FrameBg]              = (ImVec4){0.10f, 0.11f, 0.16f, 1.0f};
+    s->Colors[ImGuiCol_FrameBgHovered]       = (ImVec4){0.16f, 0.20f, 0.30f, 1.0f};
+    s->Colors[ImGuiCol_FrameBgActive]        = (ImVec4){0.14f, 0.18f, 0.28f, 1.0f};
+
+    /* Menu / bar */
+    s->Colors[ImGuiCol_MenuBarBg]            = (ImVec4){0.08f, 0.08f, 0.12f, 1.0f};
+
+    /* Slider grab */
+    s->Colors[ImGuiCol_SliderGrab]           = (ImVec4){0.26f, 0.40f, 0.66f, 1.0f};
+    s->Colors[ImGuiCol_SliderGrabActive]     = (ImVec4){0.34f, 0.52f, 0.80f, 1.0f};
+
+    /* Check / radio */
+    s->Colors[ImGuiCol_CheckMark]            = (ImVec4){0.40f, 0.65f, 1.0f, 1.0f};
+
+    /* Resize grip */
+    s->Colors[ImGuiCol_ResizeGrip]           = (ImVec4){0.20f, 0.30f, 0.50f, 0.30f};
+    s->Colors[ImGuiCol_ResizeGripHovered]    = (ImVec4){0.30f, 0.44f, 0.70f, 0.60f};
+    s->Colors[ImGuiCol_ResizeGripActive]     = (ImVec4){0.36f, 0.54f, 0.82f, 0.90f};
+
+    /* Text */
+    s->Colors[ImGuiCol_Text]                 = (ImVec4){0.88f, 0.90f, 0.95f, 1.0f};
+    s->Colors[ImGuiCol_TextDisabled]         = (ImVec4){0.42f, 0.44f, 0.50f, 1.0f};
+
+    /* Table */
+    s->Colors[ImGuiCol_TableHeaderBg]        = (ImVec4){0.12f, 0.14f, 0.22f, 1.0f};
+    s->Colors[ImGuiCol_TableBorderStrong]    = (ImVec4){0.18f, 0.20f, 0.30f, 0.60f};
+    s->Colors[ImGuiCol_TableBorderLight]     = (ImVec4){0.14f, 0.16f, 0.24f, 0.40f};
+    s->Colors[ImGuiCol_TableRowBg]           = (ImVec4){0.00f, 0.00f, 0.00f, 0.00f};
+    s->Colors[ImGuiCol_TableRowBgAlt]        = (ImVec4){0.10f, 0.12f, 0.18f, 0.40f};
 }
 
 /* ===========================================================================
@@ -335,38 +595,111 @@ static const unsigned char sc_to_ascii_shift[84] = {
 
 static int _ig_shift_down = 0;
 
+/* ===========================================================================
+ * ISR-safe input buffering
+ *
+ * The PS/2 keyboard and mouse ISRs fire asynchronously while the main
+ * render loop may be mid-frame.  Calling ImGui IO functions from ISR
+ * context causes data races and crashes.  Instead we buffer raw events
+ * in lock-free ring buffers and drain them once per frame from the
+ * main loop (before igNewFrame).
+ * =========================================================================== */
+
+/* --- Scancode ring buffer --- */
+#define SC_BUF_SIZE 64
+static volatile unsigned int _sc_buf[SC_BUF_SIZE];
+static volatile int _sc_buf_head = 0;   /* ISR writes here */
+static volatile int _sc_buf_tail = 0;   /* main loop reads here */
+
+/* --- Mouse event ring buffer --- */
+#define MS_BUF_SIZE 64
+typedef struct { float x, y; int btn; int down; int kind; } _ms_evt;
+/* kind: 0=pos, 1=button */
+static volatile _ms_evt _ms_buf[MS_BUF_SIZE];
+static volatile int _ms_buf_head = 0;
+static volatile int _ms_buf_tail = 0;
+
 /*
  * Called from the PS/2 keyboard ISR hook with a raw scancode byte.
- * Maps to ImGuiKey events and feeds printable ASCII characters.
+ * Just pushes into the ring buffer — no ImGui calls.
  */
 void imgui_handle_scancode(unsigned int scancode) {
-    unsigned int is_break = scancode & 0x80;
-    unsigned int make     = scancode & 0x7F;
-
-    /* Map to ImGuiKey and send key down/up event */
-    if (make < 84) {
-        int key = sc_to_imgui[make];
-        if (key != 0)
-            imgui_add_key_event(key, is_break ? 0 : 1);
-    }
-
-    /* Track shift state for ASCII mapping */
-    if (make == 42 || make == 54)
-        _ig_shift_down = is_break ? 0 : 1;
-
-    /* Feed printable ASCII on key-down only */
-    if (!is_break && make < 84) {
-        unsigned char c = _ig_shift_down
-            ? sc_to_ascii_shift[make]
-            : sc_to_ascii[make];
-        if (c >= 32 && c < 127)
-            imgui_add_input_char((unsigned int)c);
+    int next = (_sc_buf_head + 1) % SC_BUF_SIZE;
+    if (next != _sc_buf_tail) {          /* drop if full */
+        _sc_buf[_sc_buf_head] = scancode;
+        _sc_buf_head = next;
     }
 }
 
-/* ---- Show the full ImGui demo window (called from Pascal) ---- */
-void imgui_test_window(void) {
-    igShowDemoWindow((bool*)0);
+/*
+ * Called from the mouse ISR hook.  Buffers position + button events.
+ */
+void imgui_handle_mouse_pos(float x, float y) {
+    int next = (_ms_buf_head + 1) % MS_BUF_SIZE;
+    if (next != _ms_buf_tail) {
+        _ms_buf[_ms_buf_head].x    = x;
+        _ms_buf[_ms_buf_head].y    = y;
+        _ms_buf[_ms_buf_head].kind = 0;
+        _ms_buf_head = next;
+    }
+}
+
+void imgui_handle_mouse_button(int button, int down) {
+    int next = (_ms_buf_head + 1) % MS_BUF_SIZE;
+    if (next != _ms_buf_tail) {
+        _ms_buf[_ms_buf_head].btn  = button;
+        _ms_buf[_ms_buf_head].down = down;
+        _ms_buf[_ms_buf_head].kind = 1;
+        _ms_buf_head = next;
+    }
+}
+
+/*
+ * Drain all buffered input into ImGui.
+ * Called once per frame from the main loop BEFORE igNewFrame.
+ */
+void imgui_drain_input(void) {
+    /* --- keyboard --- */
+    while (_sc_buf_tail != _sc_buf_head) {
+        unsigned int scancode = _sc_buf[_sc_buf_tail];
+        _sc_buf_tail = (_sc_buf_tail + 1) % SC_BUF_SIZE;
+
+        unsigned int is_break = scancode & 0x80;
+        unsigned int make     = scancode & 0x7F;
+
+        if (make < 84) {
+            int key = sc_to_imgui[make];
+            if (key != 0)
+                imgui_add_key_event(key, is_break ? 0 : 1);
+        }
+
+        if (make == 42 || make == 54)
+            _ig_shift_down = is_break ? 0 : 1;
+
+        if (!is_break && make < 84) {
+            unsigned char c = _ig_shift_down
+                ? sc_to_ascii_shift[make]
+                : sc_to_ascii[make];
+            if (c >= 32 && c < 127)
+                imgui_add_input_char((unsigned int)c);
+        }
+    }
+
+    /* --- mouse --- */
+    while (_ms_buf_tail != _ms_buf_head) {
+        int idx = _ms_buf_tail;
+        float mx   = _ms_buf[idx].x;
+        float my   = _ms_buf[idx].y;
+        int   mbtn = _ms_buf[idx].btn;
+        int   mdn  = _ms_buf[idx].down;
+        int   mk   = _ms_buf[idx].kind;
+        _ms_buf_tail = (_ms_buf_tail + 1) % MS_BUF_SIZE;
+
+        if (mk == 0)
+            imgui_add_mouse_pos(mx, my);
+        else
+            imgui_add_mouse_button(mbtn, mdn);
+    }
 }
 
 /* Wrapper for igNewFrame with debug checkpoints.
@@ -424,9 +757,7 @@ void imgui_new_frame_impl(void) {
         _first_frame = 0;
     }
 
-    dbg("[BRIDGE] igNewFrame...\r\n");
     igNewFrame();
-    dbg("[BRIDGE] igNewFrame done.\r\n");
 }
 
 #ifdef __cplusplus

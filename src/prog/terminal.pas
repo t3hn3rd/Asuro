@@ -72,6 +72,7 @@ procedure registerCommandEx(command : pchar; method : TCommandMethod; descriptio
 function getParams(buf : TCommandBuffer) : PParamList;
 function paramCount(params : PParamList) : uint32;
 function getParam(index : uint32; params : PParamList) : pchar;
+procedure freeParams(params : PParamList);
 procedure setWorkingDirectory(str : pchar);
 function getWorkingDirectory : pchar;
 function getTerminalHWND : uint32;

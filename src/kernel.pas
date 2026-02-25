@@ -57,7 +57,7 @@ uses
      terminal,
      hashmap, vfs, 
      video, vesa, doublebuffer, color,
-     imgui, imguitypes;
+     imgui, imguitypes, desktop;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
@@ -122,11 +122,16 @@ begin
 end;
 
 procedure imgui_mouse_hook(x, y: sint32; lmb, rmb, mmb: boolean);
+var
+    fx, fy: Single;
 begin
-    imgui_feed_mouse_pos(Single(x), Single(y));
-    imgui_feed_mouse_button(0, lmb);
-    imgui_feed_mouse_button(1, rmb);
-    imgui_feed_mouse_button(2, mmb);
+    { Buffer mouse events — will be drained before next frame }
+    fx := x;
+    fy := y;
+    imgui_handle_mouse_pos(fx, fy);
+    imgui_handle_mouse_button(0, sint32(lmb));
+    imgui_handle_mouse_button(1, sint32(rmb));
+    imgui_handle_mouse_button(2, sint32(mmb));
 end;
 
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall; [public, alias: 'kmain'];   
@@ -235,6 +240,9 @@ begin
      { Call Tracer }
      tracer.init();
 
+     { Virtual File System }
+     vfs.init();
+
      video.init();
      vesa.init(@video.register);
      doublebuffer.init(@video.register);
@@ -282,6 +290,11 @@ begin
      imgui_init(video.frontBufferWidth, video.frontBufferHeight);
      console.outputln('KERNEL', 'ImGui: INIT END.');
 
+     { Initialize desktop }
+     console.outputln('KERNEL', 'Desktop: INIT BEGIN.');
+     desktop_init;
+     console.outputln('KERNEL', 'Desktop: INIT END.');
+
      { Initialize input drivers }
      console.outputln('KERNEL', 'Input: INIT BEGIN.');
      keyboard.init(keyboard_layout);
@@ -302,10 +315,10 @@ begin
 
      { Warm-up frames: ImGui needs 2+ frames for window layout }
      imgui_new_frame;
-     imgui_test_window;
+     desktop_frame;
      imgui_render;
      imgui_new_frame;
-     imgui_test_window;
+     desktop_frame;
      imgui_render;
 
      { Main interactive render loop }
@@ -321,8 +334,9 @@ begin
          else
              imgui_feed_delta_time(Single(0.001));
 
+         imgui_process_input;
          imgui_new_frame;
-         imgui_test_window;
+         desktop_frame;
          imgui_render;
      end;
 

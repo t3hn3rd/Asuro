@@ -45,6 +45,7 @@ type
 
 var
     Active : Boolean;
+    Root_Task    : PScheduler_Entry;
 
 procedure init;
 procedure add_task(priority : uint8);
@@ -53,7 +54,6 @@ implementation
 
 var
    Tick         : uint32;
-   Root_Task    : PScheduler_Entry = nil;
    Current_Task : PScheduler_Entry = nil;
 
 procedure context_switch();

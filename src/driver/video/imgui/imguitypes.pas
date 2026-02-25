@@ -137,27 +137,33 @@ const
   ============================================================ }
 const
     ImGuiInputTextFlags_None                = 0;
+    { Character filters }
     ImGuiInputTextFlags_CharsDecimal        = 1 SHL 0;
     ImGuiInputTextFlags_CharsHexadecimal    = 1 SHL 1;
-    ImGuiInputTextFlags_CharsUppercase      = 1 SHL 2;
-    ImGuiInputTextFlags_CharsNoBlank        = 1 SHL 3;
-    ImGuiInputTextFlags_AutoSelectAll       = 1 SHL 4;
-    ImGuiInputTextFlags_EnterReturnsTrue    = 1 SHL 5;
-    ImGuiInputTextFlags_CallbackCompletion  = 1 SHL 6;
-    ImGuiInputTextFlags_CallbackHistory     = 1 SHL 7;
-    ImGuiInputTextFlags_CallbackAlways      = 1 SHL 8;
-    ImGuiInputTextFlags_CallbackCharFilter  = 1 SHL 9;
-    ImGuiInputTextFlags_AllowTabInput       = 1 SHL 10;
-    ImGuiInputTextFlags_CtrlEnterForNewLine = 1 SHL 11;
-    ImGuiInputTextFlags_NoHorizontalScroll  = 1 SHL 12;
-    ImGuiInputTextFlags_AlwaysOverwrite     = 1 SHL 13;
-    ImGuiInputTextFlags_ReadOnly            = 1 SHL 14;
-    ImGuiInputTextFlags_Password            = 1 SHL 15;
+    ImGuiInputTextFlags_CharsScientific     = 1 SHL 2;
+    ImGuiInputTextFlags_CharsUppercase      = 1 SHL 3;
+    ImGuiInputTextFlags_CharsNoBlank        = 1 SHL 4;
+    { Inputs }
+    ImGuiInputTextFlags_AllowTabInput       = 1 SHL 5;
+    ImGuiInputTextFlags_EnterReturnsTrue    = 1 SHL 6;
+    ImGuiInputTextFlags_EscapeClearsAll     = 1 SHL 7;
+    ImGuiInputTextFlags_CtrlEnterForNewLine = 1 SHL 8;
+    { Other options }
+    ImGuiInputTextFlags_ReadOnly            = 1 SHL 9;
+    ImGuiInputTextFlags_Password            = 1 SHL 10;
+    ImGuiInputTextFlags_AlwaysOverwrite     = 1 SHL 11;
+    ImGuiInputTextFlags_AutoSelectAll       = 1 SHL 12;
+    ImGuiInputTextFlags_ParseEmptyRefVal    = 1 SHL 13;
+    ImGuiInputTextFlags_DisplayEmptyRefVal  = 1 SHL 14;
+    ImGuiInputTextFlags_NoHorizontalScroll  = 1 SHL 15;
     ImGuiInputTextFlags_NoUndoRedo          = 1 SHL 16;
-    ImGuiInputTextFlags_CharsScientific     = 1 SHL 17;
-    ImGuiInputTextFlags_CallbackResize      = 1 SHL 18;
-    ImGuiInputTextFlags_CallbackEdit        = 1 SHL 19;
-    ImGuiInputTextFlags_EscapeClearsAll     = 1 SHL 20;
+    { Callback features }
+    ImGuiInputTextFlags_CallbackCompletion  = 1 SHL 17;
+    ImGuiInputTextFlags_CallbackHistory     = 1 SHL 18;
+    ImGuiInputTextFlags_CallbackAlways      = 1 SHL 19;
+    ImGuiInputTextFlags_CallbackCharFilter  = 1 SHL 20;
+    ImGuiInputTextFlags_CallbackResize      = 1 SHL 21;
+    ImGuiInputTextFlags_CallbackEdit        = 1 SHL 22;
 
 { ============================================================
   ImGuiTreeNodeFlags

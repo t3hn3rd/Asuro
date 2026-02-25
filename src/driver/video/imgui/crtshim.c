@@ -125,9 +125,11 @@ char* strcpy(char* dst, const char* src) {
 }
 
 char* strncpy(char* dst, const char* src, size_t n) {
-    char* d = dst;
-    while (n-- && (*d++ = *src++));
-    while (n--) *d++ = '\0';
+    size_t i;
+    for (i = 0; i < n && src[i] != '\0'; i++)
+        dst[i] = src[i];
+    for (; i < n; i++)
+        dst[i] = '\0';
     return dst;
 }
 
@@ -150,8 +152,8 @@ int strcmp(const char* a, const char* b) {
 }
 
 int strncmp(const char* a, const char* b, size_t n) {
-    while (n-- && *a && (*a == *b)) { a++; b++; }
     if (!n) return 0;
+    while (--n && *a && (*a == *b)) { a++; b++; }
     return (unsigned char)*a - (unsigned char)*b;
 }
 

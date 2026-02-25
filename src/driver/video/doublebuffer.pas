@@ -54,13 +54,8 @@ end;
 
 procedure Flush(FrontBuffer : PVideoBuffer; BackBuffer : PVideoBuffer);
 var
-    idx : uint32;
     Back,Front : uint32;
-    BufferSize : uint32;
-
-const
-    //COPY_WIDTH = 64; //Use this for 64bit copies
-    COPY_WIDTH = 128; //Use this for SSE copies
+    Count64 : uint32;
 
 begin
     //tracer.push_trace('doublebuffer.Flush.enter');
@@ -68,11 +63,32 @@ begin
     if ((FrontBuffer^.Width > BackBuffer^.Width) or (FrontBuffer^.Height > BackBuffer^.Height)) then exit;
     Back:= BackBuffer^.Location;
     Front:= FrontBuffer^.Location;
-    BufferSize:= ( ( BackBuffer^.Width * BackBuffer^.Height * BackBuffer^.BitsPerPixel) div COPY_WIDTH ) - 1;
-    for idx:=0 to BufferSize do begin
-        //Front[idx]:= Back[idx];
-        // -- TODO: Get SSE working here for 128bit copies --
-        __SSE_128_memcpy(Back + (idx * 16), Front + (idx * 16));  
+    { Number of 64-byte blocks: total_bytes / 64 = (W * H * BPP/8) / 64 }
+    Count64:= ( BackBuffer^.Width * BackBuffer^.Height * BackBuffer^.BitsPerPixel) div 512;
+    if Count64 = 0 then exit;
+    { Bulk SSE copy: 4 x MOVAPS (64 bytes) per iteration.
+      4x fewer loop iterations than the old per-16-byte function-call loop. }
+    asm
+        PUSH ESI
+        PUSH EDI
+        MOV ESI, Back
+        MOV EDI, Front
+        MOV ECX, Count64
+    @sseloop:
+        MOVAPS XMM0, [ESI]
+        MOVAPS XMM1, [ESI + 16]
+        MOVAPS XMM2, [ESI + 32]
+        MOVAPS XMM3, [ESI + 48]
+        MOVAPS [EDI], XMM0
+        MOVAPS [EDI + 16], XMM1
+        MOVAPS [EDI + 32], XMM2
+        MOVAPS [EDI + 48], XMM3
+        ADD ESI, 64
+        ADD EDI, 64
+        DEC ECX
+        JNZ @sseloop
+        POP EDI
+        POP ESI
     end;
     //tracer.push_trace('doublebuffer.Flush.exit');
 end;

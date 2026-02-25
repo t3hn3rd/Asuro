@@ -40,6 +40,7 @@ function frontBufferBpp : uint8;
 function backBufferWidth : uint32;
 function backBufferHeight : uint32;
 function backBufferBpp : uint8;
+function backBufferLocation : uint32;
 
 Procedure basicFDrawTexture(Buffer : PVideoBuffer; X : uint32; Y : uint32; Texture : PTexture);
 
@@ -313,6 +314,11 @@ end;
 function backBufferBpp : uint8;
 begin
     backBufferBpp:= VideoInterface.BackBuffer.BitsPerPixel;
+end;
+
+function backBufferLocation : uint32;
+begin
+    backBufferLocation:= VideoInterface.BackBuffer.Location;
 end;
 
 end.
