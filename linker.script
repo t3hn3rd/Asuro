@@ -34,4 +34,14 @@ SECTIONS
   }
   end = .; _end = .; __end = .;
   kernel_end = .;
+
+  /DISCARD/ : {
+    *(.init_array*)
+    *(.fini_array*)
+    *(.ctors)
+    *(.dtors)
+    *(.eh_frame*)
+    *(.gcc_except_table*)
+    *(.note.GNU-stack)
+  }
 }

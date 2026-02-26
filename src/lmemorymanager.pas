@@ -170,7 +170,7 @@ begin
     klalloc:= Address;
 end;
 
-function kalloc(size : uint32) : void;
+function kalloc(size : uint32) : void; [public, alias: 'kernel_kalloc'];
 var
    Heap_Entries : uint32;
    i, j         : uint32;
@@ -217,7 +217,7 @@ begin
     //pop_trace;
 end;
 
-procedure kfree(area : void);
+procedure kfree(area : void); [public, alias: 'kernel_kfree'];
 var
     hp : PHeapPage;
     entry : uint32;
