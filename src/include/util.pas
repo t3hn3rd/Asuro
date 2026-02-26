@@ -130,10 +130,13 @@ begin
 end;
 
 function getESP : uint32;
+var
+    tmp: uint32;
 begin
     asm
-        MOV getESP, ESP
+        MOV tmp, ESP
     end;
+    getESP := tmp;
 end;
 
 function HexCharToDecimal(hex : char) : uint8;
@@ -362,6 +365,8 @@ begin
 end;
 
 function inl(port : uint16) : uint32; [public, alias: 'util_inl'];
+var
+     tmp : uint32;
 begin
      //serial.sendString('[inl]');
      //serial.sendHex(port);
@@ -370,14 +375,17 @@ begin
           PUSH EDX
           MOV DX, port
           IN EAX, DX
-          MOV inl, EAX
+          MOV tmp, EAX
           POP EDX
           POP EAX
      end;
+     inl := tmp;
      io_wait;
 end;
 
 function inw(port : uint16) : uint16; [public, alias: 'util_inw'];
+var
+     tmp : uint16;
 begin
      //serial.sendString('[inw]');
      //serial.sendHex(port);
@@ -386,14 +394,17 @@ begin
           PUSH EDX
           MOV DX, port
           IN AX, DX
-          MOV inw, AX
+          MOV tmp, AX
           POP EDX
           POP EAX
      end;
+     inw := tmp;
      io_wait;
 end;
 
 function inb(port : uint16) : uint8; [public, alias: 'util_inb'];
+var
+     tmp : uint8;
 begin
      //serial.sendString('[inb]');
      //serial.sendHex(port);
@@ -402,10 +413,11 @@ begin
           PUSH EDX
           MOV DX, port
           IN AL, DX
-          MOV inb, AL
+          MOV tmp, AL
           POP EDX
           POP EAX
      end;
+     inb := tmp;
      io_wait;
 end;
 

@@ -58,16 +58,19 @@ begin
 end;
 
 function sinb(port : uint16) : uint8;
+var
+     tmp : uint8;
 begin
      asm
           PUSH EAX
           PUSH EDX
           MOV DX, port
           IN AL, DX
-          MOV sinb, AL
+          MOV tmp, AL
           POP EDX
           POP EAX
      end;
+     sinb := tmp;
      io_wait;
 end;
 

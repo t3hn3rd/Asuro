@@ -53,6 +53,7 @@ steps:
 
   - name: msg status
     image: appleboy/drone-discord
+    failure: ignore
     depends_on:
       - compile
     when:

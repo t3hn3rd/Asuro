@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y \
 	apt-get clean my room
 
 SHELL ["/bin/bash", "-c"]
-ARG FPC_VERSION=2.6.4
+ARG FPC_VERSION=3.2.2
 RUN curl -sL https://sourceforge.net/projects/freepascal/files/Linux/$FPC_VERSION/fpc-$FPC_VERSION.i386-linux.tar/download | tar -xf - && \
 	pushd fpc-$FPC_VERSION.i386-linux && ./install.sh && popd && \
 	rm -rf fpc-$FPC_VERSION.i386-linux
