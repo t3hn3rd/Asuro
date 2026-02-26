@@ -491,22 +491,26 @@ begin
         
         { Create a new header to the use in our DHCP REQUEST packet }
         SendHeader:= createHeader();
-        CopyIPv4(puint8(@Header^.Your_IP[0]), puint8(@SendHeader^.Client_IP[0]));
+        CopyIPv4(@getIPv4Config^.Address[0], puint8(@SendHeader^.Client_IP[0]));
         CopyIPv4(puint8(@Header^.Server_IP[0]), puint8(@SendHeader^.Server_IP[0]));
         processHeader(SendHeader);
 
         { Setup Options }
         SendOptions:= newOptions();
+
         { Create a message type option and assign it the value REQUEST }
         SendMsgType:= ord(TDHCPMessageType.REQUEST);
         NewOption(SendOptions, TDHCPOpCode.DHCP_MESSAGE_TYPE, void(@SendMsgType), 1, false);
+
         { Create a Requested IP option and assign it the value from the OFFER packet header }
-        NewOption(SendOptions, TDHCPOpCode.REQUESTED_IP_ADDRESS, void(@SendHeader^.Client_IP[0]), 4, false);
+        NewOption(SendOptions, TDHCPOpCode.REQUESTED_IP_ADDRESS, void(@Header^.Your_IP[0]), 4, false);
+
         { Create a Server Identifier Option and assign it the value from the OFFER packet options }
         Option:= getOptionByOpcode(Options, TDHCPOpCode.SERVER_IDENTIFIER);
         if Option <> nil then begin
             NewOption(SendOptions, TDHCPOpCode.SERVER_IDENTIFIER, void(@Option^.Value[0]), 4, false);
         end;
+
         { Create a Parameter Request List, Request the following: Netmask, Gateway, DNS Name & DNS Server }
         RequestParams[0]:= Ord(TDHCPOpCode.SUBNET_MASK);
         RequestParams[1]:= Ord(TDHCPOpCode.ROUTER);
@@ -522,9 +526,13 @@ begin
         MAC:= getMAC();
         packetCtx:= PPacketContext(Kalloc(sizeof(TPacketContext)));
         packetCtx^.TTL:= 128;
-        copyMAC(@BROADCAST_MAC[0], @packetCtx^.MAC.Destination[0]);
+
+        { Copy over MAC - src: broadcast - dst: DHCP Server }
         copyMAC(MAC, @packetCtx^.MAC.Source[0]);
-        copyIPv4(@NULL_IP[0], @packetCtx^.IP.Source[0]);
+        copyMAC(@BROADCAST_MAC[0], @packetCtx^.MAC.Destination[0]);
+        
+        { Copy over IP - src: NULL - dst: Broadcast }
+        CopyIPv4(@getIPv4Config^.Address[0], @packetCtx^.IP.Source[0]);
         copyIPv4(@BROADCAST_IP[0], @packetCtx^.IP.Destination[0]);
 
         { Setup UDPContext (UDP) & copy in the correct details }
@@ -570,7 +578,7 @@ begin
 
     { Check the frame is for us and then process }
     MAC:= getMAC;
-    if MACEqual(@context^.PacketContext^.MAC.Destination[0], MAC) then begin
+    if MACEqual(@context^.PacketContext^.MAC.Destination[0], MAC) or MACEqual(@context^.PacketContext^.MAC.Destination[0], BROADCAST_MAC) then begin
         Outputln('DHCP','Frame is addressed to us.');
         { Check the message type is client specific }
         If Header^.Message_Type = $02 then begin
@@ -655,7 +663,7 @@ begin
         copyMAC(@BROADCAST_MAC[0], @packetCtx^.MAC.Destination[0]);
         MAC:= getMAC;
         copyMAC(MAC, @packetCtx^.MAC.Source[0]);
-        copyIPv4(@NULL_IP[0], @packetCtx^.IP.Source[0]);
+        CopyIPv4(@getIPv4Config^.Address[0], @packetCtx^.IP.Source[0]);
         copyIPv4(@BROADCAST_IP[0], @packetCtx^.IP.Destination[0]);
 
         { Setup UDPContext (UDP) }

@@ -32,7 +32,7 @@ const
 type
     //internal types
     cardinal = 0..$FFFFFFFF;
-    hresult = cardinal;
+    hresult = type longint;
     dword = cardinal;
     integer = longint;
     pchar = ^char;
@@ -143,6 +143,88 @@ type
 
     PText = ^Text;
 
+    { ---- Types required by FPC 3.2.2 compiler internals ---- }
+
+    { Size/pointer integer types for 32-bit target }
+    SizeInt = longint;
+    SizeUInt = cardinal;
+    PtrInt = longint;
+    PtrUInt = cardinal;
+    ValSInt = longint;
+    ValUInt = cardinal;
+    NativeInt = longint;
+    NativeUInt = cardinal;
+    CodePointer = Pointer;
+    PCodePointer = ^CodePointer;
+    PSizeInt = ^SizeInt;
+
+    { RTTI type kind enumeration — must match compiler's internal list }
+    TTypeKind = (
+        tkUnknown, tkInteger, tkChar, tkEnumeration, tkFloat,
+        tkSet, tkMethod, tkSString, tkLString, tkAString,
+        tkWString, tkVariant, tkArray, tkRecord, tkInterface,
+        tkClass, tkObject, tkWChar, tkBool, tkInt64,
+        tkQWord, tkDynArray, tkInterfaceRaw, tkProcVar, tkUString,
+        tkUChar, tkHelper, tkFile, tkClassRef, tkPointer
+    );
+
+    { jmp_buf for i386 — used by exception handling internals }
+    jmp_buf = packed record
+        ebx, esi, edi: LongInt;
+        bp, sp, pc: Pointer;
+    end;
+    PJmp_buf = ^jmp_buf;
+
+    { Exception address stack entry }
+    PExceptAddr = ^TExceptAddr;
+    TExceptAddr = record
+        buf: PJmp_buf;
+        next: PExceptAddr;
+        frametype: LongInt;
+    end;
+
+    { GUID record — required by compiler for interface support }
+    PGuid = ^TGuid;
+    TGuid = packed record
+        case Integer of
+            1: (Data1: DWord; Data2: Word; Data3: Word; Data4: array[0..7] of Byte);
+            2: (D1: DWord; D2: Word; D3: Word; D4: array[0..7] of Byte);
+            3: (time_low: DWord; time_mid: Word; time_hi_and_version: Word;
+                clock_seq_hi_and_reserved: Byte; clock_seq_low: Byte;
+                node: array[0..5] of Byte);
+    end;
+
+    { File record types — required by compiler for file I/O internals }
+    FileRec = packed record
+        Handle    : longint;
+        Mode      : longint;
+        RecSize   : SizeInt;
+        _private  : array[0..31] of byte;
+        UserData  : array[0..31] of byte;
+        name      : array[0..255] of char;
+    end;
+    PFileRec = ^FileRec;
+
+    TextBuf = array[0..255] of char;
+    TextRec = packed record
+        Handle    : longint;
+        Mode      : longint;
+        BufSize   : SizeInt;
+        _private  : SizeInt;
+        BufPos    : SizeInt;
+        BufEnd    : SizeInt;
+        BufPtr    : ^TextBuf;
+        OpenFunc  : CodePointer;
+        InOutFunc : CodePointer;
+        FlushFunc : CodePointer;
+        CloseFunc : CodePointer;
+        UserData  : array[0..31] of byte;
+        name      : array[0..255] of char;
+        LineEnd   : array[0..3] of char;
+        Buffer    : TextBuf;
+    end;
+    PTextRec = ^TextRec;
+
 var
   AK_START : uint32; external name 'kernel_start';
   AK_END   : uint32; external name 'kernel_end';
@@ -150,15 +232,280 @@ var
   ASURO_KERNEL_END   : uint32;
   ASURO_KERNEL_SIZE  : uint32;
 
+  { FPC 3.2.2 required globals }
+  ExceptAddrStack : PExceptAddr;
+  ExitCode : longint; public name 'operatingsystem_result';
+  ErrorAddr : Pointer;
+  ErrorCode : Word;
+  ExitProc : CodePointer;
+  StackBottom : Pointer;
+  StackLength : SizeUInt;
+  RandSeed : Cardinal;
+
 procedure init();
 
+{ ---- FPC 3.2.2 compilerproc stubs ---- }
+{ These are required by the compiler for program init/exit and error handling. }
+procedure fpc_initializeunits; compilerproc;
+procedure fpc_do_exit; compilerproc;
+procedure fpc_handleerror(errno: longint); compilerproc;
+procedure fpc_rangeerror; compilerproc;
+procedure fpc_overflow; compilerproc;
+procedure fpc_divbyzero; compilerproc;
+procedure fpc_objecterror; compilerproc;
+procedure fpc_abstracterror; compilerproc;
+procedure fpc_stackcheck(stack_size: SizeUInt); compilerproc;
+procedure fpc_iocheck; compilerproc;
+function fpc_pushexceptaddr(ft: longint; _buf: PJmp_buf; var newaddr: TExceptAddr): PJmp_buf; compilerproc;
+procedure fpc_popaddrstack; compilerproc;
+function fpc_setjmp(var s: jmp_buf): longint; compilerproc;
+procedure fpc_longjmp(var s: jmp_buf; value: longint); compilerproc;
+procedure fpc_shortstr_assign(len: longint; sstr, dstr: Pointer); compilerproc;
+
+{ 64-bit multiply compilerproc required by FPC on i386 when
+  any int64/uint64 arithmetic occurs (e.g. sint32 * uint32 promotion).
+  Must live in the system unit so the compiler can resolve it. }
+function fpc_mul_int64(f1, f2: int64): int64; compilerproc;
+
+{ Memory allocation compilerprocs – delegate to kernel heap (lmemorymanager) }
+function fpc_getmem(size: PtrUInt): Pointer; compilerproc;
+procedure fpc_freemem(p: Pointer); compilerproc;
+
+{ Exception handling compilerprocs }
+procedure fpc_reraise; compilerproc;
+procedure fpc_raiseexception(obj: Pointer; anaddr, aframe: Pointer); compilerproc;
+function fpc_catches(obj: Pointer; t: Pointer): Pointer; compilerproc;
+procedure fpc_doneexception; compilerproc;
+
+procedure move(const source; var dest; count: SizeInt);
+
 implementation
+
+{ ---- compilerproc implementations ---- }
+
+{ Internal error handler — called by the individual error stubs.
+  Declared as a normal procedure so it's visible to other procs. }
+procedure HandleErrorInternal(errno: longint);
+begin
+    ErrorCode := Word(errno);
+    ErrorAddr := nil;
+    asm
+        cli
+        hlt
+    end;
+end;
+
+{ Move memory block — minimal implementation needed by shortstr_assign }
+procedure move(const source; var dest; count: SizeInt);
+    [public, alias: 'FPC_MOVE'];
+var
+    i: SizeInt;
+    s, d: PuInt8;
+begin
+    s := @source;
+    d := @dest;
+    if SizeUInt(d) > SizeUInt(s) then begin
+        { Copy backward to handle overlap }
+        for i := count - 1 downto 0 do
+            d[i] := s[i];
+    end else begin
+        for i := 0 to count - 1 do
+            d[i] := s[i];
+    end;
+end;
+
+procedure fpc_initializeunits; [public, alias: 'FPC_INITIALIZEUNITS']; compilerproc;
+begin
+    { Unit initialization is handled by the kernel boot sequence }
+end;
+
+procedure fpc_do_exit; [public, alias: 'FPC_DO_EXIT']; compilerproc;
+begin
+    { Bare metal: halt the CPU }
+    asm
+        cli
+        hlt
+    end;
+end;
+
+procedure fpc_handleerror(errno: longint); [public, alias: 'FPC_HANDLEERROR']; compilerproc;
+begin
+    HandleErrorInternal(errno);
+end;
+
+procedure fpc_rangeerror; [public, alias: 'FPC_RANGEERROR']; compilerproc;
+begin
+    HandleErrorInternal(201);
+end;
+
+procedure fpc_overflow; [public, alias: 'FPC_OVERFLOW']; compilerproc;
+begin
+    HandleErrorInternal(215);
+end;
+
+procedure fpc_divbyzero; [public, alias: 'FPC_DIVBYZERO']; compilerproc;
+begin
+    HandleErrorInternal(200);
+end;
+
+procedure fpc_objecterror; [public, alias: 'FPC_OBJECTERROR']; compilerproc;
+begin
+    HandleErrorInternal(210);
+end;
+
+procedure fpc_abstracterror; [public, alias: 'FPC_ABSTRACTERROR']; compilerproc;
+begin
+    HandleErrorInternal(211);
+end;
+
+procedure fpc_stackcheck(stack_size: SizeUInt); [public, alias: 'FPC_STACKCHECK']; compilerproc;
+begin
+    { No stack checking on bare metal }
+end;
+
+procedure fpc_iocheck; [public, alias: 'FPC_IOCHECK']; compilerproc;
+begin
+    { No IO error checking on bare metal }
+end;
+
+function fpc_pushexceptaddr(ft: longint; _buf: PJmp_buf; var newaddr: TExceptAddr): PJmp_buf;
+    [public, alias: 'FPC_PUSHEXCEPTADDR']; compilerproc;
+begin
+    newaddr.buf := _buf;
+    newaddr.next := ExceptAddrStack;
+    newaddr.frametype := ft;
+    ExceptAddrStack := @newaddr;
+    fpc_pushexceptaddr := _buf;
+end;
+
+procedure fpc_popaddrstack; [public, alias: 'FPC_POPADDRSTACK']; compilerproc;
+begin
+    if ExceptAddrStack <> nil then
+        ExceptAddrStack := ExceptAddrStack^.next;
+end;
+
+function fpc_setjmp(var s: jmp_buf): longint; [public, alias: 'FPC_SETJMP']; compilerproc; assembler;
+asm
+    mov ecx, eax   { eax = @s (register calling convention) }
+    mov [ecx],    ebx
+    mov [ecx+4],  esi
+    mov [ecx+8],  edi
+    mov [ecx+12], ebp
+    mov [ecx+16], esp
+    mov eax, [esp]       { return address }
+    mov [ecx+20], eax
+    xor eax, eax         { return 0 }
+end;
+
+procedure fpc_longjmp(var s: jmp_buf; value: longint); [public, alias: 'FPC_LONGJMP']; compilerproc; assembler;
+asm
+    mov ecx, eax    { eax = @s }
+    mov eax, edx    { edx = value }
+    test eax, eax
+    jnz @notZero
+    inc eax          { value must be non-zero }
+@notZero:
+    mov ebx, [ecx]
+    mov esi, [ecx+4]
+    mov edi, [ecx+8]
+    mov ebp, [ecx+12]
+    mov esp, [ecx+16]
+    jmp dword [ecx+20]
+end;
+
+procedure fpc_shortstr_assign(len: longint; sstr, dstr: Pointer);
+    [public, alias: 'FPC_SHORTSTR_ASSIGN']; compilerproc;
+var
+    slen: uint8;
+    src, dst: PuInt8;
+begin
+    src := PuInt8(sstr);
+    dst := PuInt8(dstr);
+    slen := src^;
+    if slen > uint8(len) then
+        slen := uint8(len);
+    dst^ := slen;
+    if slen > 0 then
+        move(PuInt8(PtrUInt(sstr) + 1)^, PuInt8(PtrUInt(dstr) + 1)^, SizeInt(slen));
+end;
+
+function fpc_mul_int64(f1, f2: int64): int64; [public, alias: 'FPC_MUL_INT64']; compilerproc;
+{ 64x64->64 multiply using three 32-bit MUL instructions.
+  We only keep the low 64 bits of the 128-bit product. }
+var
+  res: int64;
+begin
+    asm
+        MOV  EAX, DWORD [f1]        { f1_lo }
+        MUL  DWORD [f2]             { EDX:EAX = f1_lo * f2_lo }
+        MOV  DWORD [res], EAX       { result_lo }
+        MOV  ECX, EDX               { carry = high(f1_lo * f2_lo) }
+
+        MOV  EAX, DWORD [f1]        { f1_lo }
+        MUL  DWORD [f2+4]           { EDX:EAX = f1_lo * f2_hi }
+        ADD  ECX, EAX               { carry += low(f1_lo * f2_hi) }
+
+        MOV  EAX, DWORD [f1+4]      { f1_hi }
+        MUL  DWORD [f2]             { EDX:EAX = f1_hi * f2_lo }
+        ADD  ECX, EAX               { carry += low(f1_hi * f2_lo) }
+
+        MOV  DWORD [res+4], ECX     { result_hi }
+    end;
+    fpc_mul_int64 := res;
+end;
+
+{ ---------- Memory allocation compilerprocs ---------- }
+
+function kernel_kalloc(size: uint32): Pointer; external name 'kernel_kalloc';
+procedure kernel_kfree(p: Pointer); external name 'kernel_kfree';
+
+function fpc_getmem(size: PtrUInt): Pointer;
+    [public, alias: 'FPC_GETMEM']; compilerproc;
+begin
+    fpc_getmem := kernel_kalloc(uint32(size));
+end;
+
+procedure fpc_freemem(p: Pointer);
+    [public, alias: 'FPC_FREEMEM']; compilerproc;
+begin
+    kernel_kfree(p);
+end;
+
+{ ---------- Exception handling compilerprocs ---------- }
+
+procedure fpc_reraise; [public, alias: 'FPC_RERAISE']; compilerproc;
+begin
+    { In a bare-metal kernel re-raise is a fatal condition }
+    HandleErrorInternal(217);
+end;
+
+procedure fpc_raiseexception(obj: Pointer; anaddr, aframe: Pointer);
+    [public, alias: 'FPC_RAISEEXCEPTION']; compilerproc;
+begin
+    HandleErrorInternal(217);
+end;
+
+function fpc_catches(obj: Pointer; t: Pointer): Pointer;
+    [public, alias: 'FPC_CATCHES']; compilerproc;
+begin
+    fpc_catches := nil;
+end;
+
+procedure fpc_doneexception; [public, alias: 'FPC_DONEEXCEPTION']; compilerproc;
+begin
+    { nothing to do in bare-metal context }
+end;
 
 procedure init();
 begin
     ASURO_KERNEL_START := uint32(@AK_START);
     ASURO_KERNEL_END := uint32(@AK_END);
     ASURO_KERNEL_SIZE:= ASURO_KERNEL_END - ASURO_KERNEL_START;
+    ExceptAddrStack := nil;
+    ErrorAddr := nil;
+    ErrorCode := 0;
+    ExitCode := 0;
+    ExitProc := nil;
 end;
 
 end.
