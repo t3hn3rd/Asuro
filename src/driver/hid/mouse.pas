@@ -51,6 +51,11 @@ type
 
 procedure init();
 procedure DrawCursor;
+function getMouseX: sint32;
+function getMouseY: sint32;
+function getMouseLMB: boolean;
+function getMouseRMB: boolean;
+function getMouseScroll: sint32;  { returns accumulated scroll delta since last call }
 
 implementation
 
@@ -59,7 +64,7 @@ var
     FirstDraw : boolean = true;
     BackPixels : Array[0..1] of Array[0..7] of uint64;
     Cycle : uint32 = 0;
-    Mouse_Byte : Array[0..2] of uint8;
+    Mouse_Byte : Array[0..3] of uint8;
     Packet : uint32;
     Registered : Boolean = false;
     NeedsRedraw : Boolean = false;
@@ -67,6 +72,35 @@ var
     LMouseDownPos : TMousePos;
     LMouseDown : Boolean;
     RMouseDown : Boolean;
+    HasScrollWheel : Boolean = false;
+    ScrollAccum : sint32 = 0;
+    PacketSize : uint32 = 3;
+
+function getMouseX: sint32;
+begin
+    getMouseX := Current.x;
+end;
+
+function getMouseY: sint32;
+begin
+    getMouseY := Current.y;
+end;
+
+function getMouseLMB: boolean;
+begin
+    getMouseLMB := LMouseDown;
+end;
+
+function getMouseRMB: boolean;
+begin
+    getMouseRMB := RMouseDown;
+end;
+
+function getMouseScroll: sint32;
+begin
+    getMouseScroll := ScrollAccum;
+    ScrollAccum := 0;
+end;
 
 procedure DrawCursor;
 var
@@ -151,7 +185,7 @@ begin
             Mouse_Byte[Cycle]:= b;
             Inc(Cycle);
         end;
-        if Cycle = 3 then begin
+        if Cycle = PacketSize then begin
             //Process
             f:= Mouse_Byte[0];
             Packet.x_sign:= (f AND %00010000) = %00010000;
@@ -172,6 +206,10 @@ begin
                 if Current.y < 0 then Current.y:= 0;
                 if Current.x > (Console.getConsoleProperties^.Width-8) then Current.x:= (Console.getConsoleProperties^.Width-8);
                 if Current.y > (Console.getConsoleProperties^.Height-8) then Current.y:= (Console.getConsoleProperties^.Height-8);
+            end;
+            { Process scroll wheel (4th byte, signed) }
+            if HasScrollWheel then begin
+                ScrollAccum := ScrollAccum + sint8(Mouse_Byte[3]);
             end;
             Cycle:= 0;
             if Packet.LMB_Down then begin
@@ -217,7 +255,8 @@ end;
 
 function load(ptr : void) : boolean;
 var
-    status : uint8; 
+    status : uint8;
+    devid_byte : uint8;
 begin
     push_trace('mouse.load');
     mouse_wait(1);
@@ -232,6 +271,26 @@ begin
     outb($60, status);
     mouse_write($F6);
     mouse_read();
+
+    { Enable IntelliMouse scroll wheel: set sample rate 200, 100, 80 }
+    mouse_write($F3); mouse_read(); mouse_write(200); mouse_read();
+    mouse_write($F3); mouse_read(); mouse_write(100); mouse_read();
+    mouse_write($F3); mouse_read(); mouse_write(80);  mouse_read();
+
+    { Query device ID — ID 3 = IntelliMouse (scroll wheel) }
+    mouse_write($F2);
+    mouse_read(); { ACK }
+    devid_byte := mouse_read(); { Device ID }
+    if devid_byte = 3 then begin
+        HasScrollWheel := true;
+        PacketSize := 4;
+        console.outputln('PS/2 MOUSE', 'Scroll wheel enabled (IntelliMouse).');
+    end else begin
+        HasScrollWheel := false;
+        PacketSize := 3;
+        console.outputln('PS/2 MOUSE', 'Standard mouse (no scroll wheel).');
+    end;
+
     mouse_write($F4);
     mouse_read();
     isrmanager.registerISR(44, @Main);

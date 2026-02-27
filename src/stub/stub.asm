@@ -58,10 +58,13 @@ align 0x1000
 _PageDirectory equ BootPageDirectory
 global _PageDirectory
 BootPageDirectory:
-	dd 0x00000083
+	dd 0x00000083						; Identity map first 4MB (for boot transition)
 	times (KERNEL_PAGE_NUMBER - 1) dd 0
-	dd 0x00000083
-	times (1024 - KERNEL_PAGE_NUMBER - 1) dd 0
+	dd 0x00000083						; 0xC0000000 -> phys 0x00000000 (0-4MB)
+	dd 0x00400083						; 0xC0400000 -> phys 0x00400000 (4-8MB)
+	dd 0x00800083						; 0xC0800000 -> phys 0x00800000 (8-12MB)
+	dd 0x00C00083						; 0xC0C00000 -> phys 0x00C00000 (12-16MB)
+	times (1024 - KERNEL_PAGE_NUMBER - 4) dd 0
 
 section .text
 ;

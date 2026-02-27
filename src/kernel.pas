@@ -55,7 +55,7 @@ uses
      rand,
      terminal,
      hashmap, vfs, 
-     video, vesa, doublebuffer, color;
+     video, vesa, doublebuffer, color, lvgl, desktop, uidebug;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
@@ -108,27 +108,8 @@ end;
 
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall; [public, alias: 'kmain'];   
 var
-   c               : uint8;
-   z               : uint32;
    dds             : uint32;
-   pint            : puint32;
-   pint2           : puint32;
    keyboard_layout : array [0..1] of TKeyInfo;
-   i               : uint32;
-   cEIP            : uint32;
-   temp            : uint32;
-   atmp            : puint32;
-   test            : puint8;
-   fb              : puint16;
-   l               : PLinkedListBase;
-   ulf             : pointer;
-
-   HM              : PHashMap;
-
-   colour          : TRGB32;
-
-   array1          : Array[0..255] of char;
-   array2          : Array[0..255] of char;
    
 begin
      { Init the base system unit }
@@ -214,47 +195,6 @@ begin
      doublebuffer.init(@video.register);
      video.enable('VESA');
      video.enable('BASIC_DOUBLE_BUFFER');
-     colour:= color.white;
-
-    //  serial.sendHex(uint32(@array1[8]));
-    //  serial.sendHex(uint32(@array2[8]));
-    //  for i:=8 to 23 do begin
-    //     array2[i]:= '?';
-    //  end;
-    //  array2[24]:= #0;
-
-    //  array1[8]:= 'H';
-    //  array1[9]:= 'e';
-    //  array1[10]:= 'l';
-    //  array1[11]:= 'l';
-    //  array1[12]:= 'o';
-    //  array1[13]:= 'w';
-    //  array1[14]:= 'o';
-    //  array1[15]:= 'r';
-    //  array1[16]:= 'l';
-    //  array1[17]:= 'd';
-    //  array1[18]:= '1';
-    //  array1[19]:= '2';
-    //  array1[20]:= '3';
-    //  array1[21]:= '4';
-    //  array1[22]:= '5';
-    //  array1[23]:= '!';
-    //  __SSE_128_memcpy(uint32(@array1[8]), uint32(@array2[8]));
-    //  serial.sendString(pchar(@array2[8]));
-
-     for i:=0 to video.frontBufferWidth-1 do begin
-        for z:=0 to video.frontBufferHeight-1 do begin
-            video.DrawPixel(i, z, colour);
-        end;
-     end;
-
-     video.DrawLine(50,50,100,100,1,color.black);
-     video.DrawRect(50,150,100,200,1,color.black);
-     video.FillRect(50,250,100,300,1,color.black,color.red);
-     video.DrawLine(50,350,100,350,1,color.black);
-     video.Flush();
-
-     while true do begin end;
 
      { VFS Init }
      vfs.init();
@@ -265,15 +205,15 @@ begin
      tracer.push_trace('kmain.STRMGMT');
      storagemanagement.init();
 
-     { Hook Timer for Ticks }
+     { Enable interrupts and hook timer BEFORE LVGL }
      tracer.push_trace('kmain.TMR');
      STI;
      TMR_0_ISR.hook(uint32(@bios_data_area.tick_update));
 
-     { Filsystems }
+     { Filesystems }
      fat32.init();
 
-     { Device Drivers }
+     { Device Drivers — must init before LVGL so mouse/keyboard are available }
      tracer.push_trace('kmain.DEVDRV');
      console.outputln('KERNEL', 'DEVICE DRIVERS: INIT BEGIN.');
      keyboard.init(keyboard_layout);
@@ -294,33 +234,30 @@ begin
      tracer.push_trace('kmain.NETDRV');
      net.init;
 
-     tracer.push_trace('kmain.VMINIT');
-     //vm.init();
-
      { Init Progs }
      progmanager.init();
 
-     { Init Splash }
-     //tracer.push_trace('kmain.SPLASHINIT');
-     //splash.init();
-
-     { End of Boot }
-     tracer.push_trace('kmain.EOB');
-
-     console.writestringln('');
-     console.setdefaultattribute(console.combinecolors($17E0, $0000));
-     console.writestringln('Asuro Booted Correctly!');
-     console.setdefaultattribute(console.combinecolors($FFFF, $0000));
-     writestringln(' ');
-
-     tracer.push_trace('kmain.END');
+     { Seed RNG }
      rand.srand((getDateTime.Seconds SHL 24) OR (getDateTime.Minutes SHL 16) OR (getDateTime.Hours SHL 8) OR (getDateTime.Day));
 
-     tracer.push_trace('kmain.TICK');
+     { Initialize LVGL }
+     console.outputln('KERNEL', 'LVGL: INIT BEGIN.');
+     lvgl_init(video.frontBufferWidth, video.frontBufferHeight);
+     console.outputln('KERNEL', 'LVGL: INIT COMPLETE.');
 
+     { Initialize desktop environment }
+     console.outputln('KERNEL', 'DESKTOP: INIT BEGIN.');
+     desktop.init;
+     console.outputln('KERNEL', 'DESKTOP: INIT COMPLETE.');
+
+     { Main render loop }
+     console.outputln('KERNEL', 'Entering main render loop.');
+     tracer.push_trace('kmain.MAINLOOP');
      while true do begin
-        tracer.push_trace('kmain.RedrawWindows');
-        console.redrawWindows;
+        desktop.update;
+        uidebug.update;
+        lvgl_handler;
+        video.Flush();
      end;
 
 end;

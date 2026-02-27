@@ -7,7 +7,7 @@ echo "Asuro Compilation"
 echo " "
 
 #Compile Stub.asm
-rm lib/*
+rm -f lib/*
 
 runOrFail() {
 	local binary=$1
@@ -23,6 +23,7 @@ runOrFail() {
 declare -a run_steps=(
 	"compile_stub.sh" "Failed to compile stub!"
 	"compile_vergen.sh" "Versions failed to compile"
+	"compile_lvgl.sh" "Failed to compile LVGL!"
 	"compile_sources.sh" "Failed to compile FPC Sources!"
 	"compile_link.sh" "Failed linking!"
 	"compile_isogen.sh" "Failed to create ISO!"
