@@ -8,7 +8,7 @@ LVGL_VERSION="v9.2.2"
 LVGL_REPO="https://github.com/lvgl/lvgl.git"
 LVGL_DIR="/tmp/lvgl"
 OBJ_DIR="/tmp/lvgl_obj"
-CONF_DIR="$(pwd)"
+CONF_DIR="$(pwd)/lvglh"
 OUT_DIR="$(pwd)/lib"
 
 CC="gcc"
@@ -70,6 +70,40 @@ fi
 OBJECTS=$(find "$OBJ_DIR" -name '*.o')
 ar rcs "${OUT_DIR}/liblvgl.a" $OBJECTS
 echo "Created ${OUT_DIR}/liblvgl.a"
+
+# Compile custom LVGL extension files from lvglh/
+LVGLH_SOURCES=$(find "${CONF_DIR}" -name '*.c' 2>/dev/null || true)
+if [ -n "$LVGLH_SOURCES" ]; then
+    echo " "
+    echo "Compiling custom LVGL files from lvglh/..."
+    LVGLH_OBJ_DIR="/tmp/lvglh_obj"
+    rm -rf "$LVGLH_OBJ_DIR"
+    mkdir -p "$LVGLH_OBJ_DIR"
+    HCOUNT=0
+    HERRORS=0
+    for src in $LVGLH_SOURCES; do
+        HCOUNT=$((HCOUNT + 1))
+        rel="${src#${CONF_DIR}/}"
+        obj_path="${LVGLH_OBJ_DIR}/${rel%.c}.o"
+        mkdir -p "$(dirname "$obj_path")"
+        echo "  [lvglh] $rel"
+        if ! $CC $CFLAGS -c "$src" -o "$obj_path" 2>&1; then
+            echo "  FAILED: $rel"
+            HERRORS=$((HERRORS + 1))
+        fi
+    done
+    echo "Compiled ${HCOUNT} custom files (${HERRORS} errors)."
+    if [ "$HERRORS" -ne 0 ]; then
+        echo "Custom LVGL compilation FAILED."
+        exit 1
+    fi
+    # Append custom objects into the existing archive
+    HOBJECTS=$(find "$LVGLH_OBJ_DIR" -name '*.o')
+    ar rcs "${OUT_DIR}/liblvgl.a" $HOBJECTS
+    echo "Updated ${OUT_DIR}/liblvgl.a with custom objects."
+else
+    echo "No custom LVGL files in lvglh/."
+fi
 
 # Copy source + objects to /lvgl host mount for debugging
 echo "Copying LVGL source and objects to host mount..."

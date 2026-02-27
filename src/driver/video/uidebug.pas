@@ -34,7 +34,7 @@ implementation
 
 const
     PANEL_W       = 220;
-    PANEL_H       = 330;
+    PANEL_H       = 280;
     PANEL_PAD     = 8;
     PANEL_MARGIN  = 8;
     ROW_HEIGHT    = 18;
@@ -107,7 +107,7 @@ var
 begin
     lbl := lv_label_create(parent);
     lv_label_set_text(lbl, '...');
-    lv_obj_set_style_text_color(lbl, lv_color_make(0, 255, 100), 0);
+    lv_obj_set_style_text_color(lbl, lv_color_make(200, 200, 200), 0);
     lv_obj_set_style_text_font(lbl, @lv_font_montserrat_14, 0);
     lv_label_set_long_mode(lbl, LV_LABEL_LONG_CLIP);
     makeRow := lbl;
@@ -124,13 +124,12 @@ begin
 
     overlay := lv_obj_create(scr);
     lv_obj_remove_style_all(overlay);
-    lv_obj_set_size(overlay, PANEL_W, PANEL_H);
     lv_obj_set_pos(overlay, PANEL_MARGIN, PANEL_MARGIN);
     lv_obj_set_style_bg_color(overlay, lv_color_make(0, 0, 0), 0);
     lv_obj_set_style_bg_opa(overlay, 180, 0);
     lv_obj_set_style_radius(overlay, 6, 0);
     lv_obj_set_style_border_width(overlay, 1, 0);
-    lv_obj_set_style_border_color(overlay, lv_color_make(0, 200, 80), 0);
+    lv_obj_set_style_border_color(overlay, lv_color_make(200, 200, 200), 0);
     lv_obj_set_style_border_opa(overlay, 120, 0);
     lv_obj_set_style_pad_left(overlay, PANEL_PAD, 0);
     lv_obj_set_style_pad_right(overlay, PANEL_PAD, 0);
@@ -150,6 +149,7 @@ begin
     lbl_ticks      := makeRow(overlay);
     lbl_memory     := makeRow(overlay);
     lbl_resolution := makeRow(overlay);
+    lv_obj_set_style_pad_bottom(lbl_resolution, 10, 0);
 
     { ---- FPS graph container ---- }
     graph_cont := lv_obj_create(overlay);
@@ -159,7 +159,7 @@ begin
     lv_obj_set_style_bg_opa(graph_cont, 200, 0);
     lv_obj_set_style_radius(graph_cont, 4, 0);
     lv_obj_set_style_border_width(graph_cont, 1, 0);
-    lv_obj_set_style_border_color(graph_cont, lv_color_make(0, 140, 60), 0);
+    lv_obj_set_style_border_color(graph_cont, lv_color_make(200, 200, 200), 0);
     lv_obj_set_style_border_opa(graph_cont, 100, 0);
     lv_obj_set_style_pad_all(graph_cont, 0, 0);
     lv_obj_remove_flag(graph_cont, LV_OBJ_FLAG_SCROLLABLE);
@@ -168,10 +168,13 @@ begin
     { ---- FPS line graph ---- }
     graph_line := lv_line_create(graph_cont);
     lv_obj_remove_style_all(graph_line);
-    lv_obj_set_style_line_color(graph_line, lv_color_make(0, 255, 100), 0);
+    lv_obj_set_style_line_color(graph_line, lv_color_make(200, 200, 200), 0);
     lv_obj_set_style_line_width(graph_line, 2, 0);
     lv_obj_set_style_line_rounded(graph_line, true, 0);
     lv_obj_set_style_line_opa(graph_line, 220, 0);
+
+    { Auto-size overlay to fit children}
+    lv_obj_set_size(overlay, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
 
     { Always on top }
     lv_obj_move_foreground(overlay);

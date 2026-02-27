@@ -55,7 +55,8 @@ uses
      rand,
      terminal,
      hashmap, vfs, 
-     video, vesa, doublebuffer, color, lvgl, desktop, uidebug;
+     video, vesa, doublebuffer, color, lvgl, desktop, uidebug,
+     vterminal;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
@@ -249,6 +250,9 @@ begin
      console.outputln('KERNEL', 'DESKTOP: INIT BEGIN.');
      desktop.init;
      console.outputln('KERNEL', 'DESKTOP: INIT COMPLETE.');
+
+     { Initialize visual terminal (registers with desktop search) }
+     vterminal.init;
 
      { Main render loop }
      console.outputln('KERNEL', 'Entering main render loop.');

@@ -269,6 +269,7 @@ var
     instr_box    : Plv_obj;
     mem_str, res_str, cpu_str, clk_str : pchar;
     cw           : sint32;
+    badge_h      : sint32;
 begin
     if windows.isWindowOpen(sysinfo_win_id) then exit;
 
@@ -286,17 +287,6 @@ begin
     if sysinfo_win_id = 0 then exit;
     content := windows.getWindowContent(sysinfo_win_id);
     if content = nil then exit;
-
-    { Enable scrolling on content area }
-    lv_obj_add_flag(content, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_scrollbar_mode(content, LV_SCROLLBAR_MODE_ON);
-
-    { Style the scrollbar so it's visible against dark background }
-    lv_obj_set_style_bg_color(content, lv_color_make(100, 115, 160), LV_PART_SCROLLBAR);
-    lv_obj_set_style_bg_opa(content, LV_OPA_COVER, LV_PART_SCROLLBAR);
-    lv_obj_set_style_radius(content, 4, LV_PART_SCROLLBAR);
-    lv_obj_set_style_width(content, 6, LV_PART_SCROLLBAR);
-    lv_obj_set_style_pad_all(content, 2, LV_PART_SCROLLBAR);
 
     cw := SYSINFO_W;
 
@@ -340,7 +330,7 @@ begin
     instr_box := lv_obj_create(content);
     lv_obj_remove_style_all(instr_box);
     lv_obj_set_width(instr_box, cw - 40);
-    lv_obj_set_style_height(instr_box, LV_SIZE_CONTENT, 0);
+    lv_obj_set_height(instr_box, 800);  { temporary large height for wrapping }
     lv_obj_set_style_layout(instr_box, LV_LAYOUT_FLEX, 0);
     lv_obj_set_flex_flow(instr_box, LV_FLEX_FLOW_ROW_WRAP);
     lv_obj_set_style_pad_row(instr_box, 4, 0);
@@ -407,6 +397,14 @@ begin
     if cpu.CPUID.Capabilities1^.OSXSAVE then addBadge(instr_box, 'OSXSAVE');
     if cpu.CPUID.Capabilities1^.AVX     then addBadge(instr_box, 'AVX');
     if cpu.CPUID.Capabilities1^.RDRAND  then addBadge(instr_box, 'RDRAND');
+
+    { Force layout so wrapped row heights are resolved,
+      then set instr_box to its actual content height. }
+    lv_obj_update_layout(lv_screen_active);
+    badge_h := lv_obj_get_self_height(instr_box);
+
+    if badge_h > 0 then
+        lv_obj_set_height(instr_box, badge_h);
 end;
 
 { ============================================================

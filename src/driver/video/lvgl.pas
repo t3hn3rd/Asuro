@@ -136,15 +136,22 @@ function  lv_obj_get_x(obj: Plv_obj): sint32; cdecl; external;
 function  lv_obj_get_y(obj: Plv_obj): sint32; cdecl; external;
 function  lv_obj_get_width(obj: Plv_obj): sint32; cdecl; external;
 function  lv_obj_get_height(obj: Plv_obj): sint32; cdecl; external;
+function  lv_obj_get_self_width(obj: Plv_obj): sint32; cdecl; external;
+function  lv_obj_get_self_height(obj: Plv_obj): sint32; cdecl; external;
 function  lv_obj_get_parent(obj: Plv_obj): Plv_obj; cdecl; external;
 procedure lv_obj_align(obj: Plv_obj; align: uint8; x_ofs, y_ofs: sint32); cdecl; external;
 procedure lv_obj_align_to(obj: Plv_obj; base: Plv_obj; align: uint8; x_ofs, y_ofs: sint32); cdecl; external;
+procedure lv_obj_center(obj: Plv_obj); cdecl; external;
 procedure lv_obj_set_style_bg_color(obj: Plv_obj; color: lv_color_t; selector: uint32); cdecl; external;
 procedure lv_obj_set_style_bg_opa(obj: Plv_obj; opa: uint8; selector: uint32); cdecl; external;
 procedure lv_obj_set_style_width(obj: Plv_obj; value: sint32; selector: uint32); cdecl; external;
 procedure lv_obj_set_style_height(obj: Plv_obj; value: sint32; selector: uint32); cdecl; external;
 procedure lv_obj_set_style_text_color(obj: Plv_obj; color: lv_color_t; selector: uint32); cdecl; external;
 procedure lv_obj_set_style_text_font(obj: Plv_obj; font: Plv_font; selector: uint32); cdecl; external;
+procedure lv_obj_set_style_transform_scale_x(obj: Plv_obj; value: sint32; selector: uint32); cdecl; external;
+procedure lv_obj_set_style_transform_scale_y(obj: Plv_obj; value: sint32; selector: uint32); cdecl; external;
+procedure lv_obj_set_style_transform_pivot_x(obj: Plv_obj; value: sint32; selector: uint32); cdecl; external;
+procedure lv_obj_set_style_transform_pivot_y(obj: Plv_obj; value: sint32; selector: uint32); cdecl; external;
 procedure lv_obj_set_style_border_width(obj: Plv_obj; width: sint32; selector: uint32); cdecl; external;
 procedure lv_obj_set_style_radius(obj: Plv_obj; radius: sint32; selector: uint32); cdecl; external;
 procedure lv_obj_set_style_pad_all(obj: Plv_obj; pad: sint32; selector: uint32);
@@ -170,6 +177,7 @@ procedure lv_obj_set_style_clip_corner(obj: Plv_obj; en: boolean; selector: uint
 procedure lv_obj_set_style_opa(obj: Plv_obj; opa: uint8; selector: uint32); cdecl; external;
 function  lv_obj_has_flag(obj: Plv_obj; flag: uint32): boolean; cdecl; external;
 function  lv_obj_get_child_count(obj: Plv_obj): uint32; cdecl; external;
+function  lv_obj_get_child(obj: Plv_obj; idx: sint32): Plv_obj; cdecl; external;
 
 { Label }
 function  lv_label_create(parent: Plv_obj): Plv_obj; cdecl; external;
@@ -186,6 +194,9 @@ procedure lv_obj_set_style_line_opa(obj: Plv_obj; opa: uint8; selector: uint32);
 
 procedure lv_obj_scroll_by(obj: Plv_obj; x, y: sint32; anim_en: uint32); cdecl; external;
 procedure lv_obj_scroll_by_bounded(obj: Plv_obj; dx, dy: sint32; anim_en: uint32); cdecl; external;
+procedure lv_obj_scroll_to_view(obj: Plv_obj; anim_en: uint32); cdecl; external;
+procedure lv_obj_scroll_to_y(obj: Plv_obj; y: sint32; anim_en: uint32); cdecl; external;
+function  lv_obj_get_scroll_bottom(obj: Plv_obj): sint32; cdecl; external;
 
 { Button }
 function  lv_button_create(parent: Plv_obj): Plv_obj; cdecl; external;
@@ -213,6 +224,7 @@ procedure lv_obj_move_to_index(obj: Plv_obj; index: sint32); cdecl; external;
 procedure lv_obj_move_foreground(obj: Plv_obj);
 procedure lv_obj_move_background(obj: Plv_obj);
 procedure lv_obj_invalidate(obj: Plv_obj); cdecl; external;
+procedure lv_obj_update_layout(obj: Plv_obj); cdecl; external;
 
 { Events }
 type
@@ -223,8 +235,10 @@ procedure lv_obj_add_event_cb(obj: Plv_obj; event_cb: lv_event_cb_t; filter: lv_
 function  lv_event_get_code(e: Plv_event): lv_event_code_t; cdecl; external;
 function  lv_event_get_target(e: Plv_event): Plv_obj; cdecl; external;
 function  lv_event_get_user_data(e: Plv_event): pointer; cdecl; external;
+function  lv_event_get_key(e: Plv_event): uint32; cdecl; external;
 
 const
+    { Input device events }
     LV_EVENT_ALL                  = 0;
     LV_EVENT_PRESSED              = 1;
     LV_EVENT_PRESSING             = 2;
@@ -234,10 +248,50 @@ const
     LV_EVENT_LONG_PRESSED_REPEAT  = 6;
     LV_EVENT_CLICKED              = 7;
     LV_EVENT_RELEASED             = 8;
-    LV_EVENT_FOCUSED              = 14;
-    LV_EVENT_DEFOCUSED            = 15;
-    LV_EVENT_VALUE_CHANGED        = 28;
-    LV_EVENT_READY                = 31;
+    LV_EVENT_SCROLL_BEGIN         = 9;
+    LV_EVENT_SCROLL_THROW_BEGIN   = 10;
+    LV_EVENT_SCROLL_END           = 11;
+    LV_EVENT_SCROLL               = 12;
+    LV_EVENT_GESTURE              = 13;
+    LV_EVENT_KEY                  = 14;
+    LV_EVENT_ROTARY               = 15;
+    LV_EVENT_FOCUSED              = 16;
+    LV_EVENT_DEFOCUSED            = 17;
+    LV_EVENT_LEAVE                = 18;
+    LV_EVENT_HIT_TEST             = 19;
+    LV_EVENT_INDEV_RESET          = 20;
+    LV_EVENT_HOVER_OVER           = 21;
+    LV_EVENT_HOVER_LEAVE          = 22;
+    { Drawing events }
+    LV_EVENT_COVER_CHECK          = 23;
+    LV_EVENT_REFR_EXT_DRAW_SIZE   = 24;
+    LV_EVENT_DRAW_MAIN_BEGIN      = 25;
+    LV_EVENT_DRAW_MAIN            = 26;
+    LV_EVENT_DRAW_MAIN_END        = 27;
+    LV_EVENT_DRAW_POST_BEGIN      = 28;
+    LV_EVENT_DRAW_POST            = 29;
+    LV_EVENT_DRAW_POST_END        = 30;
+    LV_EVENT_DRAW_TASK_ADDED      = 31;
+    { Special events }
+    LV_EVENT_VALUE_CHANGED        = 32;
+    LV_EVENT_INSERT               = 33;
+    LV_EVENT_REFRESH              = 34;
+    LV_EVENT_READY                = 35;
+    LV_EVENT_CANCEL               = 36;
+    { Other events }
+    LV_EVENT_CREATE               = 37;
+    LV_EVENT_DELETE               = 38;
+    LV_EVENT_CHILD_CHANGED        = 39;
+    LV_EVENT_CHILD_CREATED        = 40;
+    LV_EVENT_CHILD_DELETED        = 41;
+    LV_EVENT_SCREEN_UNLOAD_START  = 42;
+    LV_EVENT_SCREEN_LOAD_START    = 43;
+    LV_EVENT_SCREEN_LOADED        = 44;
+    LV_EVENT_SCREEN_UNLOADED      = 45;
+    LV_EVENT_SIZE_CHANGED         = 46;
+    LV_EVENT_STYLE_CHANGED        = 47;
+    LV_EVENT_LAYOUT_CHANGED       = 48;
+    LV_EVENT_GET_SELF_SIZE        = 49;
 
 { Part selectors }
 const
@@ -272,17 +326,24 @@ procedure lv_obj_set_style_outline_width(obj: Plv_obj; width: sint32; selector: 
 procedure lv_obj_set_style_outline_color(obj: Plv_obj; color: lv_color_t; selector: uint32); cdecl; external;
 procedure lv_obj_set_style_pad_row(obj: Plv_obj; pad: sint32; selector: uint32); cdecl; external;
 procedure lv_obj_set_style_pad_column(obj: Plv_obj; pad: sint32; selector: uint32); cdecl; external;
+procedure lv_obj_set_style_text_align(obj: Plv_obj; value: uint8; selector: uint32); cdecl; external;
+procedure lv_obj_set_flex_grow(obj: Plv_obj; grow: uint8); cdecl; external;
 
 { Fonts - LVGL built-in }
 var
     lv_font_montserrat_14: uint8; cvar; external;
+    lv_font_fa_solid_16: uint8; cvar; external;
 
 { Flex layout constants }
 const
-    LV_FLEX_FLOW_ROW          = 0;
-    LV_FLEX_FLOW_COLUMN       = 1;
-    LV_FLEX_FLOW_ROW_WRAP     = 2;
-    LV_FLEX_FLOW_COLUMN_WRAP  = 5;
+    LV_FLEX_FLOW_ROW               = 0;
+    LV_FLEX_FLOW_COLUMN            = 1;
+    LV_FLEX_FLOW_ROW_WRAP          = 4;  { ROW | WRAP }
+    LV_FLEX_FLOW_ROW_REVERSE       = 8;  { ROW | REVERSE }
+    LV_FLEX_FLOW_ROW_WRAP_REVERSE  = 12; { ROW | WRAP | REVERSE }
+    LV_FLEX_FLOW_COLUMN_WRAP       = 5;  { COLUMN | WRAP }
+    LV_FLEX_FLOW_COLUMN_REVERSE    = 9;  { COLUMN | REVERSE }
+    LV_FLEX_FLOW_COLUMN_WRAP_REVERSE = 13; { COLUMN | WRAP | REVERSE }
 
     LV_SIZE_CONTENT           = sint32($3FFFFFFF);
     LV_FLEX_ALIGN_START       = 0;
@@ -292,6 +353,13 @@ const
     LV_FLEX_ALIGN_SPACE_AROUND  = 4;
     LV_FLEX_ALIGN_SPACE_BETWEEN = 5;
     LV_LAYOUT_FLEX              = 1;
+
+{ Text alignment }
+const
+    LV_TEXT_ALIGN_AUTO   = 0;
+    LV_TEXT_ALIGN_LEFT   = 1;
+    LV_TEXT_ALIGN_CENTER = 2;
+    LV_TEXT_ALIGN_RIGHT  = 3;
 
 { Alignment constants }
 const
@@ -314,9 +382,10 @@ const
     LV_OBJ_FLAG_CLICKABLE     = (1 SHL 1);
     LV_OBJ_FLAG_SCROLLABLE    = (1 SHL 4);
     LV_OBJ_FLAG_HIDDEN        = (1 SHL 0);
-    LV_OBJ_FLAG_PRESS_LOCK    = (1 SHL 13);
-    LV_OBJ_FLAG_IGNORE_LAYOUT = (1 SHL 17);
-    LV_OBJ_FLAG_FLOATING      = (1 SHL 18);
+    LV_OBJ_FLAG_PRESS_LOCK       = (1 SHL 13);
+    LV_OBJ_FLAG_IGNORE_LAYOUT    = (1 SHL 17);
+    LV_OBJ_FLAG_FLOATING         = (1 SHL 18);
+    LV_OBJ_FLAG_OVERFLOW_VISIBLE = (1 SHL 20);
 
 { Scrollbar mode }
 const
@@ -511,6 +580,10 @@ begin
         $08: last_key := LV_KEY_BACKSPACE;
         $0D: last_key := LV_KEY_ENTER;
         $09: last_key := LV_KEY_NEXT;
+        $10: last_key := LV_KEY_UP;
+        $12: last_key := LV_KEY_DOWN;
+        $13: last_key := LV_KEY_LEFT;
+        $14: last_key := LV_KEY_RIGHT;
         else last_key := uint32(key_info.key_code);
     end;
     key_pressed := true;

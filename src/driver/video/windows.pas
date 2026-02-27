@@ -492,19 +492,19 @@ begin
     lv_obj_set_size(titlebar, w, WIN_TITLEBAR_H);
     lv_obj_set_style_bg_color(titlebar, lv_color_make(45, 48, 58), 0);
     lv_obj_set_style_bg_opa(titlebar, LV_OPA_COVER, 0);
-    lv_obj_set_style_pad_left(titlebar, 10, 0);
-    lv_obj_set_style_pad_right(titlebar, 10, 0);
+    lv_obj_set_style_pad_left(titlebar, 0, 0);
+    lv_obj_set_style_pad_right(titlebar, 0, 0);
     lv_obj_set_style_pad_top(titlebar, 0, 0);
     lv_obj_set_style_pad_bottom(titlebar, 0, 0);
     lv_obj_remove_flag(titlebar, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scrollbar_mode(titlebar, LV_SCROLLBAR_MODE_OFF);
     lv_obj_add_flag(titlebar, LV_OBJ_FLAG_CLICKABLE);
 
-    { Flex layout: close(left) | collapse(left) | title(fill) }
+    { Flex layout: title(grow) | minimize | close }
     lv_obj_set_style_layout(titlebar, LV_LAYOUT_FLEX, 0);
     lv_obj_set_flex_flow(titlebar, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(titlebar, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_column(titlebar, 8, 0);
+    lv_obj_set_style_pad_column(titlebar, 0, 0);
 
     { Titlebar events for drag }
     lv_obj_add_event_cb(titlebar, @titlebar_press_cb, LV_EVENT_PRESSED, nil);
@@ -512,52 +512,52 @@ begin
     lv_obj_add_event_cb(titlebar, @titlebar_release_cb, LV_EVENT_RELEASED, nil);
     lv_obj_add_event_cb(titlebar, @titlebar_release_cb, LV_EVENT_PRESS_LOST, nil);
 
-    { ---- Close button (red circle) ---- }
-    close_btn := lv_button_create(titlebar);
-    lv_obj_remove_style_all(close_btn);
-    lv_obj_set_size(close_btn, 18, 18);
-    lv_obj_set_style_bg_color(close_btn, lv_color_make(220, 60, 60), 0);
-    lv_obj_set_style_bg_opa(close_btn, LV_OPA_COVER, 0);
-    lv_obj_set_style_radius(close_btn, 9, 0);
-    lv_obj_set_style_border_width(close_btn, 0, 0);
-    lv_obj_set_style_shadow_width(close_btn, 0, 0);
-    lv_obj_set_style_pad_all(close_btn, 0, 0);
-    lv_obj_set_style_layout(close_btn, LV_LAYOUT_FLEX, 0);
-    lv_obj_set_flex_flow(close_btn, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(close_btn, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_add_event_cb(close_btn, @close_click_cb, LV_EVENT_CLICKED, pointer(id));
-
-    close_lbl := lv_label_create(close_btn);
-    lv_label_set_text(close_lbl, 'X');
-    lv_obj_set_style_text_color(close_lbl, lv_color_make(255, 255, 255), 0);
-    lv_obj_set_style_text_font(close_lbl, @lv_font_montserrat_14, 0);
-
-    { ---- Collapse button (yellow circle) ---- }
-    coll_btn := lv_button_create(titlebar);
-    lv_obj_remove_style_all(coll_btn);
-    lv_obj_set_size(coll_btn, 18, 18);
-    lv_obj_set_style_bg_color(coll_btn, lv_color_make(230, 190, 50), 0);
-    lv_obj_set_style_bg_opa(coll_btn, LV_OPA_COVER, 0);
-    lv_obj_set_style_radius(coll_btn, 9, 0);
-    lv_obj_set_style_border_width(coll_btn, 0, 0);
-    lv_obj_set_style_shadow_width(coll_btn, 0, 0);
-    lv_obj_set_style_pad_all(coll_btn, 0, 0);
-    lv_obj_set_style_layout(coll_btn, LV_LAYOUT_FLEX, 0);
-    lv_obj_set_flex_flow(coll_btn, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(coll_btn, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_add_event_cb(coll_btn, @collapse_click_cb, LV_EVENT_CLICKED, pointer(id));
-
-    coll_lbl := lv_label_create(coll_btn);
-    lv_label_set_text(coll_lbl, '-');
-    lv_obj_set_style_text_color(coll_lbl, lv_color_make(60, 50, 10), 0);
-    lv_obj_set_style_text_font(coll_lbl, @lv_font_montserrat_14, 0);
-
-    { ---- Title label ---- }
+    { ---- Title label (fills remaining space, centered text) ---- }
     title_lbl := lv_label_create(titlebar);
     lv_label_set_text(title_lbl, title);
     lv_obj_set_style_text_color(title_lbl, lv_color_make(210, 215, 230), 0);
     lv_obj_set_style_text_font(title_lbl, @lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_align(title_lbl, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_pad_left(title_lbl, 10, 0);
     lv_label_set_long_mode(title_lbl, LV_LABEL_LONG_CLIP);
+    lv_obj_set_width(title_lbl, 0);
+    lv_obj_set_flex_grow(title_lbl, 1);
+
+    { ---- Minimize button (full height) ---- }
+    coll_btn := lv_button_create(titlebar);
+    lv_obj_remove_style_all(coll_btn);
+    lv_obj_set_size(coll_btn, WIN_TITLEBAR_H, WIN_TITLEBAR_H);
+    lv_obj_set_style_bg_color(coll_btn, lv_color_make(55, 58, 70), 0);
+    lv_obj_set_style_bg_opa(coll_btn, 0, 0);
+    lv_obj_set_style_radius(coll_btn, 0, 0);
+    lv_obj_set_style_border_width(coll_btn, 0, 0);
+    lv_obj_set_style_shadow_width(coll_btn, 0, 0);
+    lv_obj_set_style_pad_all(coll_btn, 0, 0);
+    lv_obj_add_event_cb(coll_btn, @collapse_click_cb, LV_EVENT_CLICKED, pointer(id));
+
+    coll_lbl := lv_label_create(coll_btn);
+    lv_label_set_text(coll_lbl, #$EF#$81#$A8);
+    lv_obj_set_style_text_color(coll_lbl, lv_color_make(160, 165, 180), 0);
+    lv_obj_set_style_text_font(coll_lbl, @lv_font_fa_solid_16, 0);
+    lv_obj_center(coll_lbl);
+
+    { ---- Close button (right edge, full height) ---- }
+    close_btn := lv_button_create(titlebar);
+    lv_obj_remove_style_all(close_btn);
+    lv_obj_set_size(close_btn, WIN_TITLEBAR_H, WIN_TITLEBAR_H);
+    lv_obj_set_style_bg_color(close_btn, lv_color_make(180, 50, 50), 0);
+    lv_obj_set_style_bg_opa(close_btn, 0, 0);
+    lv_obj_set_style_radius(close_btn, 0, 0);
+    lv_obj_set_style_border_width(close_btn, 0, 0);
+    lv_obj_set_style_shadow_width(close_btn, 0, 0);
+    lv_obj_set_style_pad_all(close_btn, 0, 0);
+    lv_obj_add_event_cb(close_btn, @close_click_cb, LV_EVENT_CLICKED, pointer(id));
+
+    close_lbl := lv_label_create(close_btn);
+    lv_label_set_text(close_lbl, #$EF#$80#$8D);
+    lv_obj_set_style_text_color(close_lbl, lv_color_make(160, 165, 180), 0);
+    lv_obj_set_style_text_font(close_lbl, @lv_font_fa_solid_16, 0);
+    lv_obj_center(close_lbl);
 
     { ---- Content area ---- }
     content := lv_obj_create(frame);
@@ -572,9 +572,15 @@ begin
     lv_obj_set_style_layout(content, LV_LAYOUT_FLEX, 0);
     lv_obj_set_flex_flow(content, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_style_pad_row(content, 6, 0);
-    lv_obj_remove_flag(content, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_scrollbar_mode(content, LV_SCROLLBAR_MODE_OFF);
-    lv_obj_set_style_clip_corner(content, true, 0);
+    lv_obj_add_flag(content, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scrollbar_mode(content, LV_SCROLLBAR_MODE_AUTO);
+
+    { Style the scrollbar so it's visible against the dark background }
+    lv_obj_set_style_bg_color(content, lv_color_make(100, 115, 160), LV_PART_SCROLLBAR);
+    lv_obj_set_style_bg_opa(content, LV_OPA_COVER, LV_PART_SCROLLBAR);
+    lv_obj_set_style_radius(content, 4, LV_PART_SCROLLBAR);
+    lv_obj_set_style_width(content, 6, LV_PART_SCROLLBAR);
+    lv_obj_set_style_pad_all(content, 2, LV_PART_SCROLLBAR);
 
     { ---- Resize grip (floating over frame bottom-right) ---- }
     { The grip is a child of frame but ignores flex layout }
