@@ -293,7 +293,14 @@ end;
 
 procedure enableAVX();
 begin
-    if CPUID.Capabilities1^.AVX then begin
+    if CPUID.Capabilities1^.AVX and CPUID.Capabilities1^.XSAVE then begin
+        { Enable OSXSAVE in CR4 (bit 18) - required before XGETBV/XSETBV }
+        asm
+            MOV EAX, CR4
+            OR EAX, (1 shl 18)
+            MOV CR4, EAX
+        end;
+        { Set XCR0 bits: x87 (0) + SSE (1) + AVX (2) }
         asm
             PUSH EAX
             PUSH ECX
