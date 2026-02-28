@@ -279,18 +279,60 @@ function load(ptr : void) : boolean;
 var
     status : uint8;
     devid_byte : uint8;
+    tmp : uint8;
 begin
     push_trace('mouse.load');
+
+    { Disable both PS/2 ports while configuring }
     mouse_wait_long(1);
-    outb($64, $A8);
+    outb($64, $AD);  { Disable keyboard port }
     mouse_wait_long(1);
-    outb($64, $20); 
+    outb($64, $A7);  { Disable mouse port }
+
+    { Flush the output buffer }
+    while (inb($64) AND $01) = $01 do begin
+        inb($60);
+    end;
+
+    { Read Controller Configuration Byte }
+    mouse_wait_long(1);
+    outb($64, $20);
     mouse_wait_long(0);
-    status:= (inb($60) OR $02) AND (NOT $20);
+    status := inb($60);
+
+    { Enable IRQ12 (bit 1), clear disable-mouse-clock (bit 5) }
+    status := status OR $02;
+    status := status AND (NOT $20);
+
+    { Write back configuration }
     mouse_wait_long(1);
     outb($64, $60);
     mouse_wait_long(1);
     outb($60, status);
+
+    { Enable auxiliary (mouse) port }
+    mouse_wait_long(1);
+    outb($64, $A8);
+
+    { Re-enable keyboard port }
+    mouse_wait_long(1);
+    outb($64, $AE);
+
+    { Reset mouse and wait for self-test }
+    mouse_write($FF);
+    if mouse_wait_long(0) then begin
+        tmp := inb($60);  { ACK ($FA) }
+        if mouse_wait_long(0) then begin
+            tmp := inb($60);  { Self-test result ($AA = pass) }
+            if tmp = $AA then begin
+                if mouse_wait_long(0) then begin
+                    tmp := inb($60);  { Device ID }
+                end;
+            end;
+        end;
+    end;
+
+    { Set defaults }
     mouse_write($F6);
     mouse_read();
 
