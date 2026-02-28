@@ -107,9 +107,10 @@ fi
 
 # Copy source + objects to /lvgl host mount for debugging
 echo "Copying LVGL source and objects to host mount..."
-rm -rf /lvgl/* /lvgl/.[!.]* /lvgl/..?* 2>/dev/null || true
-cp -a "$LVGL_DIR/src" /lvgl/src
-cp -a "$OBJ_DIR" /lvgl/obj
+mkdir /code/lvgl 2>/dev/null || true
+rm -rf /code/lvgl/* /code/lvgl/.[!.]* /code/lvgl/..?* 2>/dev/null || true
+cp -a "$LVGL_DIR/src" /code/lvgl/src
+cp -a "$OBJ_DIR" /code/lvgl/obj
 echo "Done."
 
 echo " "
