@@ -123,8 +123,6 @@ begin
      multibootinfo:= mbinfo;
      multibootmagic:= mbmagic;
 
-    //video.init();
-
      { Ensure tracer is frozen }
      tracer.freeze();
 
@@ -181,7 +179,7 @@ begin
      scheduler.init();
 
      { Console Init }
-     console.init();
+     //console.init();
 
      { CPUID }
      console.outputln('CPU', 'Init begin');

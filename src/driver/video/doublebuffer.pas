@@ -32,8 +32,7 @@ implementation
 function allocateBackBuffer(Width : uint32; Height : uint32; BitsPerPixel : uint8) : uint64;
 begin
     tracer.push_trace('doublebuffer.allocateBackBuffer.enter');
-    //This doesn't currently work... Needs a rework of lmemorymanager
-    allocateBackBuffer:= uint64(klalloc((Width * Height) * BitsPerPixel));
+    allocateBackBuffer:= uint64(klalloc((Width * Height * BitsPerPixel) div 8));
     tracer.push_trace('doublebuffer.allocateBackBuffer.exit');
 end;
 

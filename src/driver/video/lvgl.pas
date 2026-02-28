@@ -1725,7 +1725,8 @@ const
     LV_BUF_LINES = 120;
 
 var
-    lv_buf1: array[0..1600*LV_BUF_LINES-1] of lv_color_t;
+    lv_buf1: pointer;
+    lv_buf1_size: uint32;
 
 { ============================================================
   Color helper
@@ -1740,24 +1741,46 @@ end;
 
 { ============================================================
   Flush callback — copies LVGL render buffer to video back buffer
+  Handles 32bpp (direct copy) and 16bpp (ARGB8888 -> RGB565).
   ============================================================ }
 procedure lvgl_flush_cb(disp: Plv_display; area: Plv_area; color_p: Plv_color); cdecl;
 var
     y, x, area_w: sint32;
     src: puint32;
-    dst: puint32;
+    dst32: puint32;
+    dst16: puint16;
     fb_w: uint32;
+    bpp: uint8;
+    pixel: uint32;
+    r, g, b: uint8;
 begin
     fb_w := video.backBufferWidth;
+    bpp := video.backBufferBpp;
     area_w := (area^.x2 - area^.x1) + 1;
     src := puint32(color_p);
 
-    for y := area^.y1 to area^.y2 do begin
-        dst := puint32(video.backBufferLocation + uint32((y * sint32(fb_w) + area^.x1) * 4));
-        for x := 0 to area_w - 1 do begin
-            dst[x] := src[x];
+    if bpp >= 32 then begin
+        { 32bpp: direct copy, 4 bytes per pixel }
+        for y := area^.y1 to area^.y2 do begin
+            dst32 := puint32(video.backBufferLocation + uint32((y * sint32(fb_w) + area^.x1) * 4));
+            for x := 0 to area_w - 1 do begin
+                dst32[x] := src[x];
+            end;
+            src := puint32(uint32(src) + uint32(area_w * 4));
         end;
-        src := puint32(uint32(src) + uint32(area_w * 4));
+    end else if bpp = 16 then begin
+        { 16bpp: convert ARGB8888 -> RGB565, 2 bytes per pixel }
+        for y := area^.y1 to area^.y2 do begin
+            dst16 := puint16(video.backBufferLocation + uint32((y * sint32(fb_w) + area^.x1) * 2));
+            for x := 0 to area_w - 1 do begin
+                pixel := src[x];
+                b := pixel and $FF;
+                g := (pixel shr 8) and $FF;
+                r := (pixel shr 16) and $FF;
+                dst16[x] := uint16(((uint16(r) shr 3) shl 11) or ((uint16(g) shr 2) shl 5) or (uint16(b) shr 3));
+            end;
+            src := puint32(uint32(src) + uint32(area_w * 4));
+        end;
     end;
 
     lv_display_flush_ready(disp);
@@ -1852,11 +1875,15 @@ begin
     { Register log callback }
     lv_log_register_print_cb(@lvgl_log_cb);
 
+    { Allocate LVGL render buffer dynamically (1/10th of screen) }
+    lv_buf1_size := screen_w * LV_BUF_LINES * SizeOf(lv_color_t);
+    lv_buf1 := pointer(kalloc(lv_buf1_size));
+
     { Create display }
     disp := lv_display_create(sint32(screen_w), sint32(screen_h));
     lv_display_set_flush_cb(disp, @lvgl_flush_cb);
-    lv_display_set_buffers(disp, @lv_buf1[0], nil,
-        SizeOf(lv_buf1), LV_DISPLAY_RENDER_MODE_PARTIAL);
+    lv_display_set_buffers(disp, lv_buf1, nil,
+        lv_buf1_size, LV_DISPLAY_RENDER_MODE_PARTIAL);
 
     { Create mouse input device with read callback }
     mouse_indev := lv_indev_create;
