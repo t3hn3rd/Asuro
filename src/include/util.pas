@@ -414,6 +414,7 @@ var
 
 begin
     //push_trace('util.memset');
+    if size = 0 then exit;
     for i:=0 to size-1 do begin
         loc:= puint8(location + i);
         loc^:= value;
@@ -428,6 +429,7 @@ var
 
 begin
     //push_trace('util.memcpy');
+    if size = 0 then exit;
     for i:=0 to size-1 do begin
         src:= puint8(source + i);
         dst:= puint8(dest + i);

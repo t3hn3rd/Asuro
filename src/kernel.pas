@@ -251,6 +251,9 @@ begin
      { Initialize visual terminal (registers with desktop search) }
      vterminal.init;
 
+     { Run unit tests }
+     strings.UnitTest;
+
      { Main render loop }
      syslog.logln('KERNEL', 'Entering main render loop.');
      tracer.push_trace('kmain.MAINLOOP');
