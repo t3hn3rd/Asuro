@@ -277,6 +277,7 @@ var
     fps_range     : uint32;
     x_step        : uint32;   { x spacing in 256ths of a pixel (fixed point) }
     y_scaled      : sint32;
+    
 begin
     if graph_line = nil then exit;
 

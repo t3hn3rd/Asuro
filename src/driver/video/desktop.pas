@@ -800,19 +800,13 @@ begin
     lv_obj_set_style_text_color(clock_label, lv_color_make(200, 205, 220), 0);
     lv_obj_set_style_text_font(clock_label, @lv_font_montserrat_14, 0);
 
-    { ---- Mouse cursor ---- }
-    cursor_obj := lv_obj_create(scr);
+    { ---- Mouse cursor (FontAwesome arrow-pointer U+F245) ---- }
+    cursor_obj := lv_label_create(scr);
     lv_obj_remove_style_all(cursor_obj);
-    lv_obj_set_size(cursor_obj, 12, 12);
-    lv_obj_set_style_bg_color(cursor_obj, lv_color_make(255, 255, 255), 0);
-    lv_obj_set_style_bg_opa(cursor_obj, LV_OPA_COVER, 0);
-    lv_obj_set_style_radius(cursor_obj, 6, 0);
-    lv_obj_set_style_border_width(cursor_obj, 1, 0);
-    lv_obj_set_style_border_color(cursor_obj, lv_color_make(0, 0, 0), 0);
-    lv_obj_set_style_border_opa(cursor_obj, LV_OPA_COVER, 0);
-    lv_obj_set_style_shadow_width(cursor_obj, 4, 0);
-    lv_obj_set_style_shadow_color(cursor_obj, lv_color_make(0, 0, 0), 0);
-    lv_obj_set_style_shadow_opa(cursor_obj, 100, 0);
+    lv_label_set_text(cursor_obj, #$EF#$89#$85);  { UTF-8 for U+F245 }
+    lv_obj_set_style_text_font(cursor_obj, @lv_font_fa_solid_16, 0);
+    lv_obj_set_style_text_color(cursor_obj, lv_color_make(255, 255, 255), 0);
+    lv_obj_set_style_text_opa(cursor_obj, LV_OPA_COVER, 0);
     lv_obj_remove_flag(cursor_obj, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_remove_flag(cursor_obj, LV_OBJ_FLAG_SCROLLABLE);
 
