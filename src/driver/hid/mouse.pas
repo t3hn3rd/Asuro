@@ -24,6 +24,7 @@ interface
 uses 
     tracer,
     console,
+    video,
     util,
     lmemorymanager,
     strings,
@@ -150,17 +151,38 @@ begin
     mouse_wait:= timeout > 0;
 end;
 
+{ Longer timeout for init-time use only (not safe in ISR context) }
+function mouse_wait_long(w_type : uint8) : boolean;
+var
+    timeout : uint32;
+
+begin
+    timeout:= 100000;
+    if (w_type = 0) then begin
+        while (timeout > 0) do begin
+            if ((inb($64) AND $01) = $01) then break;
+            timeout:= timeout-1;
+        end;
+    end else begin
+        while (timeout > 0) do begin
+            if ((inb($64) AND 2) = 0) then break;
+            timeout := timeout - 1;
+        end;
+    end;
+    mouse_wait_long:= timeout > 0;
+end;
+
 procedure mouse_write(value : uint8);
 begin
-    mouse_wait(1);
+    mouse_wait_long(1);
     outb($64, $D4);
-    mouse_wait(1);
+    mouse_wait_long(1);
     outb($60, value);
 end;
 
 function mouse_read : uint8;
 begin
-    mouse_wait(0);
+    mouse_wait_long(0);
     mouse_read:= inb($60);
 end;
 
@@ -204,8 +226,8 @@ begin
                 Current.y:= Current.y - Packet.y_movement;            
                 if Current.x < 0 then Current.x:= 0;
                 if Current.y < 0 then Current.y:= 0;
-                if Current.x > (Console.getConsoleProperties^.Width-8) then Current.x:= (Console.getConsoleProperties^.Width-8);
-                if Current.y > (Console.getConsoleProperties^.Height-8) then Current.y:= (Console.getConsoleProperties^.Height-8);
+                if Current.x > sint32(video.frontBufferWidth - 1) then Current.x:= sint32(video.frontBufferWidth - 1);
+                if Current.y > sint32(video.frontBufferHeight - 1) then Current.y:= sint32(video.frontBufferHeight - 1);
             end;
             { Process scroll wheel (4th byte, signed) }
             if HasScrollWheel then begin
@@ -259,15 +281,15 @@ var
     devid_byte : uint8;
 begin
     push_trace('mouse.load');
-    mouse_wait(1);
+    mouse_wait_long(1);
     outb($64, $A8);
-    mouse_wait(1);
+    mouse_wait_long(1);
     outb($64, $20); 
-    mouse_wait(0);
-    status:= inb($60) OR $02;
-    mouse_wait(1);
+    mouse_wait_long(0);
+    status:= (inb($60) OR $02) AND (NOT $20);
+    mouse_wait_long(1);
     outb($64, $60);
-    mouse_wait(1);
+    mouse_wait_long(1);
     outb($60, status);
     mouse_write($F6);
     mouse_read();
