@@ -581,12 +581,13 @@ begin
         syslog.writestring('   EIP: '); syslog.writehex(IntSpec^.EIP); syslog.writestring('   CS: '); syslog.writehex(IntSpec^.CS);  syslog.writestring('  EFLAGS: '); syslog.writehexln(IntSpec^.EFLAGS);
         syslog.writestringln(' ');
     end;
-    syslog.writestring('Call Stack: ');
+    tracer.freeze;
+    syslog.writestring('Call Stack:     ');
     trace:= tracer.get_last_trace;
     if trace <> nil then begin
         syslog.writestring('[-0] ');
         syslog.writestringln(trace);
-        for i:=1 to tracer.get_trace_count-7 do begin
+        for i:=1 to tracer.get_trace_count-1 do begin
             trace:= tracer.get_trace_N(i);
             if trace <> nil then begin
                 syslog.writestring('                [');
@@ -594,6 +595,12 @@ begin
                 syslog.writeint(i);
                 syslog.writestring('] ');
                 syslog.writestringln(trace);
+            end else begin
+                syslog.writestring('                [');
+                syslog.writestring('-');
+                syslog.writeint(i);
+                syslog.writestring('] ');
+                syslog.writestringln('?????????');
             end;
         end;
     end else begin
