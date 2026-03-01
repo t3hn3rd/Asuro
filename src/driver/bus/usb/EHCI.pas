@@ -29,7 +29,8 @@ uses
     pmemorymanager,
     vmemorymanager,
     util,
-    drivermanagement;
+    drivermanagement,
+    usbtypes;
 
 function load : boolean;
 

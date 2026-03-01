@@ -12,7 +12,7 @@ unit vterminal;
 interface
 
 uses
-    lvgl, video, windows, desktop, keyboard, serial, tracer,
+    lvgl, video, windows, desktop, keyboard, tracer,
     strings, util, lmemorymanager, asuro, stdio, vfs;
 
 procedure init;
@@ -115,9 +115,6 @@ begin
         lv_obj_update_layout(lv_screen_active);
         { Get remaining scrollable distance to bottom and scroll by that }
         sb := lv_obj_get_scroll_bottom(content);
-        serial.sendString('[VT] scroll_bottom=');
-        serial.sendString(intToString(sb));
-        serial.sendString(#13#10);
         if sb > 0 then
             lv_obj_scroll_by(content, 0, -sb, LV_ANIM_OFF);
     end;

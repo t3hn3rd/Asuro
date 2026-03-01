@@ -30,6 +30,11 @@ uses
     vmemorymanager,
     util,
     drivermanagement,
+    usbtypes,
+    usbcore,
+    usbhub,
+    usb_keyboard,
+    usb_mouse,
     OHCI, UHCI, EHCI, XHCI;
 
 procedure init;
@@ -40,24 +45,28 @@ function loadXHCI(ptr : void) : boolean;
 begin
     push_trace('USB.loadXHCI');
     loadXHCI:= XHCI.load;
+    pop_trace;
 end;
 
 function loadEHCI(ptr : void) : boolean;
 begin
     push_trace('USB.loadEHCI');
     loadEHCI:= EHCI.load;
+    pop_trace;
 end;
 
 function loadOHCI(ptr : void) : boolean;
 begin
     push_trace('USB.loadOHCI');
     loadOHCI:= OHCI.load;
+    pop_trace;
 end;
 
 function loadUHCI(ptr : void) : boolean;
 begin
     push_trace('USB.loadUHCI');
     loadUHCI:= UHCI.load;
+    pop_trace;
 end;
 
 procedure init;
@@ -70,6 +79,16 @@ var
 begin
     push_trace('USB.init');
     syslog.logln('USB Driver', 'INIT BEGIN.');
+
+    { Initialize USB core (HC list, etc.) }
+    usbcore.init;
+
+    { Initialize hub driver (registers class driver for $09) }
+    usbhub.init;
+
+    { Initialize HID class drivers }
+    usb_keyboard.init;
+    usb_mouse.init;
     
     UHCI_ID.Bus:= biPCI;
     UHCI_ID.id0:= idANY;

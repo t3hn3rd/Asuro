@@ -13,7 +13,7 @@ interface
 
 uses
     video, videotypes, color, serial, tracer, lmemorymanager,
-    mousestate, keyboard, TMR_0_ISR, util;
+    mouse, keyboard, TMR_0_ISR, util;
 
 { ============================================================
   Opaque LVGL pointer types (internal C structs)
@@ -1719,10 +1719,11 @@ var
 
     { Keyboard ring buffer for LVGL }
     kb_buf      : array[0..15] of uint32;
-    kb_head     : uint32;  { next write slot (ISR side) }
+    kb_head     : uint32;  { next write slot (hook side) }
     kb_tail     : uint32;  { next read slot (LVGL poll side) }
-    last_key    : uint32;  { last key delivered, for release event }
-    kb_pending_release : boolean;  { true = must send RELEASED before next key }
+    kb_current_key : uint32;   { key currently reported as pressed to LVGL, 0 = none }
+    kb_key_held    : boolean;  { true while physical key is down }
+    kb_held_code   : uint32;   { the LVGL key code of the held key }
 
 const
     KB_BUF_SIZE = 16;
@@ -1805,9 +1806,9 @@ end;
   ============================================================ }
 procedure lvgl_mouse_read_cb(indev: Plv_indev; data: Plv_indev_data); cdecl;
 begin
-    data^.point.x := mousestate.getMouseX;
-    data^.point.y := mousestate.getMouseY;
-    if mousestate.getMouseLMB then
+    data^.point.x := mouse.getMouseX;
+    data^.point.y := mouse.getMouseY;
+    if mouse.getMouseLMB then
         data^.state := LV_INDEV_STATE_PRESSED
     else
         data^.state := LV_INDEV_STATE_RELEASED;
@@ -1818,28 +1819,29 @@ end;
   Keyboard read callback — LVGL polls this for key state
   ============================================================ }
 procedure lvgl_kb_read_cb(indev: Plv_indev; data: Plv_indev_data); cdecl;
-var
-    next_tail: uint32;
 begin
-    if kb_pending_release then begin
-        { Send release for the previous key before consuming the next }
-        data^.key   := last_key;
+    if (kb_current_key <> 0) and
+       ((not kb_key_held) or (kb_held_code <> kb_current_key) or (kb_tail <> kb_head)) then begin
+        { Release current key: physical key released, different key now held, or new keys queued }
+        data^.key   := kb_current_key;
         data^.state := LV_INDEV_STATE_RELEASED;
-        kb_pending_release := false;
-        { If more keys are queued, tell LVGL to call us again }
+        kb_current_key := 0;
         data^.continue_reading := (kb_tail <> kb_head);
     end else if kb_tail <> kb_head then begin
-        { Consume next key from ring buffer — send press }
-        last_key := kb_buf[kb_tail];
+        { Consume next key from ring buffer — press }
+        kb_current_key := kb_buf[kb_tail];
         kb_tail := (kb_tail + 1) mod KB_BUF_SIZE;
-        data^.key   := last_key;
+        data^.key   := kb_current_key;
         data^.state := LV_INDEV_STATE_PRESSED;
-        kb_pending_release := true;
-        { Always call again to send the matching release }
-        data^.continue_reading := true;
+        data^.continue_reading := false; { one press per timer cycle for proper long-press timing }
+    end else if (kb_current_key <> 0) and kb_key_held then begin
+        { Key still physically held — keep reporting pressed for LVGL long-press repeat }
+        data^.key   := kb_current_key;
+        data^.state := LV_INDEV_STATE_PRESSED;
+        data^.continue_reading := false;
     end else begin
-        { No pending keys — idle release }
-        data^.key   := last_key;
+        { Idle — no keys }
+        data^.key   := 0;
         data^.state := LV_INDEV_STATE_RELEASED;
         data^.continue_reading := false;
     end;
@@ -1853,12 +1855,13 @@ var
     k: uint32;
     next_head: uint32;
 begin
-    { Ctrl+D toggles debug overlay }
-    if key_info.CTRL_DOWN and (key_info.key_code = ord('d')) then begin
+    { Ctrl+D toggles debug overlay (press only) }
+    if key_info.is_down_code and key_info.CTRL_DOWN and (key_info.key_code = ord('d')) then begin
         uidebug.toggle;
         exit;
     end;
 
+    { Map Asuro key codes to LVGL key codes }
     case key_info.key_code of
         $1B: k := LV_KEY_ESC;
         $08: k := LV_KEY_BACKSPACE;
@@ -1871,11 +1874,19 @@ begin
         else k := uint32(key_info.key_code);
     end;
 
-    { Push into ring buffer (drop if full — better than corrupting) }
-    next_head := (kb_head + 1) mod KB_BUF_SIZE;
-    if next_head <> kb_tail then begin
-        kb_buf[kb_head] := k;
-        kb_head := next_head;
+    if key_info.is_down_code then begin
+        { Key press — push into ring buffer and track held state }
+        next_head := (kb_head + 1) mod KB_BUF_SIZE;
+        if next_head <> kb_tail then begin
+            kb_buf[kb_head] := k;
+            kb_head := next_head;
+        end;
+        kb_key_held := true;
+        kb_held_code := k;
+    end else begin
+        { Key release — clear held state if it matches }
+        if kb_key_held and (kb_held_code = k) then
+            kb_key_held := false;
     end;
 end;
 
@@ -1895,10 +1906,11 @@ begin
     tracer.push_trace('lvgl.init.enter');
 
     tick_accumulator := 0;
-    last_key := 0;
     kb_head := 0;
     kb_tail := 0;
-    kb_pending_release := false;
+    kb_current_key := 0;
+    kb_key_held := false;
+    kb_held_code := 0;
 
     { Initialize LVGL core }
     lv_init;
@@ -1957,10 +1969,10 @@ begin
         lv_tick_inc(elapsed);
 
     { Process scroll wheel }
-    scroll_delta := mousestate.getMouseScroll;
+    scroll_delta := mouse.getMouseScroll;
     if scroll_delta <> 0 then begin
-        mx := mousestate.getMouseX;
-        my := mousestate.getMouseY;
+        mx := mouse.getMouseX;
+        my := mouse.getMouseY;
         pt.x := mx;
         pt.y := my;
         target := lv_indev_search_obj(lv_screen_active, @pt);
