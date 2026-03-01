@@ -23,7 +23,7 @@ interface
 
 uses
     util,
-    console,
+    syslog,
     isr_types,
     isrmanager,
     IDT;
@@ -40,7 +40,7 @@ begin
     CLI;
     correctInterruptRegisters(true);
     BSOD('SNS', 'Segment Not Present Exception.');
-    console.writestringln('Segment Not Present Exception.');
+    syslog.writestringln('Segment Not Present Exception.');
     util.halt_and_catch_fire;
 end;
 

@@ -23,10 +23,9 @@ unit scheduler;
 interface
 
 uses
-    console,
+    syslog, stdio,
     TMR_0_ISR,
-    lmemorymanager,
-    terminal;
+    lmemorymanager;
 
 const
     Quantum = 64;
@@ -91,32 +90,32 @@ begin
     end;
 end;
 
-procedure terminal_command_tasks(params : PParamList);
+procedure terminal_command_tasks(params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
 var
     list : PScheduler_Entry;
 
 begin
-    console.writestringlnWND('ThreadID - Priority - Delta', getTerminalHWND);
+    stdio.bufWriteStrLn(stdout_buf, 'ThreadID - Priority - Delta');
     list:= Root_Task;
-    console.writeintWND(list^.ThreadID, getTerminalHWND);
-    console.writestringWND('        - ', getTerminalHWND);
-    console.writeintWND(list^.Priority, getTerminalHWND);
-    console.writestringWND('        - ', getTerminalHWND);
-    console.writeintlnWND(list^.Delta, getTerminalHWND);
+    stdio.bufWriteInt(stdout_buf, list^.ThreadID);
+    stdio.bufWriteStr(stdout_buf, '        - ');
+    stdio.bufWriteInt(stdout_buf, list^.Priority);
+    stdio.bufWriteStr(stdout_buf, '        - ');
+    stdio.bufWriteIntLn(stdout_buf, list^.Delta);
     list:= PScheduler_Entry(list^.Next);
     while list <> Root_Task do begin
-        console.writeintWND(list^.ThreadID, getTerminalHWND);
-        console.writestringWND('        - ', getTerminalHWND);
-        console.writeintWND(list^.Priority, getTerminalHWND);
-        console.writestringWND('        - ', getTerminalHWND);
-        console.writeintlnWND(list^.Delta, getTerminalHWND);
+        stdio.bufWriteInt(stdout_buf, list^.ThreadID);
+        stdio.bufWriteStr(stdout_buf, '        - ');
+        stdio.bufWriteInt(stdout_buf, list^.Priority);
+        stdio.bufWriteStr(stdout_buf, '        - ');
+        stdio.bufWriteIntLn(stdout_buf, list^.Delta);
         list:= PScheduler_Entry(list^.Next);
     end;
 end;
 
 procedure init;
 begin
-    console.outputln('SCHEDULER','INIT BEGIN.');
+    syslog.logln('SCHEDULER','INIT BEGIN.');
     Root_Task:= PScheduler_Entry(kalloc(sizeof(TScheduler_Entry)));
     Root_Task^.ThreadID:= 0;
     Root_Task^.Priority:= 1;
@@ -126,8 +125,8 @@ begin
     Tick:= 0;
     Active:= False;
     TMR_0_ISR.hook(uint32(@delta));
-    //terminal.registerCommand('TASKS', @terminal_command_tasks, 'List Active Processes.');
-    console.outputln('SCHEDULER','INIT END.');
+    //stdio.registerCommand('TASKS', @terminal_command_tasks, 'List Active Processes.');
+    syslog.logln('SCHEDULER','INIT END.');
 end;
 
 end.

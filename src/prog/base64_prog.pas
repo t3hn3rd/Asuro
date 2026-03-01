@@ -22,13 +22,13 @@ unit base64_prog;
 interface
 
 uses
-    console, terminal, keyboard, util, strings, tracer, base64, lmemorymanager;
+    stdio, util, strings, tracer, base64, lmemorymanager;
 
 procedure init();
 
 implementation
 
-procedure run(Params : PParamList);
+procedure run(Params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
 var
     input     : pchar;
     pinput    : pchar;
@@ -58,23 +58,23 @@ begin
             dec(pinput);
             pinput^ := #0;
             result := b64_encode_str(input);
-            writestringlnWND(result, getTerminalHWND);
+            stdio.bufWriteStrLn(stdout_buf, result);
             kfree(void(result));
         end else if stringEquals(encdec, 'decode') then begin
             input := getParam(1, Params);
             result := b64_decode_str(input);
-            writestringlnWND(result, getTerminalHWND);
+            stdio.bufWriteStrLn(stdout_buf, result);
             kfree(void(result));
-        end else writestringlnWND('Usage: base64 <encode/decode> <text>', getTerminalHWND);
+        end else stdio.bufWriteStrLn(stderr_buf, 'Usage: base64 <encode/decode> <text>');
     end else begin
-        writestringlnWND('Usage: base64 <encode/decode> <text>', getTerminalHWND);
+        stdio.bufWriteStrLn(stderr_buf, 'Usage: base64 <encode/decode> <text>');
     end;
 end;
 
 procedure init();
 begin
     tracer.push_trace('base64_prog.init');
-    terminal.registerCommand('BASE64', @Run, 'Perform Base64 Encode/Decode.');
+    stdio.registerCommand('BASE64', @Run, 'Perform Base64 Encode/Decode.');
 end;
 
 end.

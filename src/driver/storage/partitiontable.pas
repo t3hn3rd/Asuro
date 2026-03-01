@@ -13,9 +13,8 @@ unit partitontable;
 interface
 
 uses
-    console,
     storagemanagement,
-    util, terminal,
+    util,
     lmemorymanager,
     strings,
     lists,

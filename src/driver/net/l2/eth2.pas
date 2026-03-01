@@ -24,10 +24,8 @@ interface
 uses
     lmemorymanager, util,
     tracer,
-    nettypes, netutils, terminal,
+    nettypes, netutils,
     net,
-    netlog,
-    console,
     crc;
 
 procedure send(p_data : void; p_len : uint16; eth_type : uint16; p_context : PPacketContext);

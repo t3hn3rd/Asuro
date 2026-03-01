@@ -25,7 +25,7 @@ interface
 uses
     util,
     pmemorymanager,
-    console,
+    syslog,
     tracer;
 
 type
@@ -111,14 +111,14 @@ var
 
 begin
     push_trace('vmemorymanager.init');
-    console.outputln('VMM','INIT BEGIN.');
+    syslog.logln('VMM','INIT BEGIN.');
     PageDirectory:= load_current_page_directory;
     KERNEL_PAGE_DIRECTORY:= PageDirectory;
     map_page(KERNEL_PAGE_NUMBER + 0, 0);
     map_page(KERNEL_PAGE_NUMBER + 1, 1);
     map_page(KERNEL_PAGE_NUMBER + 2, 2);
     map_page(KERNEL_PAGE_NUMBER + 3, 3);    
-    console.outputln('VMM','INIT END.');
+    syslog.logln('VMM','INIT END.');
     pop_trace;
 end;
 

@@ -23,7 +23,7 @@ interface
 
 uses
     util,
-    console,
+    syslog,
     isr_types,
     isrmanager,
     IDT;
@@ -40,7 +40,7 @@ begin
     CLI;
     correctInterruptRegisters(false);
     BSOD('OOB', 'Out of Bouunds Exception.');
-    console.writestringln('OOB Exception.');
+    syslog.writestringln('OOB Exception.');
     util.halt_and_catch_fire;
 end;
 

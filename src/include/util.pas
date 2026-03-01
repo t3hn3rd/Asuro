@@ -49,9 +49,7 @@ procedure io_wait;
 
 procedure memset(location : uint32; value : uint8; size : uint32);
 procedure memcpy(source : uint32; dest : uint32; size : uint32);
-
-procedure printmemory(source : uint32; length : uint32; col : uint32; delim : PChar; offset_row : boolean);
-procedure printmemoryWND(source : uint32; length : uint32; col : uint32; delim : PChar; offset_row : boolean; WND : HWND);
+procedure __SSE_128_memcpy(source : uint32; dest : uint32);
 
 procedure halt_and_catch_fire();
 procedure halt_and_dont_catch_fire();
@@ -80,6 +78,8 @@ function RorDWord(AValue : uint32; Dist : uint8) : uint32;
 
 function MsSinceSystemBoot : uint64;
 
+function abs(x : sint32) : uint32;
+
 var
     endptr : uint32; external name '__end';
     stack  : uint32; external name 'KERNEL_STACK';
@@ -87,7 +87,16 @@ var
 implementation
 
 uses
-    console, RTC, cpu, serial, strings, isr_types;
+    syslog, RTC, cpu, serial, strings, isr_types;
+
+function abs(x : sint32) : uint32;
+var
+    y : uint32;
+
+begin
+    y:= x SHR 31;
+    abs:= (x XOR y) - y;
+end;
 
 function MsSinceSystemBoot : uint64;
 begin
@@ -114,6 +123,14 @@ begin
         POPAD
     end;
     div6432:= (r0 SHL 32) OR r4;
+end;
+
+procedure __SSE_128_memcpy(source : uint32; dest : uint32); assembler;
+asm
+    MOV EAX, Source
+    MOVAPS XMM1, [EAX]
+    MOV EAX, Dest
+    MOVAPS [EAX], XMM1
 end;
 
 function switchendian16(b : uint16) : uint16;
@@ -221,37 +238,6 @@ begin
         POP EDX
         POP EAX   
     end;  
-end;
-
-procedure printmemoryWND(source : uint32; length : uint32; col : uint32; delim : PChar; offset_row : boolean; WND : HWND);
-var
-    buf : puint8;
-    i   : uint32;
-
-begin   
-    buf:= puint8(source);
-    for i:=0 to length-1 do begin
-        if offset_row and (i = 0) then begin
-            console.writehexWND(source + (i), WND);
-            console.writestringWND(': ', WND);
-        end; 
-        console.writehexpairWND(buf[i], WND);
-        if ((i+1) MOD col) = 0 then begin
-            console.writestringlnWND(' ', WND);  
-            if offset_row then begin
-                console.writehexWND(source + (i + 1), WND);
-                console.writestringWND(': ', WND);
-            end;  
-        end else begin
-            console.writestringWND(delim, WND);
-        end;
-    end;
-    console.writestringlnWND(' ', WND);   
-end;
-
-procedure printmemory(source : uint32; length : uint32; col : uint32; delim : PChar; offset_row : boolean);
-begin
-    printmemoryWND(source, length, col, delim, offset_row, 0);
 end;
 
 function hi(b : uint8) : uint8; [public, alias: 'util_hi'];
@@ -570,70 +556,48 @@ var
     z     : uint32;
 
 begin
-    console.disable_cursor;
-    console.mouseEnabled(false);
-    console.forceQuitAll;
     if not BSOD_ENABLE then exit;
-    console.setdefaultattribute(console.combinecolors($FFFF, $F800));
-    console.clear;
-    console.writestringln(' ');
-    console.writestringln(' ');
-    console.writestring('             ');
-    console.setdefaultattribute(console.combinecolors($0000, $FFFF));  
-    console.writestring('                                                    ');
-    console.setdefaultattribute(console.combinecolors($FFFF, $F800));
-    console.writestringln(' ');
-    console.writestring('             ');
-    console.setdefaultattribute(console.combinecolors($0000, $FFFF)); 
-    console.writestring('             ASURO DID A WHOOPSIE!  :(              ');
-    console.setdefaultattribute(console.combinecolors($FFFF, $F800));
-    console.writestringln(' ');
-    console.writestring('             ');
-    console.setdefaultattribute(console.combinecolors($0000, $FFFF)); 
-    console.writestring('                                                    ');
-    console.setdefaultattribute(console.combinecolors($FFFF, $F800));
-    console.writestringln(' ');
-    console.writestringln(' ');
-    console.writestringln(' ');
-    console.writestringln('    Asuro encountered an error and your computer is now a teapot.');
-    console.writestringln(' ');
-    console.writestringln('    Your data is almost certainly safe.');
-    console.writestringln(' ');
-    console.writestringln('    Details of the fault (for those boring enough to read) are as follows: ');
-    console.writestringln(' ');
-    console.writestring('    Fault ID:   ');
-    console.writestringln(fault);
-    console.writestring('    Fault Info: ');
-    console.writestringln(info);
-    console.writestringln(' ');
+    syslog.writestringln('=== KERNEL PANIC ===');
+    syslog.writestringln('ASURO DID A WHOOPSIE!  :(');
+    syslog.writestringln(' ');
+    syslog.writestringln('Asuro encountered an error and your computer is now a teapot.');
+    syslog.writestringln('Your data is almost certainly safe.');
+    syslog.writestringln(' ');
+    syslog.writestringln('Details of the fault (for those boring enough to read) are as follows: ');
+    syslog.writestringln(' ');
+    syslog.writestring('Fault ID:   ');
+    syslog.writestringln(fault);
+    syslog.writestring('Fault Info: ');
+    syslog.writestringln(info);
+    syslog.writestringln(' ');
     if IntReg <> nil then begin
-        console.writestringln('    Processor Info: ');
-        console.writestring('       EBP: '); console.writehex(IntReg^.EBP);  console.writestring('      EAX: '); console.writehex(IntReg^.EAX);  console.writestring('      EBX: '); console.writehexln(IntReg^.EBX);
-        console.writestring('       ECX: '); console.writehex(IntReg^.ECX);  console.writestring('      EDX: '); console.writehex(IntReg^.EDX);  console.writestring('      ESI: '); console.writehexln(IntReg^.ESI);
-        console.writestring('       EDI: '); console.writehex(IntReg^.EDI);  console.writestring('       DS: '); console.writehex(IntReg^.DS);   console.writestring('       ES: '); console.writehexln(IntReg^.ES);
-        console.writestring('        FS: '); console.writehex(IntReg^.FS);   console.writestring('       GS: '); console.writehex(IntReg^.GS);   console.writestring('    ERROR: '); console.writehexln(IntErr^.Error);
-        console.writestring('       EIP: '); console.writehex(IntSpec^.EIP); console.writestring('       CS: '); console.writehex(IntSpec^.CS);  console.writestring('   EFLAGS: '); console.writehexln(IntSpec^.EFLAGS);
-        console.writestringln(' ');
+        syslog.writestringln('Processor Info: ');
+        syslog.writestring('   EBP: '); syslog.writehex(IntReg^.EBP);  syslog.writestring('  EAX: '); syslog.writehex(IntReg^.EAX);  syslog.writestring('  EBX: '); syslog.writehexln(IntReg^.EBX);
+        syslog.writestring('   ECX: '); syslog.writehex(IntReg^.ECX);  syslog.writestring('  EDX: '); syslog.writehex(IntReg^.EDX);  syslog.writestring('  ESI: '); syslog.writehexln(IntReg^.ESI);
+        syslog.writestring('   EDI: '); syslog.writehex(IntReg^.EDI);  syslog.writestring('   DS: '); syslog.writehex(IntReg^.DS);   syslog.writestring('   ES: '); syslog.writehexln(IntReg^.ES);
+        syslog.writestring('    FS: '); syslog.writehex(IntReg^.FS);   syslog.writestring('   GS: '); syslog.writehex(IntReg^.GS);   syslog.writestring('  ERROR: '); syslog.writehexln(IntErr^.Error);
+        syslog.writestring('   EIP: '); syslog.writehex(IntSpec^.EIP); syslog.writestring('   CS: '); syslog.writehex(IntSpec^.CS);  syslog.writestring('  EFLAGS: '); syslog.writehexln(IntSpec^.EFLAGS);
+        syslog.writestringln(' ');
     end;
-    console.writestring('    Call Stack: ');
+    syslog.writestring('Call Stack: ');
     trace:= tracer.get_last_trace;
     if trace <> nil then begin
-        console.writestring('[-0] ');
-        console.writestringln(trace);
+        syslog.writestring('[-0] ');
+        syslog.writestringln(trace);
         for i:=1 to tracer.get_trace_count-7 do begin
             trace:= tracer.get_trace_N(i);
             if trace <> nil then begin
-                console.writestring('                [');
-                console.writestring('-');
-                console.writeint(i);
-                console.writestring('] ');
-                console.writestringln(trace);
+                syslog.writestring('                [');
+                syslog.writestring('-');
+                syslog.writeint(i);
+                syslog.writestring('] ');
+                syslog.writestringln(trace);
             end;
         end;
     end else begin
-        console.writestringln('Unknown.');
+        syslog.writestringln('Unknown.');
     end;
-    console.redrawWindows;
+    syslog.writestringln('=== END KERNEL PANIC ===');
     halt_and_catch_fire();
 end;
 

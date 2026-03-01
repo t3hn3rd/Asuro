@@ -22,7 +22,7 @@ unit hashmap;
 interface
 
 uses
-    md5, util, strings, lmemorymanager, console, tracer;
+    md5, util, strings, lmemorymanager, tracer, syslog;
 
 type
     DPHashItem = ^PHashItem;
@@ -265,23 +265,23 @@ var
 begin
     for i:=0 to map^.Size-1 do begin
         if map^.table[i] <> nil then begin
-            writestring('Map[');
-            writeint(i);
-            writestring(']->(0)="');
-            writestring(map^.table[i]^.key);
-            writestring('"');
+            syslog.writestring('Map[');
+            syslog.writeint(i);
+            syslog.writestring(']->(0)="');
+            syslog.writestring(map^.table[i]^.key);
+            syslog.writestring('"');
             item:= map^.table[i]^.next;
             c:=1;
             while item <> nil do begin
-                writestring('->(');
-                writeint(c);
-                writestring(')="');
-                writestring(item^.key);
-                writestring('"');
+                syslog.writestring('->(');
+                syslog.writeint(c);
+                syslog.writestring(')="');
+                syslog.writestring(item^.key);
+                syslog.writestring('"');
                 inc(c);
                 item:= item^.next;
             end;
-            writestringln(' ');
+            syslog.writestringln(' ');
         end;
     end;
 end;

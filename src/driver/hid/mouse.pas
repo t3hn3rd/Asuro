@@ -23,7 +23,9 @@ interface
 
 uses 
     tracer,
-    console,
+    mousestate,
+    syslog,
+    video,
     util,
     lmemorymanager,
     strings,
@@ -50,50 +52,50 @@ type
     end;
 
 procedure init();
-procedure DrawCursor;
+function getMouseX: sint32;
+function getMouseY: sint32;
+function getMouseLMB: boolean;
+function getMouseRMB: boolean;
+function getMouseScroll: sint32;  { returns accumulated scroll delta since last call }
 
 implementation
 
 var
     Current, Last : TMousePos;
-    FirstDraw : boolean = true;
-    BackPixels : Array[0..1] of Array[0..7] of uint64;
     Cycle : uint32 = 0;
-    Mouse_Byte : Array[0..2] of uint8;
+    Mouse_Byte : Array[0..3] of uint8;
     Packet : uint32;
     Registered : Boolean = false;
-    NeedsRedraw : Boolean = false;
     RMouseDownPos : TMousePos;
     LMouseDownPos : TMousePos;
     LMouseDown : Boolean;
     RMouseDown : Boolean;
+    HasScrollWheel : Boolean = false;
+    PacketSize : uint32 = 3;
 
-procedure DrawCursor;
-var
-    x, y : uint32;
-    nx, ny : uint32;
+function getMouseX: sint32;
+begin
+    getMouseX := mousestate.getMouseX;
+end;
 
-begin 
-    nx:= Current.x;
-    ny:= Current.y;
-    if not NeedsRedraw then exit;
-    NeedsRedraw:= false;
-    if not FirstDraw then begin
-        for y:=0 to 7 do begin
-            for x:=0 to 1 do begin
-                drawPixel64(Last.x + (x * 4), Last.y + y, BackPixels[x][y]);
-            end;
-        end;        
-    end;
-    Last.x:= nx;
-    Last.y:= ny;
-    for y:=0 to 7 do begin
-        for x:=0 to 1 do begin
-            BackPixels[x][y]:= GetPixel64(nx + (x * 4), ny + y);
-        end; 
-    end;
-    outputCharToScreenSpace(char(0), nx, ny, $FFFF);
-    FirstDraw:= false;
+function getMouseY: sint32;
+begin
+    getMouseY := mousestate.getMouseY;
+end;
+
+function getMouseLMB: boolean;
+begin
+    getMouseLMB := mousestate.getMouseLMB;
+end;
+
+function getMouseRMB: boolean;
+begin
+    getMouseRMB := mousestate.getMouseRMB;
+end;
+
+function getMouseScroll: sint32;
+begin
+    getMouseScroll := mousestate.getMouseScroll;
 end;
 
 function mouse_wait(w_type : uint8) : boolean;
@@ -116,17 +118,38 @@ begin
     mouse_wait:= timeout > 0;
 end;
 
+{ Longer timeout for init-time use only (not safe in ISR context) }
+function mouse_wait_long(w_type : uint8) : boolean;
+var
+    timeout : uint32;
+
+begin
+    timeout:= 100000;
+    if (w_type = 0) then begin
+        while (timeout > 0) do begin
+            if ((inb($64) AND $01) = $01) then break;
+            timeout:= timeout-1;
+        end;
+    end else begin
+        while (timeout > 0) do begin
+            if ((inb($64) AND 2) = 0) then break;
+            timeout := timeout - 1;
+        end;
+    end;
+    mouse_wait_long:= timeout > 0;
+end;
+
 procedure mouse_write(value : uint8);
 begin
-    mouse_wait(1);
+    mouse_wait_long(1);
     outb($64, $D4);
-    mouse_wait(1);
+    mouse_wait_long(1);
     outb($60, value);
 end;
 
 function mouse_read : uint8;
 begin
-    mouse_wait(0);
+    mouse_wait_long(0);
     mouse_read:= inb($60);
 end;
 
@@ -151,7 +174,7 @@ begin
             Mouse_Byte[Cycle]:= b;
             Inc(Cycle);
         end;
-        if Cycle = 3 then begin
+        if Cycle = PacketSize then begin
             //Process
             f:= Mouse_Byte[0];
             Packet.x_sign:= (f AND %00010000) = %00010000;
@@ -170,8 +193,12 @@ begin
                 Current.y:= Current.y - Packet.y_movement;            
                 if Current.x < 0 then Current.x:= 0;
                 if Current.y < 0 then Current.y:= 0;
-                if Current.x > (Console.getConsoleProperties^.Width-8) then Current.x:= (Console.getConsoleProperties^.Width-8);
-                if Current.y > (Console.getConsoleProperties^.Height-8) then Current.y:= (Console.getConsoleProperties^.Height-8);
+                if Current.x > sint32(video.frontBufferWidth - 1) then Current.x:= sint32(video.frontBufferWidth - 1);
+                if Current.y > sint32(video.frontBufferHeight - 1) then Current.y:= sint32(video.frontBufferHeight - 1);
+            end;
+            { Process scroll wheel (4th byte, signed) }
+            if HasScrollWheel then begin
+                mousestate.addScroll(sint8(Mouse_Byte[3]));
             end;
             Cycle:= 0;
             if Packet.LMB_Down then begin
@@ -179,17 +206,17 @@ begin
                     LMouseDown:= true;
                     LMouseDownPos.x:= Current.x;
                     LMouseDownPos.y:= Current.y;
-                    //MouseDownEvent
-                    console._mouseDown();
+                    mousestate.setMouseLMB(true);
+                    mousestate.fireMouseEvent(MOUSE_DOWN_LEFT);
                 end;
             end;
             if not Packet.LMB_Down then begin
                 if LMouseDown then begin
                     If (Current.x = LMouseDownPos.x) and (Current.y = LMouseDownPos.y) then begin
-                        Console._MouseClick(true);
+                        mousestate.fireMouseEvent(MOUSE_CLICK_LEFT);
                     end;
-                    //MouseUpEvent
-                    Console._MouseUp();
+                    mousestate.setMouseLMB(false);
+                    mousestate.fireMouseEvent(MOUSE_UP_LEFT);
                     LMouseDown:= false;
                 end;
             end;
@@ -198,46 +225,114 @@ begin
                     RMouseDown:= true;
                     RMouseDownPos.x:= Current.x;
                     RMouseDownPos.y:= Current.y;
+                    mousestate.setMouseRMB(true);
+                    mousestate.fireMouseEvent(MOUSE_DOWN_RIGHT);
                 end;
             end;
             
             if not Packet.RMB_Down then begin
                 if RMouseDown then begin
                     if (Current.x = RMouseDownPos.x) and (Current.y = RMouseDownPos.y) then begin
-                        Console._MouseClick(false);
+                        mousestate.fireMouseEvent(MOUSE_CLICK_RIGHT);
                     end;
+                    mousestate.setMouseRMB(false);
+                    mousestate.fireMouseEvent(MOUSE_UP_RIGHT);
                 end;
                 RMouseDown:= false;
             end;
             
-            console.setMousePosition(Current.x, Current.y);
+            mousestate.setMousePos(Current.x, Current.y);
+            mousestate.fireMouseEvent(MOUSE_MOVE);
         end;
     end;
 end;
 
 function load(ptr : void) : boolean;
 var
-    status : uint8; 
+    status : uint8;
+    devid_byte : uint8;
+    tmp : uint8;
 begin
     push_trace('mouse.load');
-    mouse_wait(1);
-    outb($64, $A8);
-    mouse_wait(1);
-    outb($64, $20); 
-    mouse_wait(0);
-    status:= inb($60) OR $02;
-    mouse_wait(1);
+
+    { Disable both PS/2 ports while configuring }
+    mouse_wait_long(1);
+    outb($64, $AD);  { Disable keyboard port }
+    mouse_wait_long(1);
+    outb($64, $A7);  { Disable mouse port }
+
+    { Flush the output buffer }
+    while (inb($64) AND $01) = $01 do begin
+        inb($60);
+    end;
+
+    { Read Controller Configuration Byte }
+    mouse_wait_long(1);
+    outb($64, $20);
+    mouse_wait_long(0);
+    status := inb($60);
+
+    { Enable IRQ12 (bit 1), clear disable-mouse-clock (bit 5) }
+    status := status OR $02;
+    status := status AND (NOT $20);
+
+    { Write back configuration }
+    mouse_wait_long(1);
     outb($64, $60);
-    mouse_wait(1);
+    mouse_wait_long(1);
     outb($60, status);
+
+    { Enable auxiliary (mouse) port }
+    mouse_wait_long(1);
+    outb($64, $A8);
+
+    { Re-enable keyboard port }
+    mouse_wait_long(1);
+    outb($64, $AE);
+
+    { Reset mouse and wait for self-test }
+    mouse_write($FF);
+    if mouse_wait_long(0) then begin
+        tmp := inb($60);  { ACK ($FA) }
+        if mouse_wait_long(0) then begin
+            tmp := inb($60);  { Self-test result ($AA = pass) }
+            if tmp = $AA then begin
+                if mouse_wait_long(0) then begin
+                    tmp := inb($60);  { Device ID }
+                end;
+            end;
+        end;
+    end;
+
+    { Set defaults }
     mouse_write($F6);
     mouse_read();
+
+    { Enable IntelliMouse scroll wheel: set sample rate 200, 100, 80 }
+    mouse_write($F3); mouse_read(); mouse_write(200); mouse_read();
+    mouse_write($F3); mouse_read(); mouse_write(100); mouse_read();
+    mouse_write($F3); mouse_read(); mouse_write(80);  mouse_read();
+
+    { Query device ID — ID 3 = IntelliMouse (scroll wheel) }
+    mouse_write($F2);
+    mouse_read(); { ACK }
+    devid_byte := mouse_read(); { Device ID }
+    if devid_byte = 3 then begin
+        HasScrollWheel := true;
+        PacketSize := 4;
+        syslog.logln('PS/2 MOUSE', 'Scroll wheel enabled (IntelliMouse).');
+    end else begin
+        HasScrollWheel := false;
+        PacketSize := 3;
+        syslog.logln('PS/2 MOUSE', 'Standard mouse (no scroll wheel).');
+    end;
+
     mouse_write($F4);
     mouse_read();
     isrmanager.registerISR(44, @Main);
-    console.outputln('PS/2 MOUSE', 'LOADED.'); 
-    console.output('PS/2 MOUSE', 'Memory: ');
-    console.writehexln(uint32(@current));
+    syslog.logln('PS/2 MOUSE', 'LOADED.');
+    syslog.log('PS/2 MOUSE', 'Memory: ');
+    syslog.writehexln(uint32(@current));
     load:= true;
     pop_trace;
 end;
@@ -248,7 +343,7 @@ var
 
 begin
     push_trace('mouse.init');
-    console.outputln('PS/2 MOUSE', 'INIT BEGIN.');
+    syslog.logln('PS/2 MOUSE', 'INIT BEGIN.');
     devid.bus:= biUnknown;
     devid.id0:= 0;
     devid.id1:= 0;
@@ -261,7 +356,7 @@ begin
     Last.x:= 0;
     Last.y:= 0;
     drivermanagement.register_driver_ex('PS/2 Mouse', @devid, @load, true);
-    console.outputln('PS/2 MOUSE', 'INIT END.');
+    syslog.logln('PS/2 MOUSE', 'INIT END.');
     pop_trace;
 end;
 

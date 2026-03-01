@@ -13,48 +13,31 @@
 //  limitations under the License.
 
 { 
-	Prog->VMLog - Virtual Machine Event Log.
+	Driver->Video->VESA8 - Implementation of VESA 8bpp draw routines for the VESA Driver.
 	
 	@author(Kieron Morris <kjm@kieronmorris.me>)
 }
-unit vmlog;
+unit vesa8;
 
 interface
 
 uses
-    console, terminal, keyboard, util, strings, tracer;
+    videotypes, vesa, tracer, color;
 
-procedure init();
-function  getVMLogHWND : HWND;
+//Init the draw routines by providing what we support through the DrawRoutines struct.
+procedure init(DrawRoutines : PDrawRoutines);
 
 implementation
 
-var
-    Handle  : HWND = 0;
-
-function getVMLogHWND : HWND;
+procedure DrawPixel(Buffer : PVideoBuffer; X : uint32; Y : uint32; Pixel : TRGB32);
 begin
-    getVMLogHWND:= Handle;
+
 end;
 
-procedure OnClose();
+procedure init(DrawRoutines : PDrawRoutines);
 begin
-    Handle:= 0;
-end;
-
-procedure run(Params : PParamList);
-begin
-    if Handle = 0 then begin
-        Handle:= newWindow(20, 40, 63, 14, 'VMLOG');
-        clearWND(Handle);
-        registerEventHandler(Handle, EVENT_CLOSE, void(@OnClose));
-    end;
-end;
-
-procedure init();
-begin
-    tracer.push_trace('vmlog.init');
-    terminal.registerCommand('VMLOG', @Run, 'View virtual-machine event log.');
+    tracer.push_trace('vesa8.init.enter');   
+    tracer.push_trace('vesa8.init.exit');  
 end;
 
 end.

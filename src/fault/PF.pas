@@ -23,7 +23,7 @@ interface
 
 uses
     util,
-    console,
+    syslog,
     isr_types,
     isrmanager,
     IDT;
@@ -40,7 +40,7 @@ begin
     CLI;
     correctInterruptRegisters(true);
     BSOD('PF', 'Page Fault.');
-    console.writestringln('Page Fault.');
+    syslog.writestringln('Page Fault.');
     util.halt_and_catch_fire;
 end;
 

@@ -23,7 +23,7 @@ interface
 
 uses
     tracer,
-    Console,
+    syslog,
     PCI,
     drivertypes,
     pmemorymanager,
@@ -71,19 +71,19 @@ var
 begin
     tracer.push_trace('OHCI.load');
     devices:= PCI.getDeviceInfo($0C, $03, $10, count);
-    console.output('USB-OHCI Driver', 'Found ');
-    console.writeint(count);
-    console.writestringln(' USB Controller(s).');
+    syslog.log('USB-OHCI Driver', 'Found ');
+    syslog.writeint(count);
+    syslog.writestringln(' USB Controller(s).');
     if count > 0 then begin
         for i:=0 to count-1 do begin
-            console.output('USB-OHCI Driver', 'Controller[');
-            console.writeint(i);
-            console.writestring(']: ');
-            console.writehex(devices[i].device_id);
-            console.writestring(' ');
-            console.writehex(devices[i].vendor_id);
-            console.writestring(' ');
-            console.writehexln(devices[i].prog_if);
+            syslog.log('USB-OHCI Driver', 'Controller[');
+            syslog.writeint(i);
+            syslog.writestring(']: ');
+            syslog.writehex(devices[i].device_id);
+            syslog.writestring(' ');
+            syslog.writehex(devices[i].vendor_id);
+            syslog.writestring(' ');
+            syslog.writehexln(devices[i].prog_if);
             block:= devices[i].address0 SHR 22;
             force_alloc_block(block, 0);
             map_page(block, block);

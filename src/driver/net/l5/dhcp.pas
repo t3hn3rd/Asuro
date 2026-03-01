@@ -22,8 +22,8 @@ unit dhcp;
 interface
 
 uses
-    lmemorymanager, console,
-    nettypes, netutils, udp, netlog, net,
+    lmemorymanager, syslog,
+    nettypes, netutils, udp, net,
     util, rand, lists, tracer, ipv4, arp;
 
 type
@@ -415,7 +415,7 @@ end;
 
 procedure processPacket_NAK(Header : PDHCPHeader; Options : PDHCPOptions);
 begin
-    console.outputln('DHCP', 'Process NAK.'); 
+    syslog.logln('DHCP', 'Process NAK.'); 
     { Server provided a NAK, NULL configuration ready for next DISCOVER/Request } 
     nullConfiguration();  
 end;
@@ -429,7 +429,7 @@ var
     cfgopt : void;
 
 begin
-    console.outputln('DHCP', 'Process ACK.');
+    syslog.logln('DHCP', 'Process ACK.');
     getIPv4Config^.UP:= false;
     
     //Copy new address
@@ -483,11 +483,11 @@ Var
     Option      : PDHCPOption;
 
 begin
-    console.outputln('DHCP', 'Process OFFER.');  
+    syslog.logln('DHCP', 'Process OFFER.');  
 
     { Check the Transaction ID matches our stored ID, discard if not. }
     if Header^.Transaction_ID = Configuration^.Transaction then begin
-        console.outputln('DHCP', 'XID Match');
+        syslog.logln('DHCP', 'XID Match');
         
         { Create a new header to the use in our DHCP REQUEST packet }
         SendHeader:= createHeader();
@@ -551,7 +551,7 @@ begin
         kfree(void(packetCtx));
         kfree(void(sendCtx));
     end else begin
-        console.outputln('DHCP', 'XID Mismatch');  
+        syslog.logln('DHCP', 'XID Mismatch');  
     end;  
 end;
 
@@ -566,7 +566,7 @@ var
 
 begin
     tracer.push_trace('dhcp.processPacket.enter');
-    Outputln('DHCP','processPacket');
+    syslog.logln('DHCP','processPacket');
     
     { Give access to header values & process to correct endianness. }
     Header:= PDHCPHeader(p_data);
@@ -579,13 +579,13 @@ begin
     { Check the frame is for us and then process }
     MAC:= getMAC;
     if MACEqual(@context^.PacketContext^.MAC.Destination[0], MAC) or MACEqual(@context^.PacketContext^.MAC.Destination[0], BROADCAST_MAC) then begin
-        Outputln('DHCP','Frame is addressed to us.');
+        syslog.logln('DHCP','Frame is addressed to us.');
         { Check the message type is client specific }
         If Header^.Message_Type = $02 then begin
-            Outputln('DHCP','Packet is a client packet.');
+            syslog.logln('DHCP','Packet is a client packet.');
 
             { Iterate options to find DHCP_MESSAGE_TYPE }
-            Outputln('DHCP','Searching for message type in Options');
+            syslog.logln('DHCP','Searching for message type in Options');
             for i:=0 to getOptionsCount(Options)-1 do begin
                 Option:= getOption(Options, i);
                 if Option^.Opcode = DHCP_MESSAGE_TYPE then begin
@@ -594,11 +594,11 @@ begin
                     Option:= nil;
                 end;
             end;
-            Outputln('DHCP','Done searching for message type in Options');
+            syslog.logln('DHCP','Done searching for message type in Options');
 
             { Did we successfully get the DHCP_MESSAGE_TYPE option? }
             if Option <> nil then begin
-                Outputln('DHCP','Found message type option.');
+                syslog.logln('DHCP','Found message type option.');
                 { Read the value of DHCP_MESSAGE_TYPE }
                 MsgType:= readOption8(Option);
                 case TDHCPMessageType(MsgType) of
@@ -609,14 +609,14 @@ begin
                 end;
             end else begin
                 { Could not find the DHCP_MESSAGE_TYPE option }
-                Outputln('DHCP','Could not find message type option.');
+                syslog.logln('DHCP','Could not find message type option.');
             end;
         end else begin
             { Packet is intended for a DHCP server }
-            Outputln('DHCP','Packet is a server packet.');
+            syslog.logln('DHCP','Packet is a server packet.');
         end;
     end else begin
-        Outputln('DHCP', 'Packet is not addressed to us.');
+        syslog.logln('DHCP', 'Packet is not addressed to us.');
     end;
 
     freeOptions(Options);
@@ -696,11 +696,11 @@ begin
     Socket^.Callback:= @processPacket;
     Socket^.UID:= rand32;
     case UDP.bind(Socket) of
-        tueOK:console.outputln('DHCP', 'Successfully bound port 68.');
+        tueOK:syslog.logln('DHCP', 'Successfully bound port 68.');
         else begin
             kfree(void(Socket));
             Socket:= nil;
-            console.outputln('DHCP', 'Failed to bind port 68.');
+            syslog.logln('DHCP', 'Failed to bind port 68.');
         end;
     end;
 end;
@@ -711,7 +711,7 @@ var
 
 begin
     tracer.push_trace('dhcp.register');
-    console.outputln('DHCP', 'Register begin.');
+    syslog.logln('DHCP', 'Register begin.');
     
     { Kalloc our Configuration Data }
     Configuration:= PDHCPConfiguation(kalloc(sizeof(TDHCPConfiguration)));
@@ -789,7 +789,7 @@ begin
     { Bind to port 68 }
     bind();
 
-    console.outputln('DHCP', 'Register end.');
+    syslog.logln('DHCP', 'Register end.');
 end;
 
 end.

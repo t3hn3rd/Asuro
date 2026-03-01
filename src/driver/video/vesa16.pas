@@ -13,48 +13,31 @@
 //  limitations under the License.
 
 { 
-	Prog->NetLog - Network Driver Logs.
+	Driver->Video->VESA16 - Implementation of VESA 16bpp draw routines for the VESA Driver.
 	
 	@author(Kieron Morris <kjm@kieronmorris.me>)
 }
-unit netlog;
+unit vesa16;
 
 interface
 
 uses
-    console, terminal, keyboard, util, strings, tracer;
+    videotypes, vesa, tracer, color;
 
-procedure init();
-function  getNetlogHWND : HWND;
+//Init the draw routines by providing what we support through the DrawRoutines struct.
+procedure init(DrawRoutines : PDrawRoutines);
 
 implementation
 
-var
-    Handle  : HWND = 0;
-
-function  getNetlogHWND : HWND;
+procedure DrawPixel(Buffer : PVideoBuffer; X : uint32; Y : uint32; Pixel : TRGB32);
 begin
-    getNetlogHWND:= Handle;
+
 end;
 
-procedure OnClose();
+procedure init(DrawRoutines : PDrawRoutines);
 begin
-    Handle:= 0;
-end;
-
-procedure run(Params : PParamList);
-begin
-    if Handle = 0 then begin
-        Handle:= newWindow(20, 40, 63, 14, 'NETLOG');
-        clearWND(Handle);
-        registerEventHandler(Handle, EVENT_CLOSE, void(@OnClose));
-    end;
-end;
-
-procedure init();
-begin
-    tracer.push_trace('netlog.init');
-    terminal.registerCommand('NETLOG', @Run, 'View network event log.');
+    tracer.push_trace('vesa16.init.enter');   
+    tracer.push_trace('vesa16.init.exit');
 end;
 
 end.

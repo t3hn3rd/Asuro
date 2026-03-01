@@ -14,8 +14,7 @@ interface
 uses
     util,
     drivertypes,
-    console,
-    terminal,
+    syslog,
     drivermanagement,
     vmemorymanager,
     lmemorymanager,
@@ -190,8 +189,7 @@ begin
         status := port_read(ATA_REG_COMMAND);
 
         if(status and ATA_SR_ERR) = ATA_SR_ERR then begin
-            console.writestringln('[IDE] (IDENTIFY_DEVICE) DRIVE ERROR!');
-            console.redrawWindows();
+            syslog.writestringln('[IDE] (IDENTIFY_DEVICE) DRIVE ERROR!');
             is_ready := false;
             break;
         end;
@@ -248,7 +246,7 @@ var
     devID : TDeviceIdentifier;
 begin
     push_trace('ide.init');
-    console.writestringln('[IDE] (INIT) BEGIN');
+    syslog.writestringln('[IDE] (INIT) BEGIN');
     devID.bus:= biPCI;
     devID.id0:= idANY;
     devID.id1:= $00000001;
@@ -257,7 +255,7 @@ begin
     devID.id4:= idANY;
     devID.ex:= nil;
     drivermanagement.register_driver('IDE ATA Driver', @devID, @load);
-    console.writestringln('[IDE] (INIT) END');
+    syslog.writestringln('[IDE] (INIT) END');
 end;
 
 function load(ptr : void) : boolean;
@@ -269,10 +267,10 @@ var
     i : uint8;
 begin
     push_trace('ide.load');
-    console.writestringln('[IDE] (LOAD) BEGIN');
+    syslog.writestringln('[IDE] (LOAD) BEGIN');
     controller := PPCI_Device(ptr);
 
-    console.writestringln('[IDE] (INIT) CHECK FLOATING BUS');
+    syslog.writestringln('[IDE] (INIT) CHECK FLOATING BUS');
     //check if bus is floating and identify device
     if inb($1F7) <> $FF then begin
         //outb($3F6, inb($3f6) or (1 shl 1)); // disable interrupts
@@ -284,7 +282,7 @@ begin
         masterDevice.maxSectorCount:= (IDEDevices[0].info[60] or (IDEDevices[0].info[61] shl 16) ); //LBA28 SATA
         
         if IDEDevices[0].info[1] = 0 then begin
-            console.writestringln('[IDE] (INIT) ERROR: DEVICE IDENT FAILED!');
+            syslog.writestringln('[IDE] (INIT) ERROR: DEVICE IDENT FAILED!');
             exit;
         end;
 
@@ -320,7 +318,7 @@ begin
     // writePIO28(0, 5, buffer);
     // kfree(puint32(buffer));
 
-    console.writestringln('[IDE] (LOAD) END');
+    syslog.writestringln('[IDE] (LOAD) END');
 end;
 
 procedure readPIO28(drive : uint8; LBA : uint32; buffer : puint8);
@@ -331,7 +329,7 @@ var
     data: uint16;
 begin 
        if not validate_28bit_address(LBA) then begin
-        console.writestringln('IDE (writePIO28) ERROR: Invalid LBA!');
+        syslog.writestringln('IDE (writePIO28) ERROR: Invalid LBA!');
     end;
 
     //Add last 4 bits of LBA to device port
@@ -378,11 +376,11 @@ var
 begin 
     push_trace('IDE.WritePIO28');
     if not validate_28bit_address(LBA) then begin
-        console.writestringln('IDE (writePIO28) ERROR: Invalid LBA!');
+        syslog.writestringln('IDE (writePIO28) ERROR: Invalid LBA!');
     end;
 
-    console.writeintln(uint32(drive));
-    console.writeintln(LBA);
+    syslog.writeintln(uint32(drive));
+    syslog.writeintln(LBA);
 
     //Add last 4 bits of LBA to device port
     if IDEDevices[drive].isMaster then begin

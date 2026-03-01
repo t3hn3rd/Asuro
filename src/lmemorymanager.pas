@@ -25,7 +25,7 @@ uses
     util,
     vmemorymanager,
     pmemorymanager,
-    console,
+    syslog,
     tracer;
 
 const
@@ -104,7 +104,7 @@ var
 
 begin
     //push_trace('lmemorymanager.init');
-    console.outputln('LMM','INIT BEGIN.');
+    syslog.logln('LMM','INIT BEGIN.');
     Root_Page:= PHeapPage(new_lmm_page);
     Search_Page:= Root_Page;
     Root_Page^.Next_Page:= 0;
@@ -114,7 +114,7 @@ begin
         Root_Page^.Entries[i].Root:= False;
         Root_Page^.Entries[i].Last:= False;
     end; 
-    console.outputln('LMM','INIT END.');
+    syslog.logln('LMM','INIT END.');
     //pop_trace;
 end;
 

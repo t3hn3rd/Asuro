@@ -27,7 +27,7 @@ uses
     drivertypes,
     drivermanagement,
     lmemorymanager,
-    console,
+    syslog,
     vmemorymanager;
 
 type
@@ -250,7 +250,7 @@ procedure init();
 var
     devID : TDeviceIdentifier;
 begin
-    console.writestringln('AHCI: Registering driver');
+    syslog.writestringln('AHCI: Registering driver');
     devID.bus:= biPCI;
     devID.id0:= idANY;
     devID.id1:= $00000001;
@@ -263,7 +263,7 @@ end;
 
 procedure load(ptr : void);
 begin
-    console.writestringln('AHCI: initilizing a new controller');
+    syslog.writestringln('AHCI: initilizing a new controller');
     ahciControllers[ahciControllerCount] := ptr;
     hba[ahciControllerCount] := PPCI_Device(ptr)^.address5;
     new_page_at_address(hba[ahciControllerCount]);

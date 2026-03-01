@@ -22,7 +22,7 @@ unit testdriver;
 interface
 
 uses
-    tracer, console, drivermanagement;
+    tracer, syslog, drivermanagement;
 
 procedure init;
 
@@ -31,7 +31,7 @@ implementation
 function load(ptr : void) : boolean;
 begin
     push_trace('testdriver.load');
-    console.outputln('DUMMY DRIVER', 'LOADED.');
+    syslog.logln('DUMMY DRIVER', 'LOADED.');
     pop_trace;
 end;
 

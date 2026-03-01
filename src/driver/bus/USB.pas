@@ -23,7 +23,7 @@ interface
 
 uses
     tracer,
-    Console,
+    syslog,
     PCI,
     drivertypes,
     pmemorymanager,
@@ -69,7 +69,7 @@ var
 
 begin
     push_trace('USB.init');
-    console.outputln('USB Driver', 'INIT BEGIN.');
+    syslog.logln('USB Driver', 'INIT BEGIN.');
     
     UHCI_ID.Bus:= biPCI;
     UHCI_ID.id0:= idANY;
@@ -108,7 +108,7 @@ begin
     drivermanagement.register_driver('USB-EHCI Driver', @EHCI_ID, @loadEHCI);
     drivermanagement.register_driver('USB-XHCI Driver', @XHCI_ID, @loadXHCI);
 
-    console.outputln('USB Driver', 'INIT END.');
+    syslog.logln('USB Driver', 'INIT END.');
     pop_trace;
 end;
 

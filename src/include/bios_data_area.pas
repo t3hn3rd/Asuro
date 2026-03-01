@@ -75,7 +75,7 @@ procedure tick_update(data : void);
 implementation
 
 uses
-    console, vmemorymanager;
+    vmemorymanager;
 
 procedure tick_update(data : void);
 begin

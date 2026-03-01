@@ -27,7 +27,6 @@ const
      KERNEL_PAGE_NUMBER = KERNEL_VIRTUAL_BASE SHR 22;
      BSOD_ENABLE = true;
      TRACER_ENABLE = true;
-     CONSOLE_SLOW_REDRAW = false; //Redraws the Window manager after every character, but slows performance.
 
 type
     //internal types
@@ -83,7 +82,6 @@ type
     PDouble = ^Double;
 
     Void = ^uInt32;
-    HWND = uint32;
 
     yord = uInt8;
     xord = uInt8;
@@ -127,19 +125,6 @@ type
 
     TMask = bitpacked array[0..7] of Boolean;
     PMask = ^TMask;
-
-    TRGB565 = bitpacked record
-      B : UBit5;
-      G : UBit6;
-      R : UBit5
-    end;
-    PRGB565 = ^TRGB565;
-
-    TRGB565Pair = bitpacked record
-      Background : TRGB565;
-      Foreground : TRGB565;
-    end;
-    PRGB565Pair = ^TRGB565Pair;
 
     PText = ^Text;
 
@@ -266,6 +251,8 @@ procedure fpc_shortstr_assign(len: longint; sstr, dstr: Pointer); compilerproc;
   any int64/uint64 arithmetic occurs (e.g. sint32 * uint32 promotion).
   Must live in the system unit so the compiler can resolve it. }
 function fpc_mul_int64(f1, f2: int64): int64; compilerproc;
+function fpc_div_int64(n, d: int64): int64; compilerproc;
+function fpc_mod_int64(n, d: int64): int64; compilerproc;
 
 { Memory allocation compilerprocs – delegate to kernel heap (lmemorymanager) }
 function fpc_getmem(size: PtrUInt): Pointer; compilerproc;
@@ -452,6 +439,111 @@ begin
         MOV  DWORD [res+4], ECX     { result_hi }
     end;
     fpc_mul_int64 := res;
+end;
+
+{ ---------- 64-bit division / modulo ---------- }
+
+{ Helper: unsigned 64÷64→64 using shift-subtract (binary long division).
+  Called by both signed div and mod after sign handling. }
+procedure udiv64(dividendLo, dividendHi, divisorLo, divisorHi: uint32;
+                 var quotLo, quotHi, remLo, remHi: uint32);
+var
+    bit: longint;
+begin
+    quotLo := 0; quotHi := 0;
+    remLo  := 0; remHi  := 0;
+
+    for bit := 63 downto 0 do begin
+        { rem := rem shl 1 }
+        remHi := (remHi shl 1) or (remLo shr 31);
+        remLo := remLo shl 1;
+
+        { bring down next bit of dividend }
+        if bit >= 32 then begin
+            remLo := remLo or ((dividendHi shr (bit - 32)) and 1);
+        end else begin
+            remLo := remLo or ((dividendLo shr bit) and 1);
+        end;
+
+        { if rem >= divisor then rem -= divisor; set quotient bit }
+        if (remHi > divisorHi) or
+           ((remHi = divisorHi) and (remLo >= divisorLo)) then begin
+            { rem -= divisor (64-bit subtract) }
+            if remLo < divisorLo then begin
+                remHi := remHi - divisorHi - 1;
+                remLo := remLo - divisorLo;
+            end else begin
+                remHi := remHi - divisorHi;
+                remLo := remLo - divisorLo;
+            end;
+            { set quotient bit }
+            if bit >= 32 then
+                quotHi := quotHi or (uint32(1) shl (bit - 32))
+            else
+                quotLo := quotLo or (uint32(1) shl bit);
+        end;
+    end;
+end;
+
+function fpc_div_int64(n, d: int64): int64; [public, alias: 'FPC_DIV_INT64']; compilerproc;
+var
+    negate: boolean;
+    nLo, nHi, dLo, dHi: uint32;
+    qLo, qHi, rLo, rHi: uint32;
+begin
+    if d = 0 then begin
+        HandleErrorInternal(200); { divide by zero }
+        fpc_div_int64 := 0;
+        exit;
+    end;
+
+    negate := false;
+
+    { Make both operands positive, track sign }
+    if n < 0 then begin
+        n := -n;
+        negate := not negate;
+    end;
+    if d < 0 then begin
+        d := -d;
+        negate := not negate;
+    end;
+
+    nLo := uint32(n); nHi := uint32(n shr 32);
+    dLo := uint32(d); dHi := uint32(d shr 32);
+
+    udiv64(nLo, nHi, dLo, dHi, qLo, qHi, rLo, rHi);
+
+    fpc_div_int64 := int64(qLo) or (int64(qHi) shl 32);
+    if negate then
+        fpc_div_int64 := -fpc_div_int64;
+end;
+
+function fpc_mod_int64(n, d: int64): int64; [public, alias: 'FPC_MOD_INT64']; compilerproc;
+var
+    nNeg: boolean;
+    nLo, nHi, dLo, dHi: uint32;
+    qLo, qHi, rLo, rHi: uint32;
+begin
+    if d = 0 then begin
+        HandleErrorInternal(200); { divide by zero }
+        fpc_mod_int64 := 0;
+        exit;
+    end;
+
+    nNeg := n < 0;
+
+    if n < 0 then n := -n;
+    if d < 0 then d := -d;
+
+    nLo := uint32(n); nHi := uint32(n shr 32);
+    dLo := uint32(d); dHi := uint32(d shr 32);
+
+    udiv64(nLo, nHi, dLo, dHi, qLo, qHi, rLo, rHi);
+
+    fpc_mod_int64 := int64(rLo) or (int64(rHi) shl 32);
+    if nNeg then
+        fpc_mod_int64 := -fpc_mod_int64;
 end;
 
 { ---------- Memory allocation compilerprocs ---------- }

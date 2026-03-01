@@ -23,7 +23,7 @@ interface
 
 uses
     util,
-    console,
+    syslog,
     isr_types,
     isrmanager,
     IDT;
@@ -40,7 +40,7 @@ begin
     CLI;
     correctInterruptRegisters(false);
     BSOD('NMI', 'Non-Maskable Interrupt Exception.');
-    console.writestringln('NMI Exception.');
+    syslog.writestringln('NMI Exception.');
     util.halt_and_catch_fire;
 end;
 

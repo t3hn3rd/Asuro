@@ -24,8 +24,7 @@ interface
 uses
     util,
     drivertypes,
-    console,
-    terminal,
+    stdio,
     drivermanagement,
     lmemorymanager,
     strings,
@@ -131,39 +130,39 @@ begin
 end;
 
 { Disk subcommand for listing drives }
-procedure ls_command(params : PParamList);
+procedure ls_command(params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
 var 
     i : uint16;
 begin
     push_trace('storagemanagment.ls_command');
     //if no storage device print none found
     if LL_Size(storageDevices) < 1 then begin
-        console.writestringlnWnd('No storage devices found.', getTerminalHWND());
+        stdio.bufWriteStrLn(stdout_buf, 'No storage devices found.');
         exit;
     end;
 
     //print number of storage devices
-    console.writeintwnd(LL_Size(storageDevices), getTerminalHWND());
-    console.writestringlnWnd(' devices found', getTerminalHWND());
+    stdio.bufWriteInt(stdout_buf, LL_Size(storageDevices));
+    stdio.bufWriteStrLn(stdout_buf, ' devices found');
 
     for i:=0 to LL_Size(storageDevices)-1 do begin
 
         //print device id and type
-        console.writeintwnd(i, getTerminalHWND());
-        console.writestringwnd(' - Device type: ', getTerminalHWND());
-        console.writestringwnd(controller_type_2_string(PStorage_Device(LL_Get(storageDevices, i))^.controller), getTerminalHWND());
-        console.writestringwnd(', ', getTerminalHWND());
+        stdio.bufWriteInt(stdout_buf, i);
+        stdio.bufWriteStr(stdout_buf, ' - Device type: ');
+        stdio.bufWriteStr(stdout_buf, controller_type_2_string(PStorage_Device(LL_Get(storageDevices, i))^.controller));
+        stdio.bufWriteStr(stdout_buf, ', ');
 
         //print device capcity
-        console.writestringwnd(' Capacity: ', getTerminalHWND());
-        console.writeintwnd((( PStorage_Device(LL_Get(storageDevices, i))^.maxSectorCount * PStorage_Device(LL_Get(storageDevices, i))^.sectorSize) DIV 1024) DIV 1024, getTerminalHWND());
-        console.writestringlnWnd('MB', getTerminalHWND());
+        stdio.bufWriteStr(stdout_buf, ' Capacity: ');
+        stdio.bufWriteInt(stdout_buf, (( PStorage_Device(LL_Get(storageDevices, i))^.maxSectorCount * PStorage_Device(LL_Get(storageDevices, i))^.sectorSize) DIV 1024) DIV 1024);
+        stdio.bufWriteStrLn(stdout_buf, 'MB');
     end;
 
 end;
 
 { Disk subcommand for formatting drives }
-procedure format_command(params : PParamList);
+procedure format_command(params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
 var
     driveIndex : uint16;
     drive : PStorage_Device;
@@ -182,15 +181,15 @@ begin
     //todo change b4 adding in aniother filesytem
     PFilesystem(LL_Get(filesystems, 0))^.createCallback(drive, drive^.maxSectorCount-1, 1, spc); 
 
-    writestringWnd('Drive ', getTerminalHWND);
-    writeintWnd(driveIndex, getTerminalHWND);
-    writestringlnWnd(' formatted.', getTerminalHWND);
+    stdio.bufWriteStr(stdout_buf, 'Drive ');
+    stdio.bufWriteInt(stdout_buf, driveIndex);
+    stdio.bufWriteStrLn(stdout_buf, ' formatted.');
     
 end;
 
 
 { Command for managing and getting information from disks. }
-procedure disk_command(params : PParamList);
+procedure disk_command(params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
 var
     i : uint16;
     drive : uint16;
@@ -200,7 +199,7 @@ begin
 
     //check if params wehre supplied
     if paramCount(params) = 0 then begin
-        writestringlnWnd('Incorrect number of params.', getTerminalHWND);
+        stdio.bufWriteStrLn(stderr_buf, 'Incorrect number of params.');
         exit;
     end;
     
@@ -208,13 +207,13 @@ begin
 
     //ls for listing storage devices
     if stringEquals(subcmd, 'ls') then begin
-        ls_command(params);
+        ls_command(params, stdin_buf, stdout_buf, stderr_buf);
         exit;
     end;
 
     //format command for clearing a disk and make a new volume
     if stringEquals(subcmd, 'format') then begin
-        format_command(params);
+        format_command(params, stdin_buf, stdout_buf, stderr_buf);
     end;
 
     //lsfs command for listing filesystems
@@ -232,7 +231,7 @@ begin
     setworkingdirectory('.');
     storageDevices:= ll_new(sizeof(TStorage_Device));
     fileSystems:= ll_New(sizeof(TFilesystem));
-    terminal.registerCommand('DISK', @disk_command, 'Disk utility');
+    stdio.registerCommand('DISK', @disk_command, 'Disk utility');
 
     pop_trace();
 end; 

@@ -23,9 +23,8 @@ interface
 
 uses
     tracer,
-    console,
     nettypes, netutils,
-    netlog,
+    syslog,
     RTC;
 
 procedure init;
@@ -39,8 +38,7 @@ procedure writeToLogLn(str : pchar);
 
 implementation
 
-uses
-    terminal,   
+uses  
     e1000,              //dev
     eth2,               //L2
     arp, ipv4,          //L3
@@ -57,32 +55,28 @@ var
     DateTime : TDateTime;
 
 begin
-    if getNetlogHWND <> 0 then begin
-        DateTime:= getDateTime;
-        writeStringWND('[', getNetlogHWND);
+    DateTime:= getDateTime;
+    syslog.writestring('[');
 
-        if DateTime.Hours < 10 then writeIntWND(0, getNetlogHWND);
-        writeIntWND(DateTime.Hours, getNetlogHWND);
-        writeStringWND(':', getNetlogHWND);
-        
-        if DateTime.Minutes < 10 then writeIntWND(0, getNetlogHWND);
-        writeIntWND(DateTime.Minutes, getNetlogHWND);
-        writeStringWND(':', getNetlogHWND);
+    if DateTime.Hours < 10 then syslog.writeint(0);
+    syslog.writeint(DateTime.Hours);
+    syslog.writestring(':');
+    
+    if DateTime.Minutes < 10 then syslog.writeint(0);
+    syslog.writeint(DateTime.Minutes);
+    syslog.writestring(':');
 
-        if DateTime.Seconds < 10 then writeIntWND(0, getNetlogHWND);
-        writeIntWND(DateTime.Seconds, getNetlogHWND);
-        writeStringWND('] ', getNetlogHWND); 
+    if DateTime.Seconds < 10 then syslog.writeint(0);
+    syslog.writeint(DateTime.Seconds);
+    syslog.writestring('] '); 
 
-        writeStringWND(str, getNetlogHWND);
-    end;
+    syslog.writestring(str);
 end;
 
 procedure writeToLogLn(str : pchar);
 begin
     writeToLog(str);
-    if getNetlogHWND <> 0 then begin
-        writestringlnWND(' ', getNetlogHWND);
-    end;
+    syslog.writestringln(' ');
 end;
 
 procedure registerNetworkCard(SendCallback : TNetSendCallback; _MAC : puint8);

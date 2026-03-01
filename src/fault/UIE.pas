@@ -23,7 +23,7 @@ interface
 
 uses
     util,
-    console,
+    syslog,
     isr_types,
     isrmanager,
     IDT;
@@ -40,7 +40,7 @@ begin
     CLI;
     correctInterruptRegisters(false);
     BSOD('UI', 'Unknown Interrupt Exception.');
-    console.writestringln('Unknown Interrupt Exception.');
+    syslog.writestringln('Unknown Interrupt Exception.');
     util.halt_and_catch_fire;
 end;
 

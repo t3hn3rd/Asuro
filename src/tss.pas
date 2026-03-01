@@ -24,7 +24,7 @@ interface
 uses
     gdt,
     vmemorymanager,
-    console;
+    syslog;
 
 type
     TTaskStateSegment = packed record
@@ -89,7 +89,7 @@ var
     cCR3 : uint32;
 
 begin
-    console.outputln('TSS','INIT BEGIN.');
+    syslog.logln('TSS','INIT BEGIN.');
     ptrTaskStateSegment^.ss0:= $08;
     ptrTaskStateSegment^.iomap:= sizeof(TTaskStateSegment)-1;
     asm
@@ -105,7 +105,7 @@ begin
         mov AX, 40
         ltr AX
     end;
-    console.outputln('TSS','INIT END.');
+    syslog.logln('TSS','INIT END.');
 end;
 
 end.

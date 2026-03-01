@@ -22,7 +22,7 @@ unit lists;
 interface
 
 uses
-    console,
+    syslog,
     lmemorymanager,
     tracer,
     util;
@@ -1119,28 +1119,28 @@ var
   testStr2: pchar;
 begin
   { --- Test Managed Linked List --- }
-  console.writeString('--- Testing Managed Linked List ---');
+  syslog.writeString('--- Testing Managed Linked List ---');
   ll := LL_New(sizeof(uint32));
   for i := 1 to 3 do
   begin
     p := LL_Add(ll);
     puint32(p)^ := i;  // Store the value (1, 2, 3)
   end;
-  console.writeString('Managed Linked List Size: ');
-  console.writeintln(LL_Size(ll));
+  syslog.writeString('Managed Linked List Size: ');
+  syslog.writeintln(LL_Size(ll));
   for i := 0 to LL_Size(ll) - 1 do
   begin
     p := LL_Get(ll, i);
-    console.writeString('Element ');
-    console.writeint(i);
-    console.writeString(': ');
-    console.writeintln(puint32(p)^);
+    syslog.writeString('Element ');
+    syslog.writeint(i);
+    syslog.writeString(': ');
+    syslog.writeintln(puint32(p)^);
   end;
   LL_Free(ll);
 
   { --- Test String Linked List --- }
-  console.writeString('');
-  console.writeString('--- Testing String Linked List ---');
+  syslog.writeString('');
+  syslog.writeString('--- Testing String Linked List ---');
   testStr := stringNew(5);
   PuInt8(testStr)^ := ord('H');
   PuInt8(testStr + 1)^ := ord('e');
@@ -1159,65 +1159,65 @@ begin
   strList := STRLL_New;
   STRLL_Add(strList, testStr);
   STRLL_Add(strList, testStr2);
-  console.writeString('String Linked List Size: ');
-  console.writeintln(STRLL_Size(strList));
+  syslog.writeString('String Linked List Size: ');
+  syslog.writeintln(STRLL_Size(strList));
   for i := 0 to STRLL_Size(strList) - 1 do
   begin
-    console.writeString('String ');
-    console.writeint(i);
-    console.writeString(': ');
-    console.writeString(STRLL_Get(strList, i));
+    syslog.writeString('String ');
+    syslog.writeint(i);
+    syslog.writeString(': ');
+    syslog.writeString(STRLL_Get(strList, i));
     
   end;
   STRLL_Free(strList);
 
   { --- Test Dynamic List --- }
-  console.writeString('');
-  console.writeString('--- Testing Dynamic List ---');
+  syslog.writeString('');
+  syslog.writeString('--- Testing Dynamic List ---');
   dlist := DL_New(sizeof(uint32));
   for i := 1 to 5 do
   begin
     intPtr := DL_Add(dlist);
     intPtr^ := i * 10;  // Store values: 10, 20, 30, 40, 50
   end;
-  console.writeString('Dynamic List Size: ');
-  console.writeintln(DL_Size(dlist));
+  syslog.writeString('Dynamic List Size: ');
+  syslog.writeintln(DL_Size(dlist));
   for i := 0 to DL_Size(dlist) - 1 do
   begin
     intPtr := DL_Get(dlist, i);
-    console.writeString('Element ');
-    console.writeint(i);
-    console.writeString(': ');
-    console.writeintln(intPtr^);
+    syslog.writeString('Element ');
+    syslog.writeint(i);
+    syslog.writeString(': ');
+    syslog.writeintln(intPtr^);
   end;
 
   { Insert a new element at index 2 }
   intPtr := DL_Insert(dlist, 2);
   if intPtr <> nil then
     intPtr^ := 999;  // Inserted value 999 at index 2
-  console.writeString('After insertion at index 2, size: ');
-  console.writeintln(DL_Size(dlist));
+  syslog.writeString('After insertion at index 2, size: ');
+  syslog.writeintln(DL_Size(dlist));
   for i := 0 to DL_Size(dlist) - 1 do
   begin
     intPtr := DL_Get(dlist, i);
-    console.writeString('Element ');
-    console.writeint(i);
-    console.writeString(': ');
-    console.writeintln(intPtr^);
+    syslog.writeString('Element ');
+    syslog.writeint(i);
+    syslog.writeString(': ');
+    syslog.writeintln(intPtr^);
   end;
 
   { Delete element at index 3 }
   if DL_Delete(dlist, 3) then
-    console.writeString('Deleted element at index 3.');
-  console.writeString('After deletion, size: ');
-  console.writeintln(DL_Size(dlist));
+    syslog.writeString('Deleted element at index 3.');
+  syslog.writeString('After deletion, size: ');
+  syslog.writeintln(DL_Size(dlist));
   for i := 0 to DL_Size(dlist) - 1 do
   begin
     intPtr := DL_Get(dlist, i);
-    console.writeString('Element ');
-    console.writeint(i);
-    console.writeString(': ');
-    console.writeintln(intPtr^);
+    syslog.writeString('Element ');
+    syslog.writeint(i);
+    syslog.writeString(': ');
+    syslog.writeintln(intPtr^);
   end;
   DL_Free(dlist);
 end;

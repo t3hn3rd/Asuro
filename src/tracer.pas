@@ -32,7 +32,7 @@ function  get_trace_N(idx : uint32) : pchar;
 implementation
 
 uses
-    console, lmemorymanager, util, strings, serial, terminal;
+    lmemorymanager, util, strings, serial, stdio;
 
 type
     PTracerEntry = ^TTracerEntry;
@@ -55,7 +55,7 @@ var
     head : PTracerEntry;
     tail : PTracerEntry;
 
-procedure terminal_command_tracer(Params : PParamList);
+procedure terminal_command_tracer(Params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
 var
     p1, p2 : PChar;
     count : uint32;
@@ -72,38 +72,38 @@ begin
                 if count > MAX_TRACE-1 then count:= MAX_TRACE-1;
             end;
             for i:=0 to count do begin
-                writeStringWND('[-', getTerminalHWND);
-                writeintWND(i, getTerminalHWND);
-                writeStringWND('] ', getTerminalHWND);
+                stdio.bufWriteStr(stdout_buf, '[-');
+                stdio.bufWriteInt(stdout_buf, i);
+                stdio.bufWriteStr(stdout_buf, '] ');
                 t:= get_trace_N(i);
-                if t <> nil then writeStringWND(t, getTerminalHWND);
-                writeStringLnWND(' ', getTerminalHWND);
+                if t <> nil then stdio.bufWriteStr(stdout_buf, t);
+                stdio.bufWriteStrLn(stdout_buf, ' ');
             end;
         end;
         if StringEquals(p1, 'disable') then begin
             if TRACER_ENABLE then begin
                 t_ready:= false;
-                writeStringLnWND('Tracer disabled.', getTerminalHWND);
+                stdio.bufWriteStrLn(stdout_buf, 'Tracer disabled.');
             end else begin
-                writeStringLnWND('Tracer is disabled by the system and it''s status cannot be changed.', getTerminalHWND);
+                stdio.bufWriteStrLn(stderr_buf, 'Tracer is disabled by the system and it''s status cannot be changed.');
             end;
         end;
         if StringEquals(p1, 'enable') then begin
             if TRACER_ENABLE then begin
                 t_ready:= true;
-                writeStringLnWND('Tracer enabled.', getTerminalHWND);
+                stdio.bufWriteStrLn(stdout_buf, 'Tracer enabled.');
             end else begin
-                writeStringLnWND('Tracer is disabled by the system and it''s status cannot be changed.', getTerminalHWND);
+                stdio.bufWriteStrLn(stderr_buf, 'Tracer is disabled by the system and it''s status cannot be changed.');
             end;
         end;
     end else begin
-        writeStringLnWND('System Trace Utility', getTerminalHWND);
-        writeStringLnWND(' ', getTerminalHWND);
-        writeStringLnWND('Usage: ', getTerminalHWND);
-        writeStringLnWND('       tracer list <Count> - Print the last <count> traces.', getTerminalHWND);
-        writeStringLnWND('       tracer disable      - Disable Tracer.', getTerminalHWND);
-        writeStringLnWND('       tracer enable       - Enable Tracer.', getTerminalHWND);
-        writeStringLnWND(' ', getTerminalHWND);
+        stdio.bufWriteStrLn(stdout_buf, 'System Trace Utility');
+        stdio.bufWriteStrLn(stdout_buf, ' ');
+        stdio.bufWriteStrLn(stdout_buf, 'Usage: ');
+        stdio.bufWriteStrLn(stdout_buf, '       tracer list <Count> - Print the last <count> traces.');
+        stdio.bufWriteStrLn(stdout_buf, '       tracer disable      - Disable Tracer.');
+        stdio.bufWriteStrLn(stdout_buf, '       tracer enable       - Enable Tracer.');
+        stdio.bufWriteStrLn(stdout_buf, ' ');
     end;
 end;
 
@@ -156,7 +156,7 @@ begin
         t_ready:= true;
         push_trace('kmain');
     end;
-    terminal.registerCommand('TRACER', @terminal_command_tracer, 'System.Tracer Interface.');
+    stdio.registerCommand('TRACER', @terminal_command_tracer, 'System.Tracer Interface.');
 end;
 
 function get_trace_count : uint32;

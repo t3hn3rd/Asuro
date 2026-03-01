@@ -23,7 +23,7 @@ interface
 
 uses
     util,
-    console,
+    syslog,
     isr_types,
     isrmanager,
     IDT;
@@ -40,7 +40,7 @@ begin
     CLI;
     correctInterruptRegisters(false);
     BSOD('MC', 'Machine Check Exception.');
-    console.writestringln('Machine Check Exception.');
+    syslog.writestringln('Machine Check Exception.');
     util.halt_and_catch_fire;
 end;
 

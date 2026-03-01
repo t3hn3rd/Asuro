@@ -46,9 +46,6 @@ function boolToString(b : boolean; ext : boolean) : pchar;
 
 implementation
 
-uses
-    console;
-
 function hexStringToInt(str : pchar) : uint32;
 var
     result : uint32;
@@ -300,8 +297,33 @@ begin
 end;
 
 function intToString(i : uint32) : pchar;
+var
+    buf    : array[0..11] of char;
+    len    : uint32;
+    tmp    : uint32;
+    result : pchar;
+    j      : uint32;
 begin
-    intToString:= ' ';
+    if i = 0 then begin
+        result := stringNew(1);
+        result[0] := '0';
+        result[1] := #0;
+        intToString := result;
+        exit;
+    end;
+    len := 0;
+    tmp := i;
+    while tmp > 0 do begin
+        buf[len] := char(byte('0') + (tmp mod 10));
+        tmp := tmp div 10;
+        inc(len);
+    end;
+    result := stringNew(len);
+    for j := 0 to len - 1 do begin
+        result[j] := buf[len - 1 - j];
+    end;
+    result[len] := #0;
+    intToString := result;
 end;
 
 function boolToString(b : boolean; ext : boolean) : pchar;

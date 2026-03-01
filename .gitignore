@@ -11,3 +11,7 @@
 /*.img
 src/include/asuro.pas
 localenv.json
+/lvgl/
+dockerout.txt
+AGENTS.md
+*.log

@@ -21,7 +21,7 @@ unit irq;
 
 interface
 
-uses util, console;
+uses util, syslog;
 
 procedure init();
 
@@ -29,7 +29,7 @@ implementation
 
 procedure init();
 begin
-    console.outputln('IRQ','INIT START.');
+    syslog.logln('IRQ','INIT START.');
     outb($20, $11);
     io_wait;
     outb($A0, $11);
@@ -50,7 +50,7 @@ begin
     io_wait;
     outb($A1, $00);
     io_wait;
-    console.outputln('IRQ','INIT END.');
+    syslog.logln('IRQ','INIT END.');
 end;
 
 end.

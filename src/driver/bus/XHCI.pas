@@ -23,7 +23,7 @@ interface
 
 uses
     tracer,
-    Console,
+    syslog,
     PCI,
     drivertypes,
     pmemorymanager,
@@ -44,19 +44,19 @@ var
 begin
     tracer.push_trace('XHCI.load');
     devices:= PCI.getDeviceInfo($0C, $03, $30, count);
-    console.output('USB-XHCI Driver', 'Found ');
-    console.writeint(count);
-    console.writestringln(' USB Controller(s).');
+    syslog.log('USB-XHCI Driver', 'Found ');
+    syslog.writeint(count);
+    syslog.writestringln(' USB Controller(s).');
     if count > 0 then begin
         for i:=0 to count-1 do begin
-            console.output('USB-XHCI Driver', 'Controller[');
-            console.writeint(i);
-            console.writestring(']: ');
-            console.writehex(devices[i].device_id);
-            console.writestring(' ');
-            console.writehex(devices[i].vendor_id);
-            console.writestring(' ');
-            console.writehexln(devices[i].prog_if);
+            syslog.log('USB-XHCI Driver', 'Controller[');
+            syslog.writeint(i);
+            syslog.writestring(']: ');
+            syslog.writehex(devices[i].device_id);
+            syslog.writestring(' ');
+            syslog.writehex(devices[i].vendor_id);
+            syslog.writestring(' ');
+            syslog.writehexln(devices[i].prog_if);
         end;
     end;
     load:= true;

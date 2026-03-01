@@ -23,7 +23,8 @@ interface
 
 uses
     tracer,
-    console,
+    syslog,
+    stdio,
     strings,
     vmemorymanager,
     lmemorymanager,
@@ -32,7 +33,6 @@ uses
     util,
     IDT,
     PCI,
-    terminal,
     net,
     nettypes,
     netutils,
@@ -307,10 +307,10 @@ begin
 
     outptr:= puint8(vtop(uint32(ptr)));//puint8(uint32(ptr) - KERNEL_VIRTUAL_BASE);
 
-    console.output('E1000 Driver', 'RX VMem: ');
-    console.writehexln(uint32(ptr));
-    console.output('E1000 Driver', 'RX Mem: ');
-    console.writehexln(uint32(outptr));
+    syslog.log('E1000 Driver', 'RX VMem: ');
+    syslog.writehexln(uint32(ptr));
+    syslog.log('E1000 Driver', 'RX Mem: ');
+    syslog.writehexln(uint32(outptr));
 
     writeCommand(REG_TXDESCLO, uint32(uint64(outptr) SHR 32));
     writeCommand(REG_TXDESCHI, uint32(uint64(outptr) AND $FFFFFFFF));
@@ -346,8 +346,8 @@ begin
     
     outptr:= puint8(vtop(uint32(ptr))); //puint8(uint32(ptr) - KERNEL_VIRTUAL_BASE);
 
-    console.writehexln(uint32(ptr));
-    console.writehexln(uint32(outptr));
+    syslog.writehexln(uint32(ptr));
+    syslog.writehexln(uint32(outptr));
 
     writeCommand(REG_TXDESCHI, 0);
     writeCommand(REG_TXDESCLO, uint32(outptr));
@@ -399,12 +399,12 @@ end;
 
 procedure writeCardType();
 begin
-    console.output('E1000 Driver', 'Card Type: ');
+    syslog.log('E1000 Driver', 'Card Type: ');
     case card_type of
-        ctUnknown:writestringln('Unknown');
-        ct82577LM:writestringln('82577LM');
-        ctE1000:writestringln('Generic E1000');
-        ctI217:writestringln('I217');
+        ctUnknown:syslog.writestringln('Unknown');
+        ct82577LM:syslog.writestringln('82577LM');
+        ctE1000:syslog.writestringln('Generic E1000');
+        ctI217:syslog.writestringln('I217');
     end;
 end;
 
@@ -428,12 +428,12 @@ begin
     writeCommand(REG_IMASK, 1);
 end;
 
-procedure console_command_mac(params : PParamList);
+procedure console_command_mac(params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
 begin
-    writeMACAddress(@mac[0], getTerminalHWND);
+    writeMACAddress(@mac[0], stdout_buf);
 end;
 
-procedure console_command_sendtest(params : PParamList);
+procedure console_command_sendtest(params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
 var
     TestPacket : Array[0..41] of uint8 = (  $ff, $ff, $ff, $ff, $ff, $ff, { eth dest (broadcast) }
                                             $52, $54, $00, $12, $34, $56, { eth source }
@@ -464,42 +464,42 @@ begin
     TestPacket[26]:= mac[4];
     TestPacket[27]:= mac[5];
     sendPacket(void(@TestPacket[0]), 42);
-    writeStringlnWND('E1000 ARP Testpacket Sent.', getTerminalHWND);
+    stdio.bufWriteStrLn(stdout_buf, 'E1000 ARP Testpacket Sent.');
     pop_trace;
 end;
 
-procedure terminal_command_e1000status(Params : PParamList);
+procedure terminal_command_e1000status(Params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
 begin
-    console.writestringWND('Card: ', getTerminalHWND);
+    stdio.bufWriteStr(stdout_buf, 'Card: ');
     case card_type of
-        ctUnknown:console.writestringlnWND('Unknown', getTerminalHWND);
-        ctE1000:console.writestringlnWND('E1000 Generic', getTerminalHWND);
-        ct82577LM:console.writestringlnWND('82577LM', getTerminalHWND);
-        ctI217:console.writestringlnWND('I217', getTerminalHWND);
-        else console.writestringlnWND('UNIDENTIFIED!!!', getTerminalHWND);
+        ctUnknown:stdio.bufWriteStrLn(stdout_buf, 'Unknown');
+        ctE1000:stdio.bufWriteStrLn(stdout_buf, 'E1000 Generic');
+        ct82577LM:stdio.bufWriteStrLn(stdout_buf, '82577LM');
+        ctI217:stdio.bufWriteStrLn(stdout_buf, 'I217');
+        else stdio.bufWriteStrLn(stdout_buf, 'UNIDENTIFIED!!!');
     end;
 
-    console.writestringWND('Status: ', getTerminalHWND);
-    console.writeHexLnWND(readStatus, getTerminalHWND);
+    stdio.bufWriteStr(stdout_buf, 'Status: ');
+    stdio.bufWriteHexLn(stdout_buf, readStatus);
 
-    console.writestringWND('CTRL: ', getTerminalHWND);
-    console.writehexlnWND(readCommand(REG_CTRL), getTerminalHWND);
+    stdio.bufWriteStr(stdout_buf, 'CTRL: ');
+    stdio.bufWriteHexLn(stdout_buf, readCommand(REG_CTRL));
 
-    console.writestringWND('TX Curr: ', getTerminalHWND);
-    console.writeintWND(tx_curr, getTerminalHWND);
-    console.writestringWND('/', getTerminalHWND);
-    console.writeintlnWND(E1000_NUM_TX_DESC, getTerminalHWND);
+    stdio.bufWriteStr(stdout_buf, 'TX Curr: ');
+    stdio.bufWriteInt(stdout_buf, tx_curr);
+    stdio.bufWriteStr(stdout_buf, '/');
+    stdio.bufWriteIntLn(stdout_buf, E1000_NUM_TX_DESC);
 
-    console.writestringWND('RX Curr: ', getTerminalHWND);
-    console.writeintWND(rx_curr, getTerminalHWND);
-    console.writestringWND('/', getTerminalHWND);
-    console.writeintlnWND(E1000_NUM_RX_DESC, getTerminalHWND);
+    stdio.bufWriteStr(stdout_buf, 'RX Curr: ');
+    stdio.bufWriteInt(stdout_buf, rx_curr);
+    stdio.bufWriteStr(stdout_buf, '/');
+    stdio.bufWriteIntLn(stdout_buf, E1000_NUM_RX_DESC);
 
-    console.writestringWND('RX MEM: ', getTerminalHWND);
-    console.writeHexLnWND(uint32(@rx_descs[0]), getTerminalHWND);
+    stdio.bufWriteStr(stdout_buf, 'RX MEM: ');
+    stdio.bufWriteHexLn(stdout_buf, uint32(@rx_descs[0]));
 
-    console.writestringWND('TX MEM: ', getTerminalHWND);
-    console.writeHexLnWND(uint32(@tx_descs[0]), getTerminalHWND);
+    stdio.bufWriteStr(stdout_buf, 'TX MEM: ');
+    stdio.bufWriteHexLn(stdout_buf, uint32(@tx_descs[0]));
 end;
 
 function load(ptr : void) : boolean;
@@ -512,7 +512,7 @@ var
 begin
     push_trace('E1000.load');
 
-    console.outputln('E1000 Driver', 'Load Start.');
+    syslog.logln('E1000 Driver', 'Load Start.');
 
     writeCardType();
 
@@ -532,13 +532,18 @@ begin
     eeprom_exists:= false;
     
     detectEEPROM();
-    if eeprom_exists then console.outputln('E1000 Driver', 'EEPROM Exists: YES.') else console.outputln('E1000 Driver', 'EEPROM Exists: NO.');
+    if eeprom_exists then syslog.logln('E1000 Driver', 'EEPROM Exists: YES.') else syslog.logln('E1000 Driver', 'EEPROM Exists: NO.');
     if not readMACAddress() then begin
-        console.outputln('E1000 Driver', 'MAC Read Failed.');
+        syslog.logln('E1000 Driver', 'MAC Read Failed.');
         load:= false;
     end else begin
-        console.output('E1000 Driver', 'MAC Address: ');
-        writeMACAddress(@mac[0], 0);
+        syslog.log('E1000 Driver', 'MAC Address: ');
+        syslog.writehexpair(mac[0]); syslog.writestring(':');
+        syslog.writehexpair(mac[1]); syslog.writestring(':');
+        syslog.writehexpair(mac[2]); syslog.writestring(':');
+        syslog.writehexpair(mac[3]); syslog.writestring(':');
+        syslog.writehexpair(mac[4]); syslog.writestring(':');
+        syslog.writehexpair(mac[5]); syslog.writestringln('');
 
         startLink();
 
@@ -560,7 +565,7 @@ begin
         if load then registercommand('MAC', @console_command_mac, 'Print MAC Address.');
     end;
 
-    console.outputln('E1000 Driver', 'Load Finish.');
+    syslog.logln('E1000 Driver', 'Load Finish.');
 
     pop_trace;
 end;

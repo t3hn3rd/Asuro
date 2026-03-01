@@ -23,7 +23,7 @@ interface
 
 uses
     util,
-    console,
+    syslog,
     isr_types,
     isrmanager,
     IDT;
@@ -40,7 +40,7 @@ begin
     CLI;
     correctInterruptRegisters(false);
     BSOD('NC', 'No Coprocessor Exception.');
-    console.writestringln('No Coprocessor Exception.');
+    syslog.writestringln('No Coprocessor Exception.');
     util.halt_and_catch_fire;
 end;
 

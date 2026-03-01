@@ -22,7 +22,7 @@ unit RTC;
 interface
 
 uses
-    console, isrmanager, util, TMR_0_ISR;
+    isrmanager, util, TMR_0_ISR;
 
 type
     TDateTime = record

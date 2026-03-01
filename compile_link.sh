@@ -14,4 +14,9 @@ done;
 objstring=lib/stub.o" "$objstring 
 echo "Object Files: "$objstring
 echo " "
-ld -m elf_i386 -s --gc-sections -Tlinker.script -o bin/kernel.bin $objstring
+
+# Find libgcc for i386 (needed by LVGL compiled with gcc)
+LIBGCC=$(gcc -m32 -print-libgcc-file-name)
+echo "libgcc: ${LIBGCC}"
+
+ld -m elf_i386 -s --gc-sections -Tlinker.script -o bin/kernel.bin $objstring --start-group lib/liblvgl.a ${LIBGCC} --end-group

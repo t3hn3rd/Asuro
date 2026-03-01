@@ -23,7 +23,7 @@ interface
 
 uses
     util,
-    console,
+    syslog,
     isr_types,
     isrmanager,
     IDT;
@@ -40,7 +40,7 @@ begin
     CLI;
     correctInterruptRegisters(false);
     BSOD('IDO', 'Into Detected Overflow Exception.');
-    console.writestringln('IDO Exception.');
+    syslog.writestringln('IDO Exception.');
     util.halt_and_catch_fire;
 end;
 
