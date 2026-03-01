@@ -22,38 +22,33 @@ unit md5sum;
 interface
 
 uses
-    console, terminal, keyboard, util, strings, tracer, md5;
+    stdio, util, strings, tracer, md5;
 
 procedure init();
 
 implementation
 
-procedure run(Params : PParamList);
+procedure run(Params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
 var
     md5word     : pchar;
     wordlen     : uint32;
     MD5_Hash    : PMD5Digest; 
     i           : uint32;
-    MD5_128     : puint128;
-    Result      : uint64;
-    Result32    : uint32;
-    Modulo      : uint64;
-
 
 begin
     md5word:= getParam(0, Params);
     wordlen:= stringSize(md5word);
     MD5_Hash := MD5Buffer(puint8(md5word), wordlen);
     for i:=0 to 15 do begin
-        writehexpairWND(MD5_Hash^[i], getTerminalHWND);
+        stdio.bufWriteHexPair(stdout_buf, MD5_Hash^[i]);
     end;
-    writestringlnWND(' ', getTerminalHWND);
+    stdio.bufWriteStrLn(stdout_buf, ' ');
 end;
 
 procedure init();
 begin
     tracer.push_trace('md5sum.init');
-    terminal.registerCommand('MD5SUM', @Run, 'Perform MD5SUM on a word.');
+    stdio.registerCommand('MD5SUM', @Run, 'Perform MD5SUM on a word.');
 end;
 
 end.

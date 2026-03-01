@@ -22,7 +22,7 @@ unit idt;
 interface
 
 uses
-    util, console;
+    util, syslog;
 
 const
      ISR_RING_0 = $8E;
@@ -68,22 +68,22 @@ begin
     IDT_Entries[Number].selector:= Selector;
     IDT_Entries[Number].flags:= Flags;
     IDT_Entries[Number].always_0:= $00;
-    console.output('IDT','GATE ');
-    console.writeint(Number);
-    console.writestringln(' SET.');
+    syslog.log('IDT','GATE ');
+    syslog.writeint(Number);
+    syslog.writestringln(' SET.');
     load(uint32(@IDT_Pointer));
 end;
 
 procedure init();
 begin
-    console.outputln('IDT','INIT START.');
+    syslog.logln('IDT','INIT START.');
     IDT_Pointer.limit:= (sizeof(TIDT_Entry) * 256) - 1;
     IDT_Pointer.base:= uint32(@IDT_Entries);
-    console.outputln('IDT','CLEAR.');
+    syslog.logln('IDT','CLEAR.');
     util.memset(uint32(@IDT_Entries[0]), 0, sizeof(TIDT_Entry) * 256);
-    console.outputln('IDT','LOAD.');
+    syslog.logln('IDT','LOAD.');
     load(uint32(@IDT_Pointer));
-    console.outputln('IDT','INIT END.');
+    syslog.logln('IDT','INIT END.');
 end;
 
 end.

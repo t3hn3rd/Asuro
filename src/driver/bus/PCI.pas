@@ -25,7 +25,7 @@ interface
 uses
     tracer,
     util,
-    console,
+    syslog,
     drivertypes,
     lmemorymanager, 
     vmemorymanager,
@@ -100,14 +100,14 @@ var
 
 begin
     push_trace('PCI.load');
-    console.outputln('PCI', 'Scanning Bus: 0');
+    syslog.logln('PCI', 'Scanning Bus: 0');
     scanBus(0);
     //while unscanned busses scan busses
     current_bus := 1;
     while true do begin
         if current_bus < bus_count then begin
-            console.output('PCI', 'Scanning Bus: ');
-            console.writeintln(bus_count);
+            syslog.log('PCI', 'Scanning Bus: ');
+            syslog.writeintln(bus_count);
             scanBus(current_bus);
             current_bus := current_bus + 1;
         end else break;
@@ -122,7 +122,7 @@ var
 
 begin
     push_trace('PCI.init');
-    console.outputln('PCI','INIT BEGIN.');
+    syslog.logln('PCI','INIT BEGIN.');
     DevID.Bus:= biUnknown;
     DevID.id0:= 0;
     DevID.id1:= 0;
@@ -130,7 +130,7 @@ begin
     DevID.id3:= 0;
     DevID.ex:= nil;
     drivermanagement.register_driver_ex('PCI Driver', @DevID, @load, true);
-    console.outputln('PCI', 'INIT END.');
+    syslog.logln('PCI', 'INIT END.');
     pop_trace;
 end;
 
@@ -388,16 +388,16 @@ begin
             DevID^.id4:= device.vendor_id;
             DevID^.ex:= nil;
 
-            console.output('PCI', 'Found Device: ');
-            console.writehex(device.header_type);
-            console.writestring('  ');
-            console.writehex(device.device_id);        
-            console.writestring('  ');        
-            console.writehex(device.class_code);        
-            console.writestring('  ');
-            console.writehex(device.subclass_class);        
-            console.writestring('  ');
-            console.writehexln(device.prog_if);
+            syslog.log('PCI', 'Found Device: ');
+            syslog.writehex(device.header_type);
+            syslog.writestring('  ');
+            syslog.writehex(device.device_id);        
+            syslog.writestring('  ');        
+            syslog.writehex(device.class_code);        
+            syslog.writestring('  ');
+            syslog.writehex(device.subclass_class);        
+            syslog.writestring('  ');
+            syslog.writehexln(device.prog_if);
 
             devices[device_count] := device;
             device_count := device_count + 1;

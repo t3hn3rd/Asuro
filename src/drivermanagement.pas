@@ -22,7 +22,7 @@ unit drivermanagement;
 interface
 
 uses
-    console, util, strings, lmemorymanager, terminal, tracer;
+    syslog, stdio, util, strings, lmemorymanager, tracer;
 
 const
     idANY = $FFFFFFFF;
@@ -78,21 +78,21 @@ var
 
 implementation
 
-procedure writeBusType(Bus : TBusIdentifier; WND : HWND);
+procedure writeBusType(Bus : TBusIdentifier; outbuf : POutBuf);
 begin
     case Bus of
-        biUnknown : console.writestringWND('Unknown', WND);
-        biANY     : console.writestringWND('ANY', WND);
-        bii2c     : console.writestringWND('i2c', WND);
-        biPCI     : console.writestringWND('PCI', WND);
-        biPCIe    : console.writestringWND('PCIe', WND);
-        biUSB     : console.writestringWND('USB', WND);
+        biUnknown : stdio.bufWriteStr(outbuf, 'Unknown');
+        biANY     : stdio.bufWriteStr(outbuf, 'ANY');
+        bii2c     : stdio.bufWriteStr(outbuf, 'i2c');
+        biPCI     : stdio.bufWriteStr(outbuf, 'PCI');
+        biPCIe    : stdio.bufWriteStr(outbuf, 'PCIe');
+        biUSB     : stdio.bufWriteStr(outbuf, 'USB');
     end;
 end;
 
 { Terminal Commands }
 
-procedure terminal_command_drivers(Params : PParamList);
+procedure terminal_command_drivers(Params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
 var
     Drv : PDriverRegistration;
     ex  : PDevEx;
@@ -104,29 +104,29 @@ begin
     i:= 1;
     while Drv <> nil do begin
         if Drv^.Loaded then begin
-            console.writeintWND(i, getTerminalHWND);
-            console.writestringWND(') ', getTerminalHWND);
-            console.writestringWND(Drv^.Driver_Name, getTerminalHWND);
-            console.writestringWND(' - Bus: ', getTerminalHWND);
-            writeBusType(Drv^.Identifier^.Bus, getTerminalHWND);
-            console.writestringlnWND(' ', getTerminalHWND);
-            console.writestringWND('   [', getTerminalHWND);
-            console.writeHexWND(Drv^.Identifier^.id0, getTerminalHWND);
-            console.writestringWND('-', getTerminalHWND);
-            console.writeHexWND(Drv^.Identifier^.id1, getTerminalHWND);
-            console.writestringWND('-', getTerminalHWND);
-            console.writeHexWND(Drv^.Identifier^.id2, getTerminalHWND);
-            console.writestringWND('-', getTerminalHWND);
-            console.writeHexWND(Drv^.Identifier^.id3, getTerminalHWND);
-            console.writestringWND('-', getTerminalHWND);
-            console.writeHexWND(Drv^.Identifier^.id4, getTerminalHWND);
+            stdio.bufWriteInt(stdout_buf, i);
+            stdio.bufWriteStr(stdout_buf, ') ');
+            stdio.bufWriteStr(stdout_buf, Drv^.Driver_Name);
+            stdio.bufWriteStr(stdout_buf, ' - Bus: ');
+            writeBusType(Drv^.Identifier^.Bus, stdout_buf);
+            stdio.bufWriteStrLn(stdout_buf, ' ');
+            stdio.bufWriteStr(stdout_buf, '   [');
+            stdio.bufWriteHex(stdout_buf, Drv^.Identifier^.id0);
+            stdio.bufWriteStr(stdout_buf, '-');
+            stdio.bufWriteHex(stdout_buf, Drv^.Identifier^.id1);
+            stdio.bufWriteStr(stdout_buf, '-');
+            stdio.bufWriteHex(stdout_buf, Drv^.Identifier^.id2);
+            stdio.bufWriteStr(stdout_buf, '-');
+            stdio.bufWriteHex(stdout_buf, Drv^.Identifier^.id3);
+            stdio.bufWriteStr(stdout_buf, '-');
+            stdio.bufWriteHex(stdout_buf, Drv^.Identifier^.id4);
             ex:= Drv^.Identifier^.ex;
             while ex <> nil do begin
-                console.writestringWND('-', getTerminalHWND);
-                console.writeHexWND(ex^.idN, getTerminalHWND);
+                stdio.bufWriteStr(stdout_buf, '-');
+                stdio.bufWriteHex(stdout_buf, ex^.idN);
                 ex:= ex^.ex;   
             end;
-            console.writestringlnWND(']', getTerminalHWND);
+            stdio.bufWriteStrLn(stdout_buf, ']');
             i:= i + 1;
         end;
         Drv:= Drv^.Next;
@@ -134,7 +134,7 @@ begin
     pop_trace;
 end;
 
-procedure terminal_command_driversex(Params : PParamList);
+procedure terminal_command_driversex(Params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
 var
     Drv : PDriverRegistration;
     ex  : PDevEx;
@@ -145,37 +145,37 @@ begin
     Drv:= Root;
     i:= 1;
     while Drv <> nil do begin
-        console.writeintWND(i, getTerminalHWND);
-        console.writestringWND(') ', getTerminalHWND);
-        console.writestringWND(Drv^.Driver_Name, getTerminalHWND);
-        console.writestringWND(' - Bus: ', getTerminalHWND);
-        writeBusType(Drv^.Identifier^.Bus, getTerminalHWND);
-        console.writestringWND(' - Loaded: ', getTerminalHWND);
-        if Drv^.Loaded then console.writestringlnWND('true', getTerminalHWND) else console.writestringlnWND('false', getTerminalHWND);
-        console.writestringWND('   [', getTerminalHWND);
-        console.writeHexWND(Drv^.Identifier^.id0, getTerminalHWND);
-        console.writestringWND('-', getTerminalHWND);
-        console.writeHexWND(Drv^.Identifier^.id1, getTerminalHWND);
-        console.writestringWND('-', getTerminalHWND);
-        console.writeHexWND(Drv^.Identifier^.id2, getTerminalHWND);
-        console.writestringWND('-', getTerminalHWND);
-        console.writeHexWND(Drv^.Identifier^.id3, getTerminalHWND);
-        console.writestringWND('-', getTerminalHWND);
-        console.writeHexWND(Drv^.Identifier^.id4, getTerminalHWND);
+        stdio.bufWriteInt(stdout_buf, i);
+        stdio.bufWriteStr(stdout_buf, ') ');
+        stdio.bufWriteStr(stdout_buf, Drv^.Driver_Name);
+        stdio.bufWriteStr(stdout_buf, ' - Bus: ');
+        writeBusType(Drv^.Identifier^.Bus, stdout_buf);
+        stdio.bufWriteStr(stdout_buf, ' - Loaded: ');
+        if Drv^.Loaded then stdio.bufWriteStrLn(stdout_buf, 'true') else stdio.bufWriteStrLn(stdout_buf, 'false');
+        stdio.bufWriteStr(stdout_buf, '   [');
+        stdio.bufWriteHex(stdout_buf, Drv^.Identifier^.id0);
+        stdio.bufWriteStr(stdout_buf, '-');
+        stdio.bufWriteHex(stdout_buf, Drv^.Identifier^.id1);
+        stdio.bufWriteStr(stdout_buf, '-');
+        stdio.bufWriteHex(stdout_buf, Drv^.Identifier^.id2);
+        stdio.bufWriteStr(stdout_buf, '-');
+        stdio.bufWriteHex(stdout_buf, Drv^.Identifier^.id3);
+        stdio.bufWriteStr(stdout_buf, '-');
+        stdio.bufWriteHex(stdout_buf, Drv^.Identifier^.id4);
         ex:= Drv^.Identifier^.ex;
         while ex <> nil do begin
-            console.writestringWND('-', getTerminalHWND);
-            console.writeHexWND(ex^.idN, getTerminalHWND);
+            stdio.bufWriteStr(stdout_buf, '-');
+            stdio.bufWriteHex(stdout_buf, ex^.idN);
             ex:= ex^.ex;   
         end;
-        console.writestringlnWND(']', getTerminalHWND);
+        stdio.bufWriteStrLn(stdout_buf, ']');
         i:= i + 1;
         Drv:= Drv^.Next;
     end;
     pop_trace;
 end;
 
-procedure terminal_command_devices(Params : PParamList);
+procedure terminal_command_devices(Params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
 var
     Dv : PDeviceRegistration;
     ex : PDevEx;
@@ -186,35 +186,35 @@ begin
     Dv:= Dev;
     i:= 1;
     while Dv <> nil do begin
-        console.writeintWND(i, getTerminalHWND);
-        console.writestringWND(') ', getTerminalHWND);
-        console.writestringWND(Dv^.Device_Name, getTerminalHWND);
-        console.writestringWND(' - Bus: ', getTerminalHWND);
-        writeBusType(Dv^.Identifier^.Bus, getTerminalHWND);
-        console.writestringlnWND(' ', getTerminalHWND);
-        console.writestringWND('   [', getTerminalHWND);
-        console.writeHexWND(Dv^.Identifier^.id0, getTerminalHWND);
-        console.writestringWND('-', getTerminalHWND);
-        console.writeHexWND(Dv^.Identifier^.id1, getTerminalHWND);
-        console.writestringWND('-', getTerminalHWND);
-        console.writeHexWND(Dv^.Identifier^.id2, getTerminalHWND);
-        console.writestringWND('-', getTerminalHWND);
-        console.writeHexWND(Dv^.Identifier^.id3, getTerminalHWND);
-        console.writestringWND('-', getTerminalHWND);
-        console.writeHexWND(Dv^.Identifier^.id4, getTerminalHWND);
+        stdio.bufWriteInt(stdout_buf, i);
+        stdio.bufWriteStr(stdout_buf, ') ');
+        stdio.bufWriteStr(stdout_buf, Dv^.Device_Name);
+        stdio.bufWriteStr(stdout_buf, ' - Bus: ');
+        writeBusType(Dv^.Identifier^.Bus, stdout_buf);
+        stdio.bufWriteStrLn(stdout_buf, ' ');
+        stdio.bufWriteStr(stdout_buf, '   [');
+        stdio.bufWriteHex(stdout_buf, Dv^.Identifier^.id0);
+        stdio.bufWriteStr(stdout_buf, '-');
+        stdio.bufWriteHex(stdout_buf, Dv^.Identifier^.id1);
+        stdio.bufWriteStr(stdout_buf, '-');
+        stdio.bufWriteHex(stdout_buf, Dv^.Identifier^.id2);
+        stdio.bufWriteStr(stdout_buf, '-');
+        stdio.bufWriteHex(stdout_buf, Dv^.Identifier^.id3);
+        stdio.bufWriteStr(stdout_buf, '-');
+        stdio.bufWriteHex(stdout_buf, Dv^.Identifier^.id4);
         ex:= Dv^.Identifier^.ex;
         while ex <> nil do begin
-            console.writestringWND('-', getTerminalHWND);
-            console.writeHexWND(ex^.idN, getTerminalHWND);
+            stdio.bufWriteStr(stdout_buf, '-');
+            stdio.bufWriteHex(stdout_buf, ex^.idN);
             ex:= ex^.ex;   
         end;
-        console.writestringlnWND(']', getTerminalHWND);
+        stdio.bufWriteStrLn(stdout_buf, ']');
         if Dv^.Driver_Loaded then begin
-            console.writestringWND('   Driver Loaded: ', getTerminalHWND);
+            stdio.bufWriteStr(stdout_buf, '   Driver Loaded: ');
             if Dv^.Driver <> nil then begin
-                console.writestringlnWND(Dv^.Driver^.Driver_Name, getTerminalHWND);
+                stdio.bufWriteStrLn(stdout_buf, Dv^.Driver^.Driver_Name);
             end else begin
-                console.writestringlnWND('Unknown', getTerminalHWND)
+                stdio.bufWriteStrLn(stdout_buf, 'Unknown')
             end;
         end;
         i:= i + 1;
@@ -223,7 +223,7 @@ begin
     pop_trace;
 end;
 
-procedure terminal_command_dev(Params : PParamList);
+procedure terminal_command_dev(Params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
 var
     p1 : pchar;
 
@@ -231,24 +231,24 @@ begin
     if paramCount(Params) > 0 then begin
         p1:= getParam(0, Params);
         if StringEquals(p1, 'drivers') then begin
-            terminal_command_drivers(Params);
+            terminal_command_drivers(Params, stdin_buf, stdout_buf, stderr_buf);
         end;
         if StringEquals(p1, 'devices') then begin
-            terminal_command_devices(Params);
+            terminal_command_devices(Params, stdin_buf, stdout_buf, stderr_buf);
         end;
         if StringEquals(p1, 'driverex') then begin
-            terminal_command_driversex(Params);
+            terminal_command_driversex(Params, stdin_buf, stdout_buf, stderr_buf);
         end;    
     end else begin
-        writeStringlnWND('Driver Management Interface', getTerminalHWND);
-        writeStringlnWND(' ', getTerminalHWND);
-        writeStringlnWND('An interface to the drivermanagement portion of the kernel.', getTerminalHWND);
-        writeStringlnWND(' ', getTerminalHWND);
-        writeStringlnWND('Usage: ', getTerminalHWND);
-        writeStringlnWND('      dev drivers  - Print a list of loaded drivers.', getTerminalHWND);
-        writeStringlnWND('      dev devices  - Print a list of registered devices.', getTerminalHWND);
-        writeStringlnWND('      dev driverex - Print a list of all available drivers.', getTerminalHWND);
-        writeStringlnWND(' ', getTerminalHWND)
+        stdio.bufWriteStrLn(stdout_buf, 'Driver Management Interface');
+        stdio.bufWriteStrLn(stdout_buf, ' ');
+        stdio.bufWriteStrLn(stdout_buf, 'An interface to the drivermanagement portion of the kernel.');
+        stdio.bufWriteStrLn(stdout_buf, ' ');
+        stdio.bufWriteStrLn(stdout_buf, 'Usage: ');
+        stdio.bufWriteStrLn(stdout_buf, '      dev drivers  - Print a list of loaded drivers.');
+        stdio.bufWriteStrLn(stdout_buf, '      dev devices  - Print a list of registered devices.');
+        stdio.bufWriteStrLn(stdout_buf, '      dev driverex - Print a list of all available drivers.');
+        stdio.bufWriteStrLn(stdout_buf, ' ')
     end;
 end;
 
@@ -328,10 +328,10 @@ end;
 procedure init;
 begin
     push_trace('driver_management.init');
-    terminal.registerCommand('DEV', @terminal_command_dev, 'Driver Management Interface.');
-    //terminal.registerCommand('DRIVERSEX', @terminal_command_driversex, 'List all available drivers.');
-    //terminal.registerCommand('DRIVERS', @terminal_command_drivers, 'List loaded drivers.');
-    //terminal.registerCommand('DEVICES', @terminal_command_devices, 'List devices.');
+    stdio.registerCommand('DEV', @terminal_command_dev, 'Driver Management Interface.');
+    //stdio.registerCommand('DRIVERSEX', @terminal_command_driversex, 'List all available drivers.');
+    //stdio.registerCommand('DRIVERS', @terminal_command_drivers, 'List loaded drivers.');
+    //stdio.registerCommand('DEVICES', @terminal_command_devices, 'List devices.');
     pop_trace;
 end;
 
@@ -365,12 +365,12 @@ begin
             end;
             RegList^.Next:= NewReg;
         end;
-        console.output('Driver Management', 'New Driver Registered: ');
-        console.writestringln(NewReg^.Driver_Name);
+        syslog.log('Driver Management', 'New Driver Registered: ');
+        syslog.writestringln(NewReg^.Driver_Name);
         if force_load then begin
-            console.output('Driver Management', 'Driver (');
-            console.writestring(NewReg^.Driver_Name);
-            console.writestringln(') forced to load.');
+            syslog.log('Driver Management', 'Driver (');
+            syslog.writestring(NewReg^.Driver_Name);
+            syslog.writestringln(') forced to load.');
             NewReg^.Loaded:= True;
             NewReg^.Driver_Load(nil);
         end;
@@ -402,18 +402,18 @@ begin
         end;
         dev_list^.Next:= new_dev;
     end;
-    console.output('Driver Management', 'New Device Registered: ');
-    console.writestringln(new_dev^.Device_Name);
+    syslog.log('Driver Management', 'New Device Registered: ');
+    syslog.writestringln(new_dev^.Device_Name);
     while drv <> nil do begin
         if identifiers_match(drv^.Identifier, DeviceID) then begin
-            console.output('Driver Management', 'Device/Driver Match: ');
-            console.writestring(new_dev^.Device_Name);
-            console.writestring('->');
-            console.writestringln(drv^.Driver_Name);
+            syslog.log('Driver Management', 'Device/Driver Match: ');
+            syslog.writestring(new_dev^.Device_Name);
+            syslog.writestring('->');
+            syslog.writestringln(drv^.Driver_Name);
             if drv^.Driver_Load(ptr) then begin
-                console.output('Driver Management', 'Driver (');
-                console.writestring(drv^.Driver_Name);
-                console.writestringln(') successfully loaded.');
+                syslog.log('Driver Management', 'Driver (');
+                syslog.writestring(drv^.Driver_Name);
+                syslog.writestringln(') successfully loaded.');
                 drv^.Loaded:= true;
                 new_dev^.Driver_Loaded:= true;
                 new_dev^.Driver:= drv;

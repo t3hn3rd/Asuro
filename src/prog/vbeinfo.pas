@@ -22,34 +22,26 @@ unit vbeinfo;
 interface
 
 uses
-    console, terminal, keyboard, util, strings, tracer, md5;
+    stdio, video, util, strings, tracer;
 
 procedure init();
 
 implementation
 
-procedure run(Params : PParamList);
-var
-    ConProp : PConsoleProperties;
-
+procedure run(Params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
 begin
-    ConProp:= getConsoleProperties();
-    writestringWND('Pixel Width: ', getTerminalHWND);
-    writeintlnWND(ConProp^.Width, getTerminalHWND);
-    writestringWND('Pixel Height: ', getTerminalHWND);
-    writeintlnWND(ConProp^.Height, getTerminalHWND);
-    writestringWND('Bits Per Pixel: ', getTerminalHWND);
-    writeintlnWND(ConProp^.BitsPerPixel, getTerminalHWND);
-    writestringWND('Cell Width: ', getTerminalHWND);
-    writeintlnWND(ConProp^.MAX_CELL_X, getTerminalHWND);
-    writestringWND('Cell Height: ', getTerminalHWND);
-    writeintlnWND(ConProp^.MAX_CELL_Y, getTerminalHWND);
+    stdio.bufWriteStr(stdout_buf, 'Pixel Width: ');
+    stdio.bufWriteIntLn(stdout_buf, video.frontBufferWidth);
+    stdio.bufWriteStr(stdout_buf, 'Pixel Height: ');
+    stdio.bufWriteIntLn(stdout_buf, video.frontBufferHeight);
+    stdio.bufWriteStr(stdout_buf, 'Bits Per Pixel: ');
+    stdio.bufWriteIntLn(stdout_buf, video.frontBufferBpp);
 end;
 
 procedure init();
 begin
     tracer.push_trace('vbeinfo.init');
-    terminal.registerCommand('VBEINFO', @Run, 'Print out vbeinfo (VESA VGA).');
+    stdio.registerCommand('VBEINFO', @Run, 'Print out vbeinfo (VESA VGA).');
 end;
 
 end.

@@ -13,7 +13,7 @@ interface
 
 uses
     video, videotypes, color, serial, tracer, lmemorymanager,
-    mouse, keyboard, TMR_0_ISR, util;
+    mousestate, keyboard, TMR_0_ISR, util;
 
 { ============================================================
   Opaque LVGL pointer types (internal C structs)
@@ -556,6 +556,7 @@ const
 var
     lv_font_montserrat_14: uint8; cvar; external;
     lv_font_fa_solid_16: uint8; cvar; external;
+    hack_14: uint8; cvar; external;
 
 { ============================================================
   Core Init / Tick / Timer
@@ -1716,11 +1717,15 @@ var
     { Tick counter — incremented by 1024Hz timer ISR }
     tick_accumulator : uint32;
 
-    { Keyboard state for LVGL }
-    last_key    : uint32;
-    key_pressed : boolean;
+    { Keyboard ring buffer for LVGL }
+    kb_buf      : array[0..15] of uint32;
+    kb_head     : uint32;  { next write slot (ISR side) }
+    kb_tail     : uint32;  { next read slot (LVGL poll side) }
+    last_key    : uint32;  { last key delivered, for release event }
+    kb_pending_release : boolean;  { true = must send RELEASED before next key }
 
 const
+    KB_BUF_SIZE = 16;
     { LVGL render buffer: 1/10th of screen }
     LV_BUF_LINES = 120;
 
@@ -1800,9 +1805,9 @@ end;
   ============================================================ }
 procedure lvgl_mouse_read_cb(indev: Plv_indev; data: Plv_indev_data); cdecl;
 begin
-    data^.point.x := mouse.getMouseX;
-    data^.point.y := mouse.getMouseY;
-    if mouse.getMouseLMB then
+    data^.point.x := mousestate.getMouseX;
+    data^.point.y := mousestate.getMouseY;
+    if mousestate.getMouseLMB then
         data^.state := LV_INDEV_STATE_PRESSED
     else
         data^.state := LV_INDEV_STATE_RELEASED;
@@ -1813,22 +1818,40 @@ end;
   Keyboard read callback — LVGL polls this for key state
   ============================================================ }
 procedure lvgl_kb_read_cb(indev: Plv_indev; data: Plv_indev_data); cdecl;
+var
+    next_tail: uint32;
 begin
-    if key_pressed then begin
-        data^.key   := last_key;
-        data^.state := LV_INDEV_STATE_PRESSED;
-        key_pressed := false;
-    end else begin
+    if kb_pending_release then begin
+        { Send release for the previous key before consuming the next }
         data^.key   := last_key;
         data^.state := LV_INDEV_STATE_RELEASED;
+        kb_pending_release := false;
+        { If more keys are queued, tell LVGL to call us again }
+        data^.continue_reading := (kb_tail <> kb_head);
+    end else if kb_tail <> kb_head then begin
+        { Consume next key from ring buffer — send press }
+        last_key := kb_buf[kb_tail];
+        kb_tail := (kb_tail + 1) mod KB_BUF_SIZE;
+        data^.key   := last_key;
+        data^.state := LV_INDEV_STATE_PRESSED;
+        kb_pending_release := true;
+        { Always call again to send the matching release }
+        data^.continue_reading := true;
+    end else begin
+        { No pending keys — idle release }
+        data^.key   := last_key;
+        data^.state := LV_INDEV_STATE_RELEASED;
+        data^.continue_reading := false;
     end;
-    data^.continue_reading := false;
 end;
 
 { ============================================================
   Keyboard hook — receives keypresses from Asuro keyboard driver
   ============================================================ }
 procedure lvgl_keyboard_hook(key_info: TKeyInfo);
+var
+    k: uint32;
+    next_head: uint32;
 begin
     { Ctrl+D toggles debug overlay }
     if key_info.CTRL_DOWN and (key_info.key_code = ord('d')) then begin
@@ -1837,17 +1860,23 @@ begin
     end;
 
     case key_info.key_code of
-        $1B: last_key := LV_KEY_ESC;
-        $08: last_key := LV_KEY_BACKSPACE;
-        $0D: last_key := LV_KEY_ENTER;
-        $09: last_key := LV_KEY_NEXT;
-        $10: last_key := LV_KEY_UP;
-        $12: last_key := LV_KEY_DOWN;
-        $13: last_key := LV_KEY_LEFT;
-        $14: last_key := LV_KEY_RIGHT;
-        else last_key := uint32(key_info.key_code);
+        $1B: k := LV_KEY_ESC;
+        $08: k := LV_KEY_BACKSPACE;
+        $0D: k := LV_KEY_ENTER;
+        $09: k := LV_KEY_NEXT;
+        $10: k := LV_KEY_UP;
+        $12: k := LV_KEY_DOWN;
+        $13: k := LV_KEY_LEFT;
+        $14: k := LV_KEY_RIGHT;
+        else k := uint32(key_info.key_code);
     end;
-    key_pressed := true;
+
+    { Push into ring buffer (drop if full — better than corrupting) }
+    next_head := (kb_head + 1) mod KB_BUF_SIZE;
+    if next_head <> kb_tail then begin
+        kb_buf[kb_head] := k;
+        kb_head := next_head;
+    end;
 end;
 
 { ============================================================
@@ -1867,7 +1896,9 @@ begin
 
     tick_accumulator := 0;
     last_key := 0;
-    key_pressed := false;
+    kb_head := 0;
+    kb_tail := 0;
+    kb_pending_release := false;
 
     { Initialize LVGL core }
     lv_init;
@@ -1926,10 +1957,10 @@ begin
         lv_tick_inc(elapsed);
 
     { Process scroll wheel }
-    scroll_delta := mouse.getMouseScroll;
+    scroll_delta := mousestate.getMouseScroll;
     if scroll_delta <> 0 then begin
-        mx := mouse.getMouseX;
-        my := mouse.getMouseY;
+        mx := mousestate.getMouseX;
+        my := mousestate.getMouseY;
         pt.x := mx;
         pt.y := my;
         target := lv_indev_search_obj(lv_screen_active, @pt);

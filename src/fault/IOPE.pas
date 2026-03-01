@@ -23,7 +23,7 @@ interface
 
 uses
     util,
-    console,
+    syslog,
     isr_types,
     isrmanager,
     IDT;
@@ -40,7 +40,7 @@ begin
     CLI;
     correctInterruptRegisters(false);
     BSOD('IO', 'Invalid OPCode Exception.');
-    console.writestringln('Invalid OPCode Exception.');
+    syslog.writestringln('Invalid OPCode Exception.');
     util.halt_and_catch_fire;
 end;
 

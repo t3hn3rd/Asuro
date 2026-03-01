@@ -23,7 +23,7 @@ interface
 
 uses
     util,
-    console,
+    syslog,
     isr_types,
     isrmanager,
     IDT;
@@ -40,7 +40,7 @@ begin
     CLI;
     correctInterruptRegisters(false);
     BSOD('DE', 'Debug Exception');
-    console.writestringln('Debug Exception.');
+    syslog.writestringln('Debug Exception.');
     util.halt_and_catch_fire;
 end;
 

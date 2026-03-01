@@ -23,7 +23,7 @@ interface
 
 uses
     util,
-    console,
+    syslog,
     isr_types,
     isrmanager,
     IDT;
@@ -40,7 +40,7 @@ begin
     CLI;
     correctInterruptRegisters(true);
     BSOD('TSS', 'Bad TSS Exception.');
-    console.writestringln('Bad TSS Exception.');
+    syslog.writestringln('Bad TSS Exception.');
     util.halt_and_catch_fire;
 end;
 

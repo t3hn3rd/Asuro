@@ -9,9 +9,9 @@ unit FAT32;
 interface
 
 uses
-    console,
+    syslog,
     storagemanagement,
-    util, terminal,
+    util,
     lmemorymanager,
     strings,
     lists,
@@ -110,7 +110,7 @@ end;
 
 function load(ptr : void) : boolean;
 begin
-    console.outputln('FAT32', 'LOADED.')
+    syslog.logln('FAT32', 'LOADED.')
 end;
 
 function cleanString(str : pchar; status : puint32) : byteArray8;
@@ -624,10 +624,10 @@ begin
 
         writeFat(volume, startcluster + clusterDifference, $FFFFFFF8, bootRecord);
         //setup fat chain 
-        console.writestringWND('clust diff: ', getTerminalHWND());
-        console.writeintlnWND(clusterDifference, getTerminalHWND());
-        console.writestringWND('startclust: ', getTerminalHWND());
-        console.writeintlnWND(startcluster, getTerminalHWND());
+        syslog.writestring('clust diff: ');
+        syslog.writeintln(clusterDifference);
+        syslog.writestring('startclust: ');
+        syslog.writeintln(startcluster);
     end;
 
     push_trace('writefile.2');
@@ -635,7 +635,7 @@ begin
     iterations:= (bytecount div bootRecord^.sectorSize) div bootRecord^.spc; //no of clusters
 
     for i:=0 to iterations do begin
-        console.writestringlnWND('writting to file', getTerminalHWND());
+        syslog.writestringln('writting to file');
         dataPosition:= i * uint32(bootRecord^.sectorsize * 4); //needs to be bytes / 4
         bufferPointer:= @buffer[dataPosition div 4]; //todo change to puint8
         volume^.device^.writecallback(volume^.device, dataStart + (startCluster * bootRecord^.spc) + (i * 4), 1, bufferPointer); //i * 4 needs to be changed, TODO fix fucking IDE driver, it suks
@@ -778,9 +778,9 @@ begin //maybe increase buffer size by one?
     // zeroBuffer:= puint32(kalloc( disk^.sectorSize * 4 ));
     // memset(uint32(zeroBuffer), 0, disk^.sectorSize * 4);
 
-    // console.writeintlnWND(disk^.sectorsize, getTerminalHWND());
-    // console.writehexlnWND(zeroBuffer[(disk^.sectorSize) - 1], getTerminalHWND());
-    // console.writehexlnWND(uint32(zeroBuffer), getTerminalHWND());
+    // syslog.writeintln(disk^.sectorsize);
+    // syslog.writehexln(zeroBuffer[(disk^.sectorSize) - 1]);
+    // syslog.writehexln(uint32(zeroBuffer));
     // console.redrawWindows();
 
     // while true do begin
@@ -826,12 +826,12 @@ begin //maybe increase buffer size by one?
     bootRecord^.identString     := fatArray;
 
 
-    console.writestringWND('spc', getTerminalHWND());
-    console.writeintlnWND(config^, getTerminalHWND());
-    console.writestringWND('sectors', getTerminalHWND());
-    console.writeintlnWND(sectors, getTerminalHWND());
-    console.writestringWND('sectorsize', getTerminalHWND());
-    console.writeintlnWND(disk^.sectorsize, getTerminalHWND());
+    syslog.writestring('spc');
+    syslog.writeintln(config^);
+    syslog.writestring('sectors');
+    syslog.writeintln(sectors);
+    syslog.writestring('sectorsize');
+    syslog.writeintln(disk^.sectorsize);
 
     disk^.writecallback(disk, start + 1, 1, puint32(buffer));
 
@@ -887,8 +887,7 @@ var
     dirs : PLinkedListBase;
 begin
     push_trace('fat32.detectVolumes()');
-    console.writeintln(2);
-    redrawWindows();
+    syslog.writeintln(2);
 
     volume:= PStorage_volume(kalloc(sizeof(TStorage_Volume)));
     //check first address for MBR
@@ -897,11 +896,10 @@ begin
     memset(uint32(buffer), 0, 512);
     disk^.readcallback(disk, 2, 1, buffer);
 
-        console.writeintln(3);
-    redrawWindows();
+        syslog.writeintln(3);
 
     if (puint32(buffer)[127] = $55AA) and (PBootRecord(buffer)^.bsignature = $29) then begin //TODO partition table
-        console.writestringln('FAT32: volume found!');
+        syslog.writestringln('FAT32: volume found!');
         volume^.device:= disk;
         volume^.sectorStart:= 1;
         volume^.sectorSize:= PBootRecord(buffer)^.sectorSize;

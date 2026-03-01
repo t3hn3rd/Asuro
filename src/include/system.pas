@@ -27,7 +27,6 @@ const
      KERNEL_PAGE_NUMBER = KERNEL_VIRTUAL_BASE SHR 22;
      BSOD_ENABLE = true;
      TRACER_ENABLE = true;
-     CONSOLE_SLOW_REDRAW = false; //Redraws the Window manager after every character, but slows performance.
 
 type
     //internal types
@@ -83,7 +82,6 @@ type
     PDouble = ^Double;
 
     Void = ^uInt32;
-    HWND = uint32;
 
     yord = uInt8;
     xord = uInt8;
@@ -127,19 +125,6 @@ type
 
     TMask = bitpacked array[0..7] of Boolean;
     PMask = ^TMask;
-
-    TRGB565 = bitpacked record
-      B : UBit5;
-      G : UBit6;
-      R : UBit5
-    end;
-    PRGB565 = ^TRGB565;
-
-    TRGB565Pair = bitpacked record
-      Background : TRGB565;
-      Foreground : TRGB565;
-    end;
-    PRGB565Pair = ^TRGB565Pair;
 
     PText = ^Text;
 

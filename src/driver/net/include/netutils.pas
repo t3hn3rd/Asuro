@@ -22,16 +22,16 @@ unit netutils;
 interface
 
 uses
-    tracer, util, nettypes, console, lmemorymanager, lists, strings;
+    tracer, util, nettypes, stdio, lmemorymanager, lists, strings;
 
 procedure copyMAC(src : puint8; dst : puint8);
 procedure copyIPv4(src : puint8; dst : puint8);
 function  stringToMAC(str : pchar) : puint8;
 function  stringToIPv4(str : pchar) : puint8;
-procedure writeMACAddress(mac : puint8; WND : HWND);
-procedure writeIPv4Address(ip : puint8; WND : HWND);
-procedure writeMACAddressEx(mac : puint8; WND : HWND);
-procedure writeIPv4AddressEx(ip : puint8; WND : HWND);
+procedure writeMACAddress(mac : puint8; outbuf : POutBuf);
+procedure writeIPv4Address(ip : puint8; outbuf : POutBuf);
+procedure writeMACAddressEx(mac : puint8; outbuf : POutBuf);
+procedure writeIPv4AddressEx(ip : puint8; outbuf : POutBuf);
 function MACEqual(mac1 : puint8; mac2 : puint8) : boolean;
 function IPEqual(ip1 : puint8; ip2 : puint8) : boolean;
 function newPacketContext : PPacketContext;
@@ -172,59 +172,59 @@ begin
     pop_trace;
 end;
 
-procedure writeIPv4AddressEx(ip : puint8; WND : HWND);
+procedure writeIPv4AddressEx(ip : puint8; outbuf : POutBuf);
 var
     i : integer;
 
 begin
     push_trace('netutils.writeIPv4Address');
-    console.writeintWND(ip[0], WND);
+    stdio.bufWriteInt(outbuf, ip[0]);
     for i:=1 to 3 do begin
-        console.writestringWND('.', WND);
-        console.writeintWND(ip[i], WND);
+        stdio.bufWriteStr(outbuf, '.');
+        stdio.bufWriteInt(outbuf, ip[i]);
     end; 
 end;
 
-procedure writeMACAddressEx(mac : puint8; WND : HWND);
+procedure writeMACAddressEx(mac : puint8; outbuf : POutBuf);
 var
     i : integer;
 
 begin
     push_trace('netutils.writeMACAddress');
-    console.writehexpairWND(mac[0], WND);
+    stdio.bufWriteHexPair(outbuf, mac[0]);
     for i:=1 to 5 do begin
-        console.writestringWND(':', WND);
-        console.writehexpairWND(mac[i], WND);
+        stdio.bufWriteStr(outbuf, ':');
+        stdio.bufWriteHexPair(outbuf, mac[i]);
     end;
 end;
 
-procedure writeIPv4Address(ip : puint8; WND : HWND);
+procedure writeIPv4Address(ip : puint8; outbuf : POutBuf);
 var
     i : integer;
 
 begin
     push_trace('netutils.writeIPv4Address');
-    console.writeintWND(ip[0], WND);
+    stdio.bufWriteInt(outbuf, ip[0]);
     for i:=1 to 3 do begin
-        console.writestringWND('.', WND);
-        console.writeintWND(ip[i], WND);
+        stdio.bufWriteStr(outbuf, '.');
+        stdio.bufWriteInt(outbuf, ip[i]);
     end;
-    console.writestringlnWND(' ', WND);   
+    stdio.bufWriteStrLn(outbuf, ' ');   
     pop_trace;
 end;
 
-procedure writeMACAddress(mac : puint8; WND : HWND);
+procedure writeMACAddress(mac : puint8; outbuf : POutBuf);
 var
     i : integer;
 
 begin
     push_trace('netutils.writeMACAddress');
-    console.writehexpairWND(mac[0], WND);
+    stdio.bufWriteHexPair(outbuf, mac[0]);
     for i:=1 to 5 do begin
-        console.writestringWND(':', WND);
-        console.writehexpairWND(mac[i], WND);
+        stdio.bufWriteStr(outbuf, ':');
+        stdio.bufWriteHexPair(outbuf, mac[i]);
     end;
-    console.writestringlnWND(' ', WND);
+    stdio.bufWriteStrLn(outbuf, ' ');
     pop_trace;
 end;
 

@@ -22,7 +22,7 @@ unit cpu;
 interface
 
 uses
-    console, util, RTC, terminal;
+    util, RTC;
 
 type
     PCapabilities_Old = ^TCapabilities_Old;
@@ -116,6 +116,9 @@ procedure init();
 
 implementation
 
+uses
+    stdio;
+
 procedure getCPUIdentifier;
 var
     id0, id1, id2 : uint32;
@@ -201,79 +204,79 @@ begin
     CPUID.ClockSpeed.GHz:= CPUID.ClockSpeed.MHz div 1000;
 end;
 
-procedure printCapabilities(WND : HWND);
+procedure printCapabilities(outbuf : POutBuf);
 begin
     { Old Capabilities }
-    if CPUID.Capabilities0^.FPU     then writestringWND('FPU', WND);
-    if CPUID.Capabilities0^.VME     then writestringWND(', VME', WND);
-    if CPUID.Capabilities0^.DE      then writestringWND(', DE', WND);
-    if CPUID.Capabilities0^.PSE     then writestringWND(', PSE', WND);
-    if CPUID.Capabilities0^.TSC     then writestringWND(', TSC', WND);
-    if CPUID.Capabilities0^.MSR     then writestringWND(', MSR', WND);
-    if CPUID.Capabilities0^.PAE     then writestringWND(', PAE', WND);
-    if CPUID.Capabilities0^.MCE     then writestringWND(', MCE', WND);
-    if CPUID.Capabilities0^.CX8     then writestringWND(', CX8', WND);
-    if CPUID.Capabilities0^.APIC    then writestringWND(', APIC', WND);
-    if CPUID.Capabilities0^.SEP     then writestringWND(', SEP', WND);
-    if CPUID.Capabilities0^.MTRR    then writestringWND(', MTRR', WND);
-    if CPUID.Capabilities0^.PGE     then writestringWND(', PGE', WND);
-    if CPUID.Capabilities0^.MCA     then writestringWND(', MCA', WND);
-    if CPUID.Capabilities0^.CMOV    then writestringWND(', CMOV', WND);
-    if CPUID.Capabilities0^.PAT     then writestringWND(', PAT', WND);
-    if CPUID.Capabilities0^.PSE36   then writestringWND(', PSE36', WND);
-    if CPUID.Capabilities0^.PSN     then writestringWND(', PSN', WND);
-    if CPUID.Capabilities0^.CLF     then writestringWND(', CLF', WND);
-    if CPUID.Capabilities0^.DTES    then writestringWND(', DTES', WND);
-    if CPUID.Capabilities0^.ACPI    then writestringWND(', ACPI', WND);
-    if CPUID.Capabilities0^.MMX     then writestringWND(', MMX', WND);
-    if CPUID.Capabilities0^.FXSR    then writestringWND(', FXSR', WND);
-    if CPUID.Capabilities0^.SSE     then writestringWND(', SSE', WND);
-    if CPUID.Capabilities0^.SSE2    then writestringWND(', SSE2', WND);
-    if CPUID.Capabilities0^.SS      then writestringWND(', SS', WND);
-    if CPUID.Capabilities0^.HTT     then writestringWND(', HTT', WND);
-    if CPUID.Capabilities0^.TM1     then writestringWND(', TM1', WND);
-    if CPUID.Capabilities0^.IA64    then writestringWND(', IA64', WND);
-    if CPUID.Capabilities0^.PBE     then writestringWND(', PBE', WND);
+    if CPUID.Capabilities0^.FPU     then stdio.bufWriteStr(outbuf, 'FPU');
+    if CPUID.Capabilities0^.VME     then stdio.bufWriteStr(outbuf, ', VME');
+    if CPUID.Capabilities0^.DE      then stdio.bufWriteStr(outbuf, ', DE');
+    if CPUID.Capabilities0^.PSE     then stdio.bufWriteStr(outbuf, ', PSE');
+    if CPUID.Capabilities0^.TSC     then stdio.bufWriteStr(outbuf, ', TSC');
+    if CPUID.Capabilities0^.MSR     then stdio.bufWriteStr(outbuf, ', MSR');
+    if CPUID.Capabilities0^.PAE     then stdio.bufWriteStr(outbuf, ', PAE');
+    if CPUID.Capabilities0^.MCE     then stdio.bufWriteStr(outbuf, ', MCE');
+    if CPUID.Capabilities0^.CX8     then stdio.bufWriteStr(outbuf, ', CX8');
+    if CPUID.Capabilities0^.APIC    then stdio.bufWriteStr(outbuf, ', APIC');
+    if CPUID.Capabilities0^.SEP     then stdio.bufWriteStr(outbuf, ', SEP');
+    if CPUID.Capabilities0^.MTRR    then stdio.bufWriteStr(outbuf, ', MTRR');
+    if CPUID.Capabilities0^.PGE     then stdio.bufWriteStr(outbuf, ', PGE');
+    if CPUID.Capabilities0^.MCA     then stdio.bufWriteStr(outbuf, ', MCA');
+    if CPUID.Capabilities0^.CMOV    then stdio.bufWriteStr(outbuf, ', CMOV');
+    if CPUID.Capabilities0^.PAT     then stdio.bufWriteStr(outbuf, ', PAT');
+    if CPUID.Capabilities0^.PSE36   then stdio.bufWriteStr(outbuf, ', PSE36');
+    if CPUID.Capabilities0^.PSN     then stdio.bufWriteStr(outbuf, ', PSN');
+    if CPUID.Capabilities0^.CLF     then stdio.bufWriteStr(outbuf, ', CLF');
+    if CPUID.Capabilities0^.DTES    then stdio.bufWriteStr(outbuf, ', DTES');
+    if CPUID.Capabilities0^.ACPI    then stdio.bufWriteStr(outbuf, ', ACPI');
+    if CPUID.Capabilities0^.MMX     then stdio.bufWriteStr(outbuf, ', MMX');
+    if CPUID.Capabilities0^.FXSR    then stdio.bufWriteStr(outbuf, ', FXSR');
+    if CPUID.Capabilities0^.SSE     then stdio.bufWriteStr(outbuf, ', SSE');
+    if CPUID.Capabilities0^.SSE2    then stdio.bufWriteStr(outbuf, ', SSE2');
+    if CPUID.Capabilities0^.SS      then stdio.bufWriteStr(outbuf, ', SS');
+    if CPUID.Capabilities0^.HTT     then stdio.bufWriteStr(outbuf, ', HTT');
+    if CPUID.Capabilities0^.TM1     then stdio.bufWriteStr(outbuf, ', TM1');
+    if CPUID.Capabilities0^.IA64    then stdio.bufWriteStr(outbuf, ', IA64');
+    if CPUID.Capabilities0^.PBE     then stdio.bufWriteStr(outbuf, ', PBE');
     { Newer Capabilities }
-    if CPUID.Capabilities1^.SSE3    then writestringWND(', SSE3', WND);
-    if CPUID.Capabilities1^.PCLMUL  then writestringWND(', PCLMUL', WND);
-    if CPUID.Capabilities1^.DTES64  then writestringWND(', DTES64', WND);
-    if CPUID.Capabilities1^.MONITOR then writestringWND(', MONITOR', WND);
-    if CPUID.Capabilities1^.DS_CPL  then writestringWND(', DS_CPL', WND);
-    if CPUID.Capabilities1^.VMX     then writestringWND(', VMX', WND);
-    if CPUID.Capabilities1^.SMX     then writestringWND(', SMX', WND);
-    if CPUID.Capabilities1^.EST     then writestringWND(', EST', WND);
-    if CPUID.Capabilities1^.TM2     then writestringWND(', TM2', WND);
-    if CPUID.Capabilities1^.SSSE3   then writestringWND(', SSSE3', WND);
-    if CPUID.Capabilities1^.CID     then writestringWND(', CID', WND);
-    if CPUID.Capabilities1^.FMA     then writestringWND(', FMA', WND);
-    if CPUID.Capabilities1^.CX16    then writestringWND(', CX16', WND);
-    if CPUID.Capabilities1^.ETPRD   then writestringWND(', ETPRD', WND);
-    if CPUID.Capabilities1^.PDCM    then writestringWND(', PDCM', WND);
-    if CPUID.Capabilities1^.PCIDE   then writestringWND(', PCIDE', WND);
-    if CPUID.Capabilities1^.DCA     then writestringWND(', DCA', WND);
-    if CPUID.Capabilities1^.SSE4_1  then writestringWND(', SSE4_1', WND);
-    if CPUID.Capabilities1^.SSE4_2  then writestringWND(', SSE4_2', WND);
-    if CPUID.Capabilities1^.x2APIC  then writestringWND(', x2APIC', WND);
-    if CPUID.Capabilities1^.MOVBE   then writestringWND(', MOVBE', WND);
-    if CPUID.Capabilities1^.POPCNT  then writestringWND(', POPCNT', WND);
-    if CPUID.Capabilities1^.AES     then writestringWND(', AES', WND);
-    if CPUID.Capabilities1^.XSAVE   then writestringWND(', XSAVE', WND);
-    if CPUID.Capabilities1^.OSXSAVE then writestringWND(', OSXSAVE', WND);
-    if CPUID.Capabilities1^.AVX     then writestringWND(', AVX', WND);
-    if CPUID.Capabilities1^.RDRAND  then writestringWND(', RDRAND', WND);
-    writestringlnWND(' ', WND);
+    if CPUID.Capabilities1^.SSE3    then stdio.bufWriteStr(outbuf, ', SSE3');
+    if CPUID.Capabilities1^.PCLMUL  then stdio.bufWriteStr(outbuf, ', PCLMUL');
+    if CPUID.Capabilities1^.DTES64  then stdio.bufWriteStr(outbuf, ', DTES64');
+    if CPUID.Capabilities1^.MONITOR then stdio.bufWriteStr(outbuf, ', MONITOR');
+    if CPUID.Capabilities1^.DS_CPL  then stdio.bufWriteStr(outbuf, ', DS_CPL');
+    if CPUID.Capabilities1^.VMX     then stdio.bufWriteStr(outbuf, ', VMX');
+    if CPUID.Capabilities1^.SMX     then stdio.bufWriteStr(outbuf, ', SMX');
+    if CPUID.Capabilities1^.EST     then stdio.bufWriteStr(outbuf, ', EST');
+    if CPUID.Capabilities1^.TM2     then stdio.bufWriteStr(outbuf, ', TM2');
+    if CPUID.Capabilities1^.SSSE3   then stdio.bufWriteStr(outbuf, ', SSSE3');
+    if CPUID.Capabilities1^.CID     then stdio.bufWriteStr(outbuf, ', CID');
+    if CPUID.Capabilities1^.FMA     then stdio.bufWriteStr(outbuf, ', FMA');
+    if CPUID.Capabilities1^.CX16    then stdio.bufWriteStr(outbuf, ', CX16');
+    if CPUID.Capabilities1^.ETPRD   then stdio.bufWriteStr(outbuf, ', ETPRD');
+    if CPUID.Capabilities1^.PDCM    then stdio.bufWriteStr(outbuf, ', PDCM');
+    if CPUID.Capabilities1^.PCIDE   then stdio.bufWriteStr(outbuf, ', PCIDE');
+    if CPUID.Capabilities1^.DCA     then stdio.bufWriteStr(outbuf, ', DCA');
+    if CPUID.Capabilities1^.SSE4_1  then stdio.bufWriteStr(outbuf, ', SSE4_1');
+    if CPUID.Capabilities1^.SSE4_2  then stdio.bufWriteStr(outbuf, ', SSE4_2');
+    if CPUID.Capabilities1^.x2APIC  then stdio.bufWriteStr(outbuf, ', x2APIC');
+    if CPUID.Capabilities1^.MOVBE   then stdio.bufWriteStr(outbuf, ', MOVBE');
+    if CPUID.Capabilities1^.POPCNT  then stdio.bufWriteStr(outbuf, ', POPCNT');
+    if CPUID.Capabilities1^.AES     then stdio.bufWriteStr(outbuf, ', AES');
+    if CPUID.Capabilities1^.XSAVE   then stdio.bufWriteStr(outbuf, ', XSAVE');
+    if CPUID.Capabilities1^.OSXSAVE then stdio.bufWriteStr(outbuf, ', OSXSAVE');
+    if CPUID.Capabilities1^.AVX     then stdio.bufWriteStr(outbuf, ', AVX');
+    if CPUID.Capabilities1^.RDRAND  then stdio.bufWriteStr(outbuf, ', RDRAND');
+    stdio.bufWriteStrLn(outbuf, ' ');
 end;
 
-procedure Terminal_Command_CPU(Params : PParamList);
+procedure Terminal_Command_CPU(Params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
 begin
-    writeStringWND('Vendor: ', getTerminalHWND);
-    writeStringLnWND(@CPUID.Identifier[0], getTerminalHWND);
-    writeStringWND('CPU Clock: ', getTerminalHWND);
-    writeIntWND(CPUID.ClockSpeed.MHz, getTerminalHWND);
-    writeStringlnWND('MHz', getTerminalHWND);
-    writeStringWND('CPU Capabilities: ', getTerminalHWND);
-    printCapabilities(getTerminalHWND);
+    stdio.bufWriteStr(stdout_buf, 'Vendor: ');
+    stdio.bufWriteStrLn(stdout_buf, @CPUID.Identifier[0]);
+    stdio.bufWriteStr(stdout_buf, 'CPU Clock: ');
+    stdio.bufWriteInt(stdout_buf, CPUID.ClockSpeed.MHz);
+    stdio.bufWriteStrLn(stdout_buf, 'MHz');
+    stdio.bufWriteStr(stdout_buf, 'CPU Capabilities: ');
+    printCapabilities(stdout_buf);
 end;
 
 procedure enableSSE();
@@ -322,7 +325,7 @@ end;
 
 procedure init();
 begin
-    terminal.registerCommand('CPU', @Terminal_Command_CPU, 'CPU Info.');
+    stdio.registerCommand('CPU', @Terminal_Command_CPU, 'CPU Info.');
     CPUID.Capabilities0:= PCapabilities_Old(@CAP_OLD);
     CPUID.Capabilities1:= PCapabilities_New(@CAP_NEW); 
     getCPUIdentifier;

@@ -22,7 +22,7 @@ unit keyboard;
 interface
 
 uses 
-    console,
+    syslog,
     util,
     PS2_KEYBOARD_ISR;
 
@@ -94,7 +94,7 @@ function load(ptr : void) : boolean;
 begin
     PS2_KEYBOARD_ISR.register();
     PS2_KEYBOARD_ISR.hook(uint32(@callback));
-    console.outputln('PS/2 KEYBOARD', 'LOADED.');
+    syslog.logln('PS/2 KEYBOARD', 'LOADED.');
     load:= true;
 end;
 
@@ -103,7 +103,7 @@ var
     devid : TDeviceIdentifier;
 
 begin
-    console.outputln('PS/2 KEYBOARD', 'INIT BEGIN.');
+    syslog.logln('PS/2 KEYBOARD', 'INIT BEGIN.');
     if keyboard_layout[1].key_code = 0 then lang_USA();
     devid.bus:= biUnknown;
     devid.id0:= 0;
@@ -113,7 +113,7 @@ begin
     devid.id4:= 0;
     devid.ex:= nil;
     drivermanagement.register_driver_ex('PS/2 Keyboard', @devid, @load, true);
-    console.outputln('PS/2 KEYBOARD', 'INIT END.');
+    syslog.logln('PS/2 KEYBOARD', 'INIT END.');
 end;
 //2A AA
 

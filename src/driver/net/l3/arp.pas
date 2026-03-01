@@ -23,9 +23,8 @@ interface
 
 uses
     tracer, lmemorymanager,
-    util, lists, console, terminal,
+    util, lists,
     net, nettypes, netutils,
-    netlog,
     eth2, ipv4;
 
 type
@@ -44,6 +43,9 @@ procedure send(hType : uint16; pType : uint16; op : uint16; p_context : PPacketC
 function resolveIP(ip : puint8) : puint8;
 
 implementation
+
+uses
+    stdio, strings;
 
 var
     Registered : Boolean = false;
@@ -263,7 +265,7 @@ begin
     end;
 end;
 
-procedure terminal_command_arp(Params : PParamList);
+procedure terminal_command_arp(Params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
 var
     i : uint32;
     elm : PARPCacheRecord;
@@ -275,19 +277,19 @@ begin
         sIP:= getParam(0, Params);
         _IP:= stringToIPv4(sIP);
         sendRequest(_IP);
-        writestringlnWND('ARP Request Sent.', getTerminalHWND);
+        stdio.bufWriteStrLn(stdout_buf, 'ARP Request Sent.');
     end else begin
         if LL_Size(Cache) > 0 then begin
-            writestringlnWND('MAC                IPv4', getTerminalHWND);
+            stdio.bufWriteStrLn(stdout_buf, 'MAC                IPv4');
             For i:=0 to LL_Size(Cache)-1 do begin
                 elm:= PARPCacheRecord(LL_Get(Cache, i));
-                writeMACAddressEx(@elm^.MAC[0], getTerminalHWND);
-                writestringWND('  ', getTerminalHWND);
-                writeIPv4AddressEx(@elm^.IP[0], getTerminalHWND);
-                writestringlnWND(' ', getTerminalHWND);
+                writeMACAddressEx(@elm^.MAC[0], stdout_buf);
+                stdio.bufWriteStr(stdout_buf, '  ');
+                writeIPv4AddressEx(@elm^.IP[0], stdout_buf);
+                stdio.bufWriteStrLn(stdout_buf, ' ');
             end;
         end else begin
-            writestringlnWND('No entries in ARP table.', getTerminalHWND);
+            stdio.bufWriteStrLn(stdout_buf, 'No entries in ARP table.');
         end;
     end;
 end;
@@ -298,7 +300,7 @@ begin
     if not Registered then begin
         Cache:= LL_New(sizeof(TARPCacheRecord));
         eth2.registerTypePromisc($0806, @recv);
-        terminal.registerCommand('ARP', @terminal_command_arp, 'Get ARP Table.');
+        stdio.registerCommand('ARP', @terminal_command_arp, 'Get ARP Table.');
         Registered:= true;
     end;
     pop_trace;

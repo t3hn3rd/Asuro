@@ -22,13 +22,13 @@ unit dhclient;
 interface
 
 uses
-    console, terminal, keyboard, util, strings, tracer, dhcp;
+    stdio, util, strings, tracer, dhcp;
 
 procedure init();
 
 implementation
 
-procedure run(Params : PParamList);
+procedure run(Params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
 begin
     tracer.push_trace('dhclient.run');
     DHCPDiscover();
@@ -37,7 +37,7 @@ end;
 procedure init();
 begin
     tracer.push_trace('dhclient.init');
-    terminal.registerCommand('DHClient', @Run, 'Run the DHCP configuration utility.');
+    stdio.registerCommand('DHClient', @Run, 'Run the DHCP configuration utility.');
 end;
 
 end.

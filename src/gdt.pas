@@ -22,7 +22,7 @@ unit gdt;
 interface
 
 uses
-    console;
+    syslog;
 
 type
     TGDT_Entry = packed record
@@ -68,7 +68,7 @@ end;
 
 procedure flush;
 begin
-    console.outputln('GDT','FLUSH.');
+    syslog.logln('GDT','FLUSH.');
     flush_gdt(uint32(@gdt_pointer));
 end;
 
@@ -80,7 +80,7 @@ end;
 
 procedure reload;
 begin
-    console.outputln('GDT','RELOAD.');
+    syslog.logln('GDT','RELOAD.');
     reload_gdt(uint32(@gdt_pointer));
 end;
 
@@ -100,14 +100,14 @@ begin
     gdt_entries[Gate_Number].limit_low   := (Limit AND $FFFF);
     gdt_entries[Gate_Number].granularity := ((Limit SHR 16) AND $0F) OR (Granularity AND $F0);
     gdt_entries[Gate_Number].access      := Access;    
-    console.output('GDT','GATE ');
-    console.writeint(Gate_Number);
-    console.writestringln(' SET.');
+    syslog.log('GDT','GATE ');
+    syslog.writeint(Gate_Number);
+    syslog.writestringln(' SET.');
 end;
 
 procedure init();
 begin
-    console.outputln('GDT','INIT START.');
+    syslog.logln('GDT','INIT START.');
     gdt_pointer.limit:= 0;
     gdt_pointer.base  := uint32(@gdt_entries);  
     set_gate($00, $00, $00,       $00, $00); //OFFSET: 0
@@ -116,7 +116,7 @@ begin
     set_gate($03, $00, $FFFFFFFF, $FA, $CF); //OFFSET: 24
     set_gate($04, $00, $FFFFFFFF, $F2, $CF); //OFFSET: 32
     flush;
-    console.outputln('GDT','INIT END.');
+    syslog.logln('GDT','INIT END.');
 end;
 
 end.

@@ -22,7 +22,7 @@ unit vfs;
 interface
 
 uses
-    hashmap, strings, lmemorymanager, lists, tracer, console;
+    hashmap, strings, lmemorymanager, lists, tracer;
 
 type
     TOpenMode       = (omReadOnly, omWriteOnly, omReadWrite);
@@ -115,7 +115,7 @@ function registerDevice(DeviceHandle : uint32; DeviceName : PChar; CBMakeDirecto
 implementation
 
 uses
-    terminal;
+    stdio;
 
 { Internal Functions }
 
@@ -610,7 +610,7 @@ end;
 
 { Terminal Commands }
 
-procedure VFS_COMMAND_PUSHD(params : PParamList);
+procedure VFS_COMMAND_PUSHD(params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
 var
     Output : pchar;
     WD     : pchar;
@@ -619,11 +619,11 @@ begin
     WD:= StringCopy(CurrentDirectory);
     STRLL_Add(PushPopDirectory, WD);
     Output:= StringConcat(WD, ' saved to stack.');
-    WritestringlnWND(Output, getTerminalHWND);
+    stdio.bufWriteStrLn(stdout_buf, Output);
     kfree(void(Output));
 end;
 
-procedure VFS_COMMAND_POPD(params : PParamList);
+procedure VFS_COMMAND_POPD(params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
 var
     Output : pchar;
     WD     : pchar;
@@ -633,26 +633,25 @@ begin
         WD:= STRLL_Get(PushPopDirectory, STRLL_Size(PushPopDirectory)-1);
         if changeDirectory(WD) = pvDirectory then begin
             Output:= StringConcat(WD, ' popped from the stack.');
-            WritestringlnWND(Output, getTerminalHWND);
+            stdio.bufWriteStrLn(stdout_buf, Output);
             kfree(void(Output));
         end else begin
             Output:= StringConcat(WD, ' popped, but was invalid!');
-            WritestringlnWND(Output, getTerminalHWND);
+            stdio.bufWriteStrLn(stderr_buf, Output);
             kfree(void(Output));
         end;
         STRLL_Delete(PushPopDirectory, STRLL_Size(PushPopDirectory)-1);
     end else begin
-        WritestringlnWND('No working directory in the stack!', getTerminalHWND);
+        stdio.bufWriteStrLn(stderr_buf, 'No working directory in the stack!');
     end;
 end;
 
-procedure VFS_COMMAND_LS(params : PParamList);
+procedure VFS_COMMAND_LS(params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
 var
     Map  : PHashMap;
     Item : PHashItem;
     obj  : PVFSObject;
     i    : uint32;
-    col  : uint32;
 
 begin
     tracer.push_trace('vfs.VFS_COMMAND_LS.enter');
@@ -662,28 +661,18 @@ begin
             Item:= Map^.Table[i];
             while Item <> nil do begin
                 obj:= PVFSObject(Item^.Data);
-                console.writestringWND(' ', getTerminalHWND);
-                col:= console.combinecolors($FFFF, $0000);
-                case obj^.ObjectType of
-                    otVDIRECTORY : col:= console.combinecolors($1587, $0000);
-                    otDRIVE      : col:= console.combinecolors($F000, $0000);
-                    otDEVICE     : col:= console.combinecolors($FFFF, $F000);
-                    otVFILE      : col:= console.combinecolors($FFFF, $C018);
-                    otMOUNT      : col:= console.combinecolors($0000, $2638);
-                    otFILE       : col:= console.combinecolors($FFFF, $0000);
-                    otDIRECTORY  : col:= console.combinecolors($547F, $0000);
-                end;
-                WritestringlnExWND(Item^.Key, col, getTerminalHWND);
+                stdio.bufWriteStr(stdout_buf, ' ');
+                stdio.bufWriteStrLn(stdout_buf, Item^.Key);
                 Item:= Item^.Next;
             end;
         end;
     end else begin
-        writestringlnWND('An internal error occured!', getTerminalHWND);
+        stdio.bufWriteStrLn(stderr_buf, 'An internal error occured!');
     end;
     tracer.push_trace('vfs.VFS_COMMAND_LS.exit');
 end;
 
-procedure VFS_COMMAND_CD(params : PParamList);
+procedure VFS_COMMAND_CD(params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
 var
     Path : pchar;
     Temp1, Temp2 : pchar;
@@ -709,14 +698,14 @@ begin
         Result:= changeDirectory(Path);
         case Result of
             pvInvalid:begin
-                writestringWND('"', getTerminalHWND);
-                writestringWND(Path, getTerminalHWND);
-                writestringlnWND('" is not a valid path.', getTerminalHWND);
+                stdio.bufWriteStr(stderr_buf, '"');
+                stdio.bufWriteStr(stderr_buf, Path);
+                stdio.bufWriteStrLn(stderr_buf, '" is not a valid path.');
             end;
             pvFile:begin
-                writestringWND('"', getTerminalHWND);
-                writestringWND(Path, getTerminalHWND);
-                writestringlnWND('" is not a directory.', getTerminalHWND);
+                stdio.bufWriteStr(stderr_buf, '"');
+                stdio.bufWriteStr(stderr_buf, Path);
+                stdio.bufWriteStrLn(stderr_buf, '" is not a directory.');
             end;
         end;
         kfree(void(Path));
@@ -758,10 +747,10 @@ begin
     //while true do begin end;
 
     { Register Terminal Commands }
-    terminal.registerCommand('LS',      @VFS_COMMAND_LS,    'List directory contents.');
-    terminal.registerCommand('CD',      @VFS_COMMAND_CD,    'Set working directory.');
-    terminal.registerCommand('PUSHD',   @VFS_COMMAND_PUSHD, 'Push the working directory.');
-    terminal.registerCommand('POPD',    @VFS_COMMAND_POPD,  'Pop the working directory.');
+    stdio.registerCommand('LS',      @VFS_COMMAND_LS,    'List directory contents.');
+    stdio.registerCommand('CD',      @VFS_COMMAND_CD,    'Set working directory.');
+    stdio.registerCommand('PUSHD',   @VFS_COMMAND_PUSHD, 'Push the working directory.');
+    stdio.registerCommand('POPD',    @VFS_COMMAND_POPD,  'Pop the working directory.');
 
     //ht:= PHashMap(Root^.Reference);
     //hashmap.add(ht, 'VDirectory', void(newDummyObject(otVDIRECTORY)));

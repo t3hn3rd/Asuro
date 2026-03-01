@@ -24,7 +24,7 @@ interface
 uses
     lmemorymanager,
     nettypes, netutils,
-    ipv4, netlog, net,
+    ipv4, net,
     util;
 
 procedure register();
@@ -35,7 +35,7 @@ procedure send(p_data : void; p_len : uint16; udpContext : PUDPSendContext);
 implementation
 
 uses
-    console, terminal;
+    syslog;
 
 var
     Ports : Array[0..65535] of PUDPBindContext;
@@ -228,9 +228,9 @@ var
 begin
     Output:= PChar(p_data);
     for i:=0 to p_len-1 do begin
-        writechar(Output[i]);
+        syslog.logChar(Output[i]);
     end;
-    writestringln(' ');
+    syslog.writestringln(' ');
 end;
 
 procedure register();

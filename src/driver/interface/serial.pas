@@ -40,8 +40,7 @@ function sinb(port : uint16) : uint8;
 
 implementation
 
-uses
-    console;
+{ no implementation uses }
 
 procedure soutb(port : uint16; val : uint8);
 begin

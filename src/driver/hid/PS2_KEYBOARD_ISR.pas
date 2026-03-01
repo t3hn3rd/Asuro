@@ -24,7 +24,6 @@ interface
 
 uses
     util,
-    console,
     isr_types,
     isrmanager,
     IDT;

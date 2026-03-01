@@ -23,7 +23,6 @@ interface
 
 uses
     util,
-    console,
     isr_types,
     IDT;
 

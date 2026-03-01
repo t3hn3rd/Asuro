@@ -13,7 +13,7 @@ interface
 
 uses
     lvgl, video, windows, desktop, keyboard, serial, tracer,
-    strings, util, lmemorymanager, asuro, terminal, vfs;
+    strings, util, lmemorymanager, asuro, stdio, vfs;
 
 procedure init;
 
@@ -37,16 +37,16 @@ var
     text_buf     : array[0..MAX_TEXT-1] of char;
     text_len     : uint32;
 
-    { Current input line buffer — sized to match terminal.TCommandBuffer }
-    line_buf     : terminal.TCommandBuffer;
+    { Current input line buffer — sized to match stdio.TCommandBuffer }
+    line_buf     : stdio.TCommandBuffer;
     line_len     : uint32;
 
     { Command history ring buffer }
-    hist         : array[0..HIST_SIZE-1] of terminal.TCommandBuffer;
+    hist         : array[0..HIST_SIZE-1] of stdio.TCommandBuffer;
     hist_count   : uint32;  { total commands stored (max HIST_SIZE) }
     hist_head    : uint32;  { next write slot }
     hist_pos     : sint32;  { browsing position: -1 = current line, 0..hist_count-1 = offset from newest }
-    saved_line   : terminal.TCommandBuffer;  { saved current input when browsing }
+    saved_line   : stdio.TCommandBuffer;  { saved current input when browsing }
     saved_len    : uint32;
 
 { ============================================================
@@ -139,11 +139,12 @@ end;
   ============================================================ }
 procedure processCommand;
 var
-    params     : terminal.PParamList;
-    i          : uint32;
-    found      : boolean;
+    params     : PParamList;
     uppera     : pchar;
-    upperb     : pchar;
+    cmd        : PCommand;
+    outbuf     : POutBuf;
+    stdin_buf  : POutBuf;
+    stderr_buf : POutBuf;
 begin
     { Null-terminate input }
     line_buf[line_len] := 0;
@@ -164,91 +165,52 @@ begin
         exit;
     end;
 
-    { Parse parameters using terminal's parser }
-    params := terminal.getParams(line_buf);
-    found := false;
+    { Parse parameters using stdio's parser }
+    params := stdio.getParams(line_buf);
 
-    if params^.Param <> nil then begin
+    if (params <> nil) and (params^.Param <> nil) then begin
         uppera := stringToUpper(params^.Param);
 
-        { --- Built-in commands handled locally --- }
+        { CLEAR is handled locally — it needs to reset the vterminal text buffer }
         if stringEquals(uppera, 'CLEAR') then begin
             text_len := 0;
             text_buf[0] := #0;
-            found := true;
-        end
-        else if stringEquals(uppera, 'HELP') then begin
-            writeLn('Registered Commands:');
-            for i := 0 to 65534 do begin
-                if terminal.Commands[i].registered and not terminal.Commands[i].hidden then begin
-                    writeStr('  ');
-                    writeStr(terminal.Commands[i].command);
-                    writeStr(' - ');
-                    writeLn(terminal.Commands[i].description);
-                end;
-            end;
-            found := true;
-        end
-        else if stringEquals(uppera, 'ECHO') then begin
-            { Print all params after the first }
-            if params^.next <> nil then begin
-                i := 0;
-                { Walk to second param (skip 'ECHO') }
-                params := params^.next;
-                while params^.Param <> nil do begin
-                    if i > 0 then writeStr(' ');
-                    writeStr(params^.Param);
-                    params := params^.next;
-                    inc(i);
-                end;
-            end;
-            appendChar(#10);
-            found := true;
-        end
-        else if stringEquals(uppera, 'VERSION') then begin
-            writeStr('  Asuro Version: ');
-            writeLn(asuro.VERSION);
-            writeStr('  Compiled on: ');
-            writeStr(asuro.COMPILE_DATE);
-            writeStr(' ');
-            writeLn(asuro.COMPILE_TIME);
-            writeLn('  Compiled With:');
-            writeStr('    NASM - Version: ');
-            writeLn(asuro.NASM_VERSION);
-            writeStr('    FPC  - Version: ');
-            writeLn(asuro.FPC_VERSION);
-            writeStr('    MAKE - Version: ');
-            writeLn(asuro.MAKE_VERSION);
-            writeStr('  ');
-            writeInt(asuro.LINE_COUNT);
-            writeStr(' lines, across ');
-            writeInt(asuro.FILE_COUNT);
-            writeLn(' files.');
-            writeStr('  Baked Drivers: ');
-            writeInt(asuro.DRIVER_COUNT);
-            appendChar(#10);
-            found := true;
-        end
-        else begin
-            { Search registered terminal commands }
-            for i := 0 to 65534 do begin
-                if terminal.Commands[i].registered then begin
-                    upperb := stringToUpper(terminal.Commands[i].command);
-                    if stringEquals(uppera, upperb) then begin
-                        terminal.Commands[i].method(params);
-                        found := true;
-                    end;
-                    kfree(void(upperb));
-                    if found then break;
-                end;
-            end;
+            kfree(void(uppera));
+            stdio.freeParams(params);
+            line_len := 0;
+            memset(uint32(@line_buf[0]), 0, 1024);
+            showPrompt;
+            exit;
         end;
 
+        { Look up any registered command }
+        cmd := stdio.findCommand(uppera);
         kfree(void(uppera));
+
+        if cmd <> nil then begin
+            outbuf := stdio.createOutBuf(1024);
+            stdin_buf := stdio.createOutBuf(0);
+            stderr_buf := stdio.createOutBuf(1024);
+            cmd^.method(params, stdin_buf, outbuf, stderr_buf);
+            { Display stdout }
+            if (outbuf <> nil) and (outbuf^.len > 0) then begin
+                outbuf^.buf[outbuf^.len] := #0;  { null-terminate }
+                appendText(outbuf^.buf);
+            end;
+            { Display stderr }
+            if (stderr_buf <> nil) and (stderr_buf^.len > 0) then begin
+                stderr_buf^.buf[stderr_buf^.len] := #0;  { null-terminate }
+                appendText(stderr_buf^.buf);
+            end;
+            stdio.freeOutBuf(stdin_buf);
+            stdio.freeOutBuf(outbuf);
+            stdio.freeOutBuf(stderr_buf);
+        end else begin
+            writeLn('Unknown command. Type HELP for a list.');
+        end;
     end;
 
-    if not found then
-        writeLn('Unknown command. Type HELP for a list.');
+    stdio.freeParams(params);
 
     { Reset input line }
     line_len := 0;
@@ -437,7 +399,7 @@ begin
     text_label := lv_label_create(content);
     lv_obj_set_width(text_label, TERM_W - 16);
     lv_obj_set_style_text_color(text_label, lv_color_make(200, 255, 200), 0);
-    lv_obj_set_style_text_font(text_label, @lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(text_label, @hack_14, 0);
     lv_label_set_long_mode(text_label, LV_LABEL_LONG_WRAP);
     lv_label_set_text(text_label, '');
 

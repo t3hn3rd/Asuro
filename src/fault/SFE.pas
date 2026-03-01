@@ -23,7 +23,7 @@ interface
 
 uses
     util,
-    console,
+    syslog,
     isr_types,
     isrmanager,
     IDT;
@@ -40,7 +40,7 @@ begin
     CLI;
     correctInterruptRegisters(true);
     BSOD('SF', 'Stack Fault Exception.');
-    console.writestringln('Stack Fault Exception.');
+    syslog.writestringln('Stack Fault Exception.');
     util.halt_and_catch_fire;
 end;
 

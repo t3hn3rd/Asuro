@@ -21,9 +21,6 @@ unit isr;
 
 interface
 
-uses
-    Console;   
-
 procedure init();
 
 implementation

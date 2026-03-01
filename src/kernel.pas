@@ -27,7 +27,7 @@ uses
      util,
      gdt, idt, isr, irq, tss,
      TMR_0_ISR,
-     console,
+     syslog, stdio,
      keyboard, mouse,
      vmemorymanager, pmemorymanager, lmemorymanager,
      tracer,
@@ -53,8 +53,7 @@ uses
      md5,
      base64,
      rand,
-     terminal,
-     hashmap, vfs, 
+     hashmap, vfs,
      video, vesa, doublebuffer, color, lvgl, desktop, uidebug,
      vterminal;
  
@@ -62,35 +61,35 @@ procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
 implementation
 
-procedure terminal_command_meminfo(params : PParamList);
+procedure terminal_command_meminfo(params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
 begin
     push_trace('kernel.terminal_command_meminfo');
 
-    console.writestringWND('Lower Memory = ', getTerminalHWND);
-    console.writeintWND(multibootinfo^.mem_lower, getTerminalHWND);
-    console.writestringlnWND('KB', getTerminalHWND);
-    console.writestringWND('Higher Memory = ', getTerminalHWND);
-    console.writeintWND(multibootinfo^.mem_upper, getTerminalHWND);
-    console.writestringlnWND('KB', getTerminalHWND);
-    console.writestringWND('Total Memory = ', getTerminalHWND);
-    console.writeintWND(((multibootinfo^.mem_upper + 1000) div 1024) + 1, getTerminalHWND);
-    console.writestringlnWND('MB', getTerminalHWND);
+    stdio.bufWriteStr(stdout_buf, 'Lower Memory = ');
+    stdio.bufWriteInt(stdout_buf, multibootinfo^.mem_lower);
+    stdio.bufWriteStrLn(stdout_buf, 'KB');
+    stdio.bufWriteStr(stdout_buf, 'Higher Memory = ');
+    stdio.bufWriteInt(stdout_buf, multibootinfo^.mem_upper);
+    stdio.bufWriteStrLn(stdout_buf, 'KB');
+    stdio.bufWriteStr(stdout_buf, 'Total Memory = ');
+    stdio.bufWriteInt(stdout_buf, ((multibootinfo^.mem_upper + 1000) div 1024) + 1);
+    stdio.bufWriteStrLn(stdout_buf, 'MB');
 
     pop_trace;
 end;
 
-procedure terminal_command_bsod(params : PParamList);
+procedure terminal_command_bsod(params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
 begin
     push_trace('kernel.terminal_command_bsod');
 
-    if ParamCount(params) > 1 then begin
+    if paramCount(params) > 1 then begin
       bsod(getparam(0, params), getparam(1, params));
     end else begin
-        console.writestringlnWND('Invalid number of params.', getTerminalHWND);
-        console.writestringlnWND('Usage: bsod <error> <info>', getTerminalHWND);
-    end;  
+        stdio.bufWriteStrLn(stderr_buf, 'Invalid number of params.');
+        stdio.bufWriteStrLn(stderr_buf, 'Usage: bsod <error> <info>');
+    end;
 
-    pop_trace; 
+    pop_trace;
 end;
 
 procedure myUserLandFunction;
@@ -119,6 +118,9 @@ begin
      { Serial Init }
      serial.init();
 
+     { Syslog Init — right after serial so log hooks work }
+     syslog.init();
+
      { Store Multiboot info }
      multibootinfo:= mbinfo;
      multibootmagic:= mbmagic;
@@ -126,19 +128,13 @@ begin
      { Ensure tracer is frozen }
      tracer.freeze();
 
-     { Terminal Init }
-     terminal.init();
-     terminal.registerCommand('MEMINFO', @terminal_command_meminfo, 'Print Simple Memory Information.');
-     terminal.registerCommand('BSOD', @terminal_command_bsod, 'Force a Panic Screen.');
+     syslog.writestringln('Booting Asuro...');
 
-     console.writestringln('Booting Asuro...');
-     
-     console.writestringln('Checking for Multiboot Compliance');
+     syslog.writestringln('Checking for Multiboot Compliance');
      { Check for Multiboot }
      if (multibootmagic <> MULTIBOOT_BOOTLOADER_MAGIC) then begin
-        console.setdefaultattribute(console.combinecolors($F800, $0000));
-        console.outputln('KERNEL', 'Multiboot Compliant Boot-Loader Needed!');
-        console.outputln('KERNEL', 'HALTING.');
+        syslog.logln('KERNEL', 'Multiboot Compliant Boot-Loader Needed!');
+        syslog.logln('KERNEL', 'HALTING.');
         BSOD('Multiboot Error', 'Multiboot Compliant Boot-Loader Needed!');
         util.halt_and_catch_fire;
      end;
@@ -149,21 +145,21 @@ begin
         MOV dds, CS
      end;
      if dds = $08 then begin
-        console.outputln('KERNEL', 'GDT: LOAD SUCCESS.');
+        syslog.logln('KERNEL', 'GDT: LOAD SUCCESS.');
      end else begin
-        console.outputln('KERNEL', 'GDT: LOAD FAIL.');
-        console.outputln('KERNEL', 'HALTING.');
+        syslog.logln('KERNEL', 'GDT: LOAD FAIL.');
+        syslog.logln('KERNEL', 'HALTING.');
         BSOD('GDT', 'Failed to load the GDT correctly.');
      end;
 
-     console.output('MULTIBOOT', 'Assigned Framebuffer: ');
-     console.writehexln(multibootinfo^.framebuffer_addr);
-     console.output('MULTIBOOT', 'Assigned Framebuffer Metrics: ');
-     console.writeint(multibootinfo^.framebuffer_width);
-     console.writestring('x');
-     console.writeint(multibootinfo^.framebuffer_height);
-     console.writestring('x');
-     console.writeintln(multibootinfo^.framebuffer_bpp);
+     syslog.log('MULTIBOOT', 'Assigned Framebuffer: ');
+     syslog.writehexln(multibootinfo^.framebuffer_addr);
+     syslog.log('MULTIBOOT', 'Assigned Framebuffer Metrics: ');
+     syslog.writeint(multibootinfo^.framebuffer_width);
+     syslog.writestring('x');
+     syslog.writeint(multibootinfo^.framebuffer_height);
+     syslog.writestring('x');
+     syslog.writeintln(multibootinfo^.framebuffer_bpp);
 
      { Memory/CPU Init }
      idt.init();
@@ -175,16 +171,19 @@ begin
      pmemorymanager.init();
      vmemorymanager.init();
      lmemorymanager.init();
+
+     { Stdio Init }
+     stdio.init();
+     stdio.registerCommand('MEMINFO', @terminal_command_meminfo, 'Print Simple Memory Information.');
+     stdio.registerCommand('BSOD', @terminal_command_bsod, 'Force a Panic Screen.');
+
      tss.init();
      scheduler.init();
 
-     { Console Init }
-     //console.init();
-
      { CPUID }
-     console.outputln('CPU', 'Init begin');
+     syslog.logln('CPU', 'Init begin');
      cpu.init();
-     console.outputln('CPU', 'Init end');
+     syslog.logln('CPU', 'Init end');
 
      { Call Tracer }
      tracer.init();
@@ -204,7 +203,7 @@ begin
      tracer.push_trace('kmain.STRMGMT');
      storagemanagement.init();
 
-     { Enable interrupts and hook timer BEFORE LVGL }
+     { Enable interrupts and hook timer }
      tracer.push_trace('kmain.TMR');
      STI;
      TMR_0_ISR.hook(uint32(@bios_data_area.tick_update));
@@ -212,22 +211,22 @@ begin
      { Filesystems }
      fat32.init();
 
-     { Device Drivers — must init before LVGL so mouse/keyboard are available }
+     { Device Drivers }
      tracer.push_trace('kmain.DEVDRV');
-     console.outputln('KERNEL', 'DEVICE DRIVERS: INIT BEGIN.');
+     syslog.logln('KERNEL', 'DEVICE DRIVERS: INIT BEGIN.');
      keyboard.init(keyboard_layout);
      mouse.init();
      testdriver.init();
      E1000.init();
      IDE.init();
-     console.outputln('KERNEL', 'DEVICE DRIVERS: INIT END.');
+     syslog.logln('KERNEL', 'DEVICE DRIVERS: INIT END.');
 
      { Bus Drivers }
      tracer.push_trace('kmain.BUSDRV');
-     console.outputln('KERNEL', 'BUS DRIVERS: INIT BEGIN.');
+     syslog.logln('KERNEL', 'BUS DRIVERS: INIT BEGIN.');
      USB.init();
      pci.init();
-     console.outputln('KERNEL', 'BUS DRIVERS: INIT END.');
+     syslog.logln('KERNEL', 'BUS DRIVERS: INIT END.');
 
      { Network Stack }
      tracer.push_trace('kmain.NETDRV');
@@ -240,20 +239,20 @@ begin
      rand.srand((getDateTime.Seconds SHL 24) OR (getDateTime.Minutes SHL 16) OR (getDateTime.Hours SHL 8) OR (getDateTime.Day));
 
      { Initialize LVGL }
-     console.outputln('KERNEL', 'LVGL: INIT BEGIN.');
+     syslog.logln('KERNEL', 'LVGL: INIT BEGIN.');
      lvgl_init(video.frontBufferWidth, video.frontBufferHeight);
-     console.outputln('KERNEL', 'LVGL: INIT COMPLETE.');
+     syslog.logln('KERNEL', 'LVGL: INIT COMPLETE.');
 
      { Initialize desktop environment }
-     console.outputln('KERNEL', 'DESKTOP: INIT BEGIN.');
+     syslog.logln('KERNEL', 'DESKTOP: INIT BEGIN.');
      desktop.init;
-     console.outputln('KERNEL', 'DESKTOP: INIT COMPLETE.');
+     syslog.logln('KERNEL', 'DESKTOP: INIT COMPLETE.');
 
      { Initialize visual terminal (registers with desktop search) }
      vterminal.init;
 
      { Main render loop }
-     console.outputln('KERNEL', 'Entering main render loop.');
+     syslog.logln('KERNEL', 'Entering main render loop.');
      tracer.push_trace('kmain.MAINLOOP');
      while true do begin
         desktop.update;

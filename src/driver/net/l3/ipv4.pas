@@ -23,9 +23,8 @@ interface
 
 uses
     tracer, lmemorymanager,
-    util, console, terminal, strings,
+    util, strings,
     net, nettypes, netutils,
-    netlog,
     lists,
     eth2;
 
@@ -37,7 +36,7 @@ procedure register;
 implementation
 
 uses
-    arp;
+    arp, stdio;
 
 var
     Registered : Boolean = false;
@@ -132,7 +131,7 @@ begin
     pop_trace;
 end;
 
-procedure terminal_command_ifconfig(params : PParamList);
+procedure terminal_command_ifconfig(params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
 var
     Command, Sub, Address, Gateway, Netmask : pchar;
     _Address, _Gateway, _Netmask : puint8;
@@ -158,7 +157,7 @@ begin
                 kfree(void(_Gateway));
                 kfree(void(_Netmask));
             end else begin
-                writestringlnWND('Invalid number of params to call ''set''.', getTerminalHWND);
+                stdio.bufWriteStrLn(stderr_buf, 'Invalid number of params to call ''set''.');
             end;
         end;
         if StringEquals(Command, 'net') then begin
@@ -174,18 +173,18 @@ begin
         CopyIPv4(@Config.Gateway[0], @Target[0]);
         arp.sendRequest(@Target[0]);
     end else begin
-        writestringWND('   MAC:     ', getTerminalHWND);
-        writeMACAddress(net.GetMAC, getTerminalHWND);
-        writestringWND('   IPv4:    ', getTerminalHWND);
-        writeIPv4Address(@Config.Address[0], getTerminalHWND);
-        writestringWND('   Gateway: ', getTerminalHWND);
-        writeIPv4Address(@Config.Gateway[0], getTerminalHWND);
-        writestringWND('   Netmask: ', getTerminalHWND);
-        writeIPv4Address(@Config.Netmask[0], getTerminalHWND);
+        stdio.bufWriteStr(stdout_buf, '   MAC:     ');
+        writeMACAddress(net.GetMAC, stdout_buf);
+        stdio.bufWriteStr(stdout_buf, '   IPv4:    ');
+        writeIPv4Address(@Config.Address[0], stdout_buf);
+        stdio.bufWriteStr(stdout_buf, '   Gateway: ');
+        writeIPv4Address(@Config.Gateway[0], stdout_buf);
+        stdio.bufWriteStr(stdout_buf, '   Netmask: ');
+        writeIPv4Address(@Config.Netmask[0], stdout_buf);
         if Config.UP then 
-            writestringlnWND('   NetUP:   true', getTerminalHWND) 
+            stdio.bufWriteStrLn(stdout_buf, '   NetUP:   true') 
         else 
-            writestringlnWND('   NetUP:   false', getTerminalHWND);
+            stdio.bufWriteStrLn(stdout_buf, '   NetUP:   false');
     end;
 end;
 
@@ -206,7 +205,7 @@ begin
         end;
         Config.UP:= false;
         eth2.registerType($0800, @recv);
-        terminal.registerCommand('IFCONFIG', @terminal_command_ifconfig, 'Configure Network Settings.');
+        stdio.registerCommand('IFCONFIG', @terminal_command_ifconfig, 'Configure Network Settings.');
         Registered:= true;
     end;
     pop_trace;

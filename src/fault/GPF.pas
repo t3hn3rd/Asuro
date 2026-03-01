@@ -23,7 +23,7 @@ interface
 
 uses
     util,
-    console,
+    syslog,
     isr_types,
     isrmanager,
     IDT;
@@ -41,7 +41,7 @@ begin
     CLI;
     correctInterruptRegisters(true);
     BSOD('GPF', 'General Protection Fault.');
-    console.writestringln('General Protection Fault.');
+    syslog.writestringln('General Protection Fault.');
     util.halt_and_catch_fire;
 end;
 

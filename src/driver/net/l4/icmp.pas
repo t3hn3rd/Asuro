@@ -24,7 +24,7 @@ interface
 uses
     bios_data_area,
     lmemorymanager,
-    net, nettypes, netutils, ipv4, console, terminal, arp, util;
+    net, nettypes, netutils, ipv4, arp, util;
 
 type
     TARPErrorCode     = (aecFailedToResolveHost, aecNoRouteToHost, aecTimeout, aecTTLExpired);
@@ -43,6 +43,9 @@ procedure ping_err(hdr : PICMPHeader; Reason : TARPErrorCode);
 procedure ping_rep(hdr : PICMPHeader);
 
 implementation
+
+uses
+    stdio, strings;
 
 var
     Handlers : Array[0..255] of TARPHandler;
@@ -163,27 +166,29 @@ begin
 end;
 
 var
-    PING_T1 : uint64;
-    PING_N  : uint16;
-    PING_C  : uint16;
-    PING_L  : uint32;
-    PING_IP : puint8;
+    PING_T1  : uint64;
+    PING_N   : uint16;
+    PING_C   : uint16;
+    PING_L   : uint32;
+    PING_IP  : puint8;
+    PING_STDOUT : POutBuf;
+    PING_STDERR : POutBuf;
 
 procedure ping_err(hdr : PICMPHeader; Reason : TARPErrorCode);
 begin
-    writestringWND('Ping Error: ', getTerminalHWND);
+    stdio.bufWriteStr(PING_STDERR, 'Ping Error: ');
     case Reason of
-        aecFailedToResolveHost:writestringlnWND('Failed to resolve host.', getTerminalHWND);
-        aecNoRouteToHost:writestringlnWND('No route to host.', getTerminalHWND);
-        aecTimeout:writestringlnWND('Timeout expired.', getTerminalHWND);
-        aecTTLExpired:writestringlnWND('TTL Expired.', getTerminalHWND);
+        aecFailedToResolveHost:stdio.bufWriteStrLn(PING_STDERR, 'Failed to resolve host.');
+        aecNoRouteToHost:stdio.bufWriteStrLn(PING_STDERR, 'No route to host.');
+        aecTimeout:stdio.bufWriteStrLn(PING_STDERR, 'Timeout expired.');
+        aecTTLExpired:stdio.bufWriteStrLn(PING_STDERR, 'TTL Expired.');
     end;
     PING_T1:= Counters.c64;
     INC(PING_C);
     if PING_C < PING_N then begin
         sendICMPRequest(PING_IP, PING_C, 128, @ping_rep, @ping_err);
     end else begin
-        terminal.done(PING_L);
+        stdio.done(PING_L);
     end;
 end;
 
@@ -193,15 +198,15 @@ var
 
 begin
     PING_T2:= Counters.c64;
-    writestringWND('Ping Reply: ', getTerminalHWND);
-    writeIntWND(PING_T2-PING_T1, getTerminalHWND);
-    writeStringlnWND('ms.', getTerminalHWND);
+    stdio.bufWriteStr(PING_STDOUT, 'Ping Reply: ');
+    stdio.bufWriteInt(PING_STDOUT, PING_T2-PING_T1);
+    stdio.bufWriteStrLn(PING_STDOUT, 'ms.');
     PING_T1:= PING_T2;
     INC(PING_C);
     if PING_C < PING_N then begin
         sendICMPRequest(PING_IP, PING_C, 128, @ping_rep, @ping_err);
     end else begin
-        terminal.done(PING_L);
+        stdio.done(PING_L);
     end;
 end;
 
@@ -210,7 +215,7 @@ begin
     PING_N:= 0;
 end;
 
-procedure terminal_command_ping(Params : PParamList);
+procedure terminal_command_ping(Params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
 var
     ip_str : pchar;
     ip : puint8;
@@ -220,7 +225,9 @@ begin
         ip_str:= getParam(0, Params);
         ip:= stringToIPv4(ip_str);
         if ip <> nil then begin
-            terminal.halt(PING_L, @ping_terminate);
+            PING_STDOUT:= stdout_buf;
+            PING_STDERR:= stderr_buf;
+            stdio.halt(PING_L, @ping_terminate);
             PING_L:= Counters.c32;
             PING_N:= 10;
             PING_C:= 0;
@@ -242,7 +249,7 @@ begin
         Handlers[i].OnReply:= nil;
     end;
     ipv4.registerProtocol($01, @recv);
-    terminal.registerCommand('PING', @terminal_command_ping, 'Ping a host.');
+    stdio.registerCommand('PING', @terminal_command_ping, 'Ping a host.');
 end;
 
 end.

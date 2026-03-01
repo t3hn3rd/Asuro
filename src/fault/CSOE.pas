@@ -23,7 +23,7 @@ interface
 
 uses
     util,
-    console,
+    syslog,
     isr_types,
     isrmanager,
     IDT;
@@ -40,7 +40,7 @@ begin
     CLI;
     correctInterruptRegisters(false);
     BSOD('CSO', 'Coprocessor Seg Overrun Exception.');
-    console.writestringln('Coprocessor Seg Overrun Exception.');
+    syslog.writestringln('Coprocessor Seg Overrun Exception.');
     util.halt_and_catch_fire;
 end;
 

@@ -23,7 +23,7 @@ interface
 
 uses
     util,
-    console,
+    syslog,
     isr_types,
     isrmanager,
     IDT;
@@ -46,7 +46,7 @@ begin
     for i:=0 to MAX_HOOKS-1 do begin
         if uint32(Hooks[i]) <> 0 then Hooks[i](void($00000000));
     end;
-    console.writestringln('Disk Operation Complete');
+    syslog.writestringln('Disk Operation Complete');
 end;
 
 procedure register();

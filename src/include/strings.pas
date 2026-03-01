@@ -46,9 +46,6 @@ function boolToString(b : boolean; ext : boolean) : pchar;
 
 implementation
 
-uses
-    console;
-
 function hexStringToInt(str : pchar) : uint32;
 var
     result : uint32;

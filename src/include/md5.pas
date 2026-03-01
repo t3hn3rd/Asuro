@@ -26,7 +26,6 @@ interface
 uses
     util,
     lmemorymanager,
-    console,
     tracer;
 
 const

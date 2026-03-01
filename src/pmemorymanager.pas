@@ -23,7 +23,7 @@ interface
 
 uses
     util,
-    console,
+    syslog,
     multiboot,
     tracer;
 
@@ -128,16 +128,16 @@ end;
 procedure init;
 begin
     push_trace('pmemorymanager.init');
-    console.outputln('PMM','INIT BEGIN.');
+    syslog.logln('PMM','INIT BEGIN.');
     walk_memory_map;
     force_alloc_block(0, 0);
     force_alloc_block(1, 0);
     force_alloc_block(2, 0); //First 12MiB reserved for Kernel/BIOS.
     force_alloc_block(3, 0);
-    console.output('PMM',' ');
-    console.writeint(nPresent);
-    console.writestringln('/1024 Block Available for Allocation.');
-    console.outputln('PMM','INIT END.');
+    syslog.log('PMM',' ');
+    syslog.writeint(nPresent);
+    syslog.writestringln('/1024 Block Available for Allocation.');
+    syslog.logln('PMM','INIT END.');
     pop_trace;
 end;
 
