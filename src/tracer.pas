@@ -13,8 +13,12 @@
 //  limitations under the License.
 
 { 
-	Tracer - Trace stack for debugging method calls.
+	Tracer - Ring buffer trace log for debugging method calls.
 	
+	IMPORTANT: push_trace MUST only be called with pointers to
+	static/persistent data (e.g. string literals). The pointer is
+	stored directly - no copy is made.
+
 	@author(Kieron Morris <kjm@kieronmorris.me>)
 }
 unit tracer;
@@ -28,19 +32,12 @@ function  get_last_trace : pchar;
 procedure freeze;
 function  get_trace_count : uint32;
 function  get_trace_N(idx : uint32) : pchar;
+procedure print_traces;
 
 implementation
 
 uses
-    lmemorymanager, util, strings, serial, stdio;
-
-type
-    PTracerEntry = ^TTracerEntry;
-    TTracerEntry = record
-        Next        : PTracerEntry;
-        Data        : pchar;
-        Previous    : PTracerEntry;
-    end;
+    util, strings, stdio, syslog;
 
 const
     MAX_TRACE = 40;
@@ -48,16 +45,12 @@ const
 var
     t_ready     : Boolean;
     Locked      : Boolean;
+    head        : uint32;
     Traces      : Array[0..MAX_TRACE-1] of PChar;
-    c_lock      : Boolean = false;
-
-var
-    head : PTracerEntry;
-    tail : PTracerEntry;
 
 procedure terminal_command_tracer(Params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
 var
-    p1, p2 : PChar;
+    p1 : PChar;
     count : uint32;
     i : uint32; 
     t : PChar;
@@ -113,22 +106,15 @@ begin
 end;
 
 procedure push_trace(t_name : pchar);
-var
-    i   : uint32;
-
 begin
     if TRACER_ENABLE then begin
         if t_ready then begin
             if not Locked then begin
-                if not c_lock then begin
-                    Locked:= true;
-                    if Traces[MAX_TRACE-1] <> nil then kfree(void(Traces[MAX_TRACE-1]));
-                    for i:=MAX_TRACE-1 downto 1 do begin
-                        Traces[i]:= Traces[i-1];
-                    end;
-                    Traces[0]:= StringCopy(t_name);
-                    Locked:= false;
-                end;
+                Locked:= true;
+                head:= head + 1;
+                if head >= MAX_TRACE then head:= 0;
+                Traces[head]:= t_name;
+                Locked:= false;
             end;
         end;
     end;
@@ -141,7 +127,7 @@ end;
 
 function get_last_trace : pchar;
 begin
-    get_last_trace:= Traces[0];
+    get_last_trace:= Traces[head];
 end;
 
 procedure init;
@@ -151,8 +137,10 @@ var
 begin
     if TRACER_ENABLE then begin
         for i:=0 to MAX_TRACE-1 do begin
-            traces[i]:= nil;
+            Traces[i]:= nil;
         end;
+        Locked:= false;
+        head:= MAX_TRACE - 1;
         t_ready:= true;
         push_trace('kmain');
     end;
@@ -166,11 +154,34 @@ begin
     end;
 end;
 
+procedure print_traces;
+var
+    i : uint32;
+
+begin
+    for i:=0 to MAX_TRACE-1 do begin
+        syslog.log('TRACER', '[');
+        syslog.writeint(i);
+        syslog.writestring('] ');
+        if Traces[i] <> nil then begin
+            syslog.writestringln(Traces[i]);
+        end else begin
+            syslog.writestringln('?????????');
+        end;
+    end;
+end;
+
 function get_trace_N(idx : uint32) : pchar;
+var
+    slot : uint32;
 begin
     if idx > MAX_TRACE-1 then exit;
     if TRACER_ENABLE then begin
-        get_trace_N:= traces[idx];
+        if head >= idx then
+            slot:= head - idx
+        else
+            slot:= MAX_TRACE - (idx - head);
+        get_trace_N:= Traces[slot];
     end;
 end;
 
