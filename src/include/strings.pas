@@ -48,6 +48,9 @@ procedure UnitTest;
 
 implementation
 
+uses
+    syslog;
+
 function hexStringToInt(str : pchar) : uint32;
 var
     result : uint32;
@@ -382,7 +385,7 @@ var
         end else begin
             inc(failed);
             msg:= stringConcat('FAIL: ', testName);
-            console.Outputln('STRINGS', msg);
+            syslog.logln('STRINGS', msg);
             kfree(void(msg));
         end;
     end;
@@ -398,7 +401,7 @@ var
         kfree(void(msg));
         msg:= stringConcat(tmp, ' failed.');
         kfree(void(tmp));
-        console.Outputln('STRINGS', msg);
+        syslog.logln('STRINGS', msg);
         kfree(void(msg));
         kfree(void(pStr));
         kfree(void(fStr));
@@ -407,7 +410,7 @@ var
 begin
     passed:= 0;
     failed:= 0;
-    console.Outputln('STRINGS', 'Unit tests starting...');
+    syslog.logln('STRINGS', 'Unit tests starting...');
 
     { === stringSize === }
     Assert(stringSize('HELLO') = 5, 'stringSize(HELLO)=5');
