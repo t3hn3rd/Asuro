@@ -43,8 +43,11 @@ uses
      usbhub,
      usb_keyboard,
      usb_mouse,
+     usb_storage,
      UHCI,
      OHCI,
+     EHCI,
+     XHCI,
      testdriver,
      E1000,
      IDE,
@@ -267,19 +270,19 @@ begin
      usbcore.UnitTest;
      UHCI.UnitTest;
      OHCI.UnitTest;
+     EHCI.UnitTest;
+     XHCI.UnitTest;
      usbhub.UnitTest;
      usb_keyboard.UnitTest;
      usb_mouse.UnitTest;
 
-     { Main render loop }
+     { Main render loop — USB completions are now interrupt-driven }
      syslog.logln('KERNEL', 'Entering main render loop.');
      while true do begin
-        usbcore.poll_all;
-        usb_keyboard.poll_keyboards;
-        usb_mouse.poll_mice;
         desktop.update;
         uidebug.update;
         lvgl_handler;
+        usbcore.usb_check_hotplug;
         video.Flush();
      end;
 
