@@ -66,7 +66,8 @@ uses
      rand,
      hashmap, vfs,
      video, vesa, doublebuffer, color, lvgl, desktop, uidebug,
-     vterminal;
+     vterminal,
+     graphicsrefresh, usbhotplug;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
@@ -103,18 +104,14 @@ begin
     pop_trace;
 end;
 
-procedure myUserLandFunction;
-var
-    i : uint32;
-
+procedure yield();
 begin
-    i:=0;
-    while true do begin 
-        i:=i+1;
-        asm
-            MOV EAX, i
-        end;
-    end;
+    asm
+         sti
+     @idle:
+         hlt
+         jmp @idle
+     end;
 end;
 
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall; [public, alias: 'kmain'];   
@@ -132,6 +129,7 @@ begin
 
      { Syslog Init — right after serial so log hooks work }
      syslog.init();
+     syslog.writestringln('Booting Asuro...');
 
      { Store Multiboot info }
      multibootinfo:= mbinfo;
@@ -140,10 +138,8 @@ begin
      { Ensure tracer is frozen }
      tracer.freeze();
 
-     syslog.writestringln('Booting Asuro...');
-
-     syslog.writestringln('Checking for Multiboot Compliance');
      { Check for Multiboot }
+     syslog.writestringln('Checking for Multiboot Compliance');
      if (multibootmagic <> MULTIBOOT_BOOTLOADER_MAGIC) then begin
         syslog.logln('KERNEL', 'Multiboot Compliant Boot-Loader Needed!');
         syslog.logln('KERNEL', 'HALTING.');
@@ -276,16 +272,13 @@ begin
      usb_keyboard.UnitTest;
      usb_mouse.UnitTest;
 
-     { Main render loop — USB completions are now interrupt-driven }
-     syslog.logln('KERNEL', 'Entering main render loop.');
-     while true do begin
-        desktop.update;
-        uidebug.update;
-        lvgl_handler;
-        usbcore.usb_check_hotplug;
-        video.Flush();
-     end;
+     { Register timer-driven tasks }
+     graphicsrefresh.init;
+     usbhotplug.init;
 
+     { All work is now driven by timer interrupts — idle the CPU }
+     syslog.logln('KERNEL', 'All tasks registered. Halting into idle.');
+     kernel.yield();
 end;
  
 end.
