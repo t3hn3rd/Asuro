@@ -18,7 +18,7 @@
 	@author(Aaron Hance <ah@aaronhance.me>)
 	@author(Kieron Morris <kjm@kieronmorris.me>)
 }
-unit PCI;
+unit pci;
 
 interface
 
