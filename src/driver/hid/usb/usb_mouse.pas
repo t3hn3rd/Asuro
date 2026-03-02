@@ -18,6 +18,7 @@ uses
     mouse,
     drivermanagement,
     lmemorymanager,
+    lists,
     tracer,
     syslog,
     strings,
@@ -48,7 +49,7 @@ const
     MOUSE_BTN_MIDDLE      = $04;
 
     { Maximum simultaneous mice }
-    MAX_USB_MICE          = 4;
+    MAX_USB_MICE          = 4; { Only used for unit test sizing }
 
 { ========================= Types ========================= }
 
@@ -61,6 +62,7 @@ type
         ReportBuf   : array[0..MOUSE_REPORT_SIZE-1] of uint8;
         Transfer    : PUSBTransfer;
         Active      : boolean;
+        FailCount   : uint32;
         PrevLMB     : boolean;
         PrevRMB     : boolean;
         PosX        : sint32;
@@ -70,8 +72,7 @@ type
 { ========================= Globals ========================= }
 
 var
-    Mice      : array[0..MAX_USB_MICE-1] of TUSBMouseData;
-    MiceCount : uint32;
+    MouseList : PLinkedListBase;
 
 { ========================= Helper Functions ========================= }
 
@@ -188,20 +189,55 @@ end;
 
 { ========================= Polling ========================= }
 
+{ ========================= Disconnect Handler ========================= }
+
+procedure unload(dev : PUSBDevice);
+var
+    i    : uint32;
+    ms   : PUSBMouseData;
+    cnt  : uint32;
+begin
+    if MouseList = nil then exit;
+    cnt := LL_Size(MouseList);
+    i := 0;
+    while i < cnt do begin
+        ms := PUSBMouseData(LL_Get(MouseList, i));
+        if (ms <> nil) and (ms^.Device = dev) then begin
+            syslog.logln('USBMouse', 'Device disconnected, deactivating.');
+            if ms^.Transfer <> nil then begin
+                kfree(void(ms^.Transfer));
+                ms^.Transfer := nil;
+            end;
+            ms^.Device := nil;
+            ms^.Active := false;
+            LL_Delete(MouseList, i);
+            dec(cnt);
+        end else
+            inc(i);
+    end;
+end;
+
 procedure poll_mice;
 var
     i      : uint32;
+    cnt    : uint32;
     ms     : PUSBMouseData;
     repLen : uint32;
 begin
-    if MiceCount = 0 then exit;
-    for i := 0 to MiceCount - 1 do begin
-        ms := @Mice[i];
-        if (not ms^.Active) or (not ms^.HasIntrEP) then continue;
+    if MouseList = nil then exit;
+    cnt := LL_Size(MouseList);
+    i := 0;
+    while i < cnt do begin
+        ms := PUSBMouseData(LL_Get(MouseList, i));
+        if (ms = nil) or (not ms^.Active) or (not ms^.HasIntrEP) or (ms^.Device = nil) then begin
+            inc(i);
+            continue;
+        end;
 
         if ms^.Transfer <> nil then begin
             if ms^.Transfer^.Status = tsSuccess then begin
                 { Determine actual report length }
+                ms^.FailCount := 0;
                 repLen := ms^.Transfer^.ActualLen;
                 if repLen < 3 then repLen := 3;
                 if repLen > MOUSE_REPORT_SIZE then repLen := MOUSE_REPORT_SIZE;
@@ -213,16 +249,25 @@ begin
                     @ms^.ReportBuf[0], MOUSE_REPORT_SIZE);
             end else if (ms^.Transfer^.Status <> tsInProgress) and
                         (ms^.Transfer^.Status <> tsNotStarted) then begin
-                { Transfer failed — retry }
-                if ms^.Transfer^.Status <> tsNAK then begin
-                    syslog.logln('USBMouse', 'Interrupt transfer failed, retrying.');
-                end;
+                { Transfer failed }
+                inc(ms^.FailCount);
                 kfree(void(ms^.Transfer));
-                ms^.Transfer := usb_interrupt_transfer(
-                    ms^.Device, @ms^.IntrEP,
-                    @ms^.ReportBuf[0], MOUSE_REPORT_SIZE);
+                if ms^.FailCount >= 3 then begin
+                    syslog.logln('USBMouse', 'Too many failures, deactivating.');
+                    ms^.Transfer := nil;
+                    ms^.Active := false;
+                    ms^.Device := nil;
+                    LL_Delete(MouseList, i);
+                    dec(cnt);
+                    continue;
+                end else begin
+                    ms^.Transfer := usb_interrupt_transfer(
+                        ms^.Device, @ms^.IntrEP,
+                        @ms^.ReportBuf[0], MOUSE_REPORT_SIZE);
+                end;
             end;
         end;
+        inc(i);
     end;
 end;
 
@@ -244,19 +289,14 @@ begin
         exit;
     end;
 
-    if MiceCount >= MAX_USB_MICE then begin
-        syslog.logln('USBMouse', 'Maximum mouse count reached.');
-        pop_trace;
-        exit;
-    end;
-
     syslog.logln('USBMouse', 'Configuring USB mouse...');
 
-    ms := @Mice[MiceCount];
+    ms := PUSBMouseData(LL_Add(MouseList));
     ms^.Device    := dev;
     ms^.HasIntrEP := false;
     ms^.Active    := false;
     ms^.Transfer  := nil;
+    ms^.FailCount := 0;
     ms^.PrevLMB   := false;
     ms^.PrevRMB   := false;
     ms^.PosX      := mouse.getMouseX;
@@ -309,8 +349,10 @@ begin
         dev, @ms^.IntrEP,
         @ms^.ReportBuf[0], MOUSE_REPORT_SIZE);
 
+    { Register disconnect callback }
+    dev^.fnDisconnect := TUSBDisconnectCallback(@unload);
+
     ms^.Active := true;
-    inc(MiceCount);
 
     syslog.log('USBMouse', 'Mouse ready (EP');
     syslog.writeint(ms^.IntrEP.Address);
@@ -330,7 +372,7 @@ begin
     push_trace('usb_mouse.init');
     syslog.logln('USBMouse', 'INIT BEGIN.');
 
-    MiceCount := 0;
+    MouseList := LL_New(sizeof(TUSBMouseData));
 
     { Register as a USB class driver matching HID boot mouse }
     { id2 = bInterfaceClass = $03 (HID) }

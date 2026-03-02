@@ -1058,6 +1058,10 @@ begin
 
         { Process completions (walks ED lists) }
         ohci_poll(hc);
+
+        { Hotplug: if RootHubStatusChange, flag for deferred processing }
+        if ((intSts AND OHCI_INT_RHSC) <> 0) and hc^.HotplugArmed then
+            hc^.PortChangePending := true;
     end;
     usbcore.fire_completion_hooks;
 end;

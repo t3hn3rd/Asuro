@@ -1355,6 +1355,10 @@ begin
 
         { Process completions (walks QH lists) }
         ehci_poll(hc);
+
+        { Hotplug: if Port Change Detect, flag for deferred processing }
+        if ((usbsts AND EHCI_STS_PCD) <> 0) and hc^.HotplugArmed then
+            hc^.PortChangePending := true;
     end;
     usbcore.fire_completion_hooks;
 end;

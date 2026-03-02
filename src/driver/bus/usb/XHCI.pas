@@ -1870,6 +1870,8 @@ var
     pend      : PXHCI_PendingTransfer;
     transfer  : PUSBTransfer;
     processed : boolean;
+    hpPortId  : uint8;
+    hpPortSC  : uint32;
 begin
     if (hc = nil) or (hc^.PrivData = nil) then exit;
     priv := PXHCI_PrivData(hc^.PrivData);
@@ -1924,9 +1926,19 @@ begin
             end;
 
             XHCI_TRB_PORT_STATUS_CHG: begin
-                { Port ID in bits 31:24 of Param0 }
+                { Port ID in bits 31:24 of Param0 (1-based) }
+                hpPortId := uint8((evt.Param0 SHR 24) AND $FF);
                 syslog.log('XHCI', 'Port Status Change: port ');
-                syslog.writeintln((evt.Param0 SHR 24) AND $FF);
+                syslog.writeintln(hpPortId);
+                if hpPortId > 0 then begin
+                    { Acknowledge port status change by writing W1C bits }
+                    hpPortSC := xhci_readl(priv^.OpBase, XHCI_OP_PORTSC_BASE + ((hpPortId - 1) * $10));
+                    xhci_writel(priv^.OpBase, XHCI_OP_PORTSC_BASE + ((hpPortId - 1) * $10),
+                        (hpPortSC AND $0E00C3E0) OR $00FE0000);
+                    { Flag for deferred hotplug processing }
+                    if hc^.HotplugArmed then
+                        hc^.PortChangePending := true;
+                end;
             end;
         end;
     end;

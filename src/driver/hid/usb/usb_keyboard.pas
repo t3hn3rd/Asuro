@@ -18,6 +18,7 @@ uses
     ps2_keyboard,
     drivermanagement,
     lmemorymanager,
+    lists,
     tracer,
     syslog,
     strings,
@@ -58,7 +59,7 @@ const
     KB_MOD_RGUI           = $80;
 
     { Maximum simultaneous keyboards }
-    MAX_USB_KEYBOARDS     = 4;
+    MAX_USB_KEYBOARDS     = 4; { Only used for unit test sizing }
 
     { Maximum keys tracked for rollover }
     MAX_KEYS              = 6;
@@ -75,13 +76,13 @@ type
         PrevReport   : array[0..KB_REPORT_SIZE-1] of uint8;
         Transfer     : PUSBTransfer;
         Active       : boolean;
+        FailCount    : uint32;
     end;
 
 { ========================= Globals ========================= }
 
 var
-    Keyboards : array[0..MAX_USB_KEYBOARDS-1] of TUSBKeyboardData;
-    KBCount   : uint32;
+    KeyboardList : PLinkedListBase;
 
 { ========================= HID Usage to ASCII Translation ========================= }
 
@@ -401,22 +402,56 @@ begin
     memcpy(uint32(@kb^.ReportBuf[0]), uint32(@kb^.PrevReport[0]), KB_REPORT_SIZE);
 end;
 
+{ ========================= Disconnect Handler ========================= }
+
+procedure unload(dev : PUSBDevice);
+var
+    i    : uint32;
+    kb   : PUSBKeyboardData;
+    cnt  : uint32;
+begin
+    if KeyboardList = nil then exit;
+    cnt := LL_Size(KeyboardList);
+    i := 0;
+    while i < cnt do begin
+        kb := PUSBKeyboardData(LL_Get(KeyboardList, i));
+        if (kb <> nil) and (kb^.Device = dev) then begin
+            syslog.logln('USBKeyboard', 'Device disconnected, deactivating.');
+            if kb^.Transfer <> nil then begin
+                kfree(void(kb^.Transfer));
+                kb^.Transfer := nil;
+            end;
+            kb^.Device := nil;
+            kb^.Active := false;
+            LL_Delete(KeyboardList, i);
+            dec(cnt);
+        end else
+            inc(i);
+    end;
+end;
+
 { ========================= Polling ========================= }
 
 procedure poll_keyboards;
 var
     i     : uint32;
+    cnt   : uint32;
     kb    : PUSBKeyboardData;
 begin
-    if KBCount = 0 then exit;
-    for i := 0 to KBCount - 1 do begin
-        kb := @Keyboards[i];
-        if (not kb^.Active) or (not kb^.HasIntrEP) then
+    if KeyboardList = nil then exit;
+    cnt := LL_Size(KeyboardList);
+    i := 0;
+    while i < cnt do begin
+        kb := PUSBKeyboardData(LL_Get(KeyboardList, i));
+        if (kb = nil) or (not kb^.Active) or (not kb^.HasIntrEP) or (kb^.Device = nil) then begin
+            inc(i);
             continue;
+        end;
 
         if kb^.Transfer <> nil then begin
             if kb^.Transfer^.Status = tsSuccess then begin
                 { Got a report — process it }
+                kb^.FailCount := 0;
                 process_report(kb);
                 { Free old transfer and resubmit }
                 kfree(void(kb^.Transfer));
@@ -425,17 +460,27 @@ begin
                     @kb^.ReportBuf[0], KB_REPORT_SIZE);
             end else if (kb^.Transfer^.Status <> tsInProgress) and
                         (kb^.Transfer^.Status <> tsNotStarted) then begin
-                { Transfer failed (stall, NAK, etc.) — retry }
-                if kb^.Transfer^.Status <> tsNAK then begin
-                    syslog.logln('USBKeyboard', 'Interrupt transfer failed, retrying.');
-                end;
+                { Transfer failed (stall, error, etc.) }
+                inc(kb^.FailCount);
                 kfree(void(kb^.Transfer));
-                kb^.Transfer := usb_interrupt_transfer(
-                    kb^.Device, @kb^.IntrEP,
-                    @kb^.ReportBuf[0], KB_REPORT_SIZE);
+                if kb^.FailCount >= 3 then begin
+                    { Too many consecutive failures — device likely unplugged }
+                    syslog.logln('USBKeyboard', 'Too many failures, deactivating.');
+                    kb^.Transfer := nil;
+                    kb^.Active := false;
+                    kb^.Device := nil;
+                    LL_Delete(KeyboardList, i);
+                    dec(cnt);
+                    continue;
+                end else begin
+                    kb^.Transfer := usb_interrupt_transfer(
+                        kb^.Device, @kb^.IntrEP,
+                        @kb^.ReportBuf[0], KB_REPORT_SIZE);
+                end;
             end;
             { tsInProgress / tsNotStarted — still waiting, do nothing }
         end;
+        inc(i);
     end;
 end;
 
@@ -457,19 +502,14 @@ begin
         exit;
     end;
 
-    if KBCount >= MAX_USB_KEYBOARDS then begin
-        syslog.logln('USBKeyboard', 'Maximum keyboard count reached.');
-        pop_trace;
-        exit;
-    end;
-
     syslog.logln('USBKeyboard', 'Configuring USB keyboard...');
 
-    kb := @Keyboards[KBCount];
+    kb := PUSBKeyboardData(LL_Add(KeyboardList));
     kb^.Device    := dev;
     kb^.HasIntrEP := false;
     kb^.Active    := false;
     kb^.Transfer  := nil;
+    kb^.FailCount := 0;
 
     { Clear report buffers }
     for i := 0 to KB_REPORT_SIZE - 1 do begin
@@ -520,8 +560,10 @@ begin
         dev, @kb^.IntrEP,
         @kb^.ReportBuf[0], KB_REPORT_SIZE);
 
+    { Register disconnect callback }
+    dev^.fnDisconnect := TUSBDisconnectCallback(@unload);
+
     kb^.Active := true;
-    inc(KBCount);
 
     syslog.log('USBKeyboard', 'Keyboard ready (EP');
     syslog.writeint(kb^.IntrEP.Address);
@@ -545,7 +587,7 @@ begin
     push_trace('usb_keyboard.init');
     syslog.logln('USBKeyboard', 'INIT BEGIN.');
 
-    KBCount := 0;
+    KeyboardList := LL_New(sizeof(TUSBKeyboardData));
 
     { Register as a USB class driver matching HID boot keyboard }
     { id2 = bInterfaceClass = $03 (HID) }

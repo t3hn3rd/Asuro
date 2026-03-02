@@ -35,6 +35,7 @@ uses
     usbhub,
     usb_keyboard,
     usb_mouse,
+    usb_storage,
     OHCI, UHCI, EHCI, XHCI;
 
 procedure init;
@@ -89,6 +90,9 @@ begin
     { Initialize HID class drivers }
     usb_keyboard.init;
     usb_mouse.init;
+
+    { Initialize storage class driver }
+    usb_storage.init;
     
     UHCI_ID.Bus:= biPCI;
     UHCI_ID.id0:= idANY;

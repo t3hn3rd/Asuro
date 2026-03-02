@@ -17,7 +17,8 @@ uses
     tracer,
     syslog,
     strings,
-    stdio;
+    stdio,
+    bios_data_area;
 
 { ========================= HC Management ========================= }
 
@@ -86,6 +87,15 @@ function usb_bulk_transfer(dev : PUSBDevice;
                            buffer : Pointer;
                            len : uint32) : PUSBTransfer;
 
+{ Submit a bulk transfer and block until complete or timeout (in ms).
+  Frees the transfer record and returns the status & actual bytes. }
+function usb_bulk_transfer_wait(dev : PUSBDevice;
+                                ep : PUSBEndpoint;
+                                buffer : Pointer;
+                                len : uint32;
+                                timeoutMs : uint32;
+                                actualLen : puint32) : TUSBTransferStatus;
+
 { ========================= Descriptor Parsing ========================= }
 
 { Find the first interface descriptor in a raw config descriptor buffer.
@@ -134,6 +144,14 @@ function enumerate_device(hc : PUSBHCDriver;
 { Get a host controller by index (0-based). Returns nil if out of range. }
 function get_hc(index : uint32) : PUSBHCDriver;
 
+{ Hotplug: rescan a specific port. If a device was detached, remove it.
+  If a new device appeared, enumerate it. }
+procedure usb_rescan_port(hc : PUSBHCDriver; port : uint8);
+
+{ Check all HCs for pending port changes and process them.
+  Must be called from non-ISR context (e.g. main loop). }
+procedure usb_check_hotplug;
+
 { Initialize the USB core. }
 procedure init;
 
@@ -166,6 +184,8 @@ begin
             memcpy(uint32(hc), uint32(entry), sizeof(TUSBHCDriver));
             { Initialize per-HC device list }
             entry^.Devices := LL_New(sizeof(PUSBDevice));
+            entry^.HotplugArmed := false;
+            entry^.PortChangePending := false;
             syslog.log('USB Core', 'Registered HC: ');
             syslog.writestringln(hc^.Name);
             register_hc := entry;
@@ -231,6 +251,10 @@ begin
             end;
         end;
     end;
+    { Arm hotplug now that initial scan is complete;
+      clear any spurious RHSC/PCD from port resets during scan. }
+    hc^.PortChangePending := false;
+    hc^.HotplugArmed := true;
     pop_trace;
 end;
 
@@ -319,13 +343,12 @@ begin
         exit;
     end;
 
-    { Poll until complete (with timeout) }
-    polls := 0;
+    { Poll until complete (with real-time timeout: 5 seconds at 1024 Hz) }
+    polls := bios_data_area.Counters.c32;
     while (transfer.Status = tsInProgress) or (transfer.Status = tsNotStarted) do begin
         if dev^.HC^.fnPoll <> nil then
             dev^.HC^.fnPoll(dev^.HC);
-        inc(polls);
-        if polls > 100000 then begin
+        if (bios_data_area.Counters.c32 - polls) > 5120 then begin
             usb_control_msg := tsTimeout;
             pop_trace;
             exit;
@@ -452,6 +475,50 @@ begin
         kfree(void(transfer));
         usb_bulk_transfer := nil;
     end;
+    pop_trace;
+end;
+
+function usb_bulk_transfer_wait(dev : PUSBDevice;
+                                ep : PUSBEndpoint;
+                                buffer : Pointer;
+                                len : uint32;
+                                timeoutMs : uint32;
+                                actualLen : puint32) : TUSBTransferStatus;
+var
+    transfer  : PUSBTransfer;
+    startTick : uint32;
+    ticks     : uint32;
+begin
+    push_trace('usbcore.usb_bulk_transfer_wait');
+    usb_bulk_transfer_wait := tsTimeout;
+    if actualLen <> nil then actualLen^ := 0;
+
+    transfer := usb_bulk_transfer(dev, ep, buffer, len);
+    if transfer = nil then begin
+        pop_trace;
+        exit;
+    end;
+
+    { Convert ms to ticks: 1024 ticks/sec ≈ 1 tick/ms }
+    ticks := timeoutMs;
+    if ticks = 0 then ticks := 5120; { default 5 seconds }
+
+    startTick := bios_data_area.Counters.c32;
+    while (transfer^.Status = tsInProgress) or (transfer^.Status = tsNotStarted) do begin
+        if dev^.HC^.fnPoll <> nil then
+            dev^.HC^.fnPoll(dev^.HC);
+        if (bios_data_area.Counters.c32 - startTick) > ticks then begin
+            kfree(void(transfer));
+            usb_bulk_transfer_wait := tsTimeout;
+            pop_trace;
+            exit;
+        end;
+    end;
+
+    usb_bulk_transfer_wait := transfer^.Status;
+    if actualLen <> nil then
+        actualLen^ := transfer^.ActualLen;
+    kfree(void(transfer));
     pop_trace;
 end;
 
@@ -596,6 +663,7 @@ begin
     dev^.ParentPort  := parentPort;
     dev^.NumEndpoints := 0;
     dev^.Configured  := false;
+    dev^.fnDisconnect := nil;
 
     { Step 3: Get first 8 bytes of device descriptor to learn MaxPacketSize0 }
     status := usb_get_descriptor(dev, USB_DESC_DEVICE, 0, @devDesc, 8);
@@ -804,6 +872,10 @@ begin
 
     hc := dev^.HC;
 
+    { Notify class driver before freeing }
+    if dev^.fnDisconnect <> nil then
+        dev^.fnDisconnect(dev);
+
     { Remove from HC's device list }
     if (hc <> nil) and (hc^.Devices <> nil) then begin
         for i := 0 to LL_Size(hc^.Devices) - 1 do begin
@@ -830,6 +902,70 @@ begin
         get_hc := PUSBHCDriver(LL_Get(HCList, index))
     else
         get_hc := nil;
+end;
+
+{ ========================= Hotplug ========================= }
+
+procedure usb_rescan_port(hc : PUSBHCDriver; port : uint8);
+var
+    status : uint32;
+    i      : uint32;
+    dev    : PUSBDevice;
+    found  : boolean;
+begin
+    push_trace('usbcore.usb_rescan_port');
+    if (hc = nil) or (hc^.fnPortStatus = nil) then begin
+        pop_trace;
+        exit;
+    end;
+
+    status := hc^.fnPortStatus(hc, port);
+
+    { Check if a device is currently tracked on this port }
+    found := false;
+    if hc^.Devices <> nil then begin
+        for i := 0 to LL_Size(hc^.Devices) - 1 do begin
+            dev := PUSBDevice(puint32(LL_Get(hc^.Devices, i))^);
+            if (dev <> nil) and (dev^.HCPort = port) then begin
+                found := true;
+                break;
+            end;
+        end;
+    end;
+
+    if (status AND $01) <> 0 then begin
+        { Device connected }
+        if not found then begin
+            syslog.log('USB Core', 'Hotplug: new device on port ');
+            syslog.writeintln(port);
+            enumerate_device(hc, port, USB_SPEED_FULL, nil, port);
+        end;
+    end else begin
+        { Device disconnected }
+        if found and (dev <> nil) and (dev^.Address > 0) then begin
+            syslog.log('USB Core', 'Hotplug: device removed from port ');
+            syslog.writeintln(port);
+            usb_remove_device(dev);
+        end;
+    end;
+    pop_trace;
+end;
+
+procedure usb_check_hotplug;
+var
+    i    : uint32;
+    hc   : PUSBHCDriver;
+    port : uint8;
+begin
+    if HCList = nil then exit;
+    for i := 0 to LL_Size(HCList) - 1 do begin
+        hc := PUSBHCDriver(LL_Get(HCList, i));
+        if (hc <> nil) and hc^.PortChangePending then begin
+            hc^.PortChangePending := false;
+            for port := 0 to hc^.NumPorts - 1 do
+                usb_rescan_port(hc, port);
+        end;
+    end;
 end;
 
 { ========================= USB Terminal Command ========================= }

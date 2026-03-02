@@ -217,6 +217,9 @@ type
     PUSBHCDriver = ^TUSBHCDriver;
     PUSBTransfer = ^TUSBTransfer;
 
+    { ---- Disconnect Callback ---- }
+    TUSBDisconnectCallback = procedure(dev : PUSBDevice);
+
     { ---- Transfer Request ---- }
 
     TUSBTransfer = record
@@ -246,6 +249,7 @@ type
         Endpoints    : array[0..USB_MAX_ENDPOINTS-1] of TUSBEndpoint;
         NumEndpoints : uint8;
         Configured   : boolean;
+        fnDisconnect : TUSBDisconnectCallback; { Called before device is freed on unplug }
     end;
 
     { ---- HC Driver Abstraction (Function Pointer Types) ---- }
@@ -269,6 +273,8 @@ type
         PrivData     : Pointer;     { HC-specific state }
         Devices      : PLinkedListBase; { List of PUSBDevice attached }
         NextAddress  : uint8;       { Next available USB address (1-127) }
+        PortChangePending : boolean; { Set by ISR when port status changes; processed in deferred context }
+        HotplugArmed : boolean;     { False during boot; set true after initial scan_ports to ignore spurious RHSC }
         { Operations }
         fnReset      : TUSBHCReset;
         fnStart      : TUSBHCStart;
