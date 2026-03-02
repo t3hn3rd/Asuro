@@ -6,7 +6,7 @@
 
     @author(Kieron Morris <kjm@kieronmorris.me>)
 }
-unit UHCI;
+unit uhci;
 
 interface
 
@@ -22,6 +22,7 @@ uses
     drivermanagement,
     usbtypes,
     usbcore,
+    isrmanager,
     lists,
     strings;
 
@@ -154,6 +155,7 @@ type
         QHControl   : PUHCI_QH; { Queue Head for control transfers }
         QHBulk      : PUHCI_QH; { Queue Head for bulk transfers }
         QHInterrupt : PUHCI_QH; { Queue Head for interrupt transfers }
+        PollBusy    : boolean;  { Re-entrancy guard for poll }
         PCIBus      : uint8;    { PCI bus/slot/func for bus mastering }
         PCISlot     : uint8;
         PCIFunc     : uint8;
@@ -750,6 +752,56 @@ begin
     pop_trace;
 end;
 
+{ ========================= Interrupt-Driven Completion ========================= }
+
+const
+    UHCI_MAX_INSTANCES = 4;
+
+var
+    UHCIInstances     : array[0..UHCI_MAX_INSTANCES-1] of PUSBHCDriver;
+    UHCIInstanceCount : uint32;
+
+{ ISR handler — registered on the PCI interrupt line. }
+procedure uhci_isr;
+var
+    i      : uint32;
+    hc     : PUSBHCDriver;
+    priv   : PUHCI_PrivData;
+    status : uint16;
+begin
+    for i := 0 to UHCIInstanceCount - 1 do begin
+        hc := UHCIInstances[i];
+        if hc = nil then continue;
+        priv := PUHCI_PrivData(hc^.PrivData);
+        if priv = nil then continue;
+
+        { Check if this controller has pending interrupt status }
+        status := uhci_read16(priv^.IOBase, UHCI_REG_USBSTS);
+        if (status AND (UHCI_STS_USBINT OR UHCI_STS_ERROR)) = 0 then continue;
+
+        { Acknowledge interrupt status NOW to de-assert level-triggered PCI line.
+          Must happen before uhci_poll, because PollBusy guard may skip the
+          acknowledge inside poll — leaving the line asserted = interrupt storm. }
+        uhci_write16(priv^.IOBase, UHCI_REG_USBSTS, status AND (UHCI_STS_USBINT OR UHCI_STS_ERROR));
+
+        { Process completions (walks QH/TD chains) }
+        uhci_poll(hc);
+    end;
+    usbcore.fire_completion_hooks;
+end;
+
+{ Enable hardware interrupts: Interrupt-on-Complete, Short Packet, Timeout/CRC. }
+procedure uhci_enable_interrupts(hc : PUSBHCDriver);
+var
+    priv : PUHCI_PrivData;
+begin
+    if (hc = nil) or (hc^.PrivData = nil) then exit;
+    priv := PUHCI_PrivData(hc^.PrivData);
+    uhci_write16(priv^.IOBase, UHCI_REG_USBINTR,
+        UHCI_INTR_IOC OR UHCI_INTR_SP OR UHCI_INTR_TIMEOUT);
+    syslog.logln('UHCI', 'Hardware interrupts enabled.');
+end;
+
 { ========================= Poll / Completion ========================= }
 
 procedure uhci_poll(hc : PUSBHCDriver);
@@ -767,6 +819,10 @@ var
 begin
     if (hc = nil) or (hc^.PrivData = nil) then exit;
     priv := PUHCI_PrivData(hc^.PrivData);
+
+    { Re-entrancy guard }
+    if priv^.PollBusy then exit;
+    priv^.PollBusy := true;
 
     { Read and clear status register }
     status := uhci_read16(priv^.IOBase, UHCI_REG_USBSTS);
@@ -841,6 +897,7 @@ begin
         end;
         qh := qh^.SWNext;
     end;
+    priv^.PollBusy := false;
 end;
 
 { ========================= Load / Init ========================= }
@@ -857,6 +914,7 @@ var
 begin
     push_trace('UHCI.load');
     load := false;
+    UHCIInstanceCount := 0;
 
     devices := PCI.getDeviceInfo($0C, $03, $00, count);
     syslog.log('UHCI', 'Found ');
@@ -945,9 +1003,24 @@ begin
         hcEntry := usbcore.register_hc(@hc);
 
         { Scan ports for connected devices (use the stable pointer, not stack-local @hc) }
-        if hcEntry <> nil then
-            usbcore.scan_ports(hcEntry)
-        else
+        if hcEntry <> nil then begin
+            { Track instance for ISR dispatch }
+            if UHCIInstanceCount < UHCI_MAX_INSTANCES then begin
+                UHCIInstances[UHCIInstanceCount] := hcEntry;
+                inc(UHCIInstanceCount);
+            end;
+
+            { Register ISR on PCI interrupt line }
+            syslog.log('UHCI', 'Registering ISR on IRQ ');
+            syslog.writeintln(devices[i].interrupt_line);
+            isrmanager.registerISR(32 + devices[i].interrupt_line, @uhci_isr);
+
+            { Enable hardware interrupts }
+            uhci_enable_interrupts(hcEntry);
+
+            { Scan for connected devices }
+            usbcore.scan_ports(hcEntry);
+        end else
             syslog.logln('UHCI', 'Failed to register HC with USB core.');
 
         syslog.logln('UHCI', 'Controller initialized and registered.');

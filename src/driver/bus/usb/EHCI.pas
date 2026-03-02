@@ -10,7 +10,7 @@
 
     @author(Kieron Morris <kjm@kieronmorris.me>)
 }
-unit EHCI;
+unit ehci;
 
 interface
 
@@ -26,6 +26,7 @@ uses
     drivermanagement,
     usbtypes,
     usbcore,
+    isrmanager,
     lists,
     strings;
 
@@ -273,6 +274,7 @@ type
         Has64Bit     : boolean;    { 64-bit addressing capable }
         HCSPARAMS    : uint32;     { Cached structural parameters }
         HCCPARAMS    : uint32;     { Cached capability parameters }
+        PollBusy     : boolean;    { Re-entrancy guard for poll }
         PCIBus       : uint8;
         PCISlot      : uint8;
         PCIFunc      : uint8;
@@ -1319,6 +1321,56 @@ begin
     end;
 end;
 
+{ ========================= Interrupt-Driven Completion ========================= }
+
+const
+    EHCI_MAX_INSTANCES = 4;
+
+var
+    EHCIInstances     : array[0..EHCI_MAX_INSTANCES-1] of PUSBHCDriver;
+    EHCIInstanceCount : uint32;
+
+{ ISR handler — registered on the PCI interrupt line. }
+procedure ehci_isr;
+var
+    i      : uint32;
+    hc     : PUSBHCDriver;
+    priv   : PEHCI_PrivData;
+    usbsts : uint32;
+begin
+    for i := 0 to EHCIInstanceCount - 1 do begin
+        hc := EHCIInstances[i];
+        if hc = nil then continue;
+        priv := PEHCI_PrivData(hc^.PrivData);
+        if priv = nil then continue;
+
+        { Check if this controller has pending status bits }
+        usbsts := ehci_readl(priv^.OpBase, EHCI_OP_USBSTS);
+        if (usbsts AND $3F) = 0 then continue;
+
+        { Acknowledge interrupt status NOW to de-assert level-triggered PCI line.
+          Must happen before ehci_poll, because PollBusy guard may skip the
+          acknowledge inside poll — leaving the line asserted = interrupt storm. }
+        ehci_writel(priv^.OpBase, EHCI_OP_USBSTS, usbsts AND $3F);
+
+        { Process completions (walks QH lists) }
+        ehci_poll(hc);
+    end;
+    usbcore.fire_completion_hooks;
+end;
+
+{ Enable hardware interrupts: USB INT, USB Error INT, Port Change, Host System Error. }
+procedure ehci_enable_interrupts(hc : PUSBHCDriver);
+var
+    priv : PEHCI_PrivData;
+begin
+    if (hc = nil) or (hc^.PrivData = nil) then exit;
+    priv := PEHCI_PrivData(hc^.PrivData);
+    ehci_writel(priv^.OpBase, EHCI_OP_USBINTR,
+        EHCI_STS_USBINT OR EHCI_STS_USBERRINT OR EHCI_STS_PCD OR EHCI_STS_HSE);
+    syslog.logln('EHCI', 'Hardware interrupts enabled.');
+end;
+
 procedure ehci_poll(hc : PUSBHCDriver);
 var
     priv     : PEHCI_PrivData;
@@ -1332,6 +1384,11 @@ var
 begin
     if (hc = nil) or (hc^.PrivData = nil) then exit;
     priv := PEHCI_PrivData(hc^.PrivData);
+
+    { Re-entrancy guard }
+    if priv^.PollBusy then exit;
+    priv^.PollBusy := true;
+
     opbase := priv^.OpBase;
 
     { Acknowledge status bits }
@@ -1375,6 +1432,7 @@ begin
             qh := nextQH;
         end;
     end;
+    priv^.PollBusy := false;
 end;
 
 { ========================= Load / Init ========================= }
@@ -1397,6 +1455,7 @@ var
 begin
     push_trace('EHCI.load');
     load := false;
+    EHCIInstanceCount := 0;
 
     devices := PCI.getDeviceInfo($0C, $03, $20, count);
     syslog.log('EHCI', 'Found ');
@@ -1519,9 +1578,24 @@ begin
         { Register with USB core and scan ports }
         hcEntry := usbcore.register_hc(@hc);
 
-        if hcEntry <> nil then
-            usbcore.scan_ports(hcEntry)
-        else
+        if hcEntry <> nil then begin
+            { Track instance for ISR dispatch }
+            if EHCIInstanceCount < EHCI_MAX_INSTANCES then begin
+                EHCIInstances[EHCIInstanceCount] := hcEntry;
+                inc(EHCIInstanceCount);
+            end;
+
+            { Register ISR on PCI interrupt line }
+            syslog.log('EHCI', 'Registering ISR on IRQ ');
+            syslog.writeintln(devices[i].interrupt_line);
+            isrmanager.registerISR(32 + devices[i].interrupt_line, @ehci_isr);
+
+            { Enable hardware interrupts }
+            ehci_enable_interrupts(hcEntry);
+
+            { Scan for connected devices }
+            usbcore.scan_ports(hcEntry);
+        end else
             syslog.logln('EHCI', 'Failed to register HC with USB core.');
 
         syslog.logln('EHCI', 'Controller initialized and registered.');

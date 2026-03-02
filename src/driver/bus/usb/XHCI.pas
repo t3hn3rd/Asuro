@@ -10,7 +10,7 @@
 
     @author(Kieron Morris <kjm@kieronmorris.me>)
 }
-unit XHCI;
+unit xhci;
 
 interface
 
@@ -26,6 +26,7 @@ uses
     drivermanagement,
     usbtypes,
     usbcore,
+    isrmanager,
     lists,
     strings;
 
@@ -428,6 +429,10 @@ type
         CmdResultCode : uint8;
         CmdSlotID     : uint8;
 
+        { Re-entrancy guard: prevents ISR from calling poll while
+          inline code is already inside poll. }
+        PollBusy    : boolean;
+
         PCIBus      : uint8;
         PCISlot     : uint8;
         PCIFunc     : uint8;
@@ -721,38 +726,19 @@ end;
   Returns the completion code. }
 function xhci_wait_command(priv : PXHCI_PrivData; timeout : uint32) : uint8;
 var
-    loops   : uint32;
-    evt     : TXHCI_TRB;
-    trbType : uint32;
-    cc      : uint8;
+    loops : uint32;
 begin
     xhci_wait_command := XHCI_CC_TRB_ERROR;
     if priv = nil then exit;
 
+    { With interrupt-driven completion, the ISR calls xhci_poll which
+      sets CmdComplete/CmdResultCode/CmdSlotID on Command Completion
+      events. We just spin here waiting for the ISR to do its work. }
     loops := 0;
     while loops < timeout do begin
-        { Check for events }
-        while xhci_event_dequeue(priv, evt) do begin
-            trbType := (evt.Control AND XHCI_TRB_TYPE_MASK) SHR XHCI_TRB_TYPE_SHIFT;
-            cc := uint8((evt.Status AND XHCI_CC_MASK) SHR XHCI_CC_SHIFT);
-
-            if trbType = XHCI_TRB_CMD_COMPLETION then begin
-                priv^.CmdComplete := true;
-                priv^.CmdResultCode := cc;
-                { Slot ID is in bits 31:24 of Control dword }
-                priv^.CmdSlotID := uint8((evt.Control SHR 24) AND $FF);
-                xhci_advance_erdp(priv);
-                xhci_wait_command := cc;
-                exit;
-            end;
-
-            { Handle other event types we might see while waiting }
-            if trbType = XHCI_TRB_PORT_STATUS_CHG then begin
-                { Just acknowledge and continue waiting }
-            end;
-
-            { Advance ERDP after processing event(s) }
-            xhci_advance_erdp(priv);
+        if priv^.CmdComplete then begin
+            xhci_wait_command := priv^.CmdResultCode;
+            exit;
         end;
         inc(loops);
     end;
@@ -1712,14 +1698,13 @@ begin
     );
     xhci_ring_enqueue(ring, @trb);
 
-    { Ring the doorbell: slot=slotID, target=1 (EP 0 = DCI 1) }
-    xhci_ring_doorbell(priv, uint32(slotID), 1);
-
+    { Set status and track pending BEFORE ringing doorbell to avoid ISR race }
     transfer^.Status := tsInProgress;
     transfer^.HCPriv := Pointer(uint32(slotID));
-
-    { Track pending transfer }
     xhci_add_pending(priv, transfer, slotID, 1);
+
+    { Ring the doorbell: slot=slotID, target=1 (EP 0 = DCI 1) }
+    xhci_ring_doorbell(priv, uint32(slotID), 1);
 
     xhci_submit_control := true;
     pop_trace;
@@ -1772,13 +1757,13 @@ begin
     );
     xhci_ring_enqueue(ring, @trb);
 
-    { Ring doorbell: target = DCI }
-    xhci_ring_doorbell(priv, uint32(slotID), uint32(dci));
-
+    { Set status and track pending BEFORE ringing doorbell to avoid ISR race }
     transfer^.Status := tsInProgress;
     transfer^.HCPriv := Pointer(uint32(slotID));
-
     xhci_add_pending(priv, transfer, slotID, dci);
+
+    { Ring doorbell: target = DCI }
+    xhci_ring_doorbell(priv, uint32(slotID), uint32(dci));
 
     xhci_submit_bulk_intr := true;
     pop_trace;
@@ -1804,6 +1789,72 @@ begin
     pop_trace;
 end;
 
+{ ========================= Interrupt-Driven Completion ========================= }
+
+const
+    XHCI_MAX_INSTANCES = 4;
+
+var
+    XHCIInstances     : array[0..XHCI_MAX_INSTANCES-1] of PUSBHCDriver;
+    XHCIInstanceCount : uint32;
+
+{ ISR handler — registered on the PCI interrupt line.
+  Checks each xHCI instance for pending events, processes completions,
+  then fires USB completion hooks (keyboard, mouse, etc.). }
+procedure xhci_isr;
+var
+    i      : uint32;
+    hc     : PUSBHCDriver;
+    priv   : PXHCI_PrivData;
+    usbsts : uint32;
+    irBase : uint32;
+begin
+    for i := 0 to XHCIInstanceCount - 1 do begin
+        hc := XHCIInstances[i];
+        if hc = nil then continue;
+        priv := PXHCI_PrivData(hc^.PrivData);
+        if priv = nil then continue;
+
+        { Check if this controller raised the interrupt }
+        usbsts := xhci_readl(priv^.OpBase, XHCI_OP_USBSTS);
+        if (usbsts AND XHCI_STS_EINT) = 0 then continue;
+
+        { Acknowledge: clear EINT in USBSTS (write-1-to-clear) }
+        xhci_writel(priv^.OpBase, XHCI_OP_USBSTS, XHCI_STS_EINT);
+
+        { Process events (dequeues from event ring, advances ERDP) }
+        xhci_poll(hc);
+
+        { Clear IMAN IP to re-arm interrupter (write-1-to-clear IP, preserve IE) }
+        irBase := priv^.RTBase + XHCI_RT_IR0_BASE;
+        xhci_writel(irBase, XHCI_IR_IMAN, XHCI_IMAN_IP OR XHCI_IMAN_IE);
+    end;
+    usbcore.fire_completion_hooks;
+end;
+
+{ Enable hardware interrupts on the controller: set IMAN IE + INTE.
+  Must be called AFTER the ISR is registered with isrmanager. }
+procedure xhci_enable_interrupts(hc : PUSBHCDriver);
+var
+    priv   : PXHCI_PrivData;
+    irBase : uint32;
+    cmd    : uint32;
+begin
+    if (hc = nil) or (hc^.PrivData = nil) then exit;
+    priv := PXHCI_PrivData(hc^.PrivData);
+    irBase := priv^.RTBase + XHCI_RT_IR0_BASE;
+
+    { Enable Interrupter 0: set IE in IMAN }
+    xhci_writel(irBase, XHCI_IR_IMAN, XHCI_IMAN_IE);
+
+    { Enable INTE in USBCMD (global interrupt enable) }
+    cmd := xhci_readl(priv^.OpBase, XHCI_OP_USBCMD);
+    cmd := cmd OR XHCI_CMD_INTE;
+    xhci_writel(priv^.OpBase, XHCI_OP_USBCMD, cmd);
+
+    syslog.logln('XHCI', 'Hardware interrupts enabled.');
+end;
+
 { ========================= Poll ========================= }
 
 procedure xhci_poll(hc : PUSBHCDriver);
@@ -1822,6 +1873,11 @@ var
 begin
     if (hc = nil) or (hc^.PrivData = nil) then exit;
     priv := PXHCI_PrivData(hc^.PrivData);
+
+    { Re-entrancy guard: if inline code is already inside poll,
+      the ISR must not re-enter. The inline poll will process events. }
+    if priv^.PollBusy then exit;
+    priv^.PollBusy := true;
 
     processed := false;
 
@@ -1877,6 +1933,8 @@ begin
 
     if processed then
         xhci_advance_erdp(priv);
+
+    priv^.PollBusy := false;
 end;
 
 { ========================= Stage 7: Load ========================= }
@@ -1901,6 +1959,7 @@ var
 begin
     push_trace('XHCI.load');
     load := false;
+    XHCIInstanceCount := 0;
 
     devices := PCI.getDeviceInfo($0C, $03, $30, count);
     syslog.log('XHCI', 'Found ');
@@ -2038,9 +2097,24 @@ begin
         { Register with USB core and scan ports }
         hcEntry := usbcore.register_hc(@hc);
 
-        if hcEntry <> nil then
-            usbcore.scan_ports(hcEntry)
-        else
+        if hcEntry <> nil then begin
+            { Track instance for ISR dispatch }
+            if XHCIInstanceCount < XHCI_MAX_INSTANCES then begin
+                XHCIInstances[XHCIInstanceCount] := hcEntry;
+                inc(XHCIInstanceCount);
+            end;
+
+            { Register ISR on PCI interrupt line (must happen BEFORE enabling HW interrupts) }
+            syslog.log('XHCI', 'Registering ISR on IRQ ');
+            syslog.writeintln(devices[i].interrupt_line);
+            isrmanager.registerISR(32 + devices[i].interrupt_line, @xhci_isr);
+
+            { Now safe to enable hardware interrupts }
+            xhci_enable_interrupts(hcEntry);
+
+            { Scan for connected devices }
+            usbcore.scan_ports(hcEntry);
+        end else
             syslog.logln('XHCI', 'Failed to register HC with USB core.');
 
         syslog.logln('XHCI', 'Controller initialized and registered.');

@@ -40,6 +40,18 @@ procedure scan_ports(hc : PUSBHCDriver);
 { Poll all registered host controllers. Called from timer/scheduler. }
 procedure poll_all;
 
+{ ========================= Completion Hooks ========================= }
+
+type
+    TUSBCompletionHook = procedure;
+
+{ Register a completion hook — called by HC ISRs after processing completions.
+  HID drivers (keyboard, mouse) use this to get notified without polling. }
+procedure register_completion_hook(hook : TUSBCompletionHook);
+
+{ Fire all registered completion hooks. Called from HC ISR context. }
+procedure fire_completion_hooks;
+
 { ========================= Transfer API ========================= }
 
 { Submit a control transfer. Blocking-style (polls until complete or timeout). }
@@ -115,8 +127,13 @@ implementation
 
 { ========================= Globals ========================= }
 
+const
+    MAX_COMPLETION_HOOKS = 8;
+
 var
     HCList : PLinkedListBase;
+    CompletionHooks : array[0..MAX_COMPLETION_HOOKS-1] of TUSBCompletionHook;
+    CompletionHookCount : uint32;
 
 { ========================= HC Management ========================= }
 
@@ -214,6 +231,26 @@ begin
             entry^.fnPoll(entry);
     end;
     pop_trace;
+end;
+
+{ ========================= Completion Hooks ========================= }
+
+procedure register_completion_hook(hook : TUSBCompletionHook);
+begin
+    if CompletionHookCount < MAX_COMPLETION_HOOKS then begin
+        CompletionHooks[CompletionHookCount] := hook;
+        inc(CompletionHookCount);
+    end;
+end;
+
+procedure fire_completion_hooks;
+var
+    i : uint32;
+begin
+    for i := 0 to CompletionHookCount - 1 do begin
+        if CompletionHooks[i] <> nil then
+            CompletionHooks[i]();
+    end;
 end;
 
 { ========================= Transfer API ========================= }
@@ -691,10 +728,15 @@ end;
 { ========================= Init ========================= }
 
 procedure init;
+var
+    i : uint32;
 begin
     push_trace('usbcore.init');
     syslog.logln('USB Core', 'INIT BEGIN.');
     HCList := LL_New(sizeof(TUSBHCDriver));
+    CompletionHookCount := 0;
+    for i := 0 to MAX_COMPLETION_HOOKS - 1 do
+        CompletionHooks[i] := nil;
     syslog.logln('USB Core', 'INIT END.');
     pop_trace;
 end;

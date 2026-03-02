@@ -561,6 +561,9 @@ begin
 
     drivermanagement.register_driver('USB Keyboard Driver', @KBID, @load);
 
+    { Register completion hook so HC ISRs trigger keyboard polling }
+    usbcore.register_completion_hook(usbcore.TUSBCompletionHook(@poll_keyboards));
+
     syslog.logln('USBKeyboard', 'INIT END.');
     pop_trace;
 end;

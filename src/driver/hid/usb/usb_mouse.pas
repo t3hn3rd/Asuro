@@ -346,6 +346,9 @@ begin
 
     drivermanagement.register_driver('USB Mouse Driver', @MouseID, @load);
 
+    { Register completion hook so HC ISRs trigger mouse polling }
+    usbcore.register_completion_hook(usbcore.TUSBCompletionHook(@poll_mice));
+
     syslog.logln('USBMouse', 'INIT END.');
     pop_trace;
 end;
