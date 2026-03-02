@@ -1,1 +1,8 @@
 * text=auto eol=lf
+lvglh/** linguist-vendored
+lvgl/** linguist-vendored
+.vscode/* linguist-vendored
+lib/* linguist-generated
+release/* linguist-generated
+iso/* linguist-generated
+*.asm linguist-detectable
