@@ -16,7 +16,8 @@ uses
     drivermanagement,
     tracer,
     syslog,
-    strings;
+    strings,
+    stdio;
 
 { ========================= HC Management ========================= }
 
@@ -105,6 +106,17 @@ function usb_count_endpoints(configBuf : Pointer; totalLen : uint16; ifaceOffset
   ifaceOffset: byte offset of the interface descriptor within configBuf. }
 function usb_find_endpoint(configBuf : Pointer; totalLen : uint16; ifaceOffset : uint32; index : uint8) : PUSBEndpointDescriptor;
 
+{ ========================= Stall Recovery ========================= }
+
+{ Clear a HALT condition on an endpoint. Sends CLEAR_FEATURE(ENDPOINT_HALT)
+  and resets the data toggle to 0. Returns the transfer status. }
+function usb_clear_halt(dev : PUSBDevice; ep : PUSBEndpoint) : TUSBTransferStatus;
+
+{ ========================= Device Removal ========================= }
+
+{ Remove a device: free endpoints, remove from HC device list, kfree device record. }
+procedure usb_remove_device(dev : PUSBDevice);
+
 { ========================= Device Enumeration ========================= }
 
 { Enumerate a newly connected device on the given HC and port.
@@ -116,6 +128,11 @@ function enumerate_device(hc : PUSBHCDriver;
                           speed : uint8;
                           parentHub : PUSBDevice;
                           parentPort : uint8) : PUSBDevice;
+
+{ ========================= Device Query ========================= }
+
+{ Get a host controller by index (0-based). Returns nil if out of range. }
+function get_hc(index : uint32) : PUSBHCDriver;
 
 { Initialize the USB core. }
 procedure init;
@@ -147,6 +164,8 @@ begin
         entry := PUSBHCDriver(LL_Add(HCList));
         if entry <> nil then begin
             memcpy(uint32(hc), uint32(entry), sizeof(TUSBHCDriver));
+            { Initialize per-HC device list }
+            entry^.Devices := LL_New(sizeof(PUSBDevice));
             syslog.log('USB Core', 'Registered HC: ');
             syslog.writestringln(hc^.Name);
             register_hc := entry;
@@ -718,11 +737,219 @@ begin
 
     kfree(void(cfgBuf));
 
+    { Track device in HC's device list (store pointer, not struct) }
+    if hc^.Devices <> nil then begin
+        puint32(LL_Add(hc^.Devices))^ := uint32(dev);
+    end;
+
     syslog.log('USB Core', 'Device enumerated at address ');
     syslog.writeintln(addr);
 
     enumerate_device := dev;
     pop_trace;
+end;
+
+{ ========================= Stall Recovery ========================= }
+
+function usb_clear_halt(dev : PUSBDevice; ep : PUSBEndpoint) : TUSBTransferStatus;
+var
+    epAddr : uint16;
+begin
+    push_trace('usbcore.usb_clear_halt');
+    usb_clear_halt := tsStall;
+    if (dev = nil) or (ep = nil) then begin
+        pop_trace;
+        exit;
+    end;
+    { Build endpoint address: number + direction bit }
+    epAddr := ep^.Address;
+    if ep^.Direction = usbtypes.dirIn then
+        epAddr := epAddr OR $80;
+
+    usb_clear_halt := usb_control_msg(
+        dev,
+        USB_REQTYPE_DIR_OUT OR USB_REQTYPE_TYPE_STANDARD OR USB_REQTYPE_REC_ENDPOINT,
+        USB_REQ_CLEAR_FEATURE,
+        USB_FEATURE_ENDPOINT_HALT,
+        epAddr,
+        nil,
+        0
+    );
+
+    { Reset data toggle after clearing halt }
+    if usb_clear_halt = tsSuccess then begin
+        ep^.Toggle := 0;
+        syslog.log('USB Core', 'Cleared halt on EP');
+        syslog.writeintln(ep^.Address);
+    end else begin
+        syslog.log('USB Core', 'Failed to clear halt on EP');
+        syslog.writeintln(ep^.Address);
+    end;
+    pop_trace;
+end;
+
+{ ========================= Device Removal ========================= }
+
+procedure usb_remove_device(dev : PUSBDevice);
+var
+    hc   : PUSBHCDriver;
+    i    : uint32;
+    dptr : PUSBDevice;
+begin
+    push_trace('usbcore.usb_remove_device');
+    if dev = nil then begin
+        pop_trace;
+        exit;
+    end;
+
+    hc := dev^.HC;
+
+    { Remove from HC's device list }
+    if (hc <> nil) and (hc^.Devices <> nil) then begin
+        for i := 0 to LL_Size(hc^.Devices) - 1 do begin
+            dptr := PUSBDevice(puint32(LL_Get(hc^.Devices, i))^);
+            if dptr = dev then begin
+                LL_Delete(hc^.Devices, i);
+                break;
+            end;
+        end;
+    end;
+
+    syslog.log('USB Core', 'Removed device at address ');
+    syslog.writeintln(dev^.Address);
+
+    kfree(void(dev));
+    pop_trace;
+end;
+
+{ ========================= Device Query ========================= }
+
+function get_hc(index : uint32) : PUSBHCDriver;
+begin
+    if (HCList <> nil) and (index < LL_Size(HCList)) then
+        get_hc := PUSBHCDriver(LL_Get(HCList, index))
+    else
+        get_hc := nil;
+end;
+
+{ ========================= USB Terminal Command ========================= }
+
+procedure terminal_command_usb(params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
+var
+    hcCount   : uint32;
+    hc        : PUSBHCDriver;
+    dev       : PUSBDevice;
+    devCount  : uint32;
+    i, j, k   : uint32;
+    hcName    : pchar;
+    totalDevs : uint32;
+begin
+    hcCount := get_hc_count;
+    totalDevs := 0;
+
+    stdio.bufWriteStrLn(stdout_buf, 'USB Subsystem Information');
+    stdio.bufWriteStrLn(stdout_buf, '=========================');
+    stdio.bufWriteStr(stdout_buf, 'Host Controllers: ');
+    stdio.bufWriteIntLn(stdout_buf, hcCount);
+    stdio.bufWriteNewLine(stdout_buf);
+
+    for i := 0 to hcCount - 1 do begin
+        hc := get_hc(i);
+        if hc = nil then continue;
+
+        { HC header }
+        case hc^.HCType of
+            USB_HC_UHCI: hcName := 'UHCI';
+            USB_HC_OHCI: hcName := 'OHCI';
+            USB_HC_EHCI: hcName := 'EHCI';
+            USB_HC_XHCI: hcName := 'xHCI';
+        else
+            hcName := '????';
+        end;
+
+        stdio.bufWriteStr(stdout_buf, 'HC ');
+        stdio.bufWriteInt(stdout_buf, i);
+        stdio.bufWriteStr(stdout_buf, ': ');
+        stdio.bufWriteStr(stdout_buf, hcName);
+        stdio.bufWriteStr(stdout_buf, ' @ 0x');
+        stdio.bufWriteHex(stdout_buf, hc^.BaseAddr);
+        stdio.bufWriteStr(stdout_buf, ' (IRQ ');
+        stdio.bufWriteInt(stdout_buf, hc^.PCIDev.interrupt_line);
+        stdio.bufWriteStr(stdout_buf, ', ');
+        stdio.bufWriteInt(stdout_buf, hc^.NumPorts);
+        stdio.bufWriteStrLn(stdout_buf, ' ports)');
+
+        { Device list }
+        if hc^.Devices <> nil then
+            devCount := LL_Size(hc^.Devices)
+        else
+            devCount := 0;
+
+        if devCount = 0 then begin
+            stdio.bufWriteStrLn(stdout_buf, '  (no devices)');
+        end else begin
+            for j := 0 to devCount - 1 do begin
+                dev := PUSBDevice(puint32(LL_Get(hc^.Devices, j))^);
+                if dev = nil then continue;
+
+                stdio.bufWriteStr(stdout_buf, '  Dev ');
+                stdio.bufWriteInt(stdout_buf, dev^.Address);
+                stdio.bufWriteStr(stdout_buf, ': VID=0x');
+                stdio.bufWriteHex(stdout_buf, dev^.DevDesc.idVendor);
+                stdio.bufWriteStr(stdout_buf, ' PID=0x');
+                stdio.bufWriteHex(stdout_buf, dev^.DevDesc.idProduct);
+
+                { Speed }
+                stdio.bufWriteStr(stdout_buf, ' [');
+                case dev^.Speed of
+                    USB_SPEED_LOW:   stdio.bufWriteStr(stdout_buf, 'Low');
+                    USB_SPEED_FULL:  stdio.bufWriteStr(stdout_buf, 'Full');
+                    USB_SPEED_HIGH:  stdio.bufWriteStr(stdout_buf, 'High');
+                    USB_SPEED_SUPER: stdio.bufWriteStr(stdout_buf, 'Super');
+                else
+                    stdio.bufWriteStr(stdout_buf, '?');
+                end;
+                stdio.bufWriteStrLn(stdout_buf, ' Speed]');
+
+                { Class info }
+                stdio.bufWriteStr(stdout_buf, '    Class=0x');
+                stdio.bufWriteHex(stdout_buf, dev^.DevDesc.bDeviceClass);
+                stdio.bufWriteStr(stdout_buf, ' Sub=0x');
+                stdio.bufWriteHex(stdout_buf, dev^.DevDesc.bDeviceSubClass);
+                stdio.bufWriteStr(stdout_buf, ' Proto=0x');
+                stdio.bufWriteHex(stdout_buf, dev^.DevDesc.bDeviceProtocol);
+                stdio.bufWriteStr(stdout_buf, ' MaxPkt0=');
+                stdio.bufWriteIntLn(stdout_buf, dev^.MaxPacket0);
+
+                { Endpoints }
+                if dev^.NumEndpoints > 0 then begin
+                    stdio.bufWriteStr(stdout_buf, '    Endpoints: ');
+                    stdio.bufWriteIntLn(stdout_buf, dev^.NumEndpoints);
+                    for k := 0 to dev^.NumEndpoints - 1 do begin
+                        stdio.bufWriteStr(stdout_buf, '      EP');
+                        stdio.bufWriteInt(stdout_buf, dev^.Endpoints[k].Address);
+                        if dev^.Endpoints[k].Direction = usbtypes.dirIn then
+                            stdio.bufWriteStr(stdout_buf, ' IN  ')
+                        else
+                            stdio.bufWriteStr(stdout_buf, ' OUT ');
+                        case dev^.Endpoints[k].PipeType of
+                            ptControl:     stdio.bufWriteStr(stdout_buf, 'Control');
+                            ptIsochronous: stdio.bufWriteStr(stdout_buf, 'Isoch');
+                            ptBulk:        stdio.bufWriteStr(stdout_buf, 'Bulk');
+                            ptInterrupt:   stdio.bufWriteStr(stdout_buf, 'Interrupt');
+                        end;
+                        stdio.bufWriteStr(stdout_buf, ' MaxPkt=');
+                        stdio.bufWriteIntLn(stdout_buf, dev^.Endpoints[k].MaxPacket);
+                    end;
+                end;
+            end;
+        end;
+        totalDevs := totalDevs + devCount;
+        stdio.bufWriteNewLine(stdout_buf);
+    end;
+
+    stdio.bufWriteStr(stdout_buf, 'Total devices: ');
+    stdio.bufWriteIntLn(stdout_buf, totalDevs);
 end;
 
 { ========================= Init ========================= }
@@ -737,6 +964,7 @@ begin
     CompletionHookCount := 0;
     for i := 0 to MAX_COMPLETION_HOOKS - 1 do
         CompletionHooks[i] := nil;
+    stdio.registerCommand('USB', @terminal_command_usb, 'USB subsystem information.');
     syslog.logln('USB Core', 'INIT END.');
     pop_trace;
 end;
