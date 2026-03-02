@@ -1,363 +1,162 @@
-//  Copyright 2021 Kieron Morris
-//
-//  Licensed under the Apache License, Version 2.0 (the "License");
-//  you may not use this file except in compliance with the License.
-//  You may obtain a copy of the License at
-//
-//  http://www.apache.org/licenses/LICENSE-2.0
-//
-//  Unless required by applicable law or agreed to in writing, software
-//  distributed under the License is distributed on an "AS IS" BASIS,
-//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//  See the License for the specific language governing permissions and
-//  limitations under the License.
+{
+    Driver->HID->Mouse - Abstract Mouse Input API.
 
-{ 
-	Driver->HID->Mouse - Mouse Driver.
-	
-	@author(Kieron Morris <kjm@kieronmorris.me>)
+    Owns the global mouse position, button state, and scroll accumulator.
+    All mouse drivers (PS/2, USB) push events through the setters and
+    fireMouseEvent(). Consumers (LVGL, windows, uidebug) use the getters
+    and register hooks via registerMouseHook().
+
+    @author(Kieron Morris <kjm@kieronmorris.me>)
 }
 unit mouse;
 
 interface
 
-uses 
-    tracer,
-    mousestate,
-    syslog,
-    video,
-    util,
-    lmemorymanager,
-    strings,
-    isrmanager,
-    drivermanagement;
+uses
+    video;
 
 type
-    PMousePacket = ^TMousePacket;
-    TMousePacket = record
-        x_movement : sint32;
-        y_movement : sint32;
-        y_overflow : boolean;
-        x_overflow : boolean;
-        y_sign     : boolean;
-        x_sign     : boolean;
-        MMB_Down   : Boolean;
-        RMB_Down   : Boolean;
-        LMB_Down   : Boolean;
-    end;
+    TMouseEventType = (
+        MOUSE_MOVE,
+        MOUSE_DOWN_LEFT,
+        MOUSE_UP_LEFT,
+        MOUSE_CLICK_LEFT,
+        MOUSE_DOWN_RIGHT,
+        MOUSE_UP_RIGHT,
+        MOUSE_CLICK_RIGHT
+    );
 
-    TMousePos = record
-        x : sint32;
-        y : sint32;
-    end;
+    TMouseHookProc = procedure(event: TMouseEventType; x, y: sint32);
 
-procedure init();
+{ Getters - safe to call from any context }
 function getMouseX: sint32;
 function getMouseY: sint32;
 function getMouseLMB: boolean;
 function getMouseRMB: boolean;
-function getMouseScroll: sint32;  { returns accumulated scroll delta since last call }
+function getMouseScroll: sint32;
+
+{ Setters - called by mouse drivers (PS/2, USB) }
+procedure setMousePos(x, y: sint32);
+procedure setMouseLMB(down: boolean);
+procedure setMouseRMB(down: boolean);
+procedure addScroll(delta: sint32);
+procedure resetScroll;
+
+{ Hook registration - up to MAX_MOUSE_HOOKS consumers }
+function registerMouseHook(hook: TMouseHookProc): boolean;
+procedure removeMouseHook(hook: TMouseHookProc);
+procedure fireMouseEvent(event: TMouseEventType);
 
 implementation
 
+const
+    MAX_MOUSE_HOOKS = 8;
+
 var
-    Current, Last : TMousePos;
-    Cycle : uint32 = 0;
-    Mouse_Byte : Array[0..3] of uint8;
-    Packet : uint32;
-    Registered : Boolean = false;
-    RMouseDownPos : TMousePos;
-    LMouseDownPos : TMousePos;
-    LMouseDown : Boolean;
-    RMouseDown : Boolean;
-    HasScrollWheel : Boolean = false;
-    PacketSize : uint32 = 3;
+    MouseX      : sint32 = 0;
+    MouseY      : sint32 = 0;
+    MouseLMB    : boolean = false;
+    MouseRMB    : boolean = false;
+    ScrollAccum : sint32 = 0;
+    Hooks       : array[0..MAX_MOUSE_HOOKS-1] of TMouseHookProc;
+    HookCount   : uint32 = 0;
 
 function getMouseX: sint32;
 begin
-    getMouseX := mousestate.getMouseX;
+    getMouseX := MouseX;
 end;
 
 function getMouseY: sint32;
 begin
-    getMouseY := mousestate.getMouseY;
+    getMouseY := MouseY;
 end;
 
 function getMouseLMB: boolean;
 begin
-    getMouseLMB := mousestate.getMouseLMB;
+    getMouseLMB := MouseLMB;
 end;
 
 function getMouseRMB: boolean;
 begin
-    getMouseRMB := mousestate.getMouseRMB;
+    getMouseRMB := MouseRMB;
 end;
 
 function getMouseScroll: sint32;
 begin
-    getMouseScroll := mousestate.getMouseScroll;
+    getMouseScroll := ScrollAccum;
+    ScrollAccum := 0;
 end;
 
-function mouse_wait(w_type : uint8) : boolean;
+procedure setMousePos(x, y: sint32);
 var
-    timeout : uint32;
-
+    maxW, maxH : sint32;
 begin
-    timeout:= 100;
-    if (w_type = 0) then begin
-        while (timeout > 0) do begin
-            if ((inb($64) AND $01) = $01) then break;
-            timeout:= timeout-1;
-        end;
-    end else begin
-        while (timeout > 0) do begin
-            if ((inb($64) AND 2) = 0) then break;
-            timeout := timeout - 1;
-        end;
-    end;
-    mouse_wait:= timeout > 0;
+    maxW := sint32(video.frontBufferWidth);
+    maxH := sint32(video.frontBufferHeight);
+    if x < 0 then x := 0;
+    if y < 0 then y := 0;
+    if (maxW > 0) and (x >= maxW) then x := maxW - 1;
+    if (maxH > 0) and (y >= maxH) then y := maxH - 1;
+    MouseX := x;
+    MouseY := y;
 end;
 
-{ Longer timeout for init-time use only (not safe in ISR context) }
-function mouse_wait_long(w_type : uint8) : boolean;
+procedure setMouseLMB(down: boolean);
+begin
+    MouseLMB := down;
+end;
+
+procedure setMouseRMB(down: boolean);
+begin
+    MouseRMB := down;
+end;
+
+procedure addScroll(delta: sint32);
+begin
+    ScrollAccum := ScrollAccum + delta;
+end;
+
+procedure resetScroll;
+begin
+    ScrollAccum := 0;
+end;
+
+function registerMouseHook(hook: TMouseHookProc): boolean;
+begin
+    registerMouseHook := false;
+    if HookCount < MAX_MOUSE_HOOKS then begin
+        Hooks[HookCount] := hook;
+        Inc(HookCount);
+        registerMouseHook := true;
+    end;
+end;
+
+procedure removeMouseHook(hook: TMouseHookProc);
 var
-    timeout : uint32;
-
+    i, j: uint32;
 begin
-    timeout:= 100000;
-    if (w_type = 0) then begin
-        while (timeout > 0) do begin
-            if ((inb($64) AND $01) = $01) then break;
-            timeout:= timeout-1;
-        end;
-    end else begin
-        while (timeout > 0) do begin
-            if ((inb($64) AND 2) = 0) then break;
-            timeout := timeout - 1;
+    if HookCount = 0 then exit;
+    for i := 0 to HookCount - 1 do begin
+        if Hooks[i] = hook then begin
+            for j := i to HookCount - 2 do begin
+                Hooks[j] := Hooks[j + 1];
+            end;
+            Dec(HookCount);
+            Hooks[HookCount] := nil;
+            exit;
         end;
     end;
-    mouse_wait_long:= timeout > 0;
 end;
 
-procedure mouse_write(value : uint8);
-begin
-    mouse_wait_long(1);
-    outb($64, $D4);
-    mouse_wait_long(1);
-    outb($60, value);
-end;
-
-function mouse_read : uint8;
-begin
-    mouse_wait_long(0);
-    mouse_read:= inb($60);
-end;
-
-procedure main();
+procedure fireMouseEvent(event: TMouseEventType);
 var
-    i : integer;
-    b : byte;
-    packet  : TMousePacket;
-    x, y, f : byte;
-    x32, y32 : sint32;
-    r : pchar;
-
+    i: uint32;
 begin
-    while mouse_wait(0) do begin
-        b:= mouse_read;
-        if Cycle = 0 then begin
-            if (b AND $08) = $08 then begin
-                Mouse_Byte[Cycle]:= b;
-                Inc(Cycle);
-            end;
-        end else begin
-            Mouse_Byte[Cycle]:= b;
-            Inc(Cycle);
-        end;
-        if Cycle = PacketSize then begin
-            //Process
-            f:= Mouse_Byte[0];
-            Packet.x_sign:= (f AND %00010000) = %00010000;
-            Packet.y_sign:= (f AND %00100000) = %00100000;
-            Packet.MMB_Down:= (f AND %00000100) = %00000100;
-            Packet.RMB_Down:= (f AND %00000010) = %00000010;
-            Packet.LMB_Down:= (f AND %00000001) = %00000001;
-            Packet.x_overflow:= (f AND $40) = $40;
-            Packet.y_overflow:= (f AND $80) = $80;
-            Packet.x_movement:= Mouse_Byte[1];// - ((f SHL 4) AND $100);
-            Packet.y_movement:= Mouse_Byte[2];// - ((f SHL 3) AND $100);
-            If Packet.x_sign then Packet.x_movement:= sint16(Packet.x_movement OR $FF00);
-            If Packet.y_sign then Packet.y_movement:= sint16(Packet.y_movement OR $FF00);
-            if not(Packet.x_overflow) and not(Packet.y_overflow) then begin
-                Current.x:= Current.x + Packet.x_movement;
-                Current.y:= Current.y - Packet.y_movement;            
-                if Current.x < 0 then Current.x:= 0;
-                if Current.y < 0 then Current.y:= 0;
-                if Current.x > sint32(video.frontBufferWidth - 1) then Current.x:= sint32(video.frontBufferWidth - 1);
-                if Current.y > sint32(video.frontBufferHeight - 1) then Current.y:= sint32(video.frontBufferHeight - 1);
-            end;
-            { Process scroll wheel (4th byte, signed) }
-            if HasScrollWheel then begin
-                mousestate.addScroll(sint8(Mouse_Byte[3]));
-            end;
-            Cycle:= 0;
-            if Packet.LMB_Down then begin
-                if not LMouseDown then begin
-                    LMouseDown:= true;
-                    LMouseDownPos.x:= Current.x;
-                    LMouseDownPos.y:= Current.y;
-                    mousestate.setMouseLMB(true);
-                    mousestate.fireMouseEvent(MOUSE_DOWN_LEFT);
-                end;
-            end;
-            if not Packet.LMB_Down then begin
-                if LMouseDown then begin
-                    If (Current.x = LMouseDownPos.x) and (Current.y = LMouseDownPos.y) then begin
-                        mousestate.fireMouseEvent(MOUSE_CLICK_LEFT);
-                    end;
-                    mousestate.setMouseLMB(false);
-                    mousestate.fireMouseEvent(MOUSE_UP_LEFT);
-                    LMouseDown:= false;
-                end;
-            end;
-            if Packet.RMB_Down then begin
-                if not RMouseDown then begin
-                    RMouseDown:= true;
-                    RMouseDownPos.x:= Current.x;
-                    RMouseDownPos.y:= Current.y;
-                    mousestate.setMouseRMB(true);
-                    mousestate.fireMouseEvent(MOUSE_DOWN_RIGHT);
-                end;
-            end;
-            
-            if not Packet.RMB_Down then begin
-                if RMouseDown then begin
-                    if (Current.x = RMouseDownPos.x) and (Current.y = RMouseDownPos.y) then begin
-                        mousestate.fireMouseEvent(MOUSE_CLICK_RIGHT);
-                    end;
-                    mousestate.setMouseRMB(false);
-                    mousestate.fireMouseEvent(MOUSE_UP_RIGHT);
-                end;
-                RMouseDown:= false;
-            end;
-            
-            mousestate.setMousePos(Current.x, Current.y);
-            mousestate.fireMouseEvent(MOUSE_MOVE);
-        end;
+    if HookCount = 0 then exit;
+    for i := 0 to HookCount - 1 do begin
+        if Hooks[i] <> nil then
+            Hooks[i](event, MouseX, MouseY);
     end;
-end;
-
-function load(ptr : void) : boolean;
-var
-    status : uint8;
-    devid_byte : uint8;
-    tmp : uint8;
-begin
-    push_trace('mouse.load');
-
-    { Disable both PS/2 ports while configuring }
-    mouse_wait_long(1);
-    outb($64, $AD);  { Disable keyboard port }
-    mouse_wait_long(1);
-    outb($64, $A7);  { Disable mouse port }
-
-    { Flush the output buffer }
-    while (inb($64) AND $01) = $01 do begin
-        inb($60);
-    end;
-
-    { Read Controller Configuration Byte }
-    mouse_wait_long(1);
-    outb($64, $20);
-    mouse_wait_long(0);
-    status := inb($60);
-
-    { Enable IRQ12 (bit 1), clear disable-mouse-clock (bit 5) }
-    status := status OR $02;
-    status := status AND (NOT $20);
-
-    { Write back configuration }
-    mouse_wait_long(1);
-    outb($64, $60);
-    mouse_wait_long(1);
-    outb($60, status);
-
-    { Enable auxiliary (mouse) port }
-    mouse_wait_long(1);
-    outb($64, $A8);
-
-    { Re-enable keyboard port }
-    mouse_wait_long(1);
-    outb($64, $AE);
-
-    { Reset mouse and wait for self-test }
-    mouse_write($FF);
-    if mouse_wait_long(0) then begin
-        tmp := inb($60);  { ACK ($FA) }
-        if mouse_wait_long(0) then begin
-            tmp := inb($60);  { Self-test result ($AA = pass) }
-            if tmp = $AA then begin
-                if mouse_wait_long(0) then begin
-                    tmp := inb($60);  { Device ID }
-                end;
-            end;
-        end;
-    end;
-
-    { Set defaults }
-    mouse_write($F6);
-    mouse_read();
-
-    { Enable IntelliMouse scroll wheel: set sample rate 200, 100, 80 }
-    mouse_write($F3); mouse_read(); mouse_write(200); mouse_read();
-    mouse_write($F3); mouse_read(); mouse_write(100); mouse_read();
-    mouse_write($F3); mouse_read(); mouse_write(80);  mouse_read();
-
-    { Query device ID — ID 3 = IntelliMouse (scroll wheel) }
-    mouse_write($F2);
-    mouse_read(); { ACK }
-    devid_byte := mouse_read(); { Device ID }
-    if devid_byte = 3 then begin
-        HasScrollWheel := true;
-        PacketSize := 4;
-        syslog.logln('PS/2 MOUSE', 'Scroll wheel enabled (IntelliMouse).');
-    end else begin
-        HasScrollWheel := false;
-        PacketSize := 3;
-        syslog.logln('PS/2 MOUSE', 'Standard mouse (no scroll wheel).');
-    end;
-
-    mouse_write($F4);
-    mouse_read();
-    isrmanager.registerISR(44, @Main);
-    syslog.logln('PS/2 MOUSE', 'LOADED.');
-    syslog.log('PS/2 MOUSE', 'Memory: ');
-    syslog.writehexln(uint32(@current));
-    load:= true;
-    pop_trace;
-end;
-
-procedure init();
-var
-    devid : TDeviceIdentifier;
-
-begin
-    push_trace('mouse.init');
-    syslog.logln('PS/2 MOUSE', 'INIT BEGIN.');
-    devid.bus:= biUnknown;
-    devid.id0:= 0;
-    devid.id1:= 0;
-    devid.id2:= 0;
-    devid.id3:= 0;
-    devid.id4:= 0;
-    devid.ex:= nil;
-    Current.x:= 0;
-    Current.y:= 0;
-    Last.x:= 0;
-    Last.y:= 0;
-    drivermanagement.register_driver_ex('PS/2 Mouse', @devid, @load, true);
-    syslog.logln('PS/2 MOUSE', 'INIT END.');
-    pop_trace;
 end;
 
 end.

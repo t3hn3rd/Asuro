@@ -29,6 +29,7 @@ uses
      TMR_0_ISR,
      syslog, stdio,
      keyboard, mouse,
+     ps2_keyboard, ps2_mouse,
      vmemorymanager, pmemorymanager, lmemorymanager,
      tracer,
      drivermanagement,
@@ -37,6 +38,16 @@ uses
      PCI,
      strings,
      USB,
+     usbtypes,
+     usbcore,
+     usbhub,
+     usb_keyboard,
+     usb_mouse,
+     usb_storage,
+     UHCI,
+     OHCI,
+     EHCI,
+     XHCI,
      testdriver,
      E1000,
      IDE,
@@ -110,6 +121,7 @@ procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall; [public, a
 var
    dds             : uint32;
    keyboard_layout : array [0..1] of TKeyInfo;
+   i : uint32;
    
 begin
      { Init the base system unit }
@@ -188,6 +200,7 @@ begin
      { Call Tracer }
      tracer.init();
 
+     { Video Init }
      video.init();
      vesa.init(@video.register);
      doublebuffer.init(@video.register);
@@ -214,8 +227,8 @@ begin
      { Device Drivers }
      tracer.push_trace('kmain.DEVDRV');
      syslog.logln('KERNEL', 'DEVICE DRIVERS: INIT BEGIN.');
-     keyboard.init(keyboard_layout);
-     mouse.init();
+     ps2_keyboard.init(keyboard_layout);
+     ps2_mouse.init();
      testdriver.init();
      E1000.init();
      IDE.init();
@@ -253,14 +266,23 @@ begin
 
      { Run unit tests }
      strings.UnitTest;
+     usbtypes.UnitTest;
+     usbcore.UnitTest;
+     UHCI.UnitTest;
+     OHCI.UnitTest;
+     EHCI.UnitTest;
+     XHCI.UnitTest;
+     usbhub.UnitTest;
+     usb_keyboard.UnitTest;
+     usb_mouse.UnitTest;
 
-     { Main render loop }
+     { Main render loop — USB completions are now interrupt-driven }
      syslog.logln('KERNEL', 'Entering main render loop.');
-     tracer.push_trace('kmain.MAINLOOP');
      while true do begin
         desktop.update;
         uidebug.update;
         lvgl_handler;
+        usbcore.usb_check_hotplug;
         video.Flush();
      end;
 
