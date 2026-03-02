@@ -32,32 +32,41 @@ uses
 
 procedure callback(scan_code : void);
 var
-    info : TKeyInfo;
+    info     : TKeyInfo;
+    raw      : uint8;
+    baseCode : uint8;
+    isBreak  : boolean;
 begin
-    info.SHIFT_DOWN := keyboard.is_shift;
-    info.CTRL_DOWN  := keyboard.is_ctrl;
-    info.ALT_DOWN   := keyboard.is_alt;
-    info.is_down_code := true;
+    raw := uint8(scan_code);
+
+    { In PS/2 scancode set 1, bit 7 set = key release (break code) }
+    isBreak  := (raw AND $80) <> 0;
+    baseCode := raw AND $7F;
+
+    { Update modifier state (use raw codes so both make/break are handled) }
+    if raw = 42  then keyboard.is_shift := true;
+    if raw = 170 then keyboard.is_shift := false;
+    if raw = 29  then keyboard.is_ctrl  := true;
+    if raw = 157 then keyboard.is_ctrl  := false;
+    if raw = 56  then keyboard.is_alt   := true;
+    if raw = 184 then keyboard.is_alt   := false;
+
+    info.SHIFT_DOWN    := keyboard.is_shift;
+    info.CTRL_DOWN     := keyboard.is_ctrl;
+    info.ALT_DOWN      := keyboard.is_alt;
+    info.is_down_code  := not isBreak;
 
     if keyboard.is_shift then begin
-        if key_matrix_shift[uint8(scan_code)].key_code <> 0 then begin
-            info.key_code := key_matrix_shift[uint8(scan_code)].key_code;
+        if key_matrix_shift[baseCode].key_code <> 0 then begin
+            info.key_code := key_matrix_shift[baseCode].key_code;
             keyboard.reportKeyEvent(info);
         end;
     end else begin
-        if key_matrix[uint8(scan_code)].key_code <> 0 then begin
-            info.key_code := key_matrix[uint8(scan_code)].key_code;
+        if key_matrix[baseCode].key_code <> 0 then begin
+            info.key_code := key_matrix[baseCode].key_code;
             keyboard.reportKeyEvent(info);
         end;
     end;
-
-    { Update modifier state }
-    if uint8(scan_code) = 42 then keyboard.is_shift := true;
-    if uint8(scan_code) = 170 then keyboard.is_shift := false;
-    if uint8(scan_code) = 29 then keyboard.is_ctrl := true;
-    if uint8(scan_code) = 157 then keyboard.is_ctrl := false;
-    if uint8(scan_code) = 56 then keyboard.is_alt := true;
-    if uint8(scan_code) = 184 then keyboard.is_alt := false;
 end;
 
 function load(ptr : void) : boolean;
