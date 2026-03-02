@@ -1,5 +1,6 @@
 * text=auto eol=lf
-lvglh/* linguist-vendored
+lvglh/** linguist-vendored
+lvgl/** linguist-vendored
 .vscode/* linguist-vendored
 lib/* linguist-generated
 release/* linguist-generated
