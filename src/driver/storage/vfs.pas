@@ -82,6 +82,10 @@ function GetDirectoryListingFrom(Path : pchar; BaseDir : pchar) : PHashMap;
 procedure FreeDirectoryListing(map : PHashMap);
 function changeDirectoryFrom(Path : pchar; BaseDir : pchar; var NewDir : pchar) : TIsPathValid;
 function MakeAbsolutePath(Path : PChar) : pchar;
+function makeAbsolutePathFrom(Path : pchar; BaseDir : pchar) : pchar;
+function resolvePathFrom(Path : pchar; BaseDir : pchar) : TIsPathValid;
+function GetDirectoryListingFrom(Path : pchar; BaseDir : pchar) : PHashMap;
+function changeDirectoryFrom(Path : pchar; BaseDir : pchar; var NewDir : pchar) : TIsPathValid;
 
 //VFS Functions
 function newVirtualDirectory(Path : pchar) : TError;

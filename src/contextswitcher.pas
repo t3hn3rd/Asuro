@@ -29,10 +29,13 @@ unit contextswitcher;
 interface
 
 uses
-    idt, isrmanager, processmanager, proctypes, util, tracer;
+    idt, isrmanager, processmanager, proctypes, util, syslog, tracer;
 
 { Initialise: overwrite IDT gate 32 with our custom ISR. }
 procedure init;
+
+{ No idle ESP variable needed — idle is now a formal process (PID 0)
+  with its SavedESP managed like any other process. }
 
 implementation
 
