@@ -324,6 +324,7 @@ begin
      //serial.sendString('[outb]');
      //serial.sendHex(port);
      //serial.sendHex(val);
+     psleep(1);
      asm
           PUSH EAX
           PUSH EDX

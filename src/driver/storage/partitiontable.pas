@@ -1,6 +1,6 @@
 { ************************************************
   * Asuro
-  * Unit: Drivers/storage/partitontable
+  * Unit: Drivers/storage/partitiontable
   * Description: partionTable
   * 
   ************************************************
@@ -8,31 +8,33 @@
   * Contributors: 
   ************************************************ }
 
-unit partitontable;
+unit partitiontable;
 
 interface
 
 uses
-    storagemanagement,
-    util,
-    lmemorymanager,
-    strings,
+    console,
     lists,
+    lmemorymanager,
+    rtc,
+    storagemanagement,
+    strings,
+    terminal,
     tracer,
-    rtc;
+    util;
 
 type 
 
-    TPartitonTable = record 
+    TpartitionTable = record 
 
     end;
-    PPartitonTable = ^TPartitonTable;
+    PpartitionTable = ^TpartitionTable;
 
 var 
     location = $1BE;
 
 procedure create_new(device : PStorage_Device);
-function get_table() : PPartitonTable;
+function get_table() : PpartitionTable;
 procedure add_volume(volume : TStorage_Volume);
 
 implementation 
@@ -44,7 +46,7 @@ begin
     
 end;
 
-function get_table() : PPartitonTable;
+function get_table() : PpartitionTable;
 procedure add_volume(volume : TStorage_Volume);
 
 end.

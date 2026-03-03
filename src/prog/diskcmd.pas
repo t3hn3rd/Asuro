@@ -1,0 +1,312 @@
+{
+    Prog->DiskCmd - Command-line tools for viewing physical storage devices.
+
+    Shell command: DISK [subcommand]
+    Subcommands:
+        list                     - List all storage devices
+        info    <disk>           - Show device details
+        wipe    <disk>           - Zero entire disk (removes all partitions)
+
+    @author(Aaron Hance <ah@aaronhance.me>)
+}
+unit diskcmd;
+
+interface
+
+procedure init();
+
+implementation
+
+uses
+    console,
+    lists,
+    lmemorymanager,
+    storagemanager,
+    storagetypes,
+    strings,
+    terminal,
+    tracer,
+    util,
+    volumemanager;
+
+{ ---------- helpers ---------- }
+
+function wnd : uint32;
+begin
+    wnd := getTerminalHWND;
+end;
+
+function str2int(s : pchar) : uint32;
+begin
+    str2int := stringToInt(s);
+end;
+
+function isNumeric(s : pchar) : boolean;
+var
+    i   : uint32;
+    len : uint32;
+begin
+    isNumeric := false;
+    len := stringSize(s);
+    if len = 0 then exit;
+    for i := 0 to len - 1 do begin
+        if (s[i] < '0') or (s[i] > '9') then exit;
+    end;
+    isNumeric := true;
+end;
+
+procedure print(s : pchar);
+begin
+    console.writestringWND(s, wnd);
+end;
+
+procedure println(s : pchar);
+begin
+    console.writestringlnWND(s, wnd);
+end;
+
+procedure printint(v : uint32);
+begin
+    console.writeintWND(v, wnd);
+end;
+
+procedure printhex(v : uint32);
+begin
+    console.writehexWND(v, wnd);
+end;
+
+procedure printsize(bytes : uint32);
+begin
+    if bytes >= 1073741824 then begin
+        printint(bytes div 1073741824);
+        print(' GB');
+    end else if bytes >= 1048576 then begin
+        printint(bytes div 1048576);
+        print(' MB');
+    end else if bytes >= 1024 then begin
+        printint(bytes div 1024);
+        print(' KB');
+    end else begin
+        printint(bytes);
+        print(' B');
+    end;
+end;
+
+{ ---------- DISK LIST ---------- }
+
+procedure cmd_list();
+var
+    i        : uint32;
+    count    : uint32;
+    device   : PStorage_Device;
+    volCount : uint32;
+begin
+    count := storagemanager.get_device_count();
+
+    if count = 0 then begin
+        println('No storage devices registered.');
+        exit;
+    end;
+
+    println('IDX  TYPE          WRITABLE  SIZE        PARTS');
+    println('---  ----          --------  ----        -----');
+
+    for i := 0 to count - 1 do begin
+        device := storagemanager.get_device(i);
+        if device = nil then continue;
+
+        print(' ');
+        printint(i);
+        print('   ');
+
+        print(storagemanager.controller_type_2_string(device^.controller));
+        print('          ');
+
+        if device^.writable then
+            print('yes       ')
+        else
+            print('no        ');
+
+        printsize(device^.maxSectorCount * device^.sectorSize);
+        print('    ');
+
+        if device^.volumes <> nil then
+            volCount := DL_Size(device^.volumes)
+        else
+            volCount := 0;
+        printint(volCount);
+
+        println('');
+    end;
+end;
+
+{ ---------- DISK INFO ---------- }
+
+procedure cmd_info(params : PParamList);
+var
+    idx      : uint32;
+    device   : PStorage_Device;
+    volCount : uint32;
+    freeSec  : uint32;
+begin
+    if paramCount(params) < 2 then begin
+        println('Usage: DISK info <disk>');
+        exit;
+    end;
+
+    if not isNumeric(getParam(1, params)) then begin
+        println('Error: disk index must be a number.');
+        exit;
+    end;
+
+    idx := str2int(getParam(1, params));
+    device := storagemanager.get_device(idx);
+
+    if device = nil then begin
+        print('Error: device ');
+        printint(idx);
+        print(' not found (');
+        printint(storagemanager.get_device_count());
+        println(' devices registered).');
+        exit;
+    end;
+
+    print('Device ID:       '); printint(device^.id); println('');
+    print('Controller:      '); println(storagemanager.controller_type_2_string(device^.controller));
+    print('Controller ID:   '); printhex(device^.controllerId0); println('');
+    print('Writable:        ');
+    if device^.writable then println('yes') else println('no');
+    print('Sector Size:     '); printint(device^.sectorSize); println(' bytes');
+    print('Total Sectors:   '); printint(device^.maxSectorCount); println('');
+    print('Total Size:      '); printsize(device^.maxSectorCount * device^.sectorSize); println('');
+    print('Start Sector:    '); printint(device^.start); println('');
+
+    freeSec := volumemanager.get_free_sector_count(device);
+    print('Free Space:      '); printsize(freeSec * device^.sectorSize); println('');
+
+    if device^.volumes <> nil then
+        volCount := DL_Size(device^.volumes)
+    else
+        volCount := 0;
+    print('Partitions:      '); printint(volCount); println('');
+end;
+
+{ ---------- DISK WIPE ---------- }
+
+procedure cmd_wipe(params : PParamList);
+var
+    idx      : uint32;
+    device   : PStorage_Device;
+    buf      : puint32;
+    sector   : uint32;
+    batch    : uint32;
+    remain   : uint32;
+    bufSects : uint32;
+begin
+    if paramCount(params) < 2 then begin
+        println('Usage: DISK wipe <disk>');
+        exit;
+    end;
+
+    if not isNumeric(getParam(1, params)) then begin
+        println('Error: disk index must be a number.');
+        exit;
+    end;
+
+    idx := str2int(getParam(1, params));
+    device := storagemanager.get_device(idx);
+
+    if device = nil then begin
+        print('Error: device ');
+        printint(idx);
+        print(' not found (');
+        printint(storagemanager.get_device_count());
+        println(' devices registered).');
+        exit;
+    end;
+
+    if not device^.writable then begin
+        println('Error: device is not writable.');
+        exit;
+    end;
+
+    if (device^.writeCallback = nil) and (device^.writeCallbackAsync = nil) then begin
+        println('Error: device has no write support.');
+        exit;
+    end;
+
+    { Remove all volumes for this device first }
+    volumemanager.init_disk(device);
+
+    { Allocate a zero buffer - 64 sectors at a time }
+    bufSects := 64;
+    buf := puint32(kalloc(bufSects * device^.sectorSize));
+    memset(uint32(buf), 0, bufSects * device^.sectorSize);
+
+    print('Wiping device ');
+    printint(idx);
+    print(' (');
+    printsize(device^.maxSectorCount * device^.sectorSize);
+    println(')...');
+
+    sector := 0;
+    while sector < device^.maxSectorCount do begin
+        remain := device^.maxSectorCount - sector;
+        if remain > bufSects then
+            batch := bufSects
+        else
+            batch := remain;
+
+        storagemanager.storage_write(device, sector, batch, buf);
+        sector := sector + batch;
+    end;
+
+    kfree(buf);
+
+    print('Device ');
+    printint(idx);
+    println(' wiped.');
+end;
+
+{ ---------- Main dispatcher ---------- }
+
+procedure command_disk(params : PParamList);
+var
+    subcmd : pchar;
+begin
+    push_trace('DiskCmd.command_disk');
+
+    if paramCount(params) = 0 then begin
+        println('Usage: DISK <list|info|wipe>');
+        exit;
+    end;
+
+    subcmd := getParam(0, params);
+
+    if stringEquals(subcmd, 'list') then begin
+        cmd_list();
+        exit;
+    end;
+
+    if stringEquals(subcmd, 'info') then begin
+        cmd_info(params);
+        exit;
+    end;
+
+    if stringEquals(subcmd, 'wipe') then begin
+        cmd_wipe(params);
+        exit;
+    end;
+
+    print('Unknown subcommand: ');
+    println(subcmd);
+end;
+
+{ ---------- Init ---------- }
+
+procedure init();
+begin
+    terminal.registerCommand('DISK', @command_disk, 'Storage device information.');
+end;
+
+end.

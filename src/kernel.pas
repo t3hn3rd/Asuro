@@ -51,8 +51,11 @@ uses
      XHCI,
      testdriver,
      E1000,
-     IDE,
-     storagemanagement,
+     AHCI,
+     storagemanager, volumemanager, filesystemmanager,
+     flatfs, iso9660,
+     ioapic,
+     diskcmd, partcmd, volcmd,
      lists,
      net,
      fat32,
@@ -191,7 +194,9 @@ begin
      tracer.push_trace('kmain.DRVMGMT');
      drivermanagement.init();
      tracer.push_trace('kmain.STRMGMT');
-     storagemanagement.init();
+     storagemanager.init();
+     volumemanager.init();
+     filesystemmanager.init();
 
      { Enable interrupts and hook timer }
      tracer.push_trace('kmain.TMR');
@@ -200,6 +205,8 @@ begin
 
      { Filesystems }
      fat32.init();
+     flatfs.init();
+     iso9660.init();
 
      { Device Drivers }
      tracer.push_trace('kmain.DEVDRV');
@@ -208,7 +215,10 @@ begin
      ps2_mouse.init();
      testdriver.init();
      E1000.init();
-     IDE.init();
+     AHCI.init();
+     diskcmd.init();
+     partcmd.init();
+     volcmd.init();
      syslog.logln('KERNEL', 'DEVICE DRIVERS: INIT END.');
 
      { Bus Drivers }
@@ -217,6 +227,9 @@ begin
      USB.init();
      pci.init();
      syslog.logln('KERNEL', 'BUS DRIVERS: INIT END.');
+
+     { Auto-mount discovered volumes into VFS }
+     vfs.auto_mount_volumes();
 
      { Network Stack }
      tracer.push_trace('kmain.NETDRV');

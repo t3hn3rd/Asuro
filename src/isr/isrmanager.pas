@@ -34,6 +34,8 @@ procedure registerISR(INT_N : uint8; callback : TISRHook);
 procedure dispatchHooks(INT_N : uint8);
 
 implementation
+uses 
+console, ioapic;
 
 var
     Hooks : TISRHookArray;
@@ -66,9 +68,20 @@ var
     i : uint8;
 
 begin
+
+	// if int_n <> $20 then begin
+	// 	console.writestring('ISR: ');
+	// 	console.writehexpair(Int_N);
+	// 	console.writestringln(' called');
+	// end;
+
     for i:=0 to MAX_HOOKS do begin
         if Hooks[INT_N][i] <> nil then Hooks[INT_N][i]();
     end;
+    { Send EOI to Local APIC (needed for IOAPIC-delivered interrupts).
+      Safe no-op when IOAPIC is not present. }
+    ioapic.lapic_eoi();
+    { Send EOI to 8259 PIC (slave then master) }
     if (INT_N >= 40) then outb($A0, $20);
     outb($20, $20);
 end;
