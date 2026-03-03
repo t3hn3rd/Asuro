@@ -25,7 +25,7 @@ uses
     tracer, lmemorymanager,
     util, lists,
     net, nettypes, netutils,
-    eth2, ipv4;
+    eth2, ipv4, stdio;
 
 type
     PARPCacheRecord = ^TARPCacheRecord;
@@ -41,11 +41,12 @@ procedure sendGratuitous;
 procedure sendRequest(ip : puint8);
 procedure send(hType : uint16; pType : uint16; op : uint16; p_context : PPacketContext);
 function resolveIP(ip : puint8) : puint8;
+procedure terminal_command_arp(Params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
 
 implementation
 
 uses
-    stdio, strings;
+    strings;
 
 var
     Registered : Boolean = false;
@@ -309,7 +310,6 @@ begin
         writeToLogLn('      L3/ARP: register');
         Cache:= LL_New(sizeof(TARPCacheRecord));
         eth2.registerTypePromisc($0806, @recv);
-        stdio.registerCommand('ARP', @terminal_command_arp, 'Get ARP Table.');
         Registered:= true;
     end;
     pop_trace;

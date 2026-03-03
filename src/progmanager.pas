@@ -24,22 +24,47 @@ interface
 uses
     tracer,
     //progs
-    base64_prog, md5sum, dhclient, vbeinfo, meminfo;
+    base64_prog, md5sum, dhclient, vbeinfo, testcmd, ping, meminfo;
 
 { Initialize all baked-in programs }
 procedure init();
 
 implementation
 
+uses
+    stdio,
+    //command provider units
+    kernel, cpu, drivermanagement, processmanager,
+    arp, ipv4, tcp,
+    storagemanagement, usbcore;
+
 procedure init();
 begin
-    tracer.push_trace('progmanager.md5sum.init');
+    tracer.push_trace('progmanager.init');
+
+    { Register commands from provider units }
+    stdio.registerCommand('MEMINFO', @kernel.terminal_command_meminfo, 'Print Simple Memory Information.');
+    stdio.registerCommand('BSOD', @kernel.terminal_command_bsod, 'Force a Panic Screen.');
+    stdio.registerCommand('CPU', @cpu.Terminal_Command_CPU, 'CPU Info.');
+    stdio.registerCommand('DEV', @drivermanagement.terminal_command_dev, 'Driver Management Interface.');
+    stdio.registerCommand('PS', @processmanager.terminal_command_ps, 'List running processes.');
+    stdio.registerCommand('KILL', @processmanager.terminal_command_kill, 'Force-kill a process by PID.');
+    stdio.registerCommand('TERMINATE', @processmanager.terminal_command_terminate, 'Gracefully terminate a process by PID.');
+    stdio.registerCommand('ARP', @arp.terminal_command_arp, 'Get ARP Table.');
+    stdio.registerCommand('IFCONFIG', @ipv4.terminal_command_ifconfig, 'Configure Network Settings.');
+    stdio.registerCommand('TCPCONNECT', @tcp.terminal_command_tcpconnect, 'Connect to a TCP host and send Hello World.');
+    stdio.registerCommand('TCPLISTEN', @tcp.terminal_command_tcplisten, 'Listen on a TCP port and log received data.');
+    stdio.registerCommand('TCPHTTP', @tcp.terminal_command_tcphttp, 'Send HTTP GET to a host IP (port 80 default).');
+    stdio.registerCommand('DISK', @storagemanagement.disk_command, 'Disk utility');
+    stdio.registerCommand('USB', @usbcore.terminal_command_usb, 'USB subsystem information.');
+
+    { Initialize baked-in programs }
     md5sum.init();
-    tracer.push_trace('progmanager.base64_prog.init');
     base64_prog.init();
-    tracer.push_trace('progmanager.dhclient.init');
     dhclient.init();
     vbeinfo.init();
+    testcmd.init();
+    ping.init();
     meminfo.init();
 end;
 

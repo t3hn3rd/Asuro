@@ -22,7 +22,7 @@ unit tcp;
 interface
 
 uses
-    tracer,
+    tracer, stdio,
     nettypes, netutils,
     ipv4;
 
@@ -33,13 +33,17 @@ function  accept(listener : PTCPSocket) : PTCPSocket;
 function  send(socket : PTCPSocket; p_data : void; p_len : uint16) : TTCPError;
 function  close(socket : PTCPSocket) : TTCPError;
 function  abort_connection(socket : PTCPSocket) : TTCPError;
+procedure terminal_command_tcpconnect(params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
+procedure terminal_command_tcplisten(params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
+procedure terminal_command_tcphttp(params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
 
 implementation
 
 uses
     lmemorymanager, util, syslog, rand, lists,
     net, TMR_0_ISR, bios_data_area,
-    stdio, strings, arp;
+    strings, arp,
+    processmanager, proctypes;
 
 const
     TCP_PROTOCOL_ID     = $06;
@@ -225,6 +229,7 @@ begin
     sock^.OnReceive := onRecv;
     sock^.OnEvent := onEvt;
     sock^.UserData := userData;
+    sock^.OwnerPID := 0;
     tcb^.Socket := sock;
     CreateSocket := sock;
 end;
@@ -251,10 +256,29 @@ begin
     end;
 end;
 
+procedure socket_cleanup(handle : void);
+var
+    sock : PTCPSocket;
+begin
+    sock := PTCPSocket(handle);
+    if sock = nil then exit;
+    sock^.OwnerPID := 0;  { Prevent DestroySocket from trying to unbind again }
+    abort_connection(sock);
+end;
+
 procedure DestroySocket(sock : PTCPSocket);
+var
+    owner : PProcessContext;
 begin
     push_trace('tcp.DestroySocket');
     if sock <> nil then begin
+        { Remove resource binding from owning process }
+        if sock^.OwnerPID <> 0 then begin
+            owner := processmanager.findByID(sock^.OwnerPID);
+            sock^.OwnerPID := 0;
+            if owner <> nil then
+                processmanager.unbindResourceNoCleanup(owner, void(sock));
+        end;
         if sock^.TCB <> nil then begin
             sock^.TCB^.Socket := nil;
             DestroyTCB(sock^.TCB);
@@ -1369,6 +1393,12 @@ begin
 
     sock := CreateSocket(tcb, context^.OnReceive, context^.OnEvent, context^.UserData);
 
+    { Auto-bind socket to calling process for cleanup on process death }
+    if processmanager.CurrentProcess <> nil then begin
+        sock^.OwnerPID := processmanager.CurrentProcess^.ProcessID;
+        processmanager.bindResource(processmanager.CurrentProcess, rkSocket, void(sock), @socket_cleanup);
+    end;
+
     AddTCB(tcb);
 
     { Send SYN (includes MSS option via SendSegment) }
@@ -1402,6 +1432,13 @@ begin
     if tcb^.BacklogMax = 0 then tcb^.BacklogMax := 5; { default backlog }
 
     sock := CreateSocket(tcb, context^.OnReceive, context^.OnEvent, context^.UserData);
+
+    { Auto-bind socket to calling process for cleanup on process death }
+    if processmanager.CurrentProcess <> nil then begin
+        sock^.OwnerPID := processmanager.CurrentProcess^.ProcessID;
+        processmanager.bindResource(processmanager.CurrentProcess, rkSocket, void(sock), @socket_cleanup);
+    end;
+
     AddTCB(tcb);
 
     listen := sock;
@@ -1866,9 +1903,6 @@ begin
         Connections := DL_New(sizeof(uint32));
         ipv4.registerProtocol(TCP_PROTOCOL_ID, @ProcessPacket);
         TMR_0_ISR.hook(uint32(@TimerTick));
-        stdio.registerCommand('TCPCONNECT', @terminal_command_tcpconnect, 'Connect to a TCP host and send Hello World.');
-        stdio.registerCommand('TCPLISTEN', @terminal_command_tcplisten, 'Listen on a TCP port and log received data.');
-        stdio.registerCommand('TCPHTTP', @terminal_command_tcphttp, 'Send HTTP GET to a host IP (port 80 default).');
         Registered := true;
         syslog.logln('TCP', 'TCP registered.');
     end;

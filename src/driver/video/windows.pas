@@ -11,7 +11,7 @@ unit windows;
 interface
 
 uses
-    lvgl, mouse, serial, tracer;
+    lvgl, mouse, serial, tracer, processmanager, proctypes;
 
 const
     MAX_WINDOWS      = 16;
@@ -55,6 +55,7 @@ type
         on_close     : TWinCloseCallback;
         on_resize    : TWinResizeCallback;
         cursor_obj   : Plv_obj;   { cursor to keep on top }
+        owner_pid    : uint32;    { owning process PID; 0 = unowned }
     end;
 
 { Create a new window. Returns window ID (0 = failure). }
@@ -80,6 +81,15 @@ function  getWindowCount: uint32;
 
 { Set a callback to be notified when a window is resized. }
 procedure setWindowResizeCallback(win_id: uint32; cb: TWinResizeCallback);
+
+{ Assign an owning process to a window.
+  When reapOrphanedWindows detects the process has died, the window
+  is automatically closed via its on_close callback. }
+procedure setWindowOwner(win_id: uint32; pid: uint32);
+
+{ Check all windows for dead owner processes and close them.
+  Called once per frame from graphicsrefresh. }
+procedure reapOrphanedWindows;
 
 implementation
 
@@ -641,6 +651,7 @@ begin
     wins[id].on_close     := closeCB;
     wins[id].on_resize    := nil;
     wins[id].cursor_obj   := cursor;
+    wins[id].owner_pid    := 0;
 
     { Bring to front }
     bringToFront(id);
@@ -698,6 +709,7 @@ begin
     wins[win_id].on_close  := nil;
     wins[win_id].on_resize := nil;
     wins[win_id].cursor_obj := nil;
+    wins[win_id].owner_pid := 0;
 
     tracer.pop_trace;
 end;
@@ -744,6 +756,38 @@ begin
     if (win_id < 1) or (win_id > MAX_WINDOWS) then exit;
     if wins[win_id].state = wsNone then exit;
     wins[win_id].on_resize := cb;
+end;
+
+{ ============================================================
+  Public: set window owner PID
+  ============================================================ }
+procedure setWindowOwner(win_id: uint32; pid: uint32);
+begin
+    if (win_id < 1) or (win_id > MAX_WINDOWS) then exit;
+    if wins[win_id].state = wsNone then exit;
+    wins[win_id].owner_pid := pid;
+end;
+
+{ ============================================================
+  Public: reap windows whose owning process has died
+  ============================================================ }
+procedure reapOrphanedWindows;
+var
+    i   : uint32;
+    ctx : PProcessContext;
+begin
+    for i := 1 to MAX_WINDOWS do begin
+        if wins[i].state = wsNone then continue;
+        if wins[i].owner_pid = 0 then continue;
+        ctx := processmanager.findByID(wins[i].owner_pid);
+        if (ctx = nil) or (ctx^.State = psFinished) or (ctx^.State = psError) then begin
+            { Owner is dead — trigger close callback or destroy directly }
+            if wins[i].on_close <> nil then
+                wins[i].on_close(i)
+            else
+                destroyWindow(i);
+        end;
+    end;
 end;
 
 end.

@@ -21,6 +21,7 @@ uses
     uidebug,
     lvgl,
     video,
+    windows,
     syslog;
 
 const
@@ -35,6 +36,7 @@ begin
     TickCounter := TickCounter + 1;
     if TickCounter >= TICKS_PER_FRAME then begin
         TickCounter := 0;
+        windows.reapOrphanedWindows;
         desktop.update;
         uidebug.update;
         lvgl_handler;

@@ -26,17 +26,18 @@ uses
     util, strings,
     net, nettypes, netutils,
     lists,
-    eth2;
+    eth2, stdio;
 
 procedure send(p_data : void; p_len : uint16; p_context : PPacketContext);
 procedure registerProtocol(Protocol_ID : uint8; recv_callback : TRecvCallback);
 function  getIPv4Config : PIPv4Configuration;
 procedure register;
+procedure terminal_command_ifconfig(params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
 
 implementation
 
 uses
-    arp, stdio;
+    arp;
 
 var
     Registered : Boolean = false;
@@ -211,7 +212,6 @@ begin
         end;
         Config.UP:= false;
         eth2.registerType($0800, @recv);
-        stdio.registerCommand('IFCONFIG', @terminal_command_ifconfig, 'Configure Network Settings.');
         Registered:= true;
     end;
     pop_trace;

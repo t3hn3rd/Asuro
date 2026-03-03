@@ -256,6 +256,7 @@ type
         OnReceive : TTCPReceiveCallback;
         OnEvent   : TTCPEventCallback;
         UserData  : void;
+        OwnerPID  : uint32;           { PID of owning process, 0 if none }
     end;
 
     TTCB = record

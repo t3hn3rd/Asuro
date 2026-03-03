@@ -28,24 +28,19 @@ uses
 
 type
     TARPErrorCode     = (aecFailedToResolveHost, aecNoRouteToHost, aecTimeout, aecTTLExpired);
-    TARPReplyCallback = procedure(hdr : PICMPHeader);
-    TARPErrorCallback = procedure(hdr : PICMPHeader; Reason : TARPErrorCode);
+    TARPReplyCallback = procedure(hdr : PICMPHeader; userData : void);
+    TARPErrorCallback = procedure(hdr : PICMPHeader; Reason : TARPErrorCode; userData : void);
     TARPHandler = record
-        Active  : Boolean;
-        OnReply : TARPReplyCallback;
-        OnError : TARPErrorCallback;
+        Active   : Boolean;
+        OnReply  : TARPReplyCallback;
+        OnError  : TARPErrorCallback;
+        UserData : void;
     end;
 
 procedure register;
-procedure sendICMPRequest(ip : puint8; Sequence : uint16; TTL : uint8; OnRep : TARPReplyCallback; OnErr : TARPErrorCallback);
-
-procedure ping_err(hdr : PICMPHeader; Reason : TARPErrorCode);
-procedure ping_rep(hdr : PICMPHeader);
+procedure sendICMPRequest(ip : puint8; Sequence : uint16; TTL : uint8; OnRep : TARPReplyCallback; OnErr : TARPErrorCallback; userData : void);
 
 implementation
-
-uses
-    stdio, strings;
 
 var
     Handlers : Array[0..255] of TARPHandler;
@@ -70,7 +65,7 @@ begin
 
 end;
 
-procedure sendICMPRequest(ip : puint8; Sequence : uint16; TTL : uint8; OnRep : TARPReplyCallback; OnErr : TARPErrorCallback);
+procedure sendICMPRequest(ip : puint8; Sequence : uint16; TTL : uint8; OnRep : TARPReplyCallback; OnErr : TARPErrorCallback; userData : void);
 var
     handle   : uint8;
     dest_mac : puint8;
@@ -87,13 +82,14 @@ begin
     Handlers[handle].Active:= true;
     Handlers[handle].OnReply:= OnRep;
     Handlers[handle].OnError:= OnErr;
+    Handlers[handle].UserData:= userData;
     if SameSubnetIPv4(ip, @getIPv4Config^.Address[0], @getIPv4Config^.Netmask[0]) then begin
         dest_mac:= arp.resolveIP(ip);
     end else begin
         dest_mac:= arp.resolveIP(@getIPv4Config^.Gateway[0]);
     end;
     if dest_mac = nil then begin
-        if Handlers[handle].OnError <> nil then Handlers[handle].OnError(nil, aecFailedToResolveHost);
+        if Handlers[handle].OnError <> nil then Handlers[handle].OnError(nil, aecFailedToResolveHost, Handlers[handle].UserData);
         Handlers[handle].Active:= false;
     end else begin
         context:= newPacketContext;
@@ -160,87 +156,15 @@ begin
             Handle:= Header^.Identifier;
             if (Handle > 0) and (Handle < 256) then begin
                 If Handlers[Handle].Active then begin
-                    If Handlers[Handle].OnReply <> nil then Handlers[Handle].OnReply(Header);
+                    If Handlers[Handle].OnReply <> nil then Handlers[Handle].OnReply(Header, Handlers[Handle].UserData);
                     Handlers[Handle].Active:= false;
                     Handlers[Handle].OnError:= nil;
                     Handlers[Handle].OnReply:= nil;
+                    Handlers[Handle].UserData:= nil;
                 end;
             end;
         end;
     end; 
-end;
-
-var
-    PING_T1  : uint64;
-    PING_N   : uint16;
-    PING_C   : uint16;
-    PING_L   : uint32;
-    PING_IP  : puint8;
-    PING_STDOUT : POutBuf;
-    PING_STDERR : POutBuf;
-
-procedure ping_err(hdr : PICMPHeader; Reason : TARPErrorCode);
-begin
-    stdio.bufWriteStr(PING_STDERR, 'Ping Error: ');
-    case Reason of
-        aecFailedToResolveHost:stdio.bufWriteStrLn(PING_STDERR, 'Failed to resolve host.');
-        aecNoRouteToHost:stdio.bufWriteStrLn(PING_STDERR, 'No route to host.');
-        aecTimeout:stdio.bufWriteStrLn(PING_STDERR, 'Timeout expired.');
-        aecTTLExpired:stdio.bufWriteStrLn(PING_STDERR, 'TTL Expired.');
-    end;
-    PING_T1:= Counters.c64;
-    INC(PING_C);
-    if PING_C < PING_N then begin
-        sendICMPRequest(PING_IP, PING_C, 128, @ping_rep, @ping_err);
-    end else begin
-        stdio.done(PING_L);
-    end;
-end;
-
-procedure ping_rep(hdr : PICMPHeader);
-var
-    PING_T2 : uint64;
-
-begin
-    PING_T2:= Counters.c64;
-    stdio.bufWriteStr(PING_STDOUT, 'Ping Reply: ');
-    stdio.bufWriteInt(PING_STDOUT, PING_T2-PING_T1);
-    stdio.bufWriteStrLn(PING_STDOUT, 'ms.');
-    PING_T1:= PING_T2;
-    INC(PING_C);
-    if PING_C < PING_N then begin
-        sendICMPRequest(PING_IP, PING_C, 128, @ping_rep, @ping_err);
-    end else begin
-        stdio.done(PING_L);
-    end;
-end;
-
-procedure ping_terminate();
-begin
-    PING_N:= 0;
-end;
-
-procedure terminal_command_ping(Params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
-var
-    ip_str : pchar;
-    ip : puint8;
-
-begin
-    if ParamCount(Params) > 0 then begin
-        ip_str:= getParam(0, Params);
-        ip:= stringToIPv4(ip_str);
-        if ip <> nil then begin
-            PING_STDOUT:= stdout_buf;
-            PING_STDERR:= stderr_buf;
-            stdio.halt(PING_L, @ping_terminate);
-            PING_L:= Counters.c32;
-            PING_N:= 10;
-            PING_C:= 0;
-            PING_T1:= Counters.c64;
-            PING_IP:= ip;
-            sendICMPRequest(PING_IP, PING_C, 128, @ping_rep, @ping_err); 
-        end;
-    end;
 end;
 
 procedure register;
@@ -254,9 +178,9 @@ begin
         Handlers[i].Active:= false;
         Handlers[i].OnError:= nil;
         Handlers[i].OnReply:= nil;
+        Handlers[i].UserData:= nil;
     end;
     ipv4.registerProtocol($01, @recv);
-    stdio.registerCommand('PING', @terminal_command_ping, 'Ping a host.');
 end;
 
 end.

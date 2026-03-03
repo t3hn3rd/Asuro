@@ -22,7 +22,7 @@ unit cpu;
 interface
 
 uses
-    util, RTC;
+    util, RTC, stdio;
 
 type
     PCapabilities_Old = ^TCapabilities_Old;
@@ -113,11 +113,9 @@ var
     CAP_OLD, CAP_NEW : uint32;
 
 procedure init();
+procedure Terminal_Command_CPU(Params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
 
 implementation
-
-uses
-    stdio;
 
 procedure getCPUIdentifier;
 var
@@ -325,7 +323,6 @@ end;
 
 procedure init();
 begin
-    stdio.registerCommand('CPU', @Terminal_Command_CPU, 'CPU Info.');
     CPUID.Capabilities0:= PCapabilities_Old(@CAP_OLD);
     CPUID.Capabilities1:= PCapabilities_New(@CAP_NEW); 
     getCPUIdentifier;

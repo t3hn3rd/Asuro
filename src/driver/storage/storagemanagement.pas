@@ -112,6 +112,7 @@ function get_device_list() : PLinkedListBase;
 procedure register_filesystem(filesystem : PFilesystem);
 
 procedure register_volume(device : PStorage_Device; volume : PStorage_Volume);
+procedure disk_command(params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
 //function writeNewFile(fileName : pchar; extension : pchar; buffer : puint32; size : uint32) : uint32;
 //function readFile(fileName : pchar; extension : pchar; buffer : puint32; byteCount : puint32) : puint32;
 
@@ -231,7 +232,6 @@ begin
     setworkingdirectory('.');
     storageDevices:= ll_new(sizeof(TStorage_Device));
     fileSystems:= ll_New(sizeof(TFilesystem));
-    stdio.registerCommand('DISK', @disk_command, 'Disk utility');
 
     pop_trace();
 end; 
