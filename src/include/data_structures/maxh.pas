@@ -80,7 +80,13 @@ uses
   **}
   procedure maxh_Free(Heap : PBinaryHeap);
 
+  {** Runs unit tests for the max-heap. **}
+  procedure UnitTest;
+
 implementation
+
+uses
+    syslog, strings, lmemorymanager;
 
 function maxh_New(ElementSize : uint32; InitialCapacity : uint32) : PBinaryHeap;
 begin
@@ -115,6 +121,87 @@ end;
 procedure maxh_Free(Heap : PBinaryHeap);
 begin
   BHeap_Free(Heap);
+end;
+
+procedure UnitTest;
+var
+    h    : PBinaryHeap;
+    v, r : uint32;
+    ok   : boolean;
+    p    : void;
+    passed, failed : uint32;
+
+    procedure Assert(condition : boolean; testName : pchar);
+    var
+        msg : pchar;
+    begin
+        if condition then begin
+            inc(passed);
+        end else begin
+            inc(failed);
+            msg := stringConcat('FAIL: ', testName);
+            syslog.logln('MAXH', msg);
+            kfree(void(msg));
+        end;
+    end;
+
+    procedure PrintSummary;
+    var
+        pStr, fStr, msg, tmp : pchar;
+    begin
+        pStr := intToString(passed);
+        fStr := intToString(failed);
+        msg := stringConcat(pStr, ' passed, ');
+        tmp := stringConcat(msg, fStr);
+        kfree(void(msg));
+        msg := stringConcat(tmp, ' failed.');
+        kfree(void(tmp));
+        syslog.logln('MAXH', msg);
+        kfree(void(msg));
+        kfree(void(pStr));
+        kfree(void(fStr));
+    end;
+
+begin
+    passed := 0;
+    failed := 0;
+    syslog.logln('MAXH', 'Unit tests starting...');
+
+    { === New / Empty === }
+    h := maxh_New(sizeof(uint32), 4);
+    Assert(h <> nil, 'New returns non-nil');
+    Assert(maxh_IsEmpty(h), 'Initially empty');
+
+    { === Insert out of order === }
+    v := 30; maxh_Insert(h, 30, @v);
+    v := 10; maxh_Insert(h, 10, @v);
+    v := 50; maxh_Insert(h, 50, @v);
+    v := 20; maxh_Insert(h, 20, @v);
+    v := 40; maxh_Insert(h, 40, @v);
+    Assert(maxh_Size(h) = 5, 'Size after 5 inserts');
+
+    { === PeekMax === }
+    p := maxh_PeekMax(h);
+    Assert(p <> nil, 'PeekMax non-nil');
+    Assert(uint32(p^) = 50, 'PeekMax returns 50');
+
+    { === ExtractMax in descending order === }
+    ok := maxh_ExtractMax(h, @r); Assert(ok, 'Extract 1 ok'); Assert(r = 50, 'Extract 50');
+    ok := maxh_ExtractMax(h, @r); Assert(ok, 'Extract 2 ok'); Assert(r = 40, 'Extract 40');
+    ok := maxh_ExtractMax(h, @r); Assert(ok, 'Extract 3 ok'); Assert(r = 30, 'Extract 30');
+    ok := maxh_ExtractMax(h, @r); Assert(ok, 'Extract 4 ok'); Assert(r = 20, 'Extract 20');
+    ok := maxh_ExtractMax(h, @r); Assert(ok, 'Extract 5 ok'); Assert(r = 10, 'Extract 10');
+    Assert(maxh_IsEmpty(h), 'Empty after all extracted');
+
+    { === Edge: extract/peek on empty === }
+    ok := maxh_ExtractMax(h, @r);
+    Assert(not ok, 'Extract on empty returns false');
+    p := maxh_PeekMax(h);
+    Assert(p = nil, 'PeekMax on empty returns nil');
+
+    maxh_Free(h);
+
+    PrintSummary;
 end;
 
 end.

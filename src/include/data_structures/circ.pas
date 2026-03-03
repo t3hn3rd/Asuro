@@ -88,7 +88,13 @@ uses
   **}
   procedure circ_Free(Queue : PCircularQueue);
 
+  {** Runs unit tests for the circular queue. **}
+  procedure UnitTest;
+
 implementation
+
+uses
+    syslog, strings;
 
 function circ_New(Capacity : uint32; ElementSize : uint32) : PCircularQueue;
 begin
@@ -160,6 +166,104 @@ begin
   if Queue = nil then exit;
   kfree(Queue^.Data);
   kfree(void(Queue));
+end;
+
+procedure UnitTest;
+var
+    q    : PCircularQueue;
+    v, r : uint32;
+    ok   : boolean;
+    p    : void;
+    passed, failed : uint32;
+
+    procedure Assert(condition : boolean; testName : pchar);
+    var
+        msg : pchar;
+    begin
+        if condition then begin
+            inc(passed);
+        end else begin
+            inc(failed);
+            msg := stringConcat('FAIL: ', testName);
+            syslog.logln('CIRC', msg);
+            kfree(void(msg));
+        end;
+    end;
+
+    procedure PrintSummary;
+    var
+        pStr, fStr, msg, tmp : pchar;
+    begin
+        pStr := intToString(passed);
+        fStr := intToString(failed);
+        msg := stringConcat(pStr, ' passed, ');
+        tmp := stringConcat(msg, fStr);
+        kfree(void(msg));
+        msg := stringConcat(tmp, ' failed.');
+        kfree(void(tmp));
+        syslog.logln('CIRC', msg);
+        kfree(void(msg));
+        kfree(void(pStr));
+        kfree(void(fStr));
+    end;
+
+begin
+    passed := 0;
+    failed := 0;
+    syslog.logln('CIRC', 'Unit tests starting...');
+
+    { === New / Empty / Full / Size === }
+    q := circ_New(4, sizeof(uint32));
+    Assert(q <> nil, 'New returns non-nil');
+    Assert(circ_IsEmpty(q), 'Initially empty');
+    Assert(not circ_IsFull(q), 'Initially not full');
+    Assert(circ_Size(q) = 0, 'Initial size is 0');
+
+    { === Fill to capacity === }
+    v := 100; ok := circ_Enqueue(q, @v); Assert(ok, 'Enqueue 1 ok');
+    v := 200; ok := circ_Enqueue(q, @v); Assert(ok, 'Enqueue 2 ok');
+    v := 300; ok := circ_Enqueue(q, @v); Assert(ok, 'Enqueue 3 ok');
+    v := 400; ok := circ_Enqueue(q, @v); Assert(ok, 'Enqueue 4 ok');
+    Assert(circ_IsFull(q), 'Full after 4 enqueues');
+    Assert(circ_Size(q) = 4, 'Size is 4 when full');
+
+    { === Enqueue when full === }
+    v := 999;
+    ok := circ_Enqueue(q, @v);
+    Assert(not ok, 'Enqueue on full returns false');
+
+    { === Peek === }
+    p := circ_Peek(q);
+    Assert(p <> nil, 'Peek non-nil');
+    Assert(uint32(p^) = 100, 'Peek returns first enqueued');
+
+    { === Dequeue all — FIFO order === }
+    ok := circ_Dequeue(q, @r); Assert(r = 100, 'Dequeue 1 value');
+    ok := circ_Dequeue(q, @r); Assert(r = 200, 'Dequeue 2 value');
+    ok := circ_Dequeue(q, @r); Assert(r = 300, 'Dequeue 3 value');
+    ok := circ_Dequeue(q, @r); Assert(r = 400, 'Dequeue 4 value');
+    Assert(circ_IsEmpty(q), 'Empty after all dequeued');
+
+    { === Edge: dequeue/peek on empty === }
+    ok := circ_Dequeue(q, @r);
+    Assert(not ok, 'Dequeue on empty returns false');
+    p := circ_Peek(q);
+    Assert(p = nil, 'Peek on empty returns nil');
+
+    { === Wrap-around === }
+    v := 1; circ_Enqueue(q, @v);
+    v := 2; circ_Enqueue(q, @v);
+    circ_Dequeue(q, @r);
+    v := 3; circ_Enqueue(q, @v);
+    v := 4; circ_Enqueue(q, @v);
+    circ_Dequeue(q, @r); Assert(r = 2, 'Wraparound order 2');
+    circ_Dequeue(q, @r); Assert(r = 3, 'Wraparound order 3');
+    circ_Dequeue(q, @r); Assert(r = 4, 'Wraparound order 4');
+    Assert(circ_IsEmpty(q), 'Empty after wraparound');
+
+    circ_Free(q);
+
+    PrintSummary;
 end;
 
 end.

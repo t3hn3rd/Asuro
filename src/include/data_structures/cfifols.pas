@@ -92,7 +92,13 @@ uses
   **}
   procedure CFIFOLS_FreeAll(List : PCFIFOList);
 
+  {** Runs unit tests for the contiguous FIFO list. **}
+  procedure UnitTest;
+
 implementation
+
+uses
+    syslog, strings;
 
 { ---------------------------------------------------------------------------- }
 {  Internal helpers                                                            }
@@ -218,6 +224,100 @@ begin
   end;
   kfree(List^.Items);
   kfree(void(List));
+end;
+
+procedure UnitTest;
+var
+    ls   : PCFIFOList;
+    q1   : PCFIFOQueue;
+    q2   : PCFIFOQueue;
+    q3   : PCFIFOQueue;
+    got  : PCFIFOQueue;
+    ok   : boolean;
+    passed, failed : uint32;
+
+    procedure Assert(condition : boolean; testName : pchar);
+    var
+        msg : pchar;
+    begin
+        if condition then begin
+            inc(passed);
+        end else begin
+            inc(failed);
+            msg := stringConcat('FAIL: ', testName);
+            syslog.logln('CFIFOLS', msg);
+            kfree(void(msg));
+        end;
+    end;
+
+    procedure PrintSummary;
+    var
+        pStr, fStr, msg, tmp : pchar;
+    begin
+        pStr := intToString(passed);
+        fStr := intToString(failed);
+        msg := stringConcat(pStr, ' passed, ');
+        tmp := stringConcat(msg, fStr);
+        kfree(void(msg));
+        msg := stringConcat(tmp, ' failed.');
+        kfree(void(tmp));
+        syslog.logln('CFIFOLS', msg);
+        kfree(void(msg));
+        kfree(void(pStr));
+        kfree(void(fStr));
+    end;
+
+begin
+    passed := 0;
+    failed := 0;
+    syslog.logln('CFIFOLS', 'Unit tests starting...');
+
+    { === New / Empty / Count === }
+    ls := CFIFOLS_New(2);
+    Assert(ls <> nil, 'New returns non-nil');
+    Assert(CFIFOLS_IsEmpty(ls), 'Initially empty');
+    Assert(CFIFOLS_Count(ls) = 0, 'Initial count is 0');
+
+    q1 := CFIFO_New(sizeof(uint32), 4);
+    q2 := CFIFO_New(sizeof(uint32), 4);
+    q3 := CFIFO_New(sizeof(uint32), 4);
+
+    { === Add / Get === }
+    CFIFOLS_Add(ls, q1);
+    CFIFOLS_Add(ls, q2);
+    CFIFOLS_Add(ls, q3);
+    Assert(CFIFOLS_Count(ls) = 3, 'Count after 3 adds');
+    Assert(CFIFOLS_Get(ls, 0) = q1, 'Get(0) returns q1');
+    Assert(CFIFOLS_Get(ls, 1) = q2, 'Get(1) returns q2');
+    Assert(CFIFOLS_Get(ls, 2) = q3, 'Get(2) returns q3');
+
+    { === Out-of-bounds Get === }
+    got := CFIFOLS_Get(ls, 99);
+    Assert(got = nil, 'Get out-of-bounds returns nil');
+
+    { === Remove middle === }
+    ok := CFIFOLS_Remove(ls, 1);
+    Assert(ok, 'Remove(1) succeeds');
+    Assert(CFIFOLS_Count(ls) = 2, 'Count after remove');
+    Assert(CFIFOLS_Get(ls, 0) = q1, 'After remove, Get(0) still q1');
+    Assert(CFIFOLS_Get(ls, 1) = q3, 'After remove, Get(1) is now q3');
+
+    { === Remove out-of-bounds === }
+    ok := CFIFOLS_Remove(ls, 99);
+    Assert(not ok, 'Remove out-of-bounds returns false');
+
+    CFIFOLS_Free(ls);
+    CFIFO_Free(q1);
+    CFIFO_Free(q2);
+    CFIFO_Free(q3);
+
+    { === FreeAll path === }
+    ls := CFIFOLS_New(2);
+    CFIFOLS_Add(ls, CFIFO_New(sizeof(uint32), 4));
+    CFIFOLS_Add(ls, CFIFO_New(sizeof(uint32), 4));
+    CFIFOLS_FreeAll(ls);
+
+    PrintSummary;
 end;
 
 end.

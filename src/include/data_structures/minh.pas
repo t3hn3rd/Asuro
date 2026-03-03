@@ -80,7 +80,13 @@ uses
   **}
   procedure minh_Free(Heap : PBinaryHeap);
 
+  {** Runs unit tests for the min-heap. **}
+  procedure UnitTest;
+
 implementation
+
+uses
+    syslog, strings, lmemorymanager;
 
 function minh_New(ElementSize : uint32; InitialCapacity : uint32) : PBinaryHeap;
 begin
@@ -115,6 +121,107 @@ end;
 procedure minh_Free(Heap : PBinaryHeap);
 begin
   BHeap_Free(Heap);
+end;
+
+procedure UnitTest;
+var
+    h    : PBinaryHeap;
+    v, r : uint32;
+    ok   : boolean;
+    p    : void;
+    i    : uint32;
+    good : boolean;
+    passed, failed : uint32;
+
+    procedure Assert(condition : boolean; testName : pchar);
+    var
+        msg : pchar;
+    begin
+        if condition then begin
+            inc(passed);
+        end else begin
+            inc(failed);
+            msg := stringConcat('FAIL: ', testName);
+            syslog.logln('MINH', msg);
+            kfree(void(msg));
+        end;
+    end;
+
+    procedure PrintSummary;
+    var
+        pStr, fStr, msg, tmp : pchar;
+    begin
+        pStr := intToString(passed);
+        fStr := intToString(failed);
+        msg := stringConcat(pStr, ' passed, ');
+        tmp := stringConcat(msg, fStr);
+        kfree(void(msg));
+        msg := stringConcat(tmp, ' failed.');
+        kfree(void(tmp));
+        syslog.logln('MINH', msg);
+        kfree(void(msg));
+        kfree(void(pStr));
+        kfree(void(fStr));
+    end;
+
+begin
+    passed := 0;
+    failed := 0;
+    syslog.logln('MINH', 'Unit tests starting...');
+
+    { === New / Empty / Size === }
+    h := minh_New(sizeof(uint32), 4);
+    Assert(h <> nil, 'New returns non-nil');
+    Assert(minh_IsEmpty(h), 'Initially empty');
+    Assert(minh_Size(h) = 0, 'Initial size is 0');
+
+    { === Insert out of order === }
+    v := 30; minh_Insert(h, 30, @v);
+    v := 10; minh_Insert(h, 10, @v);
+    v := 50; minh_Insert(h, 50, @v);
+    v := 20; minh_Insert(h, 20, @v);
+    v := 40; minh_Insert(h, 40, @v);
+    Assert(minh_Size(h) = 5, 'Size after 5 inserts');
+
+    { === PeekMin === }
+    p := minh_PeekMin(h);
+    Assert(p <> nil, 'PeekMin non-nil');
+    Assert(uint32(p^) = 10, 'PeekMin returns 10');
+
+    { === ExtractMin in ascending order === }
+    ok := minh_ExtractMin(h, @r); Assert(ok, 'Extract 1 ok'); Assert(r = 10, 'Extract 10');
+    ok := minh_ExtractMin(h, @r); Assert(ok, 'Extract 2 ok'); Assert(r = 20, 'Extract 20');
+    ok := minh_ExtractMin(h, @r); Assert(ok, 'Extract 3 ok'); Assert(r = 30, 'Extract 30');
+    ok := minh_ExtractMin(h, @r); Assert(ok, 'Extract 4 ok'); Assert(r = 40, 'Extract 40');
+    ok := minh_ExtractMin(h, @r); Assert(ok, 'Extract 5 ok'); Assert(r = 50, 'Extract 50');
+    Assert(minh_IsEmpty(h), 'Empty after all extracted');
+
+    { === Edge: extract/peek on empty === }
+    ok := minh_ExtractMin(h, @r);
+    Assert(not ok, 'Extract on empty returns false');
+    p := minh_PeekMin(h);
+    Assert(p = nil, 'PeekMin on empty returns nil');
+
+    minh_Free(h);
+
+    { === Stress: 50 elements reverse insert === }
+    h := minh_New(sizeof(uint32), 4);
+    for i := 50 downto 1 do
+    begin
+        v := i;
+        minh_Insert(h, i, @v);
+    end;
+    Assert(minh_Size(h) = 50, 'Stress: 50 inserted');
+    good := true;
+    for i := 1 to 50 do
+    begin
+        ok := minh_ExtractMin(h, @r);
+        if (not ok) or (r <> i) then good := false;
+    end;
+    Assert(good, 'Stress: 50 extracted in ascending order');
+    minh_Free(h);
+
+    PrintSummary;
 end;
 
 end.

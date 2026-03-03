@@ -24,9 +24,9 @@ unit bheap;
 interface
 
 uses
-    lmemorymanager,
-    dstypes,
-    util;
+  dstypes,
+  lmemorymanager,
+  util;
 
   {** Creates a new BinaryHeap.
     @param ElementSize     Size (in bytes) of each data element.
