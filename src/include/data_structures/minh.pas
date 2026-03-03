@@ -13,20 +13,20 @@
 //  limitations under the License.
 
 {
-	Queue Min-Heap - Lowest priority value extracted first.
+	Min-Heap - Lowest priority value extracted first.
 
 	@author(Aaron Hance <ah@aaronhance.me>)
 }
-unit q_minh;
+unit minh;
 
 interface
 
 uses
-    q_types,
-    q_heap;
+    dstypes,
+    bheap;
 
 { ============================================================================ }
-{                       Min-Heap — Q_MINH_* API                                }
+{                       Min-Heap — minh_* API                                }
 { ============================================================================ }
 
   {**
@@ -35,7 +35,7 @@ uses
     @param InitialCapacity Starting number of slots (will grow as needed).
     @returns Pointer to the new heap.
   **}
-  function Q_MINH_New(ElementSize : uint32; InitialCapacity : uint32) : PBinaryHeap;
+  function minh_New(ElementSize : uint32; InitialCapacity : uint32) : PBinaryHeap;
 
   {**
     @abstract Inserts an element into the min-heap.
@@ -43,7 +43,7 @@ uses
     @param Priority Priority value (lower = higher priority).
     @param Data     Pointer to the element data to copy in.
   **}
-  procedure Q_MINH_Insert(Heap : PBinaryHeap; Priority : uint32; Data : void);
+  procedure minh_Insert(Heap : PBinaryHeap; Priority : uint32; Data : void);
 
   {**
     @abstract Extracts the minimum-priority element from the heap.
@@ -51,70 +51,70 @@ uses
     @param Data Pointer to a buffer that receives the extracted element.
     @returns True if an element was extracted, false if the heap was empty.
   **}
-  function Q_MINH_ExtractMin(Heap : PBinaryHeap; Data : void) : boolean;
+  function minh_ExtractMin(Heap : PBinaryHeap; Data : void) : boolean;
 
   {**
     @abstract Peeks at the minimum-priority element without removing it.
     @param Heap Pointer to the heap.
     @returns Pointer to the element data, or nil if empty.
   **}
-  function Q_MINH_PeekMin(Heap : PBinaryHeap) : void;
+  function minh_PeekMin(Heap : PBinaryHeap) : void;
 
   {**
     @abstract Returns the number of elements in the min-heap.
     @param Heap Pointer to the heap.
     @returns Element count.
   **}
-  function Q_MINH_Size(Heap : PBinaryHeap) : uint32;
+  function minh_Size(Heap : PBinaryHeap) : uint32;
 
   {**
     @abstract Checks whether the min-heap is empty.
     @param Heap Pointer to the heap.
     @returns True if empty.
   **}
-  function Q_MINH_IsEmpty(Heap : PBinaryHeap) : boolean;
+  function minh_IsEmpty(Heap : PBinaryHeap) : boolean;
 
   {**
     @abstract Frees the min-heap and all its elements.
     @param Heap Pointer to the heap.
   **}
-  procedure Q_MINH_Free(Heap : PBinaryHeap);
+  procedure minh_Free(Heap : PBinaryHeap);
 
 implementation
 
-function Q_MINH_New(ElementSize : uint32; InitialCapacity : uint32) : PBinaryHeap;
+function minh_New(ElementSize : uint32; InitialCapacity : uint32) : PBinaryHeap;
 begin
-  Q_MINH_New := BH_New(ElementSize, InitialCapacity, true);
+  minh_New := BHeap_New(ElementSize, InitialCapacity, true);
 end;
 
-procedure Q_MINH_Insert(Heap : PBinaryHeap; Priority : uint32; Data : void);
+procedure minh_Insert(Heap : PBinaryHeap; Priority : uint32; Data : void);
 begin
-  BH_Insert(Heap, Priority, Data);
+  BHeap_Insert(Heap, Priority, Data);
 end;
 
-function Q_MINH_ExtractMin(Heap : PBinaryHeap; Data : void) : boolean;
+function minh_ExtractMin(Heap : PBinaryHeap; Data : void) : boolean;
 begin
-  Q_MINH_ExtractMin := BH_ExtractRoot(Heap, Data);
+  minh_ExtractMin := BHeap_ExtractRoot(Heap, Data);
 end;
 
-function Q_MINH_PeekMin(Heap : PBinaryHeap) : void;
+function minh_PeekMin(Heap : PBinaryHeap) : void;
 begin
-  Q_MINH_PeekMin := BH_PeekRoot(Heap);
+  minh_PeekMin := BHeap_PeekRoot(Heap);
 end;
 
-function Q_MINH_Size(Heap : PBinaryHeap) : uint32;
+function minh_Size(Heap : PBinaryHeap) : uint32;
 begin
-  Q_MINH_Size := Heap^.Count;
+  minh_Size := Heap^.Count;
 end;
 
-function Q_MINH_IsEmpty(Heap : PBinaryHeap) : boolean;
+function minh_IsEmpty(Heap : PBinaryHeap) : boolean;
 begin
-  Q_MINH_IsEmpty := (Heap^.Count = 0);
+  minh_IsEmpty := (Heap^.Count = 0);
 end;
 
-procedure Q_MINH_Free(Heap : PBinaryHeap);
+procedure minh_Free(Heap : PBinaryHeap);
 begin
-  BH_Free(Heap);
+  BHeap_Free(Heap);
 end;
 
 end.

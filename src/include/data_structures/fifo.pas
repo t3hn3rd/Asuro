@@ -17,17 +17,17 @@
 
 	@author(Aaron Hance <ah@aaronhance.me>)
 }
-unit q_fifo;
+unit fifo;
 
 interface
 
 uses
     lmemorymanager,
     util,
-    q_types;
+    dstypes;
 
 { ============================================================================ }
-{                        FIFO Queue — Q_FIFO_* API                             }
+{                        FIFO Queue — FIFO_* API                             }
 { ============================================================================ }
 
   {**
@@ -35,14 +35,14 @@ uses
     @param ElementSize Size (in bytes) of each element.
     @returns Pointer to the new queue.
   **}
-  function Q_FIFO_New(ElementSize : uint32) : PFIFOQueue;
+  function FIFO_New(ElementSize : uint32) : PFIFOQueue;
 
   {**
     @abstract Enqueues an element at the back of the FIFO queue.
     @param Queue Pointer to the FIFO queue.
     @param Data  Pointer to the element data to copy in.
   **}
-  procedure Q_FIFO_Enqueue(Queue : PFIFOQueue; Data : void);
+  procedure FIFO_Enqueue(Queue : PFIFOQueue; Data : void);
 
   {**
     @abstract Dequeues the front element from the FIFO queue.
@@ -50,47 +50,47 @@ uses
     @param Data  Pointer to a buffer that receives the dequeued element.
     @returns True if an element was dequeued, false if the queue was empty.
   **}
-  function Q_FIFO_Dequeue(Queue : PFIFOQueue; Data : void) : boolean;
+  function FIFO_Dequeue(Queue : PFIFOQueue; Data : void) : boolean;
 
   {**
     @abstract Peeks at the front element without removing it.
     @param Queue Pointer to the FIFO queue.
     @returns Pointer to the front element data, or nil if empty.
   **}
-  function Q_FIFO_Peek(Queue : PFIFOQueue) : void;
+  function FIFO_Peek(Queue : PFIFOQueue) : void;
 
   {**
     @abstract Returns the number of elements in the FIFO queue.
     @param Queue Pointer to the FIFO queue.
     @returns Element count.
   **}
-  function Q_FIFO_Size(Queue : PFIFOQueue) : uint32;
+  function FIFO_Size(Queue : PFIFOQueue) : uint32;
 
   {**
     @abstract Checks whether the FIFO queue is empty.
     @param Queue Pointer to the FIFO queue.
     @returns True if empty.
   **}
-  function Q_FIFO_IsEmpty(Queue : PFIFOQueue) : boolean;
+  function FIFO_IsEmpty(Queue : PFIFOQueue) : boolean;
 
   {**
     @abstract Frees the FIFO queue and all its nodes.
     @param Queue Pointer to the FIFO queue.
   **}
-  procedure Q_FIFO_Free(Queue : PFIFOQueue);
+  procedure FIFO_Free(Queue : PFIFOQueue);
 
 implementation
 
-function Q_FIFO_New(ElementSize : uint32) : PFIFOQueue;
+function FIFO_New(ElementSize : uint32) : PFIFOQueue;
 begin
-  Q_FIFO_New := PFIFOQueue(kalloc(sizeof(TFIFOQueue)));
-  Q_FIFO_New^.Head        := nil;
-  Q_FIFO_New^.Tail        := nil;
-  Q_FIFO_New^.Count       := 0;
-  Q_FIFO_New^.ElementSize := ElementSize;
+  FIFO_New := PFIFOQueue(kalloc(sizeof(TFIFOQueue)));
+  FIFO_New^.Head        := nil;
+  FIFO_New^.Tail        := nil;
+  FIFO_New^.Count       := 0;
+  FIFO_New^.ElementSize := ElementSize;
 end;
 
-procedure Q_FIFO_Enqueue(Queue : PFIFOQueue; Data : void);
+procedure FIFO_Enqueue(Queue : PFIFOQueue; Data : void);
 var
   Node : PQueueNode;
 begin
@@ -108,11 +108,11 @@ begin
   Queue^.Count := Queue^.Count + 1;
 end;
 
-function Q_FIFO_Dequeue(Queue : PFIFOQueue; Data : void) : boolean;
+function FIFO_Dequeue(Queue : PFIFOQueue; Data : void) : boolean;
 var
   Node : PQueueNode;
 begin
-  Q_FIFO_Dequeue := false;
+  FIFO_Dequeue := false;
   if Queue^.Head = nil then exit;
 
   Node := Queue^.Head;
@@ -125,28 +125,28 @@ begin
   Queue^.Count := Queue^.Count - 1;
   kfree(Node^.Data);
   kfree(void(Node));
-  Q_FIFO_Dequeue := true;
+  FIFO_Dequeue := true;
 end;
 
-function Q_FIFO_Peek(Queue : PFIFOQueue) : void;
+function FIFO_Peek(Queue : PFIFOQueue) : void;
 begin
   if Queue^.Head = nil then
-    Q_FIFO_Peek := nil
+    FIFO_Peek := nil
   else
-    Q_FIFO_Peek := Queue^.Head^.Data;
+    FIFO_Peek := Queue^.Head^.Data;
 end;
 
-function Q_FIFO_Size(Queue : PFIFOQueue) : uint32;
+function FIFO_Size(Queue : PFIFOQueue) : uint32;
 begin
-  Q_FIFO_Size := Queue^.Count;
+  FIFO_Size := Queue^.Count;
 end;
 
-function Q_FIFO_IsEmpty(Queue : PFIFOQueue) : boolean;
+function FIFO_IsEmpty(Queue : PFIFOQueue) : boolean;
 begin
-  Q_FIFO_IsEmpty := (Queue^.Count = 0);
+  FIFO_IsEmpty := (Queue^.Count = 0);
 end;
 
-procedure Q_FIFO_Free(Queue : PFIFOQueue);
+procedure FIFO_Free(Queue : PFIFOQueue);
 var
   Node, Next : PQueueNode;
 begin

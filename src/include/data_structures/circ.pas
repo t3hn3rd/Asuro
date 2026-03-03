@@ -17,17 +17,17 @@
 
 	@author(Aaron Hance <ah@aaronhance.me>)
 }
-unit q_circ;
+unit circ;
 
 interface
 
 uses
     lmemorymanager,
-    q_types,
+    dstypes,
     util;
 
 { ============================================================================ }
-{                     Circular Queue — Q_CIRC_* API                            }
+{                     Circular Queue — circ_* API                            }
 { ============================================================================ }
 
   {**
@@ -36,7 +36,7 @@ uses
     @param ElementSize Size (in bytes) of each element.
     @returns Pointer to the new circular queue.
   **}
-  function Q_CIRC_New(Capacity : uint32; ElementSize : uint32) : PCircularQueue;
+  function circ_New(Capacity : uint32; ElementSize : uint32) : PCircularQueue;
 
   {**
     @abstract Enqueues an element into the circular queue.
@@ -44,7 +44,7 @@ uses
     @param Data  Pointer to the element data to copy in.
     @returns True if the element was enqueued, false if the queue is full.
   **}
-  function Q_CIRC_Enqueue(Queue : PCircularQueue; Data : void) : boolean;
+  function circ_Enqueue(Queue : PCircularQueue; Data : void) : boolean;
 
   {**
     @abstract Dequeues the front element from the circular queue.
@@ -52,61 +52,61 @@ uses
     @param Data  Pointer to a buffer that receives the dequeued element.
     @returns True if an element was dequeued, false if empty.
   **}
-  function Q_CIRC_Dequeue(Queue : PCircularQueue; Data : void) : boolean;
+  function circ_Dequeue(Queue : PCircularQueue; Data : void) : boolean;
 
   {**
     @abstract Peeks at the front element without removing it.
     @param Queue Pointer to the circular queue.
     @returns Pointer to the front element data, or nil if empty.
   **}
-  function Q_CIRC_Peek(Queue : PCircularQueue) : void;
+  function circ_Peek(Queue : PCircularQueue) : void;
 
   {**
     @abstract Returns the number of elements in the circular queue.
     @param Queue Pointer to the circular queue.
     @returns Element count.
   **}
-  function Q_CIRC_Size(Queue : PCircularQueue) : uint32;
+  function circ_Size(Queue : PCircularQueue) : uint32;
 
   {**
     @abstract Checks whether the circular queue is full.
     @param Queue Pointer to the circular queue.
     @returns True if full.
   **}
-  function Q_CIRC_IsFull(Queue : PCircularQueue) : boolean;
+  function circ_IsFull(Queue : PCircularQueue) : boolean;
 
   {**
     @abstract Checks whether the circular queue is empty.
     @param Queue Pointer to the circular queue.
     @returns True if empty.
   **}
-  function Q_CIRC_IsEmpty(Queue : PCircularQueue) : boolean;
+  function circ_IsEmpty(Queue : PCircularQueue) : boolean;
 
   {**
     @abstract Frees the circular queue and its buffer.
     @param Queue Pointer to the circular queue.
   **}
-  procedure Q_CIRC_Free(Queue : PCircularQueue);
+  procedure circ_Free(Queue : PCircularQueue);
 
 implementation
 
-function Q_CIRC_New(Capacity : uint32; ElementSize : uint32) : PCircularQueue;
+function circ_New(Capacity : uint32; ElementSize : uint32) : PCircularQueue;
 begin
-  Q_CIRC_New := PCircularQueue(kalloc(sizeof(TCircularQueue)));
-  Q_CIRC_New^.Capacity    := Capacity;
-  Q_CIRC_New^.ElementSize := ElementSize;
-  Q_CIRC_New^.Count       := 0;
-  Q_CIRC_New^.Head        := 0;
-  Q_CIRC_New^.Tail        := 0;
-  Q_CIRC_New^.Data        := kalloc(Capacity * ElementSize);
-  memset(uint32(Q_CIRC_New^.Data), 0, Capacity * ElementSize);
+  circ_New := PCircularQueue(kalloc(sizeof(TCircularQueue)));
+  circ_New^.Capacity    := Capacity;
+  circ_New^.ElementSize := ElementSize;
+  circ_New^.Count       := 0;
+  circ_New^.Head        := 0;
+  circ_New^.Tail        := 0;
+  circ_New^.Data        := kalloc(Capacity * ElementSize);
+  memset(uint32(circ_New^.Data), 0, Capacity * ElementSize);
 end;
 
-function Q_CIRC_Enqueue(Queue : PCircularQueue; Data : void) : boolean;
+function circ_Enqueue(Queue : PCircularQueue; Data : void) : boolean;
 var
   dst : uint32;
 begin
-  Q_CIRC_Enqueue := false;
+  circ_Enqueue := false;
   if Queue^.Count >= Queue^.Capacity then exit;
 
   dst := uint32(Queue^.Data) + (Queue^.Tail * Queue^.ElementSize);
@@ -114,14 +114,14 @@ begin
 
   Queue^.Tail  := (Queue^.Tail + 1) mod Queue^.Capacity;
   Queue^.Count := Queue^.Count + 1;
-  Q_CIRC_Enqueue := true;
+  circ_Enqueue := true;
 end;
 
-function Q_CIRC_Dequeue(Queue : PCircularQueue; Data : void) : boolean;
+function circ_Dequeue(Queue : PCircularQueue; Data : void) : boolean;
 var
   src : uint32;
 begin
-  Q_CIRC_Dequeue := false;
+  circ_Dequeue := false;
   if Queue^.Count = 0 then exit;
 
   src := uint32(Queue^.Data) + (Queue^.Head * Queue^.ElementSize);
@@ -129,33 +129,33 @@ begin
 
   Queue^.Head  := (Queue^.Head + 1) mod Queue^.Capacity;
   Queue^.Count := Queue^.Count - 1;
-  Q_CIRC_Dequeue := true;
+  circ_Dequeue := true;
 end;
 
-function Q_CIRC_Peek(Queue : PCircularQueue) : void;
+function circ_Peek(Queue : PCircularQueue) : void;
 begin
   if Queue^.Count = 0 then
-    Q_CIRC_Peek := nil
+    circ_Peek := nil
   else
-    Q_CIRC_Peek := void(uint32(Queue^.Data) + (Queue^.Head * Queue^.ElementSize));
+    circ_Peek := void(uint32(Queue^.Data) + (Queue^.Head * Queue^.ElementSize));
 end;
 
-function Q_CIRC_Size(Queue : PCircularQueue) : uint32;
+function circ_Size(Queue : PCircularQueue) : uint32;
 begin
-  Q_CIRC_Size := Queue^.Count;
+  circ_Size := Queue^.Count;
 end;
 
-function Q_CIRC_IsFull(Queue : PCircularQueue) : boolean;
+function circ_IsFull(Queue : PCircularQueue) : boolean;
 begin
-  Q_CIRC_IsFull := (Queue^.Count = Queue^.Capacity);
+  circ_IsFull := (Queue^.Count = Queue^.Capacity);
 end;
 
-function Q_CIRC_IsEmpty(Queue : PCircularQueue) : boolean;
+function circ_IsEmpty(Queue : PCircularQueue) : boolean;
 begin
-  Q_CIRC_IsEmpty := (Queue^.Count = 0);
+  circ_IsEmpty := (Queue^.Count = 0);
 end;
 
-procedure Q_CIRC_Free(Queue : PCircularQueue);
+procedure circ_Free(Queue : PCircularQueue);
 begin
   if Queue = nil then exit;
   kfree(Queue^.Data);

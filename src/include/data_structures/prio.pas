@@ -18,16 +18,16 @@
 
 	@author(Aaron Hance <ah@aaronhance.me>)
 }
-unit q_prio;
+unit prio;
 
 interface
 
 uses
-    q_types,
-    q_heap;
+  bheap,
+  dstypes;
 
 { ============================================================================ }
-{                    Priority Queue — Q_PRIO_* API                             }
+{                    Priority Queue — prio_* API                             }
 { ============================================================================ }
 
   {**
@@ -36,7 +36,7 @@ uses
     @param InitialCapacity Starting number of slots.
     @returns Pointer to the new priority queue (a PBinaryHeap).
   **}
-  function Q_PRIO_New(ElementSize : uint32; InitialCapacity : uint32) : PBinaryHeap;
+  function prio_New(ElementSize : uint32; InitialCapacity : uint32) : PBinaryHeap;
 
   {**
     @abstract Enqueues an element with a given priority.
@@ -44,7 +44,7 @@ uses
     @param Priority Priority value (lower = dequeued first).
     @param Data     Pointer to the element data to copy in.
   **}
-  procedure Q_PRIO_Enqueue(Heap : PBinaryHeap; Priority : uint32; Data : void);
+  procedure prio_Enqueue(Heap : PBinaryHeap; Priority : uint32; Data : void);
 
   {**
     @abstract Dequeues the highest-priority (lowest value) element.
@@ -52,70 +52,70 @@ uses
     @param Data Pointer to a buffer that receives the dequeued element.
     @returns True if an element was dequeued, false if empty.
   **}
-  function Q_PRIO_Dequeue(Heap : PBinaryHeap; Data : void) : boolean;
+  function prio_Dequeue(Heap : PBinaryHeap; Data : void) : boolean;
 
   {**
     @abstract Peeks at the highest-priority element without removing it.
     @param Heap Pointer to the priority queue.
     @returns Pointer to the element data, or nil if empty.
   **}
-  function Q_PRIO_Peek(Heap : PBinaryHeap) : void;
+  function prio_Peek(Heap : PBinaryHeap) : void;
 
   {**
     @abstract Returns the number of elements in the priority queue.
     @param Heap Pointer to the priority queue.
     @returns Element count.
   **}
-  function Q_PRIO_Size(Heap : PBinaryHeap) : uint32;
+  function prio_Size(Heap : PBinaryHeap) : uint32;
 
   {**
     @abstract Checks whether the priority queue is empty.
     @param Heap Pointer to the priority queue.
     @returns True if empty.
   **}
-  function Q_PRIO_IsEmpty(Heap : PBinaryHeap) : boolean;
+  function prio_IsEmpty(Heap : PBinaryHeap) : boolean;
 
   {**
     @abstract Frees the priority queue and all its elements.
     @param Heap Pointer to the priority queue.
   **}
-  procedure Q_PRIO_Free(Heap : PBinaryHeap);
+  procedure prio_Free(Heap : PBinaryHeap);
 
 implementation
 
-function Q_PRIO_New(ElementSize : uint32; InitialCapacity : uint32) : PBinaryHeap;
+function prio_New(ElementSize : uint32; InitialCapacity : uint32) : PBinaryHeap;
 begin
-  Q_PRIO_New := BH_New(ElementSize, InitialCapacity, true);
+  prio_New := BHeap_New(ElementSize, InitialCapacity, true);
 end;
 
-procedure Q_PRIO_Enqueue(Heap : PBinaryHeap; Priority : uint32; Data : void);
+procedure prio_Enqueue(Heap : PBinaryHeap; Priority : uint32; Data : void);
 begin
-  BH_Insert(Heap, Priority, Data);
+  BHeap_Insert(Heap, Priority, Data);
 end;
 
-function Q_PRIO_Dequeue(Heap : PBinaryHeap; Data : void) : boolean;
+function prio_Dequeue(Heap : PBinaryHeap; Data : void) : boolean;
 begin
-  Q_PRIO_Dequeue := BH_ExtractRoot(Heap, Data);
+  prio_Dequeue := BHeap_ExtractRoot(Heap, Data);
 end;
 
-function Q_PRIO_Peek(Heap : PBinaryHeap) : void;
+function prio_Peek(Heap : PBinaryHeap) : void;
 begin
-  Q_PRIO_Peek := BH_PeekRoot(Heap);
+  prio_Peek := BHeap_PeekRoot(Heap);
 end;
 
-function Q_PRIO_Size(Heap : PBinaryHeap) : uint32;
+function prio_Size(Heap : PBinaryHeap) : uint32;
 begin
-  Q_PRIO_Size := Heap^.Count;
+  prio_Size := Heap^.Count;
 end;
 
-function Q_PRIO_IsEmpty(Heap : PBinaryHeap) : boolean;
+function prio_IsEmpty(Heap : PBinaryHeap) : boolean;
 begin
-  Q_PRIO_IsEmpty := (Heap^.Count = 0);
+  prio_IsEmpty := (Heap^.Count = 0);
 end;
 
-procedure Q_PRIO_Free(Heap : PBinaryHeap);
+procedure prio_Free(Heap : PBinaryHeap);
 begin
-  BH_Free(Heap);
+  BHeap_Free(Heap);
 end;
 
 end.

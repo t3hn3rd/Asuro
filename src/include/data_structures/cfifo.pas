@@ -17,17 +17,17 @@
 
 	@author(Aaron Hance <ah@aaronhance.me>)
 }
-unit q_cfifo;
+unit cfifo;
 
 interface
 
 uses
-    lmemorymanager,
-    q_types,
-    util;
+  dstypes,
+  lmemorymanager,
+  util;
 
 { ============================================================================ }
-{                  Contiguous FIFO Queue — Q_CFIFO_* API                       }
+{                  Contiguous FIFO Queue — CFIFO_* API                       }
 { ============================================================================ }
 
   {**
@@ -36,14 +36,14 @@ uses
     @param InitialCapacity Starting number of slots (will grow as needed).
     @returns Pointer to the new contiguous FIFO queue.
   **}
-  function Q_CFIFO_New(ElementSize : uint32; InitialCapacity : uint32) : PCFIFOQueue;
+  function CFIFO_New(ElementSize : uint32; InitialCapacity : uint32) : PCFIFOQueue;
 
   {**
     @abstract Enqueues an element at the back of the contiguous FIFO queue.
     @param Queue Pointer to the contiguous FIFO queue.
     @param Data  Pointer to the element data to copy in.
   **}
-  procedure Q_CFIFO_Enqueue(Queue : PCFIFOQueue; Data : void);
+  procedure CFIFO_Enqueue(Queue : PCFIFOQueue; Data : void);
 
   {**
     @abstract Dequeues the front element from the contiguous FIFO queue.
@@ -51,41 +51,41 @@ uses
     @param Data  Pointer to a buffer that receives the dequeued element.
     @returns True if an element was dequeued, false if the queue was empty.
   **}
-  function Q_CFIFO_Dequeue(Queue : PCFIFOQueue; Data : void) : boolean;
+  function CFIFO_Dequeue(Queue : PCFIFOQueue; Data : void) : boolean;
 
   {**
     @abstract Peeks at the front element without removing it.
     @param Queue Pointer to the contiguous FIFO queue.
     @returns Pointer to the front element data, or nil if empty.
   **}
-  function Q_CFIFO_Peek(Queue : PCFIFOQueue) : void;
+  function CFIFO_Peek(Queue : PCFIFOQueue) : void;
 
   {**
     @abstract Returns the number of elements in the contiguous FIFO queue.
     @param Queue Pointer to the contiguous FIFO queue.
     @returns Element count.
   **}
-  function Q_CFIFO_Size(Queue : PCFIFOQueue) : uint32;
+  function CFIFO_Size(Queue : PCFIFOQueue) : uint32;
 
   {**
     @abstract Checks whether the contiguous FIFO queue is empty.
     @param Queue Pointer to the contiguous FIFO queue.
     @returns True if empty.
   **}
-  function Q_CFIFO_IsEmpty(Queue : PCFIFOQueue) : boolean;
+  function CFIFO_IsEmpty(Queue : PCFIFOQueue) : boolean;
 
   {**
     @abstract Returns the current capacity of the contiguous FIFO queue.
     @param Queue Pointer to the contiguous FIFO queue.
     @returns Capacity in number of elements.
   **}
-  function Q_CFIFO_Capacity(Queue : PCFIFOQueue) : uint32;
+  function CFIFO_Capacity(Queue : PCFIFOQueue) : uint32;
 
   {**
     @abstract Frees the contiguous FIFO queue and its buffer.
     @param Queue Pointer to the contiguous FIFO queue.
   **}
-  procedure Q_CFIFO_Free(Queue : PCFIFOQueue);
+  procedure CFIFO_Free(Queue : PCFIFOQueue);
 
 implementation
 
@@ -134,18 +134,18 @@ end;
 {  Public API                                                                  }
 { ---------------------------------------------------------------------------- }
 
-function Q_CFIFO_New(ElementSize : uint32; InitialCapacity : uint32) : PCFIFOQueue;
+function CFIFO_New(ElementSize : uint32; InitialCapacity : uint32) : PCFIFOQueue;
 begin
-  Q_CFIFO_New := PCFIFOQueue(kalloc(sizeof(TCFIFOQueue)));
-  Q_CFIFO_New^.ElementSize := ElementSize;
-  Q_CFIFO_New^.Capacity    := InitialCapacity;
-  Q_CFIFO_New^.Count       := 0;
-  Q_CFIFO_New^.Head        := 0;
-  Q_CFIFO_New^.Data        := kalloc(InitialCapacity * ElementSize);
-  memset(uint32(Q_CFIFO_New^.Data), 0, InitialCapacity * ElementSize);
+  CFIFO_New := PCFIFOQueue(kalloc(sizeof(TCFIFOQueue)));
+  CFIFO_New^.ElementSize := ElementSize;
+  CFIFO_New^.Capacity    := InitialCapacity;
+  CFIFO_New^.Count       := 0;
+  CFIFO_New^.Head        := 0;
+  CFIFO_New^.Data        := kalloc(InitialCapacity * ElementSize);
+  memset(uint32(CFIFO_New^.Data), 0, InitialCapacity * ElementSize);
 end;
 
-procedure Q_CFIFO_Enqueue(Queue : PCFIFOQueue; Data : void);
+procedure CFIFO_Enqueue(Queue : PCFIFOQueue; Data : void);
 var
   tail : uint32;
   dst  : uint32;
@@ -168,11 +168,11 @@ begin
   Queue^.Count := Queue^.Count + 1;
 end;
 
-function Q_CFIFO_Dequeue(Queue : PCFIFOQueue; Data : void) : boolean;
+function CFIFO_Dequeue(Queue : PCFIFOQueue; Data : void) : boolean;
 var
   src : uint32;
 begin
-  Q_CFIFO_Dequeue := false;
+  CFIFO_Dequeue := false;
   if Queue^.Count = 0 then exit;
 
   src := uint32(Queue^.Data) + (Queue^.Head * Queue^.ElementSize);
@@ -189,33 +189,33 @@ begin
   if Queue^.Count = 0 then
     Queue^.Head := 0;
 
-  Q_CFIFO_Dequeue := true;
+  CFIFO_Dequeue := true;
 end;
 
-function Q_CFIFO_Peek(Queue : PCFIFOQueue) : void;
+function CFIFO_Peek(Queue : PCFIFOQueue) : void;
 begin
   if Queue^.Count = 0 then
-    Q_CFIFO_Peek := nil
+    CFIFO_Peek := nil
   else
-    Q_CFIFO_Peek := void(uint32(Queue^.Data) + (Queue^.Head * Queue^.ElementSize));
+    CFIFO_Peek := void(uint32(Queue^.Data) + (Queue^.Head * Queue^.ElementSize));
 end;
 
-function Q_CFIFO_Size(Queue : PCFIFOQueue) : uint32;
+function CFIFO_Size(Queue : PCFIFOQueue) : uint32;
 begin
-  Q_CFIFO_Size := Queue^.Count;
+  CFIFO_Size := Queue^.Count;
 end;
 
-function Q_CFIFO_IsEmpty(Queue : PCFIFOQueue) : boolean;
+function CFIFO_IsEmpty(Queue : PCFIFOQueue) : boolean;
 begin
-  Q_CFIFO_IsEmpty := (Queue^.Count = 0);
+  CFIFO_IsEmpty := (Queue^.Count = 0);
 end;
 
-function Q_CFIFO_Capacity(Queue : PCFIFOQueue) : uint32;
+function CFIFO_Capacity(Queue : PCFIFOQueue) : uint32;
 begin
-  Q_CFIFO_Capacity := Queue^.Capacity;
+  CFIFO_Capacity := Queue^.Capacity;
 end;
 
-procedure Q_CFIFO_Free(Queue : PCFIFOQueue);
+procedure CFIFO_Free(Queue : PCFIFOQueue);
 begin
   if Queue = nil then exit;
   kfree(Queue^.Data);

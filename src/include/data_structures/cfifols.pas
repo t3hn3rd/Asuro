@@ -17,18 +17,18 @@
 
 	@author(Aaron Hance <ah@aaronhance.me>)
 }
-unit q_cfifols;
+unit cfifols;
 
 interface
 
 uses
     lmemorymanager,
-    q_types,
-    q_cfifo,
+    dstypes,
+    cfifo,
     util;
 
 { ============================================================================ }
-{                 Contiguous FIFO List — Q_CFIFOLS_* API                       }
+{                 Contiguous FIFO List — CFIFOLS_* API                       }
 { ============================================================================ }
 
   {**
@@ -36,14 +36,14 @@ uses
     @param InitialCapacity Starting number of pointer slots.
     @returns Pointer to the new list.
   **}
-  function Q_CFIFOLS_New(InitialCapacity : uint32) : PCFIFOList;
+  function CFIFOLS_New(InitialCapacity : uint32) : PCFIFOList;
 
   {**
     @abstract Appends an existing contiguous FIFO queue to the list.
     @param List  Pointer to the list.
     @param Queue Pointer to the contiguous FIFO queue to add.
   **}
-  procedure Q_CFIFOLS_Add(List : PCFIFOList; Queue : PCFIFOQueue);
+  procedure CFIFOLS_Add(List : PCFIFOList; Queue : PCFIFOQueue);
 
   {**
     @abstract Returns the contiguous FIFO queue at the given index.
@@ -51,7 +51,7 @@ uses
     @param Index Zero-based index.
     @returns The PCFIFOQueue at Index, or nil if Index is out of range.
   **}
-  function Q_CFIFOLS_Get(List : PCFIFOList; Index : uint32) : PCFIFOQueue;
+  function CFIFOLS_Get(List : PCFIFOList; Index : uint32) : PCFIFOQueue;
 
   {**
     @abstract Removes the queue pointer at the given index.
@@ -61,36 +61,36 @@ uses
     @param Index Zero-based index to remove.
     @returns True if the index was valid and an entry was removed.
   **}
-  function Q_CFIFOLS_Remove(List : PCFIFOList; Index : uint32) : boolean;
+  function CFIFOLS_Remove(List : PCFIFOList; Index : uint32) : boolean;
 
   {**
     @abstract Returns the number of queues in the list.
     @param List Pointer to the list.
     @returns Queue count.
   **}
-  function Q_CFIFOLS_Count(List : PCFIFOList) : uint32;
+  function CFIFOLS_Count(List : PCFIFOList) : uint32;
 
   {**
     @abstract Checks whether the list is empty.
     @param List Pointer to the list.
     @returns True if empty.
   **}
-  function Q_CFIFOLS_IsEmpty(List : PCFIFOList) : boolean;
+  function CFIFOLS_IsEmpty(List : PCFIFOList) : boolean;
 
   {**
     @abstract Frees the list structure only.
-    @discussion Does NOT free the contained queues. Use Q_CFIFOLS_FreeAll
+    @discussion Does NOT free the contained queues. Use CFIFOLS_FreeAll
                 to free both the list and every queue it holds.
     @param List Pointer to the list.
   **}
-  procedure Q_CFIFOLS_Free(List : PCFIFOList);
+  procedure CFIFOLS_Free(List : PCFIFOList);
 
   {**
     @abstract Frees the list AND every queue it contains.
-    @discussion Calls Q_CFIFO_Free on each queue, then frees the list.
+    @discussion Calls CFIFO_Free on each queue, then frees the list.
     @param List Pointer to the list.
   **}
-  procedure Q_CFIFOLS_FreeAll(List : PCFIFOList);
+  procedure CFIFOLS_FreeAll(List : PCFIFOList);
 
 implementation
 
@@ -140,16 +140,16 @@ end;
 {  Public API                                                                  }
 { ---------------------------------------------------------------------------- }
 
-function Q_CFIFOLS_New(InitialCapacity : uint32) : PCFIFOList;
+function CFIFOLS_New(InitialCapacity : uint32) : PCFIFOList;
 begin
-  Q_CFIFOLS_New := PCFIFOList(kalloc(sizeof(TCFIFOList)));
-  Q_CFIFOLS_New^.Count    := 0;
-  Q_CFIFOLS_New^.Capacity := InitialCapacity;
-  Q_CFIFOLS_New^.Items    := kalloc(InitialCapacity * sizeof(PCFIFOQueue));
-  memset(uint32(Q_CFIFOLS_New^.Items), 0, InitialCapacity * sizeof(PCFIFOQueue));
+  CFIFOLS_New := PCFIFOList(kalloc(sizeof(TCFIFOList)));
+  CFIFOLS_New^.Count    := 0;
+  CFIFOLS_New^.Capacity := InitialCapacity;
+  CFIFOLS_New^.Items    := kalloc(InitialCapacity * sizeof(PCFIFOQueue));
+  memset(uint32(CFIFOLS_New^.Items), 0, InitialCapacity * sizeof(PCFIFOQueue));
 end;
 
-procedure Q_CFIFOLS_Add(List : PCFIFOList; Queue : PCFIFOQueue);
+procedure CFIFOLS_Add(List : PCFIFOList; Queue : PCFIFOQueue);
 begin
   if List^.Count >= List^.Capacity then
     CFIFOLS_Grow(List);
@@ -158,19 +158,19 @@ begin
   List^.Count := List^.Count + 1;
 end;
 
-function Q_CFIFOLS_Get(List : PCFIFOList; Index : uint32) : PCFIFOQueue;
+function CFIFOLS_Get(List : PCFIFOList; Index : uint32) : PCFIFOQueue;
 begin
   if Index >= List^.Count then
-    Q_CFIFOLS_Get := nil
+    CFIFOLS_Get := nil
   else
-    Q_CFIFOLS_Get := CFIFOLS_SlotAt(List, Index);
+    CFIFOLS_Get := CFIFOLS_SlotAt(List, Index);
 end;
 
-function Q_CFIFOLS_Remove(List : PCFIFOList; Index : uint32) : boolean;
+function CFIFOLS_Remove(List : PCFIFOList; Index : uint32) : boolean;
 var
   src, dst, len : uint32;
 begin
-  Q_CFIFOLS_Remove := false;
+  CFIFOLS_Remove := false;
   if Index >= List^.Count then exit;
 
   List^.Count := List^.Count - 1;
@@ -184,27 +184,27 @@ begin
     memcpy(src, dst, len);
   end;
 
-  Q_CFIFOLS_Remove := true;
+  CFIFOLS_Remove := true;
 end;
 
-function Q_CFIFOLS_Count(List : PCFIFOList) : uint32;
+function CFIFOLS_Count(List : PCFIFOList) : uint32;
 begin
-  Q_CFIFOLS_Count := List^.Count;
+  CFIFOLS_Count := List^.Count;
 end;
 
-function Q_CFIFOLS_IsEmpty(List : PCFIFOList) : boolean;
+function CFIFOLS_IsEmpty(List : PCFIFOList) : boolean;
 begin
-  Q_CFIFOLS_IsEmpty := (List^.Count = 0);
+  CFIFOLS_IsEmpty := (List^.Count = 0);
 end;
 
-procedure Q_CFIFOLS_Free(List : PCFIFOList);
+procedure CFIFOLS_Free(List : PCFIFOList);
 begin
   if List = nil then exit;
   kfree(List^.Items);
   kfree(void(List));
 end;
 
-procedure Q_CFIFOLS_FreeAll(List : PCFIFOList);
+procedure CFIFOLS_FreeAll(List : PCFIFOList);
 var
   i : uint32;
   q : PCFIFOQueue;
@@ -214,7 +214,7 @@ begin
   begin
     q := CFIFOLS_SlotAt(List, i);
     if q <> nil then
-      Q_CFIFO_Free(q);
+      CFIFO_Free(q);
   end;
   kfree(List^.Items);
   kfree(void(List));

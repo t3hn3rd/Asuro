@@ -13,11 +13,11 @@
 //  limitations under the License.
 
 {
-	Queue Types - Shared type definitions for all queue data structures.
+	Data Structure Types - Shared type definitions for all data structures.
 
 	@author(Aaron Hance <ah@aaronhance.me>)
 }
-unit q_types;
+unit dstypes;
 
 interface
 
