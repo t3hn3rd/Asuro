@@ -190,7 +190,7 @@ begin
     push_trace('vmemorymanager.vtop');
     idx:= address SHR 22;
     paddress:= uint32(KERNEL_PAGE_DIRECTORY^[idx].address) SHL 12;
-    loadd:= address AND $FFFFFF;
+    loadd:= address AND $3FFFFF;
     vtop:= paddress + loadd;
     pop_trace;
 end;
