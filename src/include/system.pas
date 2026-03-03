@@ -61,7 +61,7 @@ type
     sInt8 = shortint;
     sInt16 = smallint;
     sInt32 = integer;
-    sInt64 = longint;
+    sInt64 = int64;
 
     Float = Single;
  
@@ -251,8 +251,10 @@ procedure fpc_shortstr_assign(len: longint; sstr, dstr: Pointer); compilerproc;
   any int64/uint64 arithmetic occurs (e.g. sint32 * uint32 promotion).
   Must live in the system unit so the compiler can resolve it. }
 function fpc_mul_int64(f1, f2: int64): int64; compilerproc;
-function fpc_div_int64(n, d: int64): int64; compilerproc;
-function fpc_mod_int64(n, d: int64): int64; compilerproc;
+function fpc_div_int64(d, n: int64): int64; compilerproc;
+function fpc_mod_int64(d, n: int64): int64; compilerproc;
+function fpc_mod_qword(d, n: qword): qword; compilerproc;
+function fpc_div_qword(d, n: qword): qword; compilerproc;
 
 { Memory allocation compilerprocs – delegate to kernel heap (lmemorymanager) }
 function fpc_getmem(size: PtrUInt): Pointer; compilerproc;
@@ -266,7 +268,56 @@ procedure fpc_doneexception; compilerproc;
 
 procedure move(const source; var dest; count: SizeInt);
 
+{ Float-to-integer intrinsics }
+function Trunc(d: Double): int64;
+function Round(d: Double): int64;
+
 implementation
+
+{ ---- Raw serial debug helpers (COM1 $3F8, no dependencies) ---- }
+
+procedure serial_putch(ch: char); assembler;
+asm
+    push edx
+    push ecx
+    mov cl, al               { ch passed in AL (register convention) }
+    mov dx, $3FD
+@wait:
+    in al, dx
+    and al, $20
+    jz @wait
+    mov dx, $3F8
+    mov al, cl
+    out dx, al
+    pop ecx
+    pop edx
+end;
+
+procedure serial_puthex8(val: uint32);
+const
+    hex: array[0..15] of char = '0123456789ABCDEF';
+begin
+    serial_putch(hex[(val shr 4) and $F]);
+    serial_putch(hex[val and $F]);
+end;
+
+procedure serial_puthex32(val: uint32);
+begin
+    serial_puthex8((val shr 24) and $FF);
+    serial_puthex8((val shr 16) and $FF);
+    serial_puthex8((val shr 8) and $FF);
+    serial_puthex8(val and $FF);
+end;
+
+procedure serial_putstr(s: pchar);
+var i: uint32;
+begin
+    i := 0;
+    while s[i] <> #0 do begin
+        serial_putch(s[i]);
+        Inc(i);
+    end;
+end;
 
 { ---- compilerproc implementations ---- }
 
@@ -485,21 +536,19 @@ begin
     end;
 end;
 
-function fpc_div_int64(n, d: int64): int64; [public, alias: 'FPC_DIV_INT64']; compilerproc;
+function fpc_div_int64(d, n: int64): int64; [public, alias: 'FPC_DIV_INT64']; compilerproc;
 var
     negate: boolean;
     nLo, nHi, dLo, dHi: uint32;
     qLo, qHi, rLo, rHi: uint32;
 begin
     if d = 0 then begin
-        HandleErrorInternal(200); { divide by zero }
+        HandleErrorInternal(200);
         fpc_div_int64 := 0;
         exit;
     end;
 
     negate := false;
-
-    { Make both operands positive, track sign }
     if n < 0 then begin
         n := -n;
         negate := not negate;
@@ -509,41 +558,177 @@ begin
         negate := not negate;
     end;
 
-    nLo := uint32(n); nHi := uint32(n shr 32);
-    dLo := uint32(d); dHi := uint32(d shr 32);
+    nLo := PuInt32(@n)[0];
+    nHi := PuInt32(@n)[1];
+    dLo := PuInt32(@d)[0];
+    dHi := PuInt32(@d)[1];
 
-    udiv64(nLo, nHi, dLo, dHi, qLo, qHi, rLo, rHi);
+    if dHi = 0 then begin
+        { Fast path: divisor fits in 32 bits }
+        asm
+            xor edx, edx
+            mov eax, dword [nHi]
+            div dword [dLo]
+            mov dword [qHi], eax
+            mov eax, dword [nLo]
+            div dword [dLo]
+            mov dword [qLo], eax
+        end;
+    end else begin
+        udiv64(nLo, nHi, dLo, dHi, qLo, qHi, rLo, rHi);
+    end;
 
-    fpc_div_int64 := int64(qLo) or (int64(qHi) shl 32);
+    PuInt32(@fpc_div_int64)[0] := qLo;
+    PuInt32(@fpc_div_int64)[1] := qHi;
     if negate then
         fpc_div_int64 := -fpc_div_int64;
 end;
 
-function fpc_mod_int64(n, d: int64): int64; [public, alias: 'FPC_MOD_INT64']; compilerproc;
+function fpc_mod_int64(d, n: int64): int64; [public, alias: 'FPC_MOD_INT64']; compilerproc;
 var
     nNeg: boolean;
     nLo, nHi, dLo, dHi: uint32;
     qLo, qHi, rLo, rHi: uint32;
 begin
     if d = 0 then begin
-        HandleErrorInternal(200); { divide by zero }
+        HandleErrorInternal(200);
         fpc_mod_int64 := 0;
         exit;
     end;
 
     nNeg := n < 0;
-
     if n < 0 then n := -n;
     if d < 0 then d := -d;
 
-    nLo := uint32(n); nHi := uint32(n shr 32);
-    dLo := uint32(d); dHi := uint32(d shr 32);
+    nLo := PuInt32(@n)[0];
+    nHi := PuInt32(@n)[1];
+    dLo := PuInt32(@d)[0];
+    dHi := PuInt32(@d)[1];
 
-    udiv64(nLo, nHi, dLo, dHi, qLo, qHi, rLo, rHi);
+    if dHi = 0 then begin
+        { Fast path: divisor fits in 32 bits }
+        asm
+            xor edx, edx
+            mov eax, dword [nHi]
+            div dword [dLo]
+            mov eax, dword [nLo]
+            div dword [dLo]
+            mov dword [rLo], edx
+        end;
+        rHi := 0;
+    end else begin
+        udiv64(nLo, nHi, dLo, dHi, qLo, qHi, rLo, rHi);
+    end;
 
-    fpc_mod_int64 := int64(rLo) or (int64(rHi) shl 32);
+    PuInt32(@fpc_mod_int64)[0] := rLo;
+    PuInt32(@fpc_mod_int64)[1] := rHi;
     if nNeg then
         fpc_mod_int64 := -fpc_mod_int64;
+end;
+
+function fpc_mod_qword(d, n: qword): qword; [public, alias: 'FPC_MOD_QWORD']; compilerproc;
+var
+    nLo, nHi, dLo, dHi: uint32;
+    qLo, qHi, rLo, rHi: uint32;
+begin
+    { Extract halves via pointer — avoids any 64-bit operations }
+    nLo := PuInt32(@n)[0];
+    nHi := PuInt32(@n)[1];
+    dLo := PuInt32(@d)[0];
+    dHi := PuInt32(@d)[1];
+
+    if (dLo = 0) and (dHi = 0) then begin
+        HandleErrorInternal(200);
+        fpc_mod_qword := 0;
+        exit;
+    end;
+
+    if dHi = 0 then begin
+        { Fast path: divisor fits in 32 bits — use hardware DIV }
+        asm
+            xor edx, edx
+            mov eax, dword [nHi]
+            div dword [dLo]
+            { EDX now has remainder from high division }
+            mov eax, dword [nLo]
+            div dword [dLo]
+            mov dword [rLo], edx         { remainder is in EDX }
+        end;
+        rHi := 0;
+    end else begin
+        { Slow path: full 64-bit software division }
+        udiv64(nLo, nHi, dLo, dHi, qLo, qHi, rLo, rHi);
+    end;
+    PuInt32(@fpc_mod_qword)[0] := rLo;
+    PuInt32(@fpc_mod_qword)[1] := rHi;
+end;
+
+function fpc_div_qword(d, n: qword): qword; [public, alias: 'FPC_DIV_QWORD']; compilerproc;
+var
+    nLo, nHi, dLo, dHi: uint32;
+    qLo, qHi, rLo, rHi: uint32;
+begin
+    { Extract halves via pointer — avoids any 64-bit operations }
+    nLo := PuInt32(@n)[0];
+    nHi := PuInt32(@n)[1];
+    dLo := PuInt32(@d)[0];
+    dHi := PuInt32(@d)[1];
+
+    if (dLo = 0) and (dHi = 0) then begin
+        HandleErrorInternal(200);
+        fpc_div_qword := 0;
+        exit;
+    end;
+
+    if dHi = 0 then begin
+        { Fast path: divisor fits in 32 bits — use hardware DIV }
+        asm
+            xor edx, edx
+            mov eax, dword [nHi]
+            div dword [dLo]
+            mov dword [qHi], eax       { quotient high dword }
+            mov eax, dword [nLo]
+            div dword [dLo]
+            mov dword [qLo], eax       { quotient low dword }
+        end;
+    end else begin
+        { Slow path: full 64-bit software division }
+        udiv64(nLo, nHi, dLo, dHi, qLo, qHi, rLo, rHi);
+    end;
+    PuInt32(@fpc_div_qword)[0] := qLo;
+    PuInt32(@fpc_div_qword)[1] := qHi;
+end;
+
+{ ---------- Float-to-integer intrinsics ---------- }
+
+function Trunc(d: Double): int64; [public, alias: 'FPC_TRUNC'];
+var
+    oldcw, newcw: word;
+    res: int64;
+begin
+    asm
+        fnstcw oldcw
+        mov    ax, oldcw
+        or     ax, $0C00      { set rounding mode to "truncate" (round toward zero) }
+        mov    newcw, ax
+        fldcw  newcw
+        fld    qword [d]
+        fistp  qword [res]
+        fldcw  oldcw           { restore original rounding mode }
+    end;
+    Trunc := res;
+end;
+
+function Round(d: Double): int64; [public, alias: 'FPC_ROUND'];
+var
+    res: int64;
+begin
+    { FPU default rounding mode is "round to nearest" which is what Round needs }
+    asm
+        fld   qword [d]
+        fistp qword [res]
+    end;
+    Round := res;
 end;
 
 { ---------- Memory allocation compilerprocs ---------- }
