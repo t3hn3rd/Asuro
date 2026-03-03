@@ -23,7 +23,7 @@ interface
 
 uses
     bios_data_area,
-    lmemorymanager,
+    lmemorymanager, tracer,
     net, nettypes, netutils, ipv4, arp, util;
 
 type
@@ -55,6 +55,7 @@ var
     i : uint8;
 
 begin
+    push_trace('icmp.nextInactiveHandler');
     nextInactiveHandler:= 0;
     for i:=1 to 255 do begin
         if not Handlers[i].Active then begin
@@ -80,6 +81,8 @@ var
     Size     : uint32;
 
 begin
+    push_trace('icmp.sendICMPRequest');
+    writeToLogLn('        L4/ICMP: sendICMPRequest');
     handle:= nextInactiveHandler;
     Handlers[handle].Active:= true;
     Handlers[handle].OnReply:= OnRep;
@@ -135,6 +138,8 @@ var
     Handle : uint8;
 
 begin
+    push_trace('icmp.recv');
+    writeToLogLn('        L4/ICMP: recv');
     Header:= PICMPHeader(p_data);
     //writehexlnWND(Header^.ICMP_Type, getTerminalHWND); 
     case Header^.ICMP_Type of
@@ -243,6 +248,8 @@ var
     i : uint32;
 
 begin
+    push_trace('icmp.register');
+    writeToLogLn('        L4/ICMP: register');
     for i:=0 to 255 do begin
         Handlers[i].Active:= false;
         Handlers[i].OnError:= nil;

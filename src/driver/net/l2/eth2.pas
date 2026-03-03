@@ -46,6 +46,7 @@ var
 
 procedure registerTypePromisc(eType : uint16; RecvCB : TRecvCallback);
 begin
+    push_trace('eth2.registerTypePromisc');
     register;
     if EthTypes[eType] = nil then EthTypes[eType]:= RecvCB;
     Promisc[eType]:= true;
@@ -53,6 +54,7 @@ end;
 
 procedure registerType(eType : uint16; RecvCB : TRecvCallback);
 begin
+    push_trace('eth2.registerType');
     register;
     if EthTypes[eType] = nil then EthTypes[eType]:= RecvCB;
 end;
@@ -93,7 +95,7 @@ var
     buf        : puint8;
 
 begin
-    //writeToLogLn('    L2: eth2.recv');
+    push_trace('eth2.recv');
     buf:= puint8(p_data);
     
     Header:= PEthernetHeader(buf);
@@ -120,6 +122,7 @@ var
 begin
     push_trace('eth2.register');
     if not Registered then begin
+        writeToLogLn('    L2/ETH: register');
         for i:=0 to 65535 do begin
             EthTypes[i]:= nil;
             Promisc[i]:= false;

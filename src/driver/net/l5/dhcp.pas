@@ -415,7 +415,7 @@ end;
 
 procedure processPacket_NAK(Header : PDHCPHeader; Options : PDHCPOptions);
 begin
-    syslog.logln('DHCP', 'Process NAK.'); 
+    writeToLogLn('          L5/DHCP: Process NAK.');
     { Server provided a NAK, NULL configuration ready for next DISCOVER/Request } 
     nullConfiguration();  
 end;
@@ -429,7 +429,7 @@ var
     cfgopt : void;
 
 begin
-    syslog.logln('DHCP', 'Process ACK.');
+    writeToLogLn('          L5/DHCP: Process ACK.');
     getIPv4Config^.UP:= false;
     
     //Copy new address
@@ -484,7 +484,7 @@ Var
 
 begin
     syslog.logln('DHCP', 'Process OFFER.');  
-
+    writeToLogLn('          L5/DHCP: Process OFFER.');
     { Check the Transaction ID matches our stored ID, discard if not. }
     if Header^.Transaction_ID = Configuration^.Transaction then begin
         syslog.logln('DHCP', 'XID Match');
@@ -566,6 +566,7 @@ var
 
 begin
     tracer.push_trace('dhcp.processPacket.enter');
+    writeToLogLn('          L5/DHCP: processPacket');
     syslog.logln('DHCP','processPacket');
     
     { Give access to header values & process to correct endianness. }
@@ -636,6 +637,7 @@ var
 
 begin
     tracer.push_trace('dhcp.DHCPDiscover.begin');
+    writeToLogLn('          L5/DHCP: DHCPDiscover');
     { Ensure we have a socket bound. }
     if Socket <> nil then begin    
         { Clear any current configuration }
@@ -711,6 +713,7 @@ var
 
 begin
     tracer.push_trace('dhcp.register');
+    writeToLogLn('          L5/DHCP: register');
     syslog.logln('DHCP', 'Register begin.');
     
     { Kalloc our Configuration Data }
