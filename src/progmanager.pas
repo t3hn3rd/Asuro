@@ -25,7 +25,7 @@ interface
 uses
     tracer,
     //progs
-    base64_prog, md5sum, dhclient, vbeinfo, testcmd, ping, meminfo;
+    base64_prog, md5sum, dhclient, vbeinfo, testcmd, ping, meminfo, setres;
 
 { Initialize all baked-in programs }
 procedure init();
@@ -65,6 +65,7 @@ begin
     testcmd.init();
     ping.init();
     meminfo.init();
+    setres.init();
 end;
 
 end.

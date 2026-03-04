@@ -22,7 +22,7 @@ unit video;
 interface
 
 uses
-    lmemorymanager, tracer, color, videotypes, hashmap, util, texture;
+    lmemorymanager, tracer, color, videotypes, hashmap, util, texture, gpu;
 
 procedure init();
 procedure DrawPixel(X : uint32; Y : uint32; Pixel : TRGB32);
@@ -30,6 +30,7 @@ procedure DrawLine(x1,y1,x2,y2 : uint32; thickness : uint32; Color : TRGB32);
 procedure DrawRect(x1,y1,x2,y2 : uint32; line_thickness : uint32; Color : TRGB32);
 procedure FillRect(x1,y1,x2,y2 : uint32; line_thickness : uint32; Line_Color : TRGB32; Fill_Color : TRGB32);
 procedure Flush();
+procedure reinit(fb_addr, width, height, pitch : uint32; bpp : uint8);
 
 function register(DriverIdentifier : pchar; EnableCallback : FEnableDriver) : boolean;
 function enable(DriverIdentifier : pchar) : boolean;
@@ -46,6 +47,9 @@ function frontBufferLocation : uint32;
 Procedure basicFDrawTexture(Buffer : PVideoBuffer; X : uint32; Y : uint32; Texture : PTexture);
 
 implementation
+
+uses
+    VESA8, VESA16, VESA24, VESA32;
 
 Procedure dummyFDrawPixel(Buffer : PVideoBuffer; X : uint32; Y : uint32; Pixel : TRGB32);
 begin
@@ -191,6 +195,14 @@ var
     VideoInterface : TVideoInterface;
     DriverMap      : PHashMap;
 
+{ ============================================================
+  GPU mode-change callback — reinits front/back buffers
+  ============================================================ }
+procedure videoModeChanged(const info : TGPUModeInfo);
+begin
+    reinit(info.Framebuffer, info.Width, info.Height, info.Pitch, info.BPP);
+end;
+
 procedure init();
 var
     RGB : TRGB32;
@@ -225,6 +237,9 @@ begin
 
     //Initialize our 'DriverMap', a hashmap of loadable display drivers.
     DriverMap:= hashmap.new;
+
+    { Register for GPU mode-change notifications so reinit fires automatically }
+    gpu.registerModeChangeCallback(@videoModeChanged);
 
     tracer.push_trace('video.init.exit');
 end;
@@ -325,6 +340,49 @@ end;
 function frontBufferLocation : uint32;
 begin
     frontBufferLocation:= VideoInterface.FrontBuffer.Location;
+end;
+
+procedure reinit(fb_addr, width, height, pitch : uint32; bpp : uint8);
+begin
+    tracer.push_trace('video.reinit.enter');
+    { Free old back buffer if allocated }
+    if VideoInterface.BackBuffer.Initialized then begin
+        kfree(void(VideoInterface.BackBuffer.Location));
+        VideoInterface.BackBuffer.Initialized := false;
+        VideoInterface.BackBuffer.Location := 0;
+        VideoInterface.BackBuffer.Width := 0;
+        VideoInterface.BackBuffer.Height := 0;
+    end;
+
+    { Reset front buffer so it can be re-initialized }
+    VideoInterface.FrontBuffer.Initialized := false;
+    VideoInterface.FrontBuffer.Location := 0;
+    VideoInterface.FrontBuffer.Width := 0;
+    VideoInterface.FrontBuffer.Height := 0;
+
+    { Point default buffer back to front (in case doublebuffer re-enable fails) }
+    VideoInterface.DefaultBuffer := @VideoInterface.FrontBuffer;
+
+    { Set front buffer directly from GPU mode info }
+    VideoInterface.FrontBuffer.Location := fb_addr;
+    VideoInterface.FrontBuffer.Width := width;
+    VideoInterface.FrontBuffer.Height := height;
+    VideoInterface.FrontBuffer.BitsPerPixel := bpp;
+    if fb_addr <> 0 then
+        VideoInterface.FrontBuffer.Initialized := true;
+
+    { Set up BPP-specific draw routines }
+    case bpp of
+        08: VESA8.init(@VideoInterface.DrawRoutines);
+        16: VESA16.init(@VideoInterface.DrawRoutines);
+        24: VESA24.init(@VideoInterface.DrawRoutines);
+        32: VESA32.init(@VideoInterface.DrawRoutines);
+    end;
+
+    { Re-enable double buffer (allocates new back buffer matching front) }
+    enable('BASIC_DOUBLE_BUFFER');
+
+    tracer.push_trace('video.reinit.exit');
 end;
 
 end.

@@ -15,7 +15,7 @@ unit desktop;
 interface
 
 uses
-    lvgl, video, RTC, strings, util, tracer, multiboot, cpu, serial, windows, asuro;
+    lvgl, video, gpu, RTC, strings, util, tracer, multiboot, cpu, serial, windows, asuro;
 
 type
     TProgLaunchProc = procedure;
@@ -25,6 +25,7 @@ procedure registerProgram(name: pchar; launcher: TProgLaunchProc);
 
 procedure init;
 procedure update;
+procedure relayout;
 
 implementation
 
@@ -36,7 +37,7 @@ const
     DOCK_ITEM_H   = 36;
 
     SEARCH_W      = 220;
-    SEARCH_RADIUS = 18;
+    SEARCH_RADIUS = 16;
 
     RESULTS_W     = SEARCH_W;
     RESULTS_ROW_H = 36;
@@ -678,6 +679,14 @@ begin
 end;
 
 { ============================================================
+  Mode-change callback — fired by GPU framework after setMode
+  ============================================================ }
+procedure desktopModeChanged(const info : TGPUModeInfo);
+begin
+    relayout;
+end;
+
+{ ============================================================
   Init — create the desktop UI
   ============================================================ }
 procedure init;
@@ -818,6 +827,43 @@ begin
 
     { ---- Register built-in programs ---- }
     registerProgram('System Information', @openSysInfo);
+
+    { Register for resolution-change notifications from GPU framework }
+    gpu.registerModeChangeCallback(@desktopModeChanged);
+
+    tracer.pop_trace;
+end;
+
+{ ============================================================
+  Relayout — reposition all desktop UI after resolution change
+  ============================================================ }
+procedure relayout;
+var
+    scr_w, scr_h : sint32;
+    dock_w       : sint32;
+    dock_x       : sint32;
+    dock_y       : sint32;
+begin
+    tracer.push_trace('desktop.relayout');
+
+    scr_w := sint32(video.frontBufferWidth);
+    scr_h := sint32(video.frontBufferHeight);
+
+    { Close any open search/results first }
+    clearAndClose;
+
+    { Reposition dock }
+    dock_w := scr_w - (DOCK_HPAD * 2);
+    dock_x := DOCK_HPAD;
+    dock_y := scr_h - DOCK_HEIGHT - DOCK_MARGIN;
+    lv_obj_set_size(dock, dock_w, DOCK_HEIGHT);
+    lv_obj_set_pos(dock, dock_x, dock_y);
+
+    { Watermark stays centered (LV_ALIGN_CENTER is relative to parent) }
+    lv_obj_align(desktop_label, LV_ALIGN_CENTER, 0, -30);
+
+    { Force layout recalculation }
+    lv_obj_update_layout(lv_screen_active);
 
     tracer.pop_trace;
 end;

@@ -13,7 +13,7 @@ interface
 
 uses
     video, videotypes, color, serial, tracer, lmemorymanager,
-    mouse, keyboard, TMR_0_ISR, util;
+    mouse, keyboard, TMR_0_ISR, util, syslog, gpu;
 
 { ============================================================
   Opaque LVGL pointer types (internal C structs)
@@ -1670,6 +1670,7 @@ function  lvgl_get_display: Plv_display;
 procedure lvgl_set_mouse_cursor(cursor: Plv_obj);
 function  lvgl_get_ticks: uint32;
 function  lvgl_get_kb_group: Plv_group;
+procedure lvgl_update_resolution(screen_w, screen_h: uint32);
 
 { Color helper (Pascal wrapper for inline C function) }
 function lv_color_make(r, g, b: uint8): lv_color_t;
@@ -1910,6 +1911,14 @@ begin
 end;
 
 { ============================================================
+  GPU mode-change callback — updates LVGL display resolution
+  ============================================================ }
+procedure lvglModeChanged(const info : TGPUModeInfo);
+begin
+    lvgl_update_resolution(info.Width, info.Height);
+end;
+
+{ ============================================================
   High-level init
   ============================================================ }
 procedure lvgl_init(screen_w, screen_h: uint32);
@@ -1962,7 +1971,43 @@ begin
     { Hook 1024Hz timer for accurate LVGL tick }
     TMR_0_ISR.hook(uint32(@lvgl_timer_tick));
 
+    { Register for GPU mode-change notifications so LVGL resolution updates automatically }
+    gpu.registerModeChangeCallback(@lvglModeChanged);
+
     tracer.push_trace('lvgl.init.exit');
+end;
+
+procedure lvgl_update_resolution(screen_w, screen_h: uint32);
+var
+    new_buf : pointer;
+    new_size : uint32;
+
+begin
+    tracer.push_trace('lvgl.update_resolution.enter');
+
+    { Allocate new render buffer for the new width }
+    new_size := screen_w * LV_BUF_LINES * SizeOf(lv_color_t);
+    new_buf := pointer(kalloc(new_size));
+
+    if new_buf <> nil then begin
+        { Free old render buffer }
+        if lv_buf1 <> nil then
+            kfree(lv_buf1);
+
+        lv_buf1 := new_buf;
+        lv_buf1_size := new_size;
+
+        { Update LVGL display resolution and buffers }
+        lv_display_set_resolution(disp, sint32(screen_w), sint32(screen_h));
+        lv_display_set_buffers(disp, lv_buf1, nil,
+            lv_buf1_size, LV_DISPLAY_RENDER_MODE_PARTIAL);
+
+        syslog.logln('LVGL', 'Resolution updated successfully.');
+    end else begin
+        syslog.logln('LVGL', 'Failed to allocate new render buffer.');
+    end;
+
+    tracer.push_trace('lvgl.update_resolution.exit');
 end;
 
 function lvgl_handler: uint32;

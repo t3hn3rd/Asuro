@@ -23,90 +23,7 @@ unit kernel;
 interface
  
 uses
-    AHCI,
-    base64,
-    bios_data_area,
-    cfifo,
-    cfifols,
-    circ,
-    color,
-    contextswitcher,
-    cpu,
-    desktop,
-    diskcmd,
-    diskutil,
-    doublebuffer,
-    drivermanagement,
-    E1000,
-    EHCI,
-    fat32,
-    faults,
-    fifo,
-    filesystemmanager,
-    flatfs,
-    fonts,
-    gdt,
-    graphicsrefresh,
-    hashmap,
-    idt,
-    ioapic,
-    irq,
-    iso9660,
-    isr,
-    isrmanager,
-    keyboard,
-    lifo,
-    lists,
-    lmemorymanager,
-    lvgl,
-    maxh,
-    md5,
-    minh,
-    mouse,
-    multiboot,
-    net,
-    notepad,
-    OHCI,
-    partcmd,
-    PCI,
-    pmemorymanager,
-    prio,
-    processmanager,
-    progmanager,
-    ps2_keyboard,
-    ps2_mouse,
-    rand,
-    RTC,
-    serial,
-    stdio,
-    storagemanager,
-    storagetest,
-    strings,
-    syslog,
-    testdriver,
-    testprocs,
-    TMR_0_ISR,
-    tracer,
-    UHCI,
-    uidebug,
-    USB,
-    usb_keyboard,
-    usb_mouse,
-    usb_storage,
-    usbcore,
-    usbhotplug,
-    usbhub,
-    usbtypes,
-    util,
-    vesa,
-    vfs,
     video,
-    vmemorymanager,
-    volcmd,
-    volumemanager,
-    vterminal,
-    Windows,
-    XHCI;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
@@ -139,6 +56,7 @@ end;
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall; [public, alias: 'kmain'];   
 var
    dds             : uint16;
+   dds             : uint32;
    keyboard_layout : array [0..1] of TKeyInfo;
    i : uint32;
    
@@ -202,6 +120,9 @@ begin
      vmemorymanager.init();
      lmemorymanager.init();
 
+     { V86 Monitor Init }
+     v86.init();
+
      { Stdio Init }
      stdio.init();
      stdio.registerCommand('BSOD', @terminal_command_bsod, 'Force a Panic Screen.');
@@ -214,10 +135,15 @@ begin
      { Call Tracer }
      tracer.init();
 
+     tracer.push_trace('kmain.DRVMGMT');
+     drivermanagement.init();
+
      { Video Init }
+     gpu.init();
      video.init();
      vesa.init(@video.register);
      doublebuffer.init(@video.register);
+     bga.init();
      video.enable('VESA');
      video.enable('BASIC_DOUBLE_BUFFER');
 
@@ -226,8 +152,6 @@ begin
      storagetest.init;
 
      { Management Interfaces }
-     tracer.push_trace('kmain.DRVMGMT');
-     drivermanagement.init();
      tracer.push_trace('kmain.STRMGMT');
      storagemanager.init();
      storagemanager.set_boot_drive_byte((multibootinfo^.boot_device shr 24) and $FF);
