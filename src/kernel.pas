@@ -254,7 +254,7 @@ begin
 
      { Enable preemptive context switching (replaces ISR_32) }
      contextswitcher.init;
-
+     
      { All work is now driven by timer interrupts — idle the CPU }
      syslog.logln('KERNEL', 'All tasks registered. Halting into idle.');
      kernel.yield();

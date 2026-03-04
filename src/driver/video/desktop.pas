@@ -300,12 +300,12 @@ begin
     addInfoRow(content, cw, 'CPU Clock', clk_str);
     mem_str := stringConcat(intToString(((multibootinfo^.mem_upper + 1000) div 1024) + 1), ' MB');
     addInfoRow(content, cw, 'Memory', mem_str);
-    res_str := stringConcat(intToString(multibootinfo^.framebuffer_width), 'x');
-    res_str := stringConcat(res_str, intToString(multibootinfo^.framebuffer_height));
+    res_str := stringConcat(intToString(video.frontBufferWidth), 'x');
+    res_str := stringConcat(res_str, intToString(video.frontBufferHeight));
     res_str := stringConcat(res_str, 'x');
-    res_str := stringConcat(res_str, intToString(multibootinfo^.framebuffer_bpp));
+    res_str := stringConcat(res_str, intToString(video.frontBufferBpp));
     addInfoRow(content, cw, 'Resolution', res_str);
-    addInfoRow(content, cw, 'Graphics', 'VESA VBE');
+    addInfoRow(content, cw, 'Graphics', gpu.activeDriverName);
 
     addSeparator(content, cw);
 

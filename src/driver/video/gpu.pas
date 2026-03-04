@@ -138,6 +138,9 @@ begin
     for i := 0 to DriverCount - 1 do begin
         if strings.stringEquals(Drivers[i].Name, name) then begin
             Drivers[i].Available := true;
+            { If no driver is active yet, default to this one }
+            if ActiveName = nil then
+                ActiveName := name;
             syslog.log('GPU', 'Driver now available: ');
             syslog.writestringln(name);
             pop_trace;
