@@ -24,7 +24,7 @@ interface
 uses
     tracer,
     //progs
-    base64_prog, md5sum, dhclient, vbeinfo;
+    base64_prog, md5sum, dhclient, vbeinfo, meminfo;
 
 { Initialize all baked-in programs }
 procedure init();
@@ -40,6 +40,7 @@ begin
     tracer.push_trace('progmanager.dhclient.init');
     dhclient.init();
     vbeinfo.init();
+    meminfo.init();
 end;
 
 end.
