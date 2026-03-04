@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # compile_lvgl.sh — Download LVGL v9.2 source and compile into lib/liblvgl.a
 # Clone & compile in /tmp (fast container-local fs).
-# Copy source + objects to /lvgl (host mount) for debugging.
+# Cache liblvgl.a on host mount (/code/lvgl/) to skip rebuild.
 set -e
 
 LVGL_VERSION="v9.2.2"
@@ -10,6 +10,7 @@ LVGL_DIR="/tmp/lvgl"
 OBJ_DIR="/tmp/lvgl_obj"
 CONF_DIR="$(pwd)/lvglh"
 OUT_DIR="$(pwd)/lib"
+CACHE_DIR="/code/lvgl"
 
 CC="gcc"
 CFLAGS="-m32 -march=i686 -ffreestanding \
@@ -25,6 +26,17 @@ echo "======================="
 echo " "
 echo "Compiling LVGL..."
 echo " "
+
+# If cached liblvgl.a exists on host mount, just copy it and skip everything
+if [ -f "${CACHE_DIR}/liblvgl.a" ]; then
+    echo "Found cached liblvgl.a in ${CACHE_DIR}, copying to ${OUT_DIR}..."
+    cp "${CACHE_DIR}/liblvgl.a" "${OUT_DIR}/liblvgl.a"
+    echo "(Delete lvgl/liblvgl.a to force a full rebuild.)"
+    echo " "
+    echo "LVGL compilation complete (cached)."
+    echo " "
+    exit 0
+fi
 
 # Clone LVGL into /tmp (container-local)
 rm -rf "$LVGL_DIR"
@@ -105,12 +117,14 @@ else
     echo "No custom LVGL files in lvglh/."
 fi
 
-# Copy source + objects to /lvgl host mount for debugging
-echo "Copying LVGL source and objects to host mount..."
-mkdir /code/lvgl 2>/dev/null || true
-rm -rf /code/lvgl/* /code/lvgl/.[!.]* /code/lvgl/..?* 2>/dev/null || true
-cp -a "$LVGL_DIR/src" /code/lvgl/src
-cp -a "$OBJ_DIR" /code/lvgl/obj
+# Cache liblvgl.a and source to host mount for next build
+echo "Caching LVGL to host mount..."
+mkdir -p "$CACHE_DIR"
+rm -rf ${CACHE_DIR}/* ${CACHE_DIR}/.[!.]* ${CACHE_DIR}/..?* 2>/dev/null || true
+cp "${OUT_DIR}/liblvgl.a" "${CACHE_DIR}/liblvgl.a"
+cp -a "$LVGL_DIR/src" "${CACHE_DIR}/src"
+cp -a "$LVGL_DIR"/*.h "${CACHE_DIR}/" 2>/dev/null || true
+cp -a "$OBJ_DIR" "${CACHE_DIR}/obj"
 echo "Done."
 
 echo " "
