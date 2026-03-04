@@ -67,7 +67,8 @@ uses
      hashmap, vfs,
      video, vesa, doublebuffer, color, lvgl, desktop, uidebug,
      vterminal,
-     graphicsrefresh, usbhotplug;
+     graphicsrefresh, usbhotplug,
+     fifo, cfifo, cfifols, lifo, circ, minh, maxh, prio;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
@@ -271,6 +272,14 @@ begin
      usbhub.UnitTest;
      usb_keyboard.UnitTest;
      usb_mouse.UnitTest;
+     fifo.UnitTest;
+     cfifo.UnitTest;
+     cfifols.UnitTest;
+     lifo.UnitTest;
+     circ.UnitTest;
+     minh.UnitTest;
+     maxh.UnitTest;
+     prio.UnitTest;
 
      { Register timer-driven tasks }
      graphicsrefresh.init;
