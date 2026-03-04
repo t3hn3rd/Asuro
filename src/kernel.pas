@@ -74,23 +74,6 @@ procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
 implementation
 
-procedure terminal_command_meminfo(params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
-begin
-    push_trace('kernel.terminal_command_meminfo');
-
-    stdio.bufWriteStr(stdout_buf, 'Lower Memory = ');
-    stdio.bufWriteInt(stdout_buf, multibootinfo^.mem_lower);
-    stdio.bufWriteStrLn(stdout_buf, 'KB');
-    stdio.bufWriteStr(stdout_buf, 'Higher Memory = ');
-    stdio.bufWriteInt(stdout_buf, multibootinfo^.mem_upper);
-    stdio.bufWriteStrLn(stdout_buf, 'KB');
-    stdio.bufWriteStr(stdout_buf, 'Total Memory = ');
-    stdio.bufWriteInt(stdout_buf, ((multibootinfo^.mem_upper + 1000) div 1024) + 1);
-    stdio.bufWriteStrLn(stdout_buf, 'MB');
-
-    pop_trace;
-end;
-
 procedure terminal_command_bsod(params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
 begin
     push_trace('kernel.terminal_command_bsod');
@@ -183,7 +166,6 @@ begin
 
      { Stdio Init }
      stdio.init();
-     stdio.registerCommand('MEMINFO', @terminal_command_meminfo, 'Print Simple Memory Information.');
      stdio.registerCommand('BSOD', @terminal_command_bsod, 'Force a Panic Screen.');
 
      tss.init();

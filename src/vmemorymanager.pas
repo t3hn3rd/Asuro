@@ -159,20 +159,14 @@ end;
 
 function map_page(page_number : uint16; block : uint16) : boolean;
 var
-    addr  : ubit20;
-    page  : uint16;
     rldpd : uint32;
 
 begin
     push_trace('vmemorymanager.map_page');
-    map_page:= false; 
-    PageDirectory^[page_number].Present:= true;
-    addr:= block;
-    PageDirectory^[page_number].Address:= addr SHL 10;
-    PageDirectory^[page_number].PageSize:= true;
-    PageDirectory^[page_number].Writable:= true;
-    map_page:= map_page_ex(page_number, block, PageDirectory);
-    rldpd:= uint32(PageDirectory) - KERNEL_VIRTUAL_BASE;
+    { Delegate to map_page_ex — no redundant direct PDE writes }
+    map_page := map_page_ex(page_number, block, PageDirectory);
+    { Reload CR3 to flush TLB }
+    rldpd := uint32(PageDirectory) - KERNEL_VIRTUAL_BASE;
     asm
         mov eax, rldpd
         mov CR3, eax
@@ -201,14 +195,15 @@ var
 
 begin
     push_trace('vmemorymanager.new_page');
-    new_page:= false;
+    new_page := false;
     if not PageDirectory^[page_number].Present then begin
         if not PageDirectory^[page_number].Reserved then begin
-            block:= pmemorymanager.new_block(uint32(PageDirectory));
-            if block < 2 then begin
-                GPF;
+            block := pmemorymanager.new_block(uint32(PageDirectory));
+            if block = 0 then begin
+                { OOM — PMM has no free blocks. Return false gracefully. }
+                syslog.logln('VMM', 'ERROR: new_page failed — PMM OOM.');
             end else begin
-                new_page:= map_page(page_number, block);
+                new_page := map_page(page_number, block);
             end;
         end;
     end;
@@ -216,17 +211,15 @@ begin
 end;
 
 function page_mappable(page_number : uint16) : boolean;
-var
-    block : uint16;
-
 begin
     push_trace('vmemorymanager.page_mappable');
-    page_mappable:= false;
+    page_mappable := false;
     if not PageDirectory^[page_number].Present then begin
         if not PageDirectory^[page_number].Reserved then begin
-            page_mappable:= true;
+            page_mappable := true;
         end;
     end;
+    pop_trace;
 end;
 
 function new_page_at_address(address : uint32) : boolean;
@@ -243,14 +236,25 @@ end;
 procedure free_page(page_number : uint16);
 var
     block : uint16;
+    vaddr : uint32;
 
 begin
     push_trace('vmemorymanager.free_page');
     if PageDirectory^[page_number].Present then begin
-        block:= PageDirectory^[page_number].Address;
+        { Recover block index: Address stores (block SHL 10), so SHR 10 gives block }
+        block := PageDirectory^[page_number].Address SHR 10;
+        { Clear the PDE before invalidating }
+        PageDirectory^[page_number].Present    := false;
+        PageDirectory^[page_number].Writable   := false;
+        PageDirectory^[page_number].PageSize   := false;
+        PageDirectory^[page_number].Address    := 0;
+        { Invalidate TLB for this virtual address (invlpg needs a virtual addr) }
+        vaddr := uint32(page_number) SHL 22;
         asm
-            invlpg [page_number]
+            mov eax, vaddr
+            invlpg [eax]
         end;
+        { Return physical block to PMM }
         pmemorymanager.free_block(block, uint32(PageDirectory));
     end else begin
         GPF;
