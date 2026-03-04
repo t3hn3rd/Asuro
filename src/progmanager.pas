@@ -43,7 +43,6 @@ begin
     tracer.push_trace('progmanager.init');
 
     { Register commands from provider units }
-    stdio.registerCommand('MEMINFO', @kernel.terminal_command_meminfo, 'Print Simple Memory Information.');
     stdio.registerCommand('BSOD', @kernel.terminal_command_bsod, 'Force a Panic Screen.');
     stdio.registerCommand('CPU', @cpu.Terminal_Command_CPU, 'CPU Info.');
     stdio.registerCommand('DEV', @drivermanagement.terminal_command_dev, 'Driver Management Interface.');
