@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# compile_wasuro.sh — Pull Wasuro WASM runtime source into /wasuro
+# compile_wasuro.sh — Pull Wasuro WASM runtime source into wasuro/
 # Clones the repo (sparse, src/wasm only) and copies the Pascal sources
-# into /code/wasuro so the FPC build can reference them via -Fu.
+# into $PWD/wasuro so the FPC build can reference them via -Fu.
 set -e
 
 WASURO_REPO="https://gitea.spexeah.com/Spexeah/Wasuro.git"
 WASURO_BRANCH="develop"
 WASURO_TMP="/tmp/wasuro"
-WASURO_OUT="/code/wasuro"
+WASURO_OUT="$(pwd)/wasuro"
 
 echo " "
 echo "======================="
@@ -28,7 +28,7 @@ git clone --depth 1 --branch "${WASURO_BRANCH}" --filter=blob:none --sparse \
     "${WASURO_REPO}" "${WASURO_TMP}" 2>&1
 cd "$WASURO_TMP"
 git sparse-checkout set src/wasm 2>&1
-cd /code
+cd -
 
 echo "Copying src/wasm to ${WASURO_OUT}..."
 rm -rf "$WASURO_OUT"
