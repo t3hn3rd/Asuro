@@ -104,6 +104,10 @@ function GetDirectories(Handle : uint32; Path : pchar) : PHashMap;
 function PathValid(Path : pchar) : TIsPathValid;
 function changeDirectory(Path : pchar) : TIsPathValid;
 function getWorkingDirectory : pchar;
+function makeAbsolutePathFrom(Path : pchar; BaseDir : pchar) : pchar;
+function resolvePathFrom(Path : pchar; BaseDir : pchar) : TIsPathValid;
+function GetDirectoryListingFrom(Path : pchar; BaseDir : pchar) : PHashMap;
+function changeDirectoryFrom(Path : pchar; BaseDir : pchar; var NewDir : pchar) : TIsPathValid;
 
 //VFS Functions
 function newVirtualDirectory(Path : pchar) : TError;
@@ -608,6 +612,67 @@ begin
     tracer.push_trace('vfs.getWorkingDirectory.exit');
 end;
 
+function makeAbsolutePathFrom(Path : pchar; BaseDir : pchar) : pchar;
+var
+    AbsPath  : pchar;
+    TempPath : pchar;
+begin
+    if Path[0] = '/' then
+        AbsPath := stringCopy(Path)
+    else begin
+        if BaseDir[StringSize(BaseDir)-1] <> '/' then
+            TempPath := StringConcat(BaseDir, '/')
+        else
+            TempPath := stringCopy(BaseDir);
+        AbsPath := StringConcat(TempPath, Path);
+        kfree(void(TempPath));
+    end;
+    makeAbsolutePathFrom := AbsPath;
+end;
+
+function resolvePathFrom(Path : pchar; BaseDir : pchar) : TIsPathValid;
+var
+    TempPath : pchar;
+    AbsPath  : pchar;
+begin
+    TempPath := makeAbsolutePathFrom(Path, BaseDir);
+    AbsPath := evaluatePath(TempPath);
+    kfree(void(TempPath));
+    resolvePathFrom := PathValid(AbsPath);
+    kfree(void(AbsPath));
+end;
+
+function GetDirectoryListingFrom(Path : pchar; BaseDir : pchar) : PHashMap;
+var
+    TempPath : pchar;
+    AbsPath  : pchar;
+begin
+    TempPath := makeAbsolutePathFrom(Path, BaseDir);
+    AbsPath := evaluatePath(TempPath);
+    kfree(void(TempPath));
+    GetDirectoryListingFrom := GetDirectoryListing(AbsPath);
+    kfree(void(AbsPath));
+end;
+
+function changeDirectoryFrom(Path : pchar; BaseDir : pchar; var NewDir : pchar) : TIsPathValid;
+var
+    TempPath : pchar;
+    AbsPath  : pchar;
+    Validity : TIsPathValid;
+begin
+    TempPath := makeAbsolutePathFrom(Path, BaseDir);
+    AbsPath := evaluatePath(TempPath);
+    kfree(void(TempPath));
+    Validity := PathValid(AbsPath);
+    if Validity = pvDirectory then
+        NewDir := AbsPath
+    else begin
+        NewDir := nil;
+        kfree(void(AbsPath));
+    end;
+    changeDirectoryFrom := Validity;
+end;
+
 { Terminal Commands }
 
 procedure VFS_COMMAND_PUSHD(params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
@@ -746,11 +811,8 @@ begin
     //outputln('VFS', makeRelative('/test/mydisk/mything', '/test/mydisk'));
     //while true do begin end;
 
-    { Register Terminal Commands }
-    stdio.registerCommand('LS',      @VFS_COMMAND_LS,    'List directory contents.');
-    stdio.registerCommand('CD',      @VFS_COMMAND_CD,    'Set working directory.');
-    stdio.registerCommand('PUSHD',   @VFS_COMMAND_PUSHD, 'Push the working directory.');
-    stdio.registerCommand('POPD',    @VFS_COMMAND_POPD,  'Pop the working directory.');
+    { LS, CD, PUSHD, POPD are now handled as per-terminal builtins
+      in vterminal.pas so each terminal has its own working directory. }
 
     //ht:= PHashMap(Root^.Reference);
     //hashmap.add(ht, 'VDirectory', void(newDummyObject(otVDIRECTORY)));

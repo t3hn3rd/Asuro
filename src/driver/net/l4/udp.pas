@@ -25,7 +25,7 @@ uses
     lmemorymanager,
     nettypes, netutils,
     ipv4, net,
-    util;
+    tracer, util;
 
 procedure register();
 function bind(bindContext : PUDPBindContext) : TUDPError;
@@ -71,6 +71,7 @@ begin
             nullend:= true;
         end;
         pseudoBuffer:= kalloc(sizeof(TUDPPseudoHeader) + pseudoSize);
+        push_trace('udp.CalculateChecksum');
         pseudoBuffer8:= puint8(pseudoBuffer);
         pseudoBuffer16:= puint16(pseudoBuffer);
         pseudoBuffer32:= puint32(pseudoBuffer);
@@ -118,6 +119,7 @@ var
 
 
 begin
+    push_trace('udp.send');
     if udpContext <> nil then begin
         size:= p_len + sizeof(TUDPHeader);
         buffer:= kalloc(size);
@@ -152,6 +154,7 @@ var
     context : PUDPBindContext;
 
 begin
+    push_trace('udp.bind');
     result:= tueGenericError;
     if bindContext <> nil then begin
         if Ports[bindContext^.port] = nil then begin
@@ -174,6 +177,7 @@ var
     context : PUDPBindContext;
 
 begin
+    push_trace('udp.unbind');
     result:= tueGenericError;
     if bindContext <> nil then begin
         context:= Ports[bindContext^.port];
@@ -203,6 +207,7 @@ var
     size    : uint16;
 
 begin
+    push_trace('udp.ProcessPacket');
     header:= PUDPHeader(p_data);
     if Ports[switchendian16(header^.DstPort)] <> nil then begin
         context:= PUDPPacketContext(kalloc(sizeof(TUDPPacketContext)));
@@ -245,6 +250,8 @@ var
     Checksum      : uint32;
 
 begin
+    push_trace('udp.register');
+    writeToLogLn('        L4/UDP: register');
     for i:=0 to 65535 do begin
         Ports[i]:= nil;
     end;

@@ -72,6 +72,8 @@ procedure register_driver(Driver_Name : PChar; DeviceID : PDeviceIdentifier; Loa
 procedure register_driver_ex(Driver_Name : PChar; DeviceID : PDeviceIdentifier; Load_Callback : TDriverLoadCallback; force_load : boolean);
 procedure register_device(Device_Name : PChar; DeviceID : PDeviceIdentifier; ptr : void);
 
+procedure terminal_command_dev(Params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
+
 var
     Root : PDriverRegistration = nil;
     Dev  : PDeviceRegistration = nil;
@@ -328,10 +330,6 @@ end;
 procedure init;
 begin
     push_trace('driver_management.init');
-    stdio.registerCommand('DEV', @terminal_command_dev, 'Driver Management Interface.');
-    //stdio.registerCommand('DRIVERSEX', @terminal_command_driversex, 'List all available drivers.');
-    //stdio.registerCommand('DRIVERS', @terminal_command_drivers, 'List loaded drivers.');
-    //stdio.registerCommand('DEVICES', @terminal_command_devices, 'List devices.');
     pop_trace;
 end;
 

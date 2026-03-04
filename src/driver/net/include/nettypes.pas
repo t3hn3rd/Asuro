@@ -203,6 +203,171 @@ type
     end;
     PUDPPseudoHeader = ^TUDPPseudoHeader;
 
+    { TCP }
+    TTCPError = (tteOK, ttePortInUse, tteConnectionRefused, tteConnectionReset,
+                 tteConnectionTimeout, tteConnectionClosing, tteInvalidState,
+                 tteNoMemory, tteGenericError);
+
+    TTCPState = (tssClosed, tssListen, tssSynSent, tssSynReceived,
+                 tssEstablished, tssFinWait1, tssFinWait2, tssCloseWait,
+                 tssClosing, tssLastAck, tssTimeWait);
+
+    TTCPEvent = (tteConnected, tteDataReceived, tteDisconnected, tteReset, tteTimeout);
+
+    PTCPHeader = ^TTCPHeader;
+    TTCPHeader = packed record
+        SrcPort    : uint16;
+        DstPort    : uint16;
+        SeqNum     : uint32;
+        AckNum     : uint32;
+        DataOff_Flags : uint16;  { 4-bit data offset, 3-bit reserved, 9 flag bits }
+        Window     : uint16;
+        Checksum   : uint16;
+        UrgentPtr  : uint16;
+    end;
+
+    TTCPPseudoHeader = packed record
+        Source_IP       : uint32;
+        Destination_IP  : uint32;
+        Reserved        : uint8;
+        Protocol        : uint8;
+        TCP_Length      : uint16;
+    end;
+    PTCPPseudoHeader = ^TTCPPseudoHeader;
+
+    { Out-of-order segment entry }
+    PTCPOOOEntry = ^TTCPOOOEntry;
+    TTCPOOOEntry = record
+        SeqNum  : uint32;
+        Data    : void;
+        DataLen : uint16;
+        Valid   : boolean;
+    end;
+
+    { Forward declaration pointer types }
+    PTCB = ^TTCB;
+    PTCPSocket = ^TTCPSocket;
+
+    TTCPReceiveCallback = procedure(socket : PTCPSocket; p_data : void; p_len : uint16);
+    TTCPEventCallback   = procedure(socket : PTCPSocket; event : TTCPEvent);
+
+    TTCPSocket = record
+        TCB       : PTCB;
+        OnReceive : TTCPReceiveCallback;
+        OnEvent   : TTCPEventCallback;
+        UserData  : void;
+        OwnerPID  : uint32;           { PID of owning process, 0 if none }
+    end;
+
+    TTCB = record
+        { Connection identity (4-tuple) }
+        LocalIP    : TIPv4Address;
+        RemoteIP   : TIPv4Address;
+        RemoteMAC  : TMACAddress;
+        LocalPort  : uint16;
+        RemotePort : uint16;
+
+        { Connection state }
+        State : TTCPState;
+
+        { Send sequence variables }
+        SND_UNA : uint32;  { oldest unacknowledged sequence number }
+        SND_NXT : uint32;  { next sequence number to send }
+        SND_WND : uint16;  { send window (from remote) }
+        ISS     : uint32;  { initial send sequence number }
+
+        { Receive sequence variables }
+        RCV_NXT : uint32;  { next expected sequence number }
+        RCV_WND : uint16;  { receive window we advertise }
+        IRS     : uint32;  { initial receive sequence number }
+
+        { Buffers }
+        SendBuf     : void;      { send buffer }
+        SendBufSize : uint16;    { total send buffer capacity }
+        SendBufLen  : uint16;    { bytes currently in send buffer }
+        RecvBuf     : void;      { receive buffer }
+        RecvBufSize : uint16;    { total receive buffer capacity }
+        RecvBufLen  : uint16;    { bytes currently in receive buffer }
+
+        { Retransmission }
+        RetransTimer  : uint32;  { ticks until next retransmission }
+        RetransCount  : uint8;   { number of retransmissions done }
+        LastSendTime  : uint32;  { tick when last segment was sent }
+        RetransBuf    : void;    { retransmission buffer (last sent segment) }
+        RetransBufLen : uint16;  { length of retransmission buffer }
+
+        { Timers }
+        TimeWaitTimer : uint32;  { ticks remaining in TIME_WAIT }
+
+        { User socket }
+        Socket : PTCPSocket;
+
+        { FIN tracking }
+        FIN_Seq : uint32;  { sequence number of our FIN }
+
+        { Active flag }
+        Active : boolean;
+
+        { Phase 2: Listen backlog }
+        BacklogQueue : void;    { PDList of pending SYN_RECEIVED TCBs (listen sockets only) }
+        BacklogMax   : uint8;   { max backlog size }
+        BacklogCount : uint8;   { current backlog count }
+
+        { Phase 3: Delayed ACK }
+        DelayedAckPending : boolean;  { whether a delayed ACK is pending }
+        DelayedAckTimer   : uint32;   { ticks until delayed ACK fires }
+
+        { Phase 3: Nagle }
+        NagleEnabled : boolean;  { whether Nagle's algorithm is active }
+
+        { Phase 3: RTT estimation (Jacobson/Karels) }
+        SRTT         : uint32;  { smoothed RTT in ticks (scaled x8) }
+        RTTVAR       : uint32;  { RTT variance in ticks (scaled x4) }
+        RTO          : uint32;  { current retransmission timeout in ticks }
+        RTTMeasuring : boolean; { whether we're timing an outgoing segment }
+        RTTSeqNum    : uint32;  { sequence number being timed }
+        RTTStartTime : uint32;  { tick count when timing started }
+
+        { Phase 3: Congestion control }
+        CongWnd  : uint32;  { congestion window in bytes }
+        SSThresh : uint32;  { slow start threshold }
+
+        { Phase 3: Zero-window probing }
+        ZWPTimer : uint32;  { zero-window probe timer }
+        ZWPCount : uint8;   { zero-window probe count }
+
+        { Phase 3: MSS option }
+        RemoteMSS : uint16;  { MSS advertised by remote (from SYN options) }
+
+        { Phase 3: Keep-alive }
+        KeepAliveEnabled : boolean;
+        KeepAliveTimer   : uint32;  { ticks until next keep-alive probe }
+        KeepAliveCount   : uint8;   { keep-alive probes sent without response }
+        KeepAliveIdle    : uint32;  { ticks of idle time before first probe }
+
+        { Phase 3: Out-of-order reassembly }
+        OOOSegments : array[0..3] of TTCPOOOEntry;  { up to 4 OOO segments }
+    end;
+
+    PTCPConnectContext = ^TTCPConnectContext;
+    TTCPConnectContext = record
+        RemoteIP   : TIPv4Address;
+        RemotePort : uint16;
+        LocalPort  : uint16;
+        OnReceive  : TTCPReceiveCallback;
+        OnEvent    : TTCPEventCallback;
+        UserData   : void;
+    end;
+
+    PTCPListenContext = ^TTCPListenContext;
+    TTCPListenContext = record
+        LocalPort  : uint16;
+        OnReceive  : TTCPReceiveCallback;
+        OnEvent    : TTCPEventCallback;
+        UserData   : void;
+        Backlog    : uint8;
+    end;
+
     { DHCP }
     TDHCPHeader = packed record
         Message_Type            : uint8;

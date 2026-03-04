@@ -25,7 +25,7 @@ uses
     tracer, lmemorymanager,
     util, lists,
     net, nettypes, netutils,
-    eth2, ipv4;
+    eth2, ipv4, stdio;
 
 type
     PARPCacheRecord = ^TARPCacheRecord;
@@ -41,11 +41,12 @@ procedure sendGratuitous;
 procedure sendRequest(ip : puint8);
 procedure send(hType : uint16; pType : uint16; op : uint16; p_context : PPacketContext);
 function resolveIP(ip : puint8) : puint8;
+procedure terminal_command_arp(Params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
 
 implementation
 
 uses
-    stdio, strings;
+    strings;
 
 var
     Registered : Boolean = false;
@@ -96,6 +97,7 @@ var
     hSize, pSize : uint8;
 
 begin
+    push_trace('arp.send');
     if p_context <> nil then begin
         buf:= kalloc(sizeof(TARPHeader));
         hdr:= PARPHeader(buf);
@@ -135,6 +137,8 @@ var
     context : PPacketContext;
 
 begin
+     push_trace('arp.sendGratuitous');
+     writeToLogLn('      L3/ARP: sendGratuitous');
      context:= newPacketContext;
      CopyIPv4(@getIPv4Config^.Address[0], @context^.IP.Destination[0]);
      CopyIPv4(@getIPv4Config^.Address[0], @context^.IP.Source[0]);
@@ -150,6 +154,7 @@ var
     CacheRecord : PARPCacheRecord;
 
 begin
+     push_trace('arp.sendRequestGateway');
      context:= newPacketContext;
      CacheRecord:= findCacheRecordByIP(@getIPv4Config^.Gateway[0]);
      if CacheRecord <> nil then begin
@@ -168,6 +173,8 @@ var
     CacheRecord : PARPCacheRecord;
 
 begin
+     push_trace('arp.sendRequest');
+     writeToLogLn('      L3/ARP: sendRequest');
      context:= newPacketContext;
      CopyIPv4(ip, @context^.IP.Destination[0]);
      CopyIPv4(@getIPv4Config^.Address[0], @context^.IP.Source[0]);
@@ -184,6 +191,7 @@ var
     CacheRecord : PARPCacheRecord;
 
 begin
+    push_trace('arp.resolveIP');
     CacheRecord:= findCacheRecordByIP(ip);
     resolveIP:= nil;
     if CacheRecord = nil then begin
@@ -203,6 +211,7 @@ var
     context      : PPacketContext;
 
 begin
+    push_trace('arp.recv');
     { Get our converted Header }
     Header:= PARPHeader(p_data);
     AHeader.Hardware_Type:= (Header^.Hardware_Type_Hi SHL 8) + Header^.Hardware_Type_Lo;
@@ -298,9 +307,9 @@ procedure register;
 begin
     push_trace('arp.register');
     if not Registered then begin
+        writeToLogLn('      L3/ARP: register');
         Cache:= LL_New(sizeof(TARPCacheRecord));
         eth2.registerTypePromisc($0806, @recv);
-        stdio.registerCommand('ARP', @terminal_command_arp, 'Get ARP Table.');
         Registered:= true;
     end;
     pop_trace;

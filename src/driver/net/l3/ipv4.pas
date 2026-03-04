@@ -26,17 +26,18 @@ uses
     util, strings,
     net, nettypes, netutils,
     lists,
-    eth2;
+    eth2, stdio;
 
 procedure send(p_data : void; p_len : uint16; p_context : PPacketContext);
 procedure registerProtocol(Protocol_ID : uint8; recv_callback : TRecvCallback);
 function  getIPv4Config : PIPv4Configuration;
 procedure register;
+procedure terminal_command_ifconfig(params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
 
 implementation
 
 uses
-    arp, stdio;
+    arp;
 
 var
     Registered : Boolean = false;
@@ -46,7 +47,9 @@ var
 
 function  getIPv4Config : PIPv4Configuration;
 begin
+    push_trace('ipv4.getIPv4Config');
     getIPv4Config:= @Config;
+    pop_trace;
 end;
 
 procedure send(p_data : void; p_len : uint16; p_context : PPacketContext);
@@ -57,6 +60,7 @@ var
     buffer : void;
 
 begin
+    push_trace('ipv4.send');
     inc(CurrentID);
     Header.version:= 4;
     Header.header_len:= 5;
@@ -84,6 +88,7 @@ begin
     memcpy(uint32(p_data), uint32(Buffer) + (Header.header_len * 4), p_len);
     eth2.send(Buffer, (Header.header_len * 4) + p_len, $0800, p_context);
     kfree(Buffer);
+    pop_trace;
 end;
 
 procedure recv(p_data : void; p_len : uint16; p_context : PPacketContext);
@@ -95,6 +100,7 @@ var
     len     : uint16;
 
 begin
+    push_trace('ipv4.recv');
     Header:= PIPV4Header(p_data);
     AHeader.version:= Header^.version;
     AHeader.header_len:= Header^.header_len;
@@ -195,6 +201,7 @@ var
 begin
     push_trace('ipv4.register');
     if not Registered then begin
+        writeToLogLn('      L3/IPv4: register');
         for i:=0 to 255 do begin
             Protocols[i]:= nil;
         end;
@@ -205,7 +212,6 @@ begin
         end;
         Config.UP:= false;
         eth2.registerType($0800, @recv);
-        stdio.registerCommand('IFCONFIG', @terminal_command_ifconfig, 'Configure Network Settings.');
         Registered:= true;
     end;
     pop_trace;
@@ -213,6 +219,7 @@ end;
 
 procedure registerProtocol(Protocol_ID : uint8; recv_callback : TRecvCallback);
 begin
+    push_trace('ipv4.registerProtocol');
     register;
     if Protocols[Protocol_ID] = nil then Protocols[Protocol_ID]:= recv_callback;
     pop_trace;

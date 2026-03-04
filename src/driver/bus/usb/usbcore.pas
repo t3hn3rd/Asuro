@@ -158,6 +158,9 @@ procedure init;
 { Unit Tests }
 procedure UnitTest;
 
+{ Terminal command }
+procedure terminal_command_usb(params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
+
 implementation
 
 { ========================= Globals ========================= }
@@ -1100,7 +1103,6 @@ begin
     CompletionHookCount := 0;
     for i := 0 to MAX_COMPLETION_HOOKS - 1 do
         CompletionHooks[i] := nil;
-    stdio.registerCommand('USB', @terminal_command_usb, 'USB subsystem information.');
     syslog.logln('USB Core', 'INIT END.');
     pop_trace;
 end;

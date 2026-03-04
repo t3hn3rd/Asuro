@@ -31,6 +31,7 @@ type
 
 procedure init;
 procedure registerISR(INT_N : uint8; callback : TISRHook);
+procedure dispatchHooks(INT_N : uint8);
 
 implementation
 
@@ -48,6 +49,15 @@ begin
     end;
     if i <= MAX_HOOKS then begin
         Hooks[INT_N][i]:= callback;
+    end;
+end;
+
+procedure dispatchHooks(INT_N : uint8);
+var
+    i : uint8;
+begin
+    for i:=0 to MAX_HOOKS do begin
+        if Hooks[INT_N][i] <> nil then Hooks[INT_N][i]();
     end;
 end;
 

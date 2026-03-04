@@ -35,6 +35,8 @@ uses
      drivermanagement,
      scheduler,
      progmanager,
+     processmanager, contextswitcher,
+     testprocs,
      PCI,
      strings,
      USB,
@@ -227,6 +229,9 @@ begin
      { Init Progs }
      progmanager.init();
 
+     { Init process manager }
+     processmanager.init;
+
      { Seed RNG }
      rand.srand((getDateTime.Seconds SHL 24) OR (getDateTime.Minutes SHL 16) OR (getDateTime.Hours SHL 8) OR (getDateTime.Day));
 
@@ -266,6 +271,12 @@ begin
      { Register timer-driven tasks }
      graphicsrefresh.init;
      usbhotplug.init;
+
+     { Spawn test processes (before preemption is enabled) }
+     //testprocs.init;
+
+     { Enable preemptive context switching (replaces ISR_32) }
+     contextswitcher.init;
 
      { All work is now driven by timer interrupts — idle the CPU }
      syslog.logln('KERNEL', 'All tasks registered. Halting into idle.');

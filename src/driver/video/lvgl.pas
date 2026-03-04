@@ -467,6 +467,7 @@ const
     LV_KEY_PREV      = 11;
     LV_KEY_HOME      = 2;
     LV_KEY_END       = 3;
+    LV_KEY_CTRLC     = 128;   { Ctrl+C — terminal interrupt }
 
     { Arc mode }
     LV_ARC_MODE_NORMAL      = 0;
@@ -1858,6 +1859,16 @@ begin
     { Ctrl+D toggles debug overlay (press only) }
     if key_info.is_down_code and key_info.CTRL_DOWN and (key_info.key_code = ord('d')) then begin
         uidebug.toggle;
+        exit;
+    end;
+
+    { Ctrl+C — inject custom key code so focused terminal can handle it }
+    if key_info.is_down_code and key_info.CTRL_DOWN and (key_info.key_code = ord('c')) then begin
+        next_head := (kb_head + 1) mod KB_BUF_SIZE;
+        if next_head <> kb_tail then begin
+            kb_buf[kb_head] := LV_KEY_CTRLC;
+            kb_head := next_head;
+        end;
         exit;
     end;
 
