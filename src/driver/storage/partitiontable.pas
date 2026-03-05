@@ -13,13 +13,13 @@ unit partitiontable;
 interface
 
 uses
-    console,
+    syslog,
     lists,
     lmemorymanager,
     rtc,
     storagemanagement,
     strings,
-    terminal,
+    stdio,
     tracer,
     util;
 

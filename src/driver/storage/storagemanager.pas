@@ -16,11 +16,13 @@ uses
     lmemorymanager,
     MBR,
     storagetypes,
+    syslog,
     tracer,
     util;
 
 var
     storageDevices : PDList;
+    nextDeviceId   : uint32;
 
 procedure init();
 procedure register_device(device : PStorage_Device);
@@ -40,17 +42,32 @@ procedure storage_write(device : PStorage_Device; addr : uint32; sectors : uint3
 
 implementation
 
+uses
+    volumemanager;
+
 procedure init();
 begin
     push_trace('StorageManager.init');
     storageDevices := DL_New(sizeof(TStorage_Device));
+    nextDeviceId := 0;
 end;
 
 procedure register_device(device : PStorage_Device);
+var
+    storedDev : PStorage_Device;
 begin
     push_trace('StorageManager.register_device');
+    device^.id := nextDeviceId;
+    nextDeviceId := nextDeviceId + 1;
     DL_Add(storageDevices);
     DL_Set(storageDevices, DL_Size(storageDevices) - 1, puint32(device));
+
+    { Get pointer to the DList copy so volumes reference the canonical device }
+    storedDev := PStorage_Device(DL_Get(storageDevices, DL_Size(storageDevices) - 1));
+
+    { Discover partitions and register volumes automatically }
+    if storedDev^.maxSectorCount > 0 then
+        volumemanager.discover_volumes(storedDev);
 end;
 
 function get_device_list() : PDList;
@@ -115,10 +132,7 @@ begin
         device^.readCallbackAsync(device, addr, sectors, buffer, @storage_sync_done, @done);
         asm sti end;
         while done = 0 do begin
-            asm hlt end;  { sleep until next interrupt }
-            { Fallback: if the hardware IRQ was not delivered through the PIC,
-              poll the driver inline so the completion fires. }
-            if (done = 0) and (device^.pollCallback <> nil) then
+            if device^.pollCallback <> nil then
                 device^.pollCallback();
         end;
     end else if device^.readCallback <> nil then
@@ -134,8 +148,7 @@ begin
         device^.writeCallbackAsync(device, addr, sectors, buffer, @storage_sync_done, @done);
         asm sti end;
         while done = 0 do begin
-            asm hlt end;  { sleep until next interrupt }
-            if (done = 0) and (device^.pollCallback <> nil) then
+            if device^.pollCallback <> nil then
                 device^.pollCallback();
         end;
     end else if device^.writeCallback <> nil then

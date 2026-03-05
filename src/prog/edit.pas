@@ -15,12 +15,12 @@ unit edit;
 interface
 
 uses
-    console,
+    syslog,
     keyboard,
     lmemorymanager,
     storagetypes,
     strings,
-    terminal,
+    stdio,
     tracer,
     util,
     vfs;
@@ -38,7 +38,7 @@ const
     TAB_SIZE   = 4;
 
 var
-    Handle     : HWND = 0;
+    Handle     : uint32 = 0;
     Colors     : uint32;
     ColorsHL   : uint32;
     ColorsST   : uint32;
@@ -109,7 +109,7 @@ var
 begin
     tracer.push_trace('edit.SaveFile.enter');
     if FilePath = nil then begin
-        console.writestringlnWND('No file path. Use: EDIT <path>', getTerminalHWND());
+        syslog.writestringln('No file path. Use: EDIT <path>');
         exit;
     end;
 
@@ -145,7 +145,7 @@ begin
         tracer.push_trace('edit.SaveFile.closeFile');
         vfs.CloseFile(fHandle);
         Dirty := false;
-        console.writestringlnWND('File saved.', getTerminalHWND());
+        syslog.writestringln('File saved.');
     end else begin
         { Try write-only for new file }
         tracer.push_trace('edit.SaveFile.openWO');
@@ -156,9 +156,9 @@ begin
             tracer.push_trace('edit.SaveFile.closeFileNew');
             vfs.CloseFile(fHandle);
             Dirty := false;
-            console.writestringlnWND('File saved.', getTerminalHWND());
+            syslog.writestringln('File saved.');
         end else begin
-            console.writestringlnWND('Error saving file.', getTerminalHWND());
+            syslog.writestringln('Error saving file.');
         end;
     end;
 
@@ -184,7 +184,7 @@ begin
     fHandle := vfs.OpenFile(FilePath, omReadOnly, wmRewrite, false, @fError);
     tracer.push_trace('edit.LoadFile.openFile.done');
     if (fHandle = 0) or (fError <> eNone) then begin
-        console.writestringlnWND('New file.', getTerminalHWND());
+        syslog.writestringln('New file.');
         exit;
     end;
 
@@ -200,7 +200,7 @@ begin
 
     if bytesRead = 0 then begin
         kfree(puint32(buf));
-        console.writestringlnWND('Empty file.', getTerminalHWND());
+        syslog.writestringln('Empty file.');
         exit;
     end;
 
@@ -237,7 +237,7 @@ begin
     CurY := 0;
     ScrollY := 0;
     Dirty := false;
-    console.writestringlnWND('File loaded.', getTerminalHWND());
+    syslog.writestringln('File loaded.');
     tracer.push_trace('edit.LoadFile.exit');
 end;
 
@@ -258,12 +258,12 @@ begin
     if Handle = 0 then exit;
     if not Active then exit;
 
-    clearWNDEx(Handle, Colors);
+    { stub: clearWNDEx };
 
     { Draw text area }
     for row := 0 to TEXT_ROWS - 1 do begin
         lineIdx := ScrollY + row;
-        setCursorPosWND(0, row, Handle);
+        { stub: setCursorPosWND };
 
         if lineIdx < NumLines then begin
             for col := 0 to ED_WIDTH - 1 do begin
@@ -277,58 +277,58 @@ begin
                 else
                     attr := Colors;
 
-                writecharexWND(ch, attr, Handle);
+                { stub: writecharexWND };
             end;
         end else begin
             { Past end of file }
-            writecharexWND('~', Colors, Handle);
+            { stub: writecharexWND };
         end;
     end;
 
     { Draw status bar — limit to ED_WIDTH-1 chars so the cursor
       never advances past WND_W on the last row, which would
       trigger _newlineWND and scroll the entire buffer up. }
-    setCursorPosWND(0, TEXT_ROWS, Handle);
+    { stub: setCursorPosWND };
     stCol := 0;
 
     { ' ESC:Exit ^S:Save' }
-    if stCol < ED_WIDTH - 1 then begin writecharexWND(' ', ColorsST, Handle); inc(stCol); end;
-    if stCol < ED_WIDTH - 1 then begin writecharexWND('E', ColorsST, Handle); inc(stCol); end;
-    if stCol < ED_WIDTH - 1 then begin writecharexWND('S', ColorsST, Handle); inc(stCol); end;
-    if stCol < ED_WIDTH - 1 then begin writecharexWND('C', ColorsST, Handle); inc(stCol); end;
-    if stCol < ED_WIDTH - 1 then begin writecharexWND(':', ColorsST, Handle); inc(stCol); end;
-    if stCol < ED_WIDTH - 1 then begin writecharexWND('E', ColorsST, Handle); inc(stCol); end;
-    if stCol < ED_WIDTH - 1 then begin writecharexWND('x', ColorsST, Handle); inc(stCol); end;
-    if stCol < ED_WIDTH - 1 then begin writecharexWND('i', ColorsST, Handle); inc(stCol); end;
-    if stCol < ED_WIDTH - 1 then begin writecharexWND('t', ColorsST, Handle); inc(stCol); end;
-    if stCol < ED_WIDTH - 1 then begin writecharexWND(' ', ColorsST, Handle); inc(stCol); end;
-    if stCol < ED_WIDTH - 1 then begin writecharexWND('^', ColorsST, Handle); inc(stCol); end;
-    if stCol < ED_WIDTH - 1 then begin writecharexWND('S', ColorsST, Handle); inc(stCol); end;
-    if stCol < ED_WIDTH - 1 then begin writecharexWND(':', ColorsST, Handle); inc(stCol); end;
-    if stCol < ED_WIDTH - 1 then begin writecharexWND('S', ColorsST, Handle); inc(stCol); end;
-    if stCol < ED_WIDTH - 1 then begin writecharexWND('a', ColorsST, Handle); inc(stCol); end;
-    if stCol < ED_WIDTH - 1 then begin writecharexWND('v', ColorsST, Handle); inc(stCol); end;
-    if stCol < ED_WIDTH - 1 then begin writecharexWND('e', ColorsST, Handle); inc(stCol); end;
+    if stCol < ED_WIDTH - 1 then begin { stub: writecharexWND }; inc(stCol); end;
+    if stCol < ED_WIDTH - 1 then begin { stub: writecharexWND }; inc(stCol); end;
+    if stCol < ED_WIDTH - 1 then begin { stub: writecharexWND }; inc(stCol); end;
+    if stCol < ED_WIDTH - 1 then begin { stub: writecharexWND }; inc(stCol); end;
+    if stCol < ED_WIDTH - 1 then begin { stub: writecharexWND }; inc(stCol); end;
+    if stCol < ED_WIDTH - 1 then begin { stub: writecharexWND }; inc(stCol); end;
+    if stCol < ED_WIDTH - 1 then begin { stub: writecharexWND }; inc(stCol); end;
+    if stCol < ED_WIDTH - 1 then begin { stub: writecharexWND }; inc(stCol); end;
+    if stCol < ED_WIDTH - 1 then begin { stub: writecharexWND }; inc(stCol); end;
+    if stCol < ED_WIDTH - 1 then begin { stub: writecharexWND }; inc(stCol); end;
+    if stCol < ED_WIDTH - 1 then begin { stub: writecharexWND }; inc(stCol); end;
+    if stCol < ED_WIDTH - 1 then begin { stub: writecharexWND }; inc(stCol); end;
+    if stCol < ED_WIDTH - 1 then begin { stub: writecharexWND }; inc(stCol); end;
+    if stCol < ED_WIDTH - 1 then begin { stub: writecharexWND }; inc(stCol); end;
+    if stCol < ED_WIDTH - 1 then begin { stub: writecharexWND }; inc(stCol); end;
+    if stCol < ED_WIDTH - 1 then begin { stub: writecharexWND }; inc(stCol); end;
+    if stCol < ED_WIDTH - 1 then begin { stub: writecharexWND }; inc(stCol); end;
 
     { Dirty flag }
     if Dirty then begin
-        if stCol < ED_WIDTH - 1 then begin writecharexWND(' ', ColorsST, Handle); inc(stCol); end;
-        if stCol < ED_WIDTH - 1 then begin writecharexWND('[', ColorsST, Handle); inc(stCol); end;
-        if stCol < ED_WIDTH - 1 then begin writecharexWND('+', ColorsST, Handle); inc(stCol); end;
-        if stCol < ED_WIDTH - 1 then begin writecharexWND(']', ColorsST, Handle); inc(stCol); end;
+        if stCol < ED_WIDTH - 1 then begin { stub: writecharexWND }; inc(stCol); end;
+        if stCol < ED_WIDTH - 1 then begin { stub: writecharexWND }; inc(stCol); end;
+        if stCol < ED_WIDTH - 1 then begin { stub: writecharexWND }; inc(stCol); end;
+        if stCol < ED_WIDTH - 1 then begin { stub: writecharexWND }; inc(stCol); end;
     end else begin
-        if stCol < ED_WIDTH - 1 then begin writecharexWND(' ', ColorsST, Handle); inc(stCol); end;
-        if stCol < ED_WIDTH - 1 then begin writecharexWND(' ', ColorsST, Handle); inc(stCol); end;
-        if stCol < ED_WIDTH - 1 then begin writecharexWND(' ', ColorsST, Handle); inc(stCol); end;
-        if stCol < ED_WIDTH - 1 then begin writecharexWND(' ', ColorsST, Handle); inc(stCol); end;
+        if stCol < ED_WIDTH - 1 then begin { stub: writecharexWND }; inc(stCol); end;
+        if stCol < ED_WIDTH - 1 then begin { stub: writecharexWND }; inc(stCol); end;
+        if stCol < ED_WIDTH - 1 then begin { stub: writecharexWND }; inc(stCol); end;
+        if stCol < ED_WIDTH - 1 then begin { stub: writecharexWND }; inc(stCol); end;
     end;
 
     { File path (truncated if needed) }
     if (FilePath <> nil) and (stCol < ED_WIDTH - 1) then begin
-        writecharexWND(' ', ColorsST, Handle); inc(stCol);
+        { stub: writecharexWND }; inc(stCol);
         i := 0;
         while (stCol < ED_WIDTH - 1) and (FilePath[i] <> char(0)) do begin
-            writecharexWND(FilePath[i], ColorsST, Handle);
+            { stub: writecharexWND };
             inc(stCol);
             inc(i);
         end;
@@ -337,12 +337,12 @@ begin
     { Position info }
     posStr := intToString(CurY + 1);
     if (posStr <> nil) and (stCol < ED_WIDTH - 1) then begin
-        if stCol < ED_WIDTH - 1 then begin writecharexWND(' ', ColorsST, Handle); inc(stCol); end;
-        if stCol < ED_WIDTH - 1 then begin writecharexWND('L', ColorsST, Handle); inc(stCol); end;
-        if stCol < ED_WIDTH - 1 then begin writecharexWND(':', ColorsST, Handle); inc(stCol); end;
+        if stCol < ED_WIDTH - 1 then begin { stub: writecharexWND }; inc(stCol); end;
+        if stCol < ED_WIDTH - 1 then begin { stub: writecharexWND }; inc(stCol); end;
+        if stCol < ED_WIDTH - 1 then begin { stub: writecharexWND }; inc(stCol); end;
         i := 0;
         while (stCol < ED_WIDTH - 1) and (posStr[i] <> char(0)) do begin
-            writecharexWND(posStr[i], ColorsST, Handle);
+            { stub: writecharexWND };
             inc(stCol);
             inc(i);
         end;
@@ -351,12 +351,12 @@ begin
 
     posStr := intToString(CurX + 1);
     if (posStr <> nil) and (stCol < ED_WIDTH - 1) then begin
-        if stCol < ED_WIDTH - 1 then begin writecharexWND(' ', ColorsST, Handle); inc(stCol); end;
-        if stCol < ED_WIDTH - 1 then begin writecharexWND('C', ColorsST, Handle); inc(stCol); end;
-        if stCol < ED_WIDTH - 1 then begin writecharexWND(':', ColorsST, Handle); inc(stCol); end;
+        if stCol < ED_WIDTH - 1 then begin { stub: writecharexWND }; inc(stCol); end;
+        if stCol < ED_WIDTH - 1 then begin { stub: writecharexWND }; inc(stCol); end;
+        if stCol < ED_WIDTH - 1 then begin { stub: writecharexWND }; inc(stCol); end;
         i := 0;
         while (stCol < ED_WIDTH - 1) and (posStr[i] <> char(0)) do begin
-            writecharexWND(posStr[i], ColorsST, Handle);
+            { stub: writecharexWND };
             inc(stCol);
             inc(i);
         end;
@@ -365,7 +365,7 @@ begin
 
     { Pad remainder — stop 1 short of ED_WIDTH }
     while stCol < ED_WIDTH - 1 do begin
-        writecharexWND(' ', ColorsST, Handle);
+        { stub: writecharexWND };
         inc(stCol);
     end;
 end;
@@ -489,7 +489,7 @@ end;
 procedure OnKeyPressed(info : TKeyInfo);
 var
     i : uint32;
-    savedHandle : HWND;
+    savedHandle : uint32;
 begin
     if not Active then exit;
     if Handle = 0 then exit;
@@ -510,7 +510,7 @@ begin
         end;
         savedHandle := Handle;
         Handle := 0;
-        console.closeWindow(savedHandle);
+        { TODO: closeWindow };
         exit;
     end;
 
@@ -595,12 +595,12 @@ end;
 {  Command entry point                                                }
 { ------------------------------------------------------------------ }
 
-procedure Run(Params : PParamList);
+procedure Run(Params : PParamList; stdin_buf, stdout_buf, stderr_buf: POutBuf);
 begin
     tracer.push_trace('edit.run');
 
     if Handle <> 0 then begin
-        console.writestringlnWND('Editor is already open.', getTerminalHWND());
+        syslog.writestringln('Editor is already open.');
         exit;
     end;
 
@@ -623,14 +623,14 @@ begin
     end;
 
     { Open editor window }
-    Handle := console.newWindow(20, 10, ED_WIDTH, ED_HEIGHT, 'Edit');
-    console.registerEventHandler(Handle, EVENT_DRAW, void(@Draw));
-    console.registerEventHandler(Handle, EVENT_CLOSE, void(@OnClose));
-    console.registerEventHandler(Handle, EVENT_KEY_PRESSED, void(@OnKeyPressed));
+    Handle := 0 { TODO: newWindow };
+    { TODO: registerEventHandler }
+    { TODO: registerEventHandler }
+    { TODO: registerEventHandler }
 
     Active := true;
 
-    console.writestringlnWND('Editor opened. ^S to save, ESC to close.', getTerminalHWND());
+    syslog.writestringln('Editor opened. ^S to save, ESC to close.');
 end;
 
 { ------------------------------------------------------------------ }
@@ -640,10 +640,10 @@ end;
 procedure init;
 begin
     tracer.push_trace('edit.init');
-    Colors   := combineColors($FFFF, $0000);  { white on black }
-    ColorsHL := combineColors($0000, $FFFF);  { black on white - cursor }
-    ColorsST := combineColors($0000, $07E0);  { black on green - status bar }
-    terminal.registerCommand('EDIT', @Run, 'Simple text editor');
+    Colors   := $FFFF0000;  { white on black }
+    ColorsHL := $0000FFFF;  { black on white - cursor }
+    ColorsST := $000007E0;  { black on green - status bar }
+    stdio.registerCommand('EDIT', @Run, 'Simple text editor');
 end;
 
 end.

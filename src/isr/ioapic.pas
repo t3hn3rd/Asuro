@@ -17,7 +17,7 @@ interface
 uses
     util,
     lmemorymanager,
-    console;
+    syslog;
 
 { Initialise IOAPIC/LAPIC support — maps MMIO regions, ensures LAPIC
   is enabled.  Safe to call even if the hardware doesn't have an IOAPIC
@@ -88,11 +88,11 @@ begin
     { Probe: read IOAPIC version register — should return non-zero/non-$FF }
     ver := ioapic_read(IOAPIC_VER);
     if (ver = 0) or (ver = $FFFFFFFF) then begin
-        console.outputln('IOAPIC', 'Not detected — PCI interrupts rely on 8259 PIC.');
+        syslog.logln('IOAPIC', 'Not detected — PCI interrupts rely on 8259 PIC.');
         exit;
     end;
 
-    console.outputln('IOAPIC', 'Detected.');
+    syslog.logln('IOAPIC', 'Detected.');
 
     { Ensure the Local APIC is software-enabled (bit 8 of SVR).
       We set the spurious vector to $FF which is unused. }
@@ -101,7 +101,7 @@ begin
         svr := svr or $100;        { Enable APIC }
         svr := (svr and $FFFFFF00) or $FF; { Spurious vector = 0xFF }
         puint32(LAPIC_PHYS + LAPIC_SVR)^ := svr;
-        console.outputln('IOAPIC', 'LAPIC software-enabled.');
+        syslog.logln('IOAPIC', 'LAPIC software-enabled.');
     end;
 
     ioapic_present := true;
@@ -128,11 +128,11 @@ begin
     ioapic_write(IOAPIC_REDTBL + uint32(irq) * 2, lo);
     ioapic_write(IOAPIC_REDTBL + uint32(irq) * 2 + 1, 0);
 
-    console.output('IOAPIC', 'Routed IRQ ');
-    console.writeint(irq);
-    console.writestring(' -> vector ');
-    console.writeint(vector);
-    console.writestringln('');
+    syslog.log('IOAPIC', 'Routed IRQ ');
+    syslog.writeint(irq);
+    syslog.writestring(' -> vector ');
+    syslog.writeint(vector);
+    syslog.writestringln('');
 end;
 
 procedure lapic_eoi();

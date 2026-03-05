@@ -22,7 +22,7 @@ unit asfs;
 interface
 
 uses
-    console,
+    syslog,
     lists,
     lmemorymanager,
     rtc,
@@ -30,7 +30,7 @@ uses
     storagemanagement,
     storagemanager,
     strings,
-    terminal,
+    stdio,
     tracer,
     util;
 

@@ -23,7 +23,7 @@ unit vfs;
 interface
 
 uses
-    console,
+    syslog,
     hashmap,
     lists,
     lmemorymanager,
@@ -87,7 +87,7 @@ implementation
 
 uses
     filesystemmanager,
-    terminal,
+    stdio,
     util,
     volumemanager;
 
@@ -1132,7 +1132,7 @@ end;
 
 { Terminal Commands }
 
-procedure VFS_COMMAND_PUSHD(params : PParamList);
+procedure VFS_COMMAND_PUSHD(params : PParamList; stdin_buf, stdout_buf, stderr_buf: POutBuf);
 var
     Output : pchar;
     WD     : pchar;
@@ -1141,11 +1141,11 @@ begin
     WD:= StringCopy(CurrentDirectory);
     STRLL_Add(PushPopDirectory, WD);
     Output:= StringConcat(WD, ' saved to stack.');
-    WritestringlnWND(Output, getTerminalHWND);
+    syslog.writestringln(Output);
     kfree(void(Output));
 end;
 
-procedure VFS_COMMAND_POPD(params : PParamList);
+procedure VFS_COMMAND_POPD(params : PParamList; stdin_buf, stdout_buf, stderr_buf: POutBuf);
 var
     Output : pchar;
     WD     : pchar;
@@ -1155,16 +1155,16 @@ begin
         WD:= STRLL_Get(PushPopDirectory, STRLL_Size(PushPopDirectory)-1);
         if changeDirectory(WD) = pvDirectory then begin
             Output:= StringConcat(WD, ' popped from the stack.');
-            WritestringlnWND(Output, getTerminalHWND);
+            syslog.writestringln(Output);
             kfree(void(Output));
         end else begin
             Output:= StringConcat(WD, ' popped, but was invalid!');
-            WritestringlnWND(Output, getTerminalHWND);
+            syslog.writestringln(Output);
             kfree(void(Output));
         end;
         STRLL_Delete(PushPopDirectory, STRLL_Size(PushPopDirectory)-1);
     end else begin
-        WritestringlnWND('No working directory in the stack!', getTerminalHWND);
+        syslog.writestringln('No working directory in the stack!');
     end;
 end;
 
@@ -1201,7 +1201,7 @@ begin
     kfree(void(Map));
 end;
 
-procedure VFS_COMMAND_LS(params : PParamList);
+procedure VFS_COMMAND_LS(params : PParamList; stdin_buf, stdout_buf, stderr_buf: POutBuf);
 var
     Map      : PHashMap;
     Item     : PHashItem;
@@ -1222,30 +1222,29 @@ begin
             Item:= Map^.Table[i];
             while Item <> nil do begin
                 obj:= PVFSObject(Item^.Data);
-                console.writestringWND(' ', getTerminalHWND);
-                col:= console.combinecolors($FFFF, $0000);
+                syslog.writestring(' ');
                 case obj^.ObjectType of
-                    otVDIRECTORY : col:= console.combinecolors($1587, $0000);
-                    otDRIVE      : col:= console.combinecolors($F000, $0000);
-                    otDEVICE     : col:= console.combinecolors($FFFF, $F000);
-                    otVFILE      : col:= console.combinecolors($FFFF, $C018);
-                    otMOUNT      : col:= console.combinecolors($0000, $2638);
-                    otFILE       : col:= console.combinecolors($FFFF, $0000);
-                    otDIRECTORY  : col:= console.combinecolors($547F, $0000);
+                    otVDIRECTORY : col:= 0;
+                    otDRIVE      : col:= 0;
+                    otDEVICE     : col:= 0;
+                    otVFILE      : col:= 0;
+                    otMOUNT      : col:= 0;
+                    otFILE       : col:= 0;
+                    otDIRECTORY  : col:= 0;
                 end;
-                WritestringlnExWND(Item^.Key, col, getTerminalHWND);
+                syslog.writestringln(Item^.Key);
                 Item:= Item^.Next;
             end;
         end;
         if mapOwned then
             freeOwnedDirListing(Map);
     end else begin
-        writestringlnWND('An internal error occured!', getTerminalHWND);
+        syslog.writestringln('An internal error occured!');
     end;
     tracer.push_trace('vfs.VFS_COMMAND_LS.exit');
 end;
 
-procedure VFS_COMMAND_CD(params : PParamList);
+procedure VFS_COMMAND_CD(params : PParamList; stdin_buf, stdout_buf, stderr_buf: POutBuf);
 var
     Path : pchar;
     Temp1, Temp2 : pchar;
@@ -1271,14 +1270,14 @@ begin
         Result:= changeDirectory(Path);
         case Result of
             pvInvalid:begin
-                writestringWND('"', getTerminalHWND);
-                writestringWND(Path, getTerminalHWND);
-                writestringlnWND('" is not a valid path.', getTerminalHWND);
+                syslog.writestring('"');
+                syslog.writestring(Path);
+                syslog.writestringln('" is not a valid path.');
             end;
             pvFile:begin
-                writestringWND('"', getTerminalHWND);
-                writestringWND(Path, getTerminalHWND);
-                writestringlnWND('" is not a directory.', getTerminalHWND);
+                syslog.writestring('"');
+                syslog.writestring(Path);
+                syslog.writestringln('" is not a directory.');
             end;
         end;
         kfree(void(Path));
@@ -1287,7 +1286,7 @@ begin
 end;
 
 { MKDIR command: MKDIR <path> }
-procedure VFS_COMMAND_MKDIR(params : PParamList);
+procedure VFS_COMMAND_MKDIR(params : PParamList; stdin_buf, stdout_buf, stderr_buf: POutBuf);
 var
     Path     : pchar;
     AbsPath  : pchar;
@@ -1299,7 +1298,7 @@ var
 begin
     tracer.push_trace('vfs.VFS_COMMAND_MKDIR.enter');
     if ParamCount(params) < 1 then begin
-        writestringlnWND('Usage: MKDIR <path>', getTerminalHWND);
+        syslog.writestringln('Usage: MKDIR <path>');
         tracer.push_trace('vfs.VFS_COMMAND_MKDIR.exit');
         exit;
     end;
@@ -1308,15 +1307,15 @@ begin
 
     { Resolve the path into volume + parent directory + new directory name }
     if not ResolveFilePath(Path, PPStorage_Volume(@vol), PPChar(@dir), PPChar(@dirName)) then begin
-        writestringWND('Invalid path: ', getTerminalHWND);
-        writestringlnWND(Path, getTerminalHWND);
+        syslog.writestring('Invalid path: ');
+        syslog.writestringln(Path);
         kfree(void(Path));
         tracer.push_trace('vfs.VFS_COMMAND_MKDIR.exit');
         exit;
     end;
 
     if vol^.filesystem = nil then begin
-        writestringlnWND('Volume has no filesystem.', getTerminalHWND);
+        syslog.writestringln('Volume has no filesystem.');
         kfree(void(Path));
         kfree(void(dir));
         kfree(void(dirName));
@@ -1325,7 +1324,7 @@ begin
     end;
 
     if vol^.filesystem^.createDirCallback = nil then begin
-        writestringlnWND('Filesystem does not support creating directories.', getTerminalHWND);
+        syslog.writestringln('Filesystem does not support creating directories.');
         kfree(void(Path));
         kfree(void(dir));
         kfree(void(dirName));
@@ -1341,21 +1340,21 @@ begin
     errCode := TError(status^);
     case errCode of
         eNone:
-            writestringlnWND('Directory created.', getTerminalHWND);
+            syslog.writestringln('Directory created.');
         eDirectoryDoesNotExist: begin
-            writestringWND('Parent directory does not exist: ', getTerminalHWND);
-            writestringlnWND(dir, getTerminalHWND);
+            syslog.writestring('Parent directory does not exist: ');
+            syslog.writestringln(dir);
         end;
         eDirectoryAlreadyExists:
-            writestringlnWND('Directory already exists.', getTerminalHWND);
+            syslog.writestringln('Directory already exists.');
         eInvalidFileName:
-            writestringlnWND('Invalid directory name.', getTerminalHWND);
+            syslog.writestringln('Invalid directory name.');
         eDiskFull:
-            writestringlnWND('Disk is full.', getTerminalHWND);
+            syslog.writestringln('Disk is full.');
         eDirectoryFull:
-            writestringlnWND('Parent directory is full.', getTerminalHWND);
+            syslog.writestringln('Parent directory is full.');
     else
-        writestringlnWND('Failed to create directory.', getTerminalHWND);
+        syslog.writestringln('Failed to create directory.');
     end;
 
     kfree(puint32(status));
@@ -1366,7 +1365,7 @@ begin
 end;
 
 { RM command: RM <path> }
-procedure VFS_COMMAND_RM(params : PParamList);
+procedure VFS_COMMAND_RM(params : PParamList; stdin_buf, stdout_buf, stderr_buf: POutBuf);
 var
     Path    : pchar;
     vol     : PStorage_Volume;
@@ -1380,7 +1379,7 @@ var
 begin
     tracer.push_trace('vfs.VFS_COMMAND_RM.enter');
     if ParamCount(params) < 1 then begin
-        writestringlnWND('Usage: RM <file_path>', getTerminalHWND);
+        syslog.writestringln('Usage: RM <file_path>');
         tracer.push_trace('vfs.VFS_COMMAND_RM.exit');
         exit;
     end;
@@ -1388,15 +1387,15 @@ begin
     Path := StringCopy(GetParam(0, params));
 
     if not ResolveFilePath(Path, PPStorage_Volume(@vol), PPChar(@dir), PPChar(@fname)) then begin
-        writestringWND('Invalid path: ', getTerminalHWND);
-        writestringlnWND(Path, getTerminalHWND);
+        syslog.writestring('Invalid path: ');
+        syslog.writestringln(Path);
         kfree(void(Path));
         tracer.push_trace('vfs.VFS_COMMAND_RM.exit');
         exit;
     end;
 
     if vol^.filesystem = nil then begin
-        writestringlnWND('Volume has no filesystem.', getTerminalHWND);
+        syslog.writestringln('Volume has no filesystem.');
         kfree(void(Path));
         kfree(void(dir));
         kfree(void(fname));
@@ -1405,7 +1404,7 @@ begin
     end;
 
     if vol^.filesystem^.deleteFileCallback = nil then begin
-        writestringlnWND('Filesystem does not support file deletion.', getTerminalHWND);
+        syslog.writestringln('Filesystem does not support file deletion.');
         kfree(void(Path));
         kfree(void(dir));
         kfree(void(fname));
@@ -1433,17 +1432,17 @@ begin
     errCode := TError(status^);
     case errCode of
         eNone: begin
-            writestringWND('Deleted: ', getTerminalHWND);
-            writestringlnWND(fname, getTerminalHWND);
+            syslog.writestring('Deleted: ');
+            syslog.writestringln(fname);
         end;
         eFileDoesNotExist:
-            writestringlnWND('File not found.', getTerminalHWND);
+            syslog.writestringln('File not found.');
         ePermissionDenied:
-            writestringlnWND('Permission denied.', getTerminalHWND);
+            syslog.writestringln('Permission denied.');
         eNotADirectory:
-            writestringlnWND('Is a directory. Use RMDIR instead.', getTerminalHWND);
+            syslog.writestringln('Is a directory. Use RMDIR instead.');
     else
-        writestringlnWND('Failed to delete file.', getTerminalHWND);
+        syslog.writestringln('Failed to delete file.');
     end;
 
     kfree(puint32(status));
@@ -1454,7 +1453,7 @@ begin
 end;
 
 { RMDIR command: RMDIR <path> }
-procedure VFS_COMMAND_RMDIR(params : PParamList);
+procedure VFS_COMMAND_RMDIR(params : PParamList; stdin_buf, stdout_buf, stderr_buf: POutBuf);
 var
     Path    : pchar;
     vol     : PStorage_Volume;
@@ -1467,7 +1466,7 @@ var
 begin
     tracer.push_trace('vfs.VFS_COMMAND_RMDIR.enter');
     if ParamCount(params) < 1 then begin
-        writestringlnWND('Usage: RMDIR <path>', getTerminalHWND);
+        syslog.writestringln('Usage: RMDIR <path>');
         tracer.push_trace('vfs.VFS_COMMAND_RMDIR.exit');
         exit;
     end;
@@ -1475,15 +1474,15 @@ begin
     Path := StringCopy(GetParam(0, params));
 
     if not ResolveFilePath(Path, PPStorage_Volume(@vol), PPChar(@dir), PPChar(@dirName)) then begin
-        writestringWND('Invalid path: ', getTerminalHWND);
-        writestringlnWND(Path, getTerminalHWND);
+        syslog.writestring('Invalid path: ');
+        syslog.writestringln(Path);
         kfree(void(Path));
         tracer.push_trace('vfs.VFS_COMMAND_RMDIR.exit');
         exit;
     end;
 
     if vol^.filesystem = nil then begin
-        writestringlnWND('Volume has no filesystem.', getTerminalHWND);
+        syslog.writestringln('Volume has no filesystem.');
         kfree(void(Path));
         kfree(void(dir));
         kfree(void(dirName));
@@ -1492,7 +1491,7 @@ begin
     end;
 
     if vol^.filesystem^.deleteDirCallback = nil then begin
-        writestringlnWND('Filesystem does not support directory deletion.', getTerminalHWND);
+        syslog.writestringln('Filesystem does not support directory deletion.');
         kfree(void(Path));
         kfree(void(dir));
         kfree(void(dirName));
@@ -1520,19 +1519,19 @@ begin
     errCode := TError(status^);
     case errCode of
         eNone: begin
-            writestringWND('Removed directory: ', getTerminalHWND);
-            writestringlnWND(dirName, getTerminalHWND);
+            syslog.writestring('Removed directory: ');
+            syslog.writestringln(dirName);
         end;
         eDirectoryDoesNotExist:
-            writestringlnWND('Directory not found.', getTerminalHWND);
+            syslog.writestringln('Directory not found.');
         eNotADirectory:
-            writestringlnWND('Not a directory.', getTerminalHWND);
+            syslog.writestringln('Not a directory.');
         eDirectoryNotEmpty:
-            writestringlnWND('Directory is not empty.', getTerminalHWND);
+            syslog.writestringln('Directory is not empty.');
         ePermissionDenied:
-            writestringlnWND('Permission denied.', getTerminalHWND);
+            syslog.writestringln('Permission denied.');
     else
-        writestringlnWND('Failed to remove directory.', getTerminalHWND);
+        syslog.writestringln('Failed to remove directory.');
     end;
 
     kfree(puint32(status));
@@ -1543,7 +1542,7 @@ begin
 end;
 
 { MOUNT command: MOUNT <vol_index> <path> [p] }
-procedure VFS_COMMAND_MOUNT(params : PParamList);
+procedure VFS_COMMAND_MOUNT(params : PParamList; stdin_buf, stdout_buf, stderr_buf: POutBuf);
 var
     volIdx    : uint32;
     volIdxStr : pchar;
@@ -1558,24 +1557,24 @@ var
 begin
     tracer.push_trace('vfs.VFS_COMMAND_MOUNT.enter');
     if ParamCount(params) < 2 then begin
-        writestringlnWND('Usage: MOUNT <vol_index> <path> [p]', getTerminalHWND);
-        writestringlnWND('  vol_index  Volume number (see VOL LIST)', getTerminalHWND);
-        writestringlnWND('  path       VFS mount point, e.g. /mnt/data', getTerminalHWND);
-        writestringlnWND('  p          Persistent: remount on boot', getTerminalHWND);
+        syslog.writestringln('Usage: MOUNT <vol_index> <path> [p]');
+        syslog.writestringln('  vol_index  Volume number (see VOL LIST)');
+        syslog.writestringln('  path       VFS mount point, e.g. /mnt/data');
+        syslog.writestringln('  p          Persistent: remount on boot');
         tracer.push_trace('vfs.VFS_COMMAND_MOUNT.exit');
         exit;
     end;
 
     volIdx := stringToInt(GetParam(0, params));
     if volIdx >= volumemanager.get_volume_count() then begin
-        writestringlnWND('Invalid volume index.', getTerminalHWND);
+        syslog.writestringln('Invalid volume index.');
         tracer.push_trace('vfs.VFS_COMMAND_MOUNT.exit');
         exit;
     end;
 
     vol := volumemanager.get_volume(volIdx);
     if vol = nil then begin
-        writestringlnWND('Volume not found.', getTerminalHWND);
+        syslog.writestringln('Volume not found.');
         tracer.push_trace('vfs.VFS_COMMAND_MOUNT.exit');
         exit;
     end;
@@ -1586,7 +1585,7 @@ begin
     end;
 
     if vol^.filesystem = nil then begin
-        writestringlnWND('Volume has no detected filesystem. Format it first.', getTerminalHWND);
+        syslog.writestringln('Volume has no detected filesystem. Format it first.');
         tracer.push_trace('vfs.VFS_COMMAND_MOUNT.exit');
         exit;
     end;
@@ -1603,14 +1602,14 @@ begin
     res := mountVolume(path, vol);
     case res of
         pvRegistered: begin
-            writestringWND('Mounted volume ', getTerminalHWND);
+            syslog.writestring('Mounted volume ');
             volIdxStr := intToString(volIdx);
-            writestringWND(volIdxStr, getTerminalHWND);
+            syslog.writestring(volIdxStr);
             kfree(void(volIdxStr));
-            writestringWND(' (', getTerminalHWND);
-            writestringWND(vol^.filesystem^.sName, getTerminalHWND);
-            writestringWND(') at ', getTerminalHWND);
-            writestringlnWND(path, getTerminalHWND);
+            syslog.writestring(' (');
+            syslog.writestring(vol^.filesystem^.sName);
+            syslog.writestring(') at ');
+            syslog.writestringln(path);
 
             { Write asr.mnt to volume root if persistent }
             if persist then begin
@@ -1631,19 +1630,19 @@ begin
                     kfree(padBuf);
 
                     if status^ = 0 then
-                        writestringlnWND('Persistent mount saved (asr.mnt).', getTerminalHWND)
+                        syslog.writestringln('Persistent mount saved (asr.mnt).')
                     else
-                        writestringlnWND('Warning: could not write asr.mnt.', getTerminalHWND);
+                        syslog.writestringln('Warning: could not write asr.mnt.');
 
                     kfree(puint32(status));
                     kfree(void(dirEntry.fileName));
                 end else begin
-                    writestringlnWND('Warning: filesystem is read-only, cannot persist.', getTerminalHWND);
+                    syslog.writestringln('Warning: filesystem is read-only, cannot persist.');
                 end;
             end;
         end;
     else
-        writestringlnWND('Failed to mount volume.', getTerminalHWND);
+        syslog.writestringln('Failed to mount volume.');
     end;
 
     kfree(void(path));
@@ -1651,7 +1650,7 @@ begin
 end;
 
 { UMOUNT command: UMOUNT <path> }
-procedure VFS_COMMAND_UMOUNT(params : PParamList);
+procedure VFS_COMMAND_UMOUNT(params : PParamList; stdin_buf, stdout_buf, stderr_buf: POutBuf);
 var
     path    : pchar;
     obj     : PVFSObject;
@@ -1661,7 +1660,7 @@ var
 begin
     tracer.push_trace('vfs.VFS_COMMAND_UMOUNT.enter');
     if ParamCount(params) < 1 then begin
-        writestringlnWND('Usage: UMOUNT <path>', getTerminalHWND);
+        syslog.writestringln('Usage: UMOUNT <path>');
         tracer.push_trace('vfs.VFS_COMMAND_UMOUNT.exit');
         exit;
     end;
@@ -1670,15 +1669,15 @@ begin
 
     obj := GetObjectFromPath(path);
     if obj = nil then begin
-        writestringWND('Path not found: ', getTerminalHWND);
-        writestringlnWND(path, getTerminalHWND);
+        syslog.writestring('Path not found: ');
+        syslog.writestringln(path);
         kfree(void(path));
         tracer.push_trace('vfs.VFS_COMMAND_UMOUNT.exit');
         exit;
     end;
 
     if obj^.ObjectType <> otDRIVE then begin
-        writestringlnWND('Path is not a mount point.', getTerminalHWND);
+        syslog.writestringln('Path is not a mount point.');
         kfree(void(path));
         tracer.push_trace('vfs.VFS_COMMAND_UMOUNT.exit');
         exit;
@@ -1695,8 +1694,8 @@ begin
     kfree(void(obj^.ObjectName));
     kfree(void(obj));
 
-    writestringWND('Unmounted ', getTerminalHWND);
-    writestringlnWND(path, getTerminalHWND);
+    syslog.writestring('Unmounted ');
+    syslog.writestringln(path);
 
     kfree(void(path));
     tracer.push_trace('vfs.VFS_COMMAND_UMOUNT.exit');
@@ -1750,17 +1749,20 @@ begin
 
         mountVolume(mountPath, vol);
 
-        console.writestring('VFS: Mounted ');
-        console.writestring(vol^.filesystem^.sName);
-        console.writestring(' volume at ');
-        console.writestringln(mountPath);
+        syslog.writestring('VFS: Mounted ');
+        syslog.writestring(vol^.filesystem^.sName);
+        syslog.writestring(' volume at ');
+        syslog.writestringln(mountPath);
 
         kfree(void(volName));
         kfree(void(prefix));
         kfree(void(mountPath));
 
-        { Check for persistent mount file asr.mnt }
-        if vol^.filesystem^.readCallback <> nil then begin
+        { Check for persistent mount file asr.mnt — only on writable filesystems
+          since read-only media (ISO9660) can never contain an ASR.MNT written by us,
+          and attempting to read from a broken/unsupported device can hang. }
+        if (vol^.filesystem^.writeCallback <> nil) and
+           (vol^.filesystem^.readCallback <> nil) then begin
             dataBuf  := puint32(kalloc(4));
             dataBuf^ := 0;
             dataSize := puint32(kalloc(4));
@@ -1828,15 +1830,15 @@ begin
     newVirtualDirectory('/cfg');
 
     { Register Terminal Commands }
-    terminal.registerCommand('LS',      @VFS_COMMAND_LS,    'List directory contents.');
-    terminal.registerCommand('CD',      @VFS_COMMAND_CD,    'Set working directory.');
-    terminal.registerCommand('PUSHD',   @VFS_COMMAND_PUSHD, 'Push the working directory.');
-    terminal.registerCommand('POPD',    @VFS_COMMAND_POPD,  'Pop the working directory.');
-    terminal.registerCommand('MKDIR',   @VFS_COMMAND_MKDIR, 'Create a directory.');
-    terminal.registerCommand('RM',      @VFS_COMMAND_RM,    'Delete a file.');
-    terminal.registerCommand('RMDIR',   @VFS_COMMAND_RMDIR, 'Delete a directory.');
-    terminal.registerCommand('MOUNT',   @VFS_COMMAND_MOUNT, 'Mount a volume at a path.');
-    terminal.registerCommand('UMOUNT',  @VFS_COMMAND_UMOUNT,'Unmount a mounted path.');
+    stdio.registerCommand('LS',      @VFS_COMMAND_LS,    'List directory contents.');
+    stdio.registerCommand('CD',      @VFS_COMMAND_CD,    'Set working directory.');
+    stdio.registerCommand('PUSHD',   @VFS_COMMAND_PUSHD, 'Push the working directory.');
+    stdio.registerCommand('POPD',    @VFS_COMMAND_POPD,  'Pop the working directory.');
+    stdio.registerCommand('MKDIR',   @VFS_COMMAND_MKDIR, 'Create a directory.');
+    stdio.registerCommand('RM',      @VFS_COMMAND_RM,    'Delete a file.');
+    stdio.registerCommand('RMDIR',   @VFS_COMMAND_RMDIR, 'Delete a directory.');
+    stdio.registerCommand('MOUNT',   @VFS_COMMAND_MOUNT, 'Mount a volume at a path.');
+    stdio.registerCommand('UMOUNT',  @VFS_COMMAND_UMOUNT,'Unmount a mounted path.');
 
     tracer.push_trace('vfs.init.exit');
 end;

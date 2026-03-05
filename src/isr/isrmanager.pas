@@ -35,7 +35,7 @@ procedure dispatchHooks(INT_N : uint8);
 
 implementation
 uses 
-console, ioapic;
+syslog, ioapic;
 
 var
     Hooks : TISRHookArray;

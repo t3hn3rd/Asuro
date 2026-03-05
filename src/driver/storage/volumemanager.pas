@@ -13,7 +13,7 @@ unit volumemanager;
 interface
 
 uses
-    console,
+    syslog,
     filesystemmanager,
     lists,
     lmemorymanager,
@@ -21,7 +21,7 @@ uses
     storagemanager,
     storagetypes,
     strings,
-    terminal,
+    stdio,
     tracer,
     util;
 

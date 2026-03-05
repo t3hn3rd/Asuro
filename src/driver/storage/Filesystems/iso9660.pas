@@ -12,7 +12,7 @@ unit iso9660;
 interface
 
 uses
-    console,
+    syslog,
     filesystemmanager,
     lists,
     lmemorymanager,

@@ -20,7 +20,7 @@
 unit AHCITypes;
 interface
 uses
-    console,
+    syslog,
     drivermanagement,
     drivertypes,
     idetypes,

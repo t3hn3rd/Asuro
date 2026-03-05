@@ -21,15 +21,15 @@ procedure init();
 implementation
 
 uses
-    console,
     filesystemmanager,
     lists,
     lmemorymanager,
     MBR,
+    stdio,
     storagemanager,
     storagetypes,
     strings,
-    terminal,
+    syslog,
     tracer,
     volumemanager;
 
@@ -37,7 +37,7 @@ uses
 
 function wnd : uint32;
 begin
-    wnd := getTerminalHWND;
+    wnd := 0;
 end;
 
 function str2int(s : pchar) : uint32;
@@ -61,22 +61,22 @@ end;
 
 procedure print(s : pchar);
 begin
-    console.writestringWND(s, wnd);
+    syslog.writestring(s);
 end;
 
 procedure println(s : pchar);
 begin
-    console.writestringlnWND(s, wnd);
+    syslog.writestringln(s);
 end;
 
 procedure printint(v : uint32);
 begin
-    console.writeintWND(v, wnd);
+    syslog.writeint(v);
 end;
 
 procedure printhex(v : uint32);
 begin
-    console.writehexWND(v, wnd);
+    syslog.writehex(v);
 end;
 
 procedure printsize(bytes : uint32);
@@ -540,7 +540,7 @@ end;
 
 { ---------- Main dispatcher ---------- }
 
-procedure command_part(params : PParamList);
+procedure command_part(params : PParamList; stdin_buf, stdout_buf, stderr_buf: POutBuf);
 var
     subcmd : pchar;
 begin
@@ -581,7 +581,7 @@ end;
 
 procedure init();
 begin
-    terminal.registerCommand('PART', @command_part, 'Partition management.');
+    stdio.registerCommand('PART', @command_part, 'Partition management.');
 end;
 
 end.

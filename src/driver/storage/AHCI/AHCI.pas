@@ -24,7 +24,7 @@ interface
 
 uses
     AHCITypes,
-    console,
+    syslog,
     drivermanagement,
     drivertypes,
     idetypes,
@@ -36,8 +36,7 @@ uses
     storagemanager,
     storagetypes,
     util,
-    vmemorymanager,
-    volumemanager;
+    vmemorymanager;
 
 var
     ahciControllers : PDList;
@@ -74,7 +73,7 @@ procedure init();
 var
     devID : TDeviceIdentifier;
 begin
-    console.writestringln('AHCI: Registering driver');
+    syslog.writestringln('AHCI: Registering driver');
     devID.bus:= biPCI;
     devID.id0:= idANY;
     devID.id1:= $00000001;
@@ -128,7 +127,7 @@ procedure reset_port(port : PHBA_Port);
 var
   timeout : uint32;
 begin
-    // console.writestringln('AHCI: Performing a full port reset.');
+    // syslog.writestringln('AHCI: Performing a full port reset.');
 
     // Stop the port: clear ST (bit 0)
     port^.cmd := port^.cmd and not $1;
@@ -138,7 +137,7 @@ begin
     while (port^.cmd and $8000) <> 0 do begin
         timeout := timeout + 1;
         if timeout > 100000 then begin
-            console.writestringln('AHCI: Port reset timeout (CR not clearing).');
+            syslog.writestringln('AHCI: Port reset timeout (CR not clearing).');
             break;
         end;
     end;
@@ -157,7 +156,7 @@ begin
     while (port^.sata_status and $F) <> 3 do begin
         timeout := timeout + 1;
         if timeout > 100000 then begin
-            console.writestringln('AHCI: Port reset timeout (waiting for device ready).');
+            syslog.writestringln('AHCI: Port reset timeout (waiting for device ready).');
             break;
         end;
     end;
@@ -172,7 +171,7 @@ end;
 // var
 //   ssts, serr, timeout : uint32;
 // begin
-//   console.writestringln('AHCI: Performing a full port reset.');
+//   syslog.writestringln('AHCI: Performing a full port reset.');
 
 //     port^.cmd := port^.cmd and not $1;
 
@@ -181,7 +180,7 @@ end;
 //     while (port^.cmd and $8000) <> 0 do begin
 //         timeout := timeout + 1;
 //         if timeout > 1000000 then begin
-//             console.writestringln('AHCI: Port reset timeout.');
+//             syslog.writestringln('AHCI: Port reset timeout.');
 //             break;
 //         end;
 //     end;
@@ -223,7 +222,12 @@ begin
             device := PAHCI_Device(@controller^.devices[i]);
             device^.port := port;
 
-            //check device type
+            //NEEED TO STOP the port before doing anything
+            stop_port(port);
+            reset_port(port);
+
+            { Read device signature AFTER reset so the device has re-sent
+              its D2H Register FIS with the correct signature. }
             case port^.signature of
                 SATA_SIG_ATA: begin
                     device^.device_type := SATA;
@@ -238,10 +242,6 @@ begin
                     device^.device_type := PM;
                 end;
             end;
-
-            //NEEED TO STOP the port before doing anything
-            stop_port(port);
-            reset_port(port);
             //allocate memory for the command list and ensure it is aligned to 1024 bytes
             // Need 32 command headers. Allocate extra (alignment-1) bytes for alignment.
             cmd_list_base := kalloc(sizeof(THBA_CMD_HEADER) * 32 + 1023);
@@ -291,7 +291,7 @@ begin
             end else if (device^.device_type = ATAPI) then begin
                 identify_device(controller, i, true);
             end else begin
-                console.writestringln('AHCI: Unsupported device type');
+                syslog.writestringln('AHCI: Unsupported device type');
             end;
 
             controller^.mio^.int_status := $FFFFFFFF;
@@ -360,8 +360,8 @@ begin
 
     //waut for the port to be ready, bit 7 in the TFD register and bit 3 tfd
     while (device^.port^.tfd and $88) <> 0 do begin
-        // console.writestring('AHCI: tfd: ');
-        // console.writehexln(device^.port^.tfd);
+        // syslog.writestring('AHCI: tfd: ');
+        // syslog.writehexln(device^.port^.tfd);
     end;
 
     // Issue the command by setting bit 0 in the port's Command Issue register.
@@ -369,7 +369,7 @@ begin
     cmd := cmd or $1;
     device^.port^.cmd_issue := cmd;
 
-    // console.writestringln('AHCI: Sent identify command');
+    // syslog.writestringln('AHCI: Sent identify command');
 
 
     // Wait for command completion with a timeout.
@@ -383,34 +383,34 @@ begin
 
       timeout := timeout + 1;
       if timeout > 100 then begin
-          console.writestringln('AHCI: IDENTIFY command timeout');
+          syslog.writestringln('AHCI: IDENTIFY command timeout');
           break;
       end;
       if (tfd and $1) <> 0 then break;  // ERR bit set
       psleep(1);
     until ((device^.port^.cmd_issue and $1) = 0);  // Wait until slot 0 is cleared
 
-    // console.writestringln('AHCI: Command complete');
+    // syslog.writestringln('AHCI: Command complete');
 
     // Check if the command slot is still set (command didn't complete)
     if (device^.port^.cmd_issue and $1) <> 0 then begin
-        console.writestringln('AHCI: Error sending identify command');
+        syslog.writestringln('AHCI: Error sending identify command');
 
         // Check the error register for more information
-        console.writestring('AHCI: Error sata register: ');
-        console.writehexln(device^.port^.sata_error);
+        syslog.writestring('AHCI: Error sata register: ');
+        syslog.writehexln(device^.port^.sata_error);
 
         //print out busy flag
-        // console.writestring('AHCI: Status: ');
-        // console.writehexln(device^.port^.sata_status);
+        // syslog.writestring('AHCI: Status: ');
+        // syslog.writehexln(device^.port^.sata_status);
 
         //print sata active flag
-        // console.writestring('AHCI: Active flag: ');
-        // console.writehexln(device^.port^.sata_active);
+        // syslog.writestring('AHCI: Active flag: ');
+        // syslog.writehexln(device^.port^.sata_active);
 
         //print tfd
-        // console.writestring('AHCI: TFD: ');
-        // console.writehexln(device^.port^.tfd);
+        // syslog.writestring('AHCI: TFD: ');
+        // syslog.writehexln(device^.port^.tfd);
     end;
 
     { Re-enable port interrupts now that IDENTIFY polling is done.
@@ -430,7 +430,7 @@ begin
     if isATAPI then begin
         if send_read_capacity(device, @sec_count, @storageDev_sectorSize) then begin
         end else begin
-            console.writestringln('AHCI: ATAPI capacity query failed (no media?).');
+            syslog.writestringln('AHCI: ATAPI capacity query failed (no media?).');
             storageDev_sectorSize := 2048;
             sec_count := 0;
         end;
@@ -450,7 +450,6 @@ begin
         storageDev := PStorage_Device(kalloc(sizeof(TStorage_Device)));
         memset(uint32(storageDev), 0, sizeof(TStorage_Device));
 
-        storageDev^.id             := portIndex;
         storageDev^.controllerId0  := uint32(device);  { store PAHCI_Device for callback wrappers }
         storageDev^.sectorSize     := storageDev_sectorSize;
         storageDev^.maxSectorCount := sec_count;
@@ -477,23 +476,19 @@ begin
 
         storagemanager.register_device(storageDev);
 
-        { Only discover volumes if there is media present }
-        if sec_count > 0 then
-            volumemanager.discover_volumes(storageDev);
-
-        console.writestring('AHCI: Registered device on port ');
-        console.writeint(portIndex);
+        syslog.writestring('AHCI: Registered device on port ');
+        syslog.writeint(portIndex);
         if sec_count > 0 then begin
-            console.writestring(' with storage manager (');
-            console.writeint((sec_count * storageDev_sectorSize) div 1024 div 1024);
-            console.writestringln(' MB)');
+            syslog.writestring(' with storage manager (');
+            syslog.writeint((sec_count * storageDev_sectorSize) div 1024 div 1024);
+            syslog.writestringln(' MB)');
         end else begin
-            console.writestringln(' with storage manager (no media)');
+            syslog.writestringln(' with storage manager (no media)');
         end;
     end else begin
-        console.writestring('AHCI: Port ');
-        console.writeint(portIndex);
-        console.writestringln(': sector count is 0, skipping registration.');
+        syslog.writestring('AHCI: Port ');
+        syslog.writeint(portIndex);
+        syslog.writestringln(': sector count is 0, skipping registration.');
     end;
 
     { Free the write-test buffer allocated above }
@@ -506,13 +501,13 @@ end;
 // begin
 //     //check sam TODO
 //     if (controller^.mio^.capabilites2 and $1) = 0 then begin
-//         console.writestringln('AHCI: Controller does not support reset');
+//         syslog.writestringln('AHCI: Controller does not support reset');
 //         exit;
 //     end;
 
 //     //check ghc.ae is set to 1
 //     if (controller^.mio^.global_ctrl and $1) = 0 then begin
-//         console.writestringln('AHCI: Controller is not enabled');
+//         syslog.writestringln('AHCI: Controller is not enabled');
 //         controller^.mio^.global_ctrl := controller^.mio^.global_ctrl or $1;
 //     end;
 
@@ -577,17 +572,17 @@ begin
         end;
 
         if timeout = 10000 then begin
-        console.writestringln('AHCI: BIOS/OS handoff timed out.');
+        syslog.writestringln('AHCI: BIOS/OS handoff timed out.');
         end else begin
-        // console.writestringln('AHCI: BIOS/OS handoff successful.');
+        // syslog.writestringln('AHCI: BIOS/OS handoff successful.');
         end;
     end else begin
-        // console.writestringln('AHCI: BIOS not holding controller or handoff already complete.');
+        // syslog.writestringln('AHCI: BIOS not holding controller or handoff already complete.');
     end;
     
     //print ghc
-    // console.writestring('AHCI: GHC: ');
-    // console.writebin32ln(base^.global_ctrl);
+    // syslog.writestring('AHCI: GHC: ');
+    // syslog.writebin32ln(base^.global_ctrl);
 
     base^.global_ctrl := base^.global_ctrl or AHCI_CONTROLLER_MODE;
 
@@ -599,11 +594,11 @@ begin
 
     registerISR(int_no, @ahci_isr);
 
-    console.writestring('AHCI: IRQ ');
-    console.writeint(device^.interrupt_line);
-    console.writestring(' -> INT ');
-    console.writeint(int_no);
-    console.writestringln('');
+    syslog.writestring('AHCI: IRQ ');
+    syslog.writeint(device^.interrupt_line);
+    syslog.writestring(' -> INT ');
+    syslog.writeint(int_no);
+    syslog.writestringln('');
 
     { Initialise IOAPIC/LAPIC support (safe no-op if no IOAPIC present).
       PCI interrupts may be routed through the IOAPIC instead of the
@@ -758,7 +753,7 @@ begin
     while (device^.port^.tfd and $88) <> 0 do begin
         timeout := timeout + 1;
         if timeout > 100000 then begin
-            console.writestringln('AHCI: Timeout waiting for port ready (async read)');
+            syslog.writestringln('AHCI: Timeout waiting for port ready (async read)');
             exit;
         end;
     end;
@@ -835,7 +830,7 @@ begin
     while (device^.port^.tfd and $88) <> 0 do begin
         timeout := timeout + 1;
         if timeout > 100000 then begin
-            console.writestringln('AHCI: Timeout waiting for port ready (async write)');
+            syslog.writestringln('AHCI: Timeout waiting for port ready (async write)');
             exit;
         end;
     end;
@@ -912,7 +907,7 @@ begin
     while (device^.port^.tfd and $88) <> 0 do begin
         timeout := timeout + 1;
         if timeout > 100000 then begin
-            console.writestringln('AHCI: Timeout waiting for port ready (async ATAPI)');
+            syslog.writestringln('AHCI: Timeout waiting for port ready (async ATAPI)');
             exit;
         end;
     end;
@@ -983,7 +978,7 @@ begin
     while (device^.port^.tfd and $88) <> 0 do begin
         timeout := timeout + 1;
         if timeout > 100000 then begin
-            console.writestringln('AHCI: Timeout waiting for port ready (READ CAPACITY)');
+            syslog.writestringln('AHCI: Timeout waiting for port ready (READ CAPACITY)');
             kfree(buffer);
             exit;
         end;
@@ -998,7 +993,7 @@ begin
         tfd := device^.port^.tfd;
         timeout := timeout + 1;
         if timeout > 100 then begin
-            console.writestringln('AHCI: READ CAPACITY command timeout');
+            syslog.writestringln('AHCI: READ CAPACITY command timeout');
             kfree(buffer);
             exit;
         end;
@@ -1007,9 +1002,9 @@ begin
     until ((device^.port^.cmd_issue and (1 shl slot)) = 0);
 
     if (device^.port^.cmd_issue and (1 shl slot)) <> 0 then begin
-        console.writestringln('AHCI: Error sending READ CAPACITY command');
-        console.writestring('AHCI: Error register: ');
-        console.writehexln(device^.port^.sata_error);
+        syslog.writestringln('AHCI: Error sending READ CAPACITY command');
+        syslog.writestring('AHCI: Error register: ');
+        syslog.writehexln(device^.port^.sata_error);
         kfree(buffer);
         exit;
     end;

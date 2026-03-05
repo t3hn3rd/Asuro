@@ -12,11 +12,11 @@ unit inio;
 interface
 
 uses
-    console,
+    syslog,
     lmemorymanager,
     storagetypes,
     strings,
-    terminal,
+    stdio,
     tracer,
     util,
     vfs;
@@ -25,7 +25,7 @@ procedure init();
 
 implementation
 
-procedure Run(Params : PParamList);
+procedure Run(Params : PParamList; stdin_buf, stdout_buf, stderr_buf: POutBuf);
 var
     filePath   : pchar;
     absPath    : pchar;
@@ -45,7 +45,7 @@ begin
 
     pCount := paramCount(Params);
     if pCount < 2 then begin
-        console.writestringlnWND('Usage: inio <file> < | inio <file> > text', getTerminalHWND());
+        syslog.writestringln('Usage: inio <file> < | inio <file> > text');
         exit;
     end;
 
@@ -53,11 +53,11 @@ begin
     op       := getParam(1, Params);
 
     if filePath = nil then begin
-        console.writestringlnWND('Error: no file specified.', getTerminalHWND());
+        syslog.writestringln('Error: no file specified.');
         exit;
     end;
     if op = nil then begin
-        console.writestringlnWND('Error: no operation specified.', getTerminalHWND());
+        syslog.writestringln('Error: no operation specified.');
         exit;
     end;
 
@@ -67,7 +67,7 @@ begin
     if op[0] = '<' then begin
         fHandle := vfs.OpenFile(absPath, omReadOnly, wmRewrite, false, @fError);
         if (fHandle = 0) or (fError <> eNone) then begin
-            console.writestringlnWND('Error: cannot open file for reading.', getTerminalHWND());
+            syslog.writestringln('Error: cannot open file for reading.');
             kfree(void(absPath));
             exit;
         end;
@@ -78,10 +78,10 @@ begin
 
         if bytesRead > 0 then begin
             buf[bytesRead] := char(0);
-            console.writestringWND(buf, getTerminalHWND());
-            console.writestringlnWND(' ', getTerminalHWND());
+            syslog.writestring(buf);
+            syslog.writestringln(' ');
         end else begin
-            console.writestringlnWND('(0 bytes read)', getTerminalHWND());
+            syslog.writestringln('(0 bytes read)');
         end;
         kfree(puint32(buf));
     end
@@ -89,7 +89,7 @@ begin
     { ---- WRITE ---- }
     else if op[0] = '>' then begin
         if pCount < 3 then begin
-            console.writestringlnWND('Error: no content to write.', getTerminalHWND());
+            syslog.writestringln('Error: no content to write.');
             kfree(void(absPath));
             exit;
         end;
@@ -119,7 +119,7 @@ begin
         end;
 
         if (fHandle = 0) or (fError <> eNone) then begin
-            console.writestringlnWND('Error: cannot open file for writing.', getTerminalHWND());
+            syslog.writestringln('Error: cannot open file for writing.');
             kfree(void(content));
             kfree(void(absPath));
             exit;
@@ -127,10 +127,10 @@ begin
 
         vfs.WriteFile(fHandle, 0, puint8(content), contentLen);
         vfs.CloseFile(fHandle);
-        console.writestringlnWND('Written.', getTerminalHWND());
+        syslog.writestringln('Written.');
         kfree(void(content));
     end else begin
-        console.writestringlnWND('Error: operation must be < or >.', getTerminalHWND());
+        syslog.writestringln('Error: operation must be < or >.');
     end;
 
     kfree(void(absPath));
@@ -139,7 +139,7 @@ end;
 procedure init();
 begin
     tracer.push_trace('inio.init');
-    terminal.registerCommand('INIO', @Run, 'Inline IO: inio <file> < | inio <file> > text');
+    stdio.registerCommand('INIO', @Run, 'Inline IO: inio <file> < | inio <file> > text');
 end;
 
 end.

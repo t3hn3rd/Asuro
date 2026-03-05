@@ -27,8 +27,8 @@ uses
     strings,
     filesystemmanager,
     lists,
-    console,
-    terminal,
+    syslog,
+    stdio,
     storagemanager,
     storagetypes,
     lmemorymanager,
@@ -148,7 +148,6 @@ begin
     kfree(puint32(data));
 
     read_file(volume, '/logs/log.txt', PuInt32(data), status);
-    writestringlnWND(pchar(data), getterminalhwnd());
 end;
 
 procedure write_directory(volume : PStorage_Volume; directory : pchar; status : PuInt32);
@@ -271,14 +270,12 @@ begin
             compString := stringSub(fileEntrys[i].name, 0, stringSize(directory));
             afterString := stringSub(fileEntrys[i].name, stringSize(directory), stringSize(fileEntrys[i].name)-1);
 
-            writestringlnWND(afterString, getterminalhwnd());
 
             push_trace('read_directory_2');
 
             if stringEquals(compString, directory) and 
                 (not stringContains(afterString, slash)) then begin
 
-                writestringlnWND(fileEntrys[i].name, getterminalhwnd());
                 STRLL_Add(directories, afterString);
             end;
     end;
@@ -542,6 +539,56 @@ begin
     status^ := 0;
 end;
 
+{ Count free sectors on a FlatFS volume by scanning file entries. }
+function countFreeFlatFSSectors(volume : PStorage_Volume) : uint32;
+var
+    buffer       : puint32;
+    diskInfo     : PDisk_Info;
+    sectorCount  : uint32;
+    fileCount    : uint32;
+    tableSectors : uint32;
+    fileEntries  : PFile_Entry;
+    usedSectors  : uint32;
+    overhead     : uint32;
+    i            : uint32;
+begin
+    countFreeFlatFSSectors := 0;
+
+    buffer := puint32(kalloc(512));
+    memset(uint32(buffer), 0, 512);
+    storagemanager.storage_read(volume^.device, volume^.sectorStart, 1, buffer);
+
+    diskInfo := PDisk_Info(buffer);
+    sectorCount := diskInfo^.sectorCount;
+    fileCount := diskInfo^.fileCount;
+    kfree(buffer);
+
+    if sectorCount = 0 then exit;
+
+    tableSectors := (fileCount * sizeof(TFile_Entry)) div 512;
+    overhead := 2 + tableSectors; { header + boundary + file table }
+
+    usedSectors := 0;
+    if fileCount > 0 then begin
+        fileEntries := PFile_Entry(kalloc(sizeof(TFile_Entry) * fileCount + 512));
+        memset(uint32(fileEntries), 0, sizeof(TFile_Entry) * fileCount);
+        storagemanager.storage_read(volume^.device, volume^.sectorStart + 1,
+            tableSectors, puint32(fileEntries));
+
+        for i := 0 to fileCount - 1 do begin
+            if fileEntries[i].attribues <> 0 then
+                usedSectors := usedSectors + fileEntries[i].size;
+        end;
+
+        kfree(puint32(fileEntries));
+    end;
+
+    if sectorCount > (overhead + usedSectors) then
+        countFreeFlatFSSectors := sectorCount - overhead - usedSectors
+    else
+        countFreeFlatFSSectors := 0;
+end;
+
 procedure detect_volumes(disk : PStorage_Device);
 var
     buffer : puint32;
@@ -553,7 +600,7 @@ begin
     memset(uint32(buffer), 0, 512);
 
     if (disk^.readCallback = nil) and (disk^.readCallbackAsync = nil) then begin
-        console.writestringln('FlatFS: detect_volumes: device has no read callback.');
+        syslog.writestringln('FlatFS: detect_volumes: device has no read callback.');
         kfree(buffer);
         exit;
     end;
@@ -561,15 +608,15 @@ begin
     storagemanager.storage_read(disk, 2, 1, buffer);
 
     if (PDisk_Info(buffer)^.signature = $0B00B1E5) then begin
-        console.writestringln('FlatFS: volume found!');
+        syslog.writestringln('FlatFS: volume found!');
         volume := PStorage_volume(kalloc(sizeof(TStorage_Volume)));
         memset(uint32(volume), 0, sizeof(TStorage_Volume));
         volume^.device       := disk;
         volume^.sectorStart  := 2;
         volume^.sectorSize   := 512;
         volume^.sectorCount  := PDisk_Info(buffer)^.sectorCount;
-        volume^.freeSectors  := 0; { TODO: implement free sector count }
         volume^.filesystem   := @filesystem;
+        volume^.freeSectors  := countFreeFlatFSSectors(volume);
         volume^.isBootDrive  := false;
 
         volumemanager.register_volume(disk, volume);
@@ -710,7 +757,6 @@ begin
 
 end;
 
-
 function identify_volume(volume : PStorage_Volume) : boolean;
 var
     buffer : puint32;
@@ -724,8 +770,10 @@ begin
 
     storagemanager.storage_read(volume^.device, volume^.sectorStart, 1, buffer);
 
-    if (PDisk_Info(buffer)^.signature = $0B00B1E5) then
+    if (PDisk_Info(buffer)^.signature = $0B00B1E5) then begin
         identify_volume := true;
+        volume^.freeSectors := countFreeFlatFSSectors(volume);
+    end;
 
     kfree(buffer);
 end;
