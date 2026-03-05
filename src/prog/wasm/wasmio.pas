@@ -17,7 +17,8 @@ interface
 uses
     wasmshim,
     wasm.types.builtin,
-    wasm.types.context;
+    wasm.types.context,
+    wasm.types.values;
 
 { Set/clear the active shim — call before/after each tick batch }
 procedure setActiveShim(shim : PProcessWASMShim);
