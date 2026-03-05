@@ -29,6 +29,9 @@ procedure relayout;
 
 implementation
 
+uses
+    syslog;
+
 const
     DOCK_HEIGHT   = 48;
     DOCK_MARGIN   = 8;
@@ -444,7 +447,7 @@ begin
         if result_btns[i] = target then begin
             pi := result_prog[i];
             if (pi < prog_count) and programs[pi].active then begin
-                serial.sendString('[Desktop] Launching program' + #10);
+                syslog.logln('Desktop', 'Launching program');
                 clearAndClose;
                 programs[pi].launch;
             end;

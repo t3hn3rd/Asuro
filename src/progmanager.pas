@@ -23,14 +23,24 @@ unit progmanager;
 interface
 
 uses
-    tracer,
+    tracer, stdio, processmanager,
     //progs
-    base64_prog, md5sum, dhclient, vbeinfo, testcmd, ping, meminfo, setres;
+    base64_prog, md5sum, dhclient, vbeinfo, testcmd, ping, meminfo, setres, testcmd, ping,
+    //drivers
+    ramdrive, drivermanagement, storagemanagement,
+    //network
+    ipv4, arp, tcp,
+    //dispatch
+    filedispatch,
+    //wasm
+    wasmrunner;
 
 { Initialize all baked-in programs }
 procedure init();
 
 implementation
+
+uses kernel;
 
 uses
     stdio,
@@ -69,6 +79,10 @@ begin
     testcmd.init();
     ping.init();
     meminfo.init();
+    { File dispatch & WASM integration }
+    ramdrive.init();
+    filedispatch.init();
+    wasmrunner.init();
     setres.init();
 end;
 

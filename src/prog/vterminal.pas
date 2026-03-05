@@ -18,7 +18,7 @@ interface
 uses
     lvgl, video, windows, desktop, keyboard, tracer,
     strings, util, lmemorymanager, asuro, stdio, vfs,
-    processmanager, proctypes, lists, hashmap;
+    processmanager, proctypes, lists, hashmap, filedispatch;
 
 procedure init;
 
@@ -445,6 +445,8 @@ var
     lastParam  : pchar;
     job        : PBackgroundJob;
     slotPtr    : ^uint32;
+    absPath    : pchar;
+    dispatchPID : uint32;
 begin
     { Null-terminate input }
     state^.line_buf[state^.line_len] := 0;
@@ -693,10 +695,86 @@ begin
                 end;
             end;
         end else begin
-            appendText(state, 'Unknown command. Type HELP for a list.');
-            appendChar(state, #10);
-            stdio.freeParams(params);
-            showPrompt(state);
+            { No built-in command found — try file dispatch }
+            absPath := vfs.makeAbsolutePathFrom(params^.Param, state^.cwd);
+            if absPath <> nil then begin
+                if is_bg then begin
+                    { Background file dispatch }
+                    job := PBackgroundJob(kalloc(SizeOf(TBackgroundJob)));
+                    if job <> nil then begin
+                        memset(uint32(job), 0, SizeOf(TBackgroundJob));
+                        job^.StdOut := stdio.createOutBuf(1024);
+                        job^.StdErr := stdio.createOutBuf(1024);
+                        job^.LastDrain := 0;
+                        job^.LastDrainE := 0;
+                        inc(state^.bg_next_job);
+                        job^.JobNum := state^.bg_next_job;
+                        pcount := stringSize(params^.Param);
+                        if pcount > 31 then pcount := 31;
+                        memcpy(uint32(params^.Param), uint32(@job^.CmdName[0]), pcount);
+                        job^.CmdName[pcount] := #0;
+
+                        dispatchPID := filedispatch.dispatch(absPath, params,
+                                                             nil, job^.StdOut, job^.StdErr);
+                        if dispatchPID > 0 then begin
+                            job^.PID := dispatchPID;
+                            if state^.bg_jobs = nil then
+                                state^.bg_jobs := DL_New(SizeOf(uint32));
+                            slotPtr := DL_Add(state^.bg_jobs);
+                            slotPtr^ := uint32(job);
+                            appendText(state, '[');
+                            lastParam := intToString(job^.JobNum);
+                            appendText(state, lastParam);
+                            kfree(void(lastParam));
+                            appendText(state, '] ');
+                            lastParam := intToString(job^.PID);
+                            appendText(state, lastParam);
+                            kfree(void(lastParam));
+                            appendChar(state, #10);
+                        end else begin
+                            appendText(state, 'Unknown command. Type HELP for a list.');
+                            appendChar(state, #10);
+                            stdio.freeOutBuf(job^.StdOut);
+                            stdio.freeOutBuf(job^.StdErr);
+                            kfree(void(job));
+                        end;
+                    end;
+                    kfree(void(absPath));
+                    stdio.freeParams(params);
+                    showPrompt(state);
+                end else begin
+                    { Foreground file dispatch }
+                    state^.fg_stdout := stdio.createOutBuf(1024);
+                    state^.fg_stderr := stdio.createOutBuf(1024);
+                    state^.fg_stdin  := stdio.createOutBuf(0);
+                    state^.last_drain := 0;
+                    state^.last_drain_err := 0;
+                    state^.fg_params := params;
+
+                    dispatchPID := filedispatch.dispatch(absPath, params,
+                                                         state^.fg_stdin, state^.fg_stdout, state^.fg_stderr);
+                    kfree(void(absPath));
+
+                    if dispatchPID > 0 then begin
+                        state^.ForegroundPID := dispatchPID;
+                    end else begin
+                        appendText(state, 'Unknown command. Type HELP for a list.');
+                        appendChar(state, #10);
+                        stdio.freeOutBuf(state^.fg_stdout);  state^.fg_stdout := nil;
+                        stdio.freeOutBuf(state^.fg_stderr);  state^.fg_stderr := nil;
+                        stdio.freeOutBuf(state^.fg_stdin);   state^.fg_stdin := nil;
+                        stdio.freeParams(params);
+                        state^.fg_params := nil;
+                        state^.ForegroundPID := 0;
+                        showPrompt(state);
+                    end;
+                end;
+            end else begin
+                appendText(state, 'Unknown command. Type HELP for a list.');
+                appendChar(state, #10);
+                stdio.freeParams(params);
+                showPrompt(state);
+            end;
         end;
     end else begin
         if params <> nil then stdio.freeParams(params);
