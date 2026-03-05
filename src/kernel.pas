@@ -145,6 +145,9 @@ var
    sha1ctx         : TSHA1Context;
    sha1dig         : TSHA1Digest;
    sha1msg         : array[0..9] of uint8;
+   sha1ctx         : TSHA1Context;
+   sha1dig         : TSHA1Digest;
+   sha1msg         : array[0..9] of uint8;
    
 begin
      { Init the base system unit }
