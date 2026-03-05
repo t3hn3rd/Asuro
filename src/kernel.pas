@@ -142,6 +142,9 @@ var
    dds             : uint16;
    keyboard_layout : array [0..1] of TKeyInfo;
    i : uint32;
+   sha1ctx         : TSHA1Context;
+   sha1dig         : TSHA1Digest;
+   sha1msg         : array[0..9] of uint8;
    
 begin
      { Init the base system unit }
