@@ -332,6 +332,18 @@ begin
      minh.UnitTest;
      maxh.UnitTest;
      prio.UnitTest;
+     vfs.UnitTest;
+     storagetest.UnitTest;
+
+     { Initialize desktop environment }
+     splash.update(100, 'Booting desktop...');
+     splash.teardown;
+     syslog.logln('KERNEL', 'DESKTOP: INIT BEGIN.');
+     desktop.init;
+     syslog.logln('KERNEL', 'DESKTOP: INIT COMPLETE.');
+
+     { Initialize visual terminal (registers with desktop search) }
+     vterminal.init;
 
      { Register timer-driven tasks }
      graphicsrefresh.init;
