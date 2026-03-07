@@ -81,7 +81,7 @@ begin
     volume^.sectorSize   := device^.sectorSize;
     volume^.freeSectors  := 0;
     volume^.filesystem   := nil;
-    volume^.isBootDrive  := false;
+    volume^.isBootDrive  := device^.isBootDevice;
     filesystemmanager.probe_volume(volume);
     register_volume(device, volume);
 end;

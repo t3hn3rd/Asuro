@@ -230,6 +230,7 @@ begin
      drivermanagement.init();
      tracer.push_trace('kmain.STRMGMT');
      storagemanager.init();
+     storagemanager.set_boot_drive_byte((multibootinfo^.boot_device shr 24) and $FF);
      volumemanager.init();
      filesystemmanager.init();
 

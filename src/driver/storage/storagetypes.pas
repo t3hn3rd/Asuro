@@ -209,6 +209,7 @@ type
         sectorSize       : uint32; //in bytes
         start            : uint32; //start of device in sectors
         cachedMBR        : pointer;           { cached MBR data, nil if not yet read }
+        isBootDevice     : boolean;           { true if this is the device GRUB booted from }
     end;
 
     { Filesystem driver descriptor }

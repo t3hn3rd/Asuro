@@ -430,6 +430,7 @@ begin
     if (dirList <> nil) and (status^ = 0) and (LL_Size(dirList) > 0) then begin
         for i := 0 to LL_Size(dirList) - 1 do begin
             entry := PDirectory_Entry(LL_Get(dirList, i));
+            if (entry = nil) or (entry^.fileName = nil) then continue;
             newObj := PVFSObject(kalloc(sizeof(TVFSObject)));
             newObj^.Parent := Parent;
             newObj^.Reference := nil;
@@ -2062,6 +2063,12 @@ begin
         syslog.writestring(' volume at ');
         syslog.writestringln(mountPath);
 
+        { If this is the boot volume, also mount it at /boot }
+        if vol^.isBootDrive then begin
+            mountVolume('/boot', vol);
+            syslog.writestringln('VFS: Boot volume mounted at /boot');
+        end;
+
         kfree(void(volName));
         kfree(void(prefix));
         kfree(void(mountPath));
@@ -2135,6 +2142,7 @@ begin
     newVirtualDirectory('/disk');
     newVirtualDirectory('/mnt');
     newVirtualDirectory('/cfg');
+    newVirtualDirectory('/boot');
 
     { Register Terminal Commands }
     stdio.registerCommand('LS',      @VFS_COMMAND_LS,    'List directory contents.');

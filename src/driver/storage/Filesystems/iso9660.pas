@@ -448,7 +448,7 @@ begin
     volume^.sectorCount := pvd^.volumeSpaceSizeLSB;
     volume^.freeSectors := 0;
     volume^.filesystem  := @filesystem;
-    volume^.isBootDrive := false;
+    volume^.isBootDrive := disk^.isBootDevice;
 
     volumemanager.register_volume(disk, volume);
 

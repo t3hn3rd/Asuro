@@ -46,7 +46,7 @@ uses
 const
     WIN_W          = 700;
     WIN_H          = 500;
-    TOOLBAR_H      = 36;
+    TOOLBAR_H      = 40;
     STATUSBAR_H    = 24;
 
     { LV_DRAW_LABEL_NO_TXT_SEL — sentinel returned when no selection is set }
@@ -77,10 +77,8 @@ type
         ta           : Plv_obj;
         status_label : Plv_obj;
         dirty_label  : Plv_obj;
-        wrap_btn_lbl : Plv_obj;
         currentPath  : pchar;
         isDirty      : boolean;
-        wordWrap     : boolean;
         sel_anchor   : sint32;
     end;
 
@@ -348,7 +346,7 @@ var
 begin
     tracer.push_trace('notepad.saveFile');
     if state^.currentPath = nil then begin
-        filepicker.show_save('Save As', '/disk', nil, @np_saveas_done_cb, state);
+        filepicker.show_save('Save As', '/disk', nil, nil, @np_saveas_done_cb, state);
         tracer.pop_trace;
         exit;
     end;
@@ -581,7 +579,7 @@ begin
     if code <> LV_EVENT_CLICKED then exit;
     state := PNotepadState(lv_event_get_user_data(e));
     if state = nil then exit;
-    filepicker.show_open('Open File', '/disk', @np_open_done_cb, state);
+    filepicker.show_open('Open File', '/disk', nil, @np_open_done_cb, state);
 end;
 
 procedure save_btn_cb(e: Plv_event); cdecl;
@@ -605,30 +603,7 @@ begin
     if code <> LV_EVENT_CLICKED then exit;
     state := PNotepadState(lv_event_get_user_data(e));
     if state = nil then exit;
-    filepicker.show_save('Save As', '/disk', nil, @np_saveas_done_cb, state);
-end;
-
-procedure wrap_btn_cb(e: Plv_event); cdecl;
-var
-    code  : lv_event_code_t;
-    state : PNotepadState;
-    lbl   : Plv_obj;
-begin
-    code := lv_event_get_code(e);
-    if code <> LV_EVENT_CLICKED then exit;
-    state := PNotepadState(lv_event_get_user_data(e));
-    if state = nil then exit;
-    state^.wordWrap := not state^.wordWrap;
-    lbl := lv_textarea_get_label(state^.ta);
-    if state^.wordWrap then begin
-        lv_label_set_long_mode(lbl, LV_LABEL_LONG_WRAP);
-        if state^.wrap_btn_lbl <> nil then
-            lv_label_set_text(state^.wrap_btn_lbl, 'Wrap [on]');
-    end else begin
-        lv_label_set_long_mode(lbl, LV_LABEL_LONG_SCROLL);
-        if state^.wrap_btn_lbl <> nil then
-            lv_label_set_text(state^.wrap_btn_lbl, 'Wrap');
-    end;
+    filepicker.show_save('Save As', '/disk', nil, nil, @np_saveas_done_cb, state);
 end;
 
 { ============================================================
@@ -812,8 +787,8 @@ var
 begin
     btn := lv_button_create(parent);
     lv_obj_remove_style_all(btn);
-    lv_obj_set_size(btn, w, 28);
-    lv_obj_set_style_bg_color(btn, lv_color_make(55, 90, 190), 0);
+    lv_obj_set_size(btn, w, 30);
+    lv_obj_set_style_bg_color(btn, lv_color_make(45, 50, 68), 0);
     lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(btn, 4, 0);
     lv_obj_add_flag(btn, LV_OBJ_FLAG_CLICKABLE);
@@ -823,7 +798,7 @@ begin
                           LV_FLEX_ALIGN_CENTER);
     lbl_obj := lv_label_create(btn);
     lv_label_set_text(lbl_obj, text);
-    lv_obj_set_style_text_color(lbl_obj, lv_color_make(220, 225, 240), 0);
+    lv_obj_set_style_text_color(lbl_obj, lv_color_make(210, 215, 230), 0);
     lv_obj_set_style_text_font(lbl_obj, @lv_font_montserrat_14, 0);
     lv_obj_add_event_cb(btn, cb, LV_EVENT_CLICKED, state_ptr);
     makeToolBtn := btn;
@@ -855,9 +830,6 @@ var
     content      : Plv_obj;
     toolbar      : Plv_obj;
     statusbar    : Plv_obj;
-    sep          : Plv_obj;
-    wrap_btn     : Plv_obj;
-    wrap_lbl_obj : Plv_obj;
     ta           : Plv_obj;
     sl    : Plv_obj;
     dl    : Plv_obj;
@@ -900,16 +872,19 @@ begin
     lv_obj_set_style_pad_all(content, 0, 0);
     lv_obj_set_style_pad_row(content, 0, 0);
     lv_obj_remove_flag(content, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_style_bg_color(content, lv_color_make(24, 27, 36), 0);
+    lv_obj_set_style_bg_color(content, lv_color_make(28, 31, 40), 0);
     lv_obj_set_style_bg_opa(content, LV_OPA_COVER, 0);
 
     { ---- Toolbar ---- }
     toolbar := lv_obj_create(content);
     lv_obj_remove_style_all(toolbar);
     lv_obj_set_size(toolbar, lv_pct(100), TOOLBAR_H);
-    lv_obj_set_style_bg_color(toolbar, lv_color_make(30, 33, 45), 0);
+    lv_obj_set_style_bg_color(toolbar, lv_color_make(28, 31, 40), 0);
     lv_obj_set_style_bg_opa(toolbar, LV_OPA_COVER, 0);
-    lv_obj_set_style_pad_all(toolbar, 4, 0);
+    lv_obj_set_style_border_color(toolbar, lv_color_make(48, 52, 68), 0);
+    lv_obj_set_style_border_side(toolbar, LV_BORDER_SIDE_BOTTOM, 0);
+    lv_obj_set_style_border_width(toolbar, 1, 0);
+    lv_obj_set_style_pad_all(toolbar, 5, 0);
     lv_obj_set_style_pad_column(toolbar, 4, 0);
     lv_obj_set_style_layout(toolbar, LV_LAYOUT_FLEX, 0);
     lv_obj_set_flex_flow(toolbar, LV_FLEX_FLOW_ROW);
@@ -917,36 +892,11 @@ begin
                          LV_FLEX_ALIGN_CENTER);
     lv_obj_remove_flag(toolbar, LV_OBJ_FLAG_SCROLLABLE);
 
+    { File group: New, Open, Save, Save As }
     makeToolBtn(toolbar, 'New',     58, state, @new_btn_cb);
     makeToolBtn(toolbar, 'Open',    64, state, @open_btn_cb);
     makeToolBtn(toolbar, 'Save',    58, state, @save_btn_cb);
     makeToolBtn(toolbar, 'Save As', 80, state, @saveas_btn_cb);
-
-    { Visual separator }
-    sep := lv_obj_create(toolbar);
-    lv_obj_remove_style_all(sep);
-    lv_obj_set_size(sep, 1, 24);
-    lv_obj_set_style_bg_color(sep, lv_color_make(60, 65, 85), 0);
-    lv_obj_set_style_bg_opa(sep, LV_OPA_COVER, 0);
-
-    { Wrap toggle button (keep label ref in state for later updates) }
-    wrap_btn := lv_button_create(toolbar);
-    lv_obj_remove_style_all(wrap_btn);
-    lv_obj_set_size(wrap_btn, 80, 28);
-    lv_obj_set_style_bg_color(wrap_btn, lv_color_make(45, 75, 160), 0);
-    lv_obj_set_style_bg_opa(wrap_btn, LV_OPA_COVER, 0);
-    lv_obj_set_style_radius(wrap_btn, 4, 0);
-    lv_obj_add_flag(wrap_btn, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_style_layout(wrap_btn, LV_LAYOUT_FLEX, 0);
-    lv_obj_set_flex_flow(wrap_btn, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(wrap_btn, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER,
-                         LV_FLEX_ALIGN_CENTER);
-    wrap_lbl_obj := lv_label_create(wrap_btn);
-    lv_label_set_text(wrap_lbl_obj, 'Wrap');
-    lv_obj_set_style_text_color(wrap_lbl_obj, lv_color_make(200, 210, 240), 0);
-    lv_obj_set_style_text_font(wrap_lbl_obj, @lv_font_montserrat_14, 0);
-    lv_obj_add_event_cb(wrap_btn, @wrap_btn_cb, LV_EVENT_CLICKED, state);
-    state^.wrap_btn_lbl := wrap_lbl_obj;
 
     { ---- Main textarea ---- }
     ta := lv_textarea_create(content);
@@ -971,6 +921,8 @@ begin
     { Register with keyboard group }
     lv_group_add_obj(lvgl_get_kb_group, ta);
     lv_group_focus_obj(ta);
+    { Always wrap — set before attaching callbacks }
+    lv_label_set_long_mode(lv_textarea_get_label(ta), LV_LABEL_LONG_WRAP);
     { Attach event callbacks (state passed as user_data) }
     lv_obj_add_event_cb(ta, @ta_key_cb,     LV_EVENT_KEY,          state);
     lv_obj_add_event_cb(ta, @ta_changed_cb, LV_EVENT_VALUE_CHANGED, state);
@@ -980,8 +932,11 @@ begin
     statusbar := lv_obj_create(content);
     lv_obj_remove_style_all(statusbar);
     lv_obj_set_size(statusbar, lv_pct(100), STATUSBAR_H);
-    lv_obj_set_style_bg_color(statusbar, lv_color_make(28, 30, 42), 0);
+    lv_obj_set_style_bg_color(statusbar, lv_color_make(28, 31, 40), 0);
     lv_obj_set_style_bg_opa(statusbar, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(statusbar, lv_color_make(48, 52, 68), 0);
+    lv_obj_set_style_border_side(statusbar, LV_BORDER_SIDE_TOP, 0);
+    lv_obj_set_style_border_width(statusbar, 1, 0);
     lv_obj_set_style_layout(statusbar, LV_LAYOUT_FLEX, 0);
     lv_obj_set_flex_flow(statusbar, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(statusbar, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
@@ -991,7 +946,7 @@ begin
 
     sl := lv_label_create(statusbar);
     lv_label_set_text(sl, 'Ln 1  Col 1    Untitled');
-    lv_obj_set_style_text_color(sl, lv_color_make(140, 148, 170), 0);
+    lv_obj_set_style_text_color(sl, lv_color_make(140, 150, 170), 0);
     lv_obj_set_style_text_font(sl, @lv_font_montserrat_14, 0);
     state^.status_label := sl;
 

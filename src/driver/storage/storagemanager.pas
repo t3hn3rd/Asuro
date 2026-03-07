@@ -52,7 +52,15 @@ var
     storageDevices : PDList;
     nextDeviceId   : uint32;
 
+{ BIOS drive byte from multiboot — set once during kernel init before any
+  device drivers run.  $80=first HDD, $81=second HDD, $9F/other=CD-ROM. }
+    bootDriveByte  : uint8;
+    hdCount        : uint32;    { non-ATAPI devices registered so far }
+    atapiCount     : uint32;    { ATAPI devices registered so far }
+
 procedure init();
+procedure set_boot_drive_byte(driveByte : uint8);
+function  get_boot_drive_byte() : uint8;
 procedure register_device(device : PStorage_Device);
 function get_device_list() : PDList;
 function get_device_count() : uint32;
@@ -147,7 +155,22 @@ procedure init();
 begin
     push_trace('StorageManager.init');
     storageDevices := DL_New(sizeof(TStorage_Device));
-    nextDeviceId := 0;
+    nextDeviceId   := 0;
+    bootDriveByte  := $FF;  { $FF = unknown/uninitialised }
+    hdCount        := 0;
+    atapiCount     := 0;
+end;
+
+procedure set_boot_drive_byte(driveByte : uint8);
+begin
+    bootDriveByte := driveByte;
+    syslog.log('STRMGR', 'Boot drive BIOS byte = 0x');
+    syslog.writehexln(driveByte);
+end;
+
+function get_boot_drive_byte() : uint8;
+begin
+    get_boot_drive_byte := bootDriveByte;
 end;
 
 procedure register_device(device : PStorage_Device);
@@ -163,6 +186,7 @@ begin
     device^.requestQueue := CFIFO_New(SizeOf(TIORequest), 32);
     device^.activeRequest := nil;
     device^.cachedMBR := nil;
+    device^.isBootDevice := false;
     { dispatchRead/dispatchWrite: left as-is — driver sets them before
       calling register_device. memset(0) guarantees nil for unmigrated drivers. }
 
@@ -171,6 +195,31 @@ begin
 
     { Get pointer to the DList copy so volumes reference the canonical device }
     storedDev := PStorage_Device(DL_Get(storageDevices, DL_Size(storageDevices) - 1));
+
+    { Identify whether this is the boot device using the BIOS drive byte.
+      BIOS numbers HDDs from $80 upward; the nth HDD is $80 + (n-1).
+      ATAPI/CD-ROM devices are NOT in the $80-range HDD sequence, so if
+      bootDriveByte does not match any HDD we have seen, the first ATAPI
+      device is marked as the boot device (covers standard ISO boot). }
+    if (storedDev^.controller = ControllerATAPI) or
+       (storedDev^.controller = ControllerAHCI_ATAPI) then begin
+        { ATAPI device: boot if the drive byte is outside the known HDD range }
+        if bootDriveByte < ($80 + hdCount) then begin
+            { drive byte refers to an HDD — this ATAPI is not the boot device }
+        end else if atapiCount = 0 then begin
+            { first ATAPI and boot byte is not a known HDD → this is the boot drive }
+            storedDev^.isBootDevice := true;
+            syslog.logln('STRMGR', 'Boot device identified (ATAPI/ISO).');
+        end;
+        atapiCount := atapiCount + 1;
+    end else begin
+        { Non-ATAPI (HDD): boot if BIOS drive byte matches $80 + index }
+        if bootDriveByte = ($80 + hdCount) then begin
+            storedDev^.isBootDevice := true;
+            syslog.logln('STRMGR', 'Boot device identified (HDD).');
+        end;
+        hdCount := hdCount + 1;
+    end;
 
     { Discover partitions and register volumes automatically }
     if storedDev^.maxSectorCount > 0 then

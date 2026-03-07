@@ -490,6 +490,12 @@ begin
     while i < maxEntries do begin
         if PDirectory(buffer)[i].fileName[0] = char(0) then break;
 
+        { Skip deleted entries ($E5 = FAT32 deleted marker) }
+        if PDirectory(buffer)[i].fileName[0] = char($E5) then begin
+            i+=1;
+            continue;
+        end;
+
         dirElm:= LL_Add(directories);
         PDirectory(dirElm)^:= PDirectory(buffer)[i];
         i+=1;
@@ -534,6 +540,9 @@ begin
 
         for i:= 0 to LL_Size(list) - 1 do begin
             dir := PDirectory(LL_get(list, i));
+
+            { Skip deleted entries (should already be filtered by getDirEntries, but guard here too) }
+            if dir^.fileName[0] = char($E5) then continue;
 
             { Trim trailing spaces from fileName (8 bytes) }
             nameLen := 8;
