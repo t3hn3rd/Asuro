@@ -23,12 +23,13 @@ unit vfs;
 interface
 
 uses
-    syslog,
+    fdtable,
     hashmap,
     lists,
     lmemorymanager,
     storagetypes,
     strings,
+    syslog,
     tracer;
 
 type
@@ -56,15 +57,20 @@ type
 
 var
     Root              : PVFSObject;
-    CurrentDirectory  : pchar = nil;
     PushPopDirectory  : PLinkedListBase;
 
 procedure init();
-Function OpenFile(Filename : pchar; OpenMode : TOpenMode; WriteMode : TWriteMode; Lock : Boolean; Error : PError) : TFileHandle;
+Function OpenFile(Filename : pchar; OpenMode : TOpenMode; WriteMode : TWriteMode; Error : PError) : TFileHandle;
 function WriteFile(FileHandle : TFileHandle; Position : uint32; Buffer : puint8; Length : uint32) : uint32;
 function ReadFile(FileHandle : TFileHandle; Position : uint32; Buffer : puint8; Length : uint32) : uint32;
-function CloseFile(Filehandle : TFileHandle) : boolean;
-function FileSize(Filename : pchar; error : puint8) : uint32;
+function CloseFile(Filehandle : TFileHandle) : TError;
+
+{ Async public API — return immediately, callback fires on completion.
+  Callers (e.g. LVGL callbacks) must keep all buffers alive until the
+  callback fires. }
+procedure WriteFileAsync(FileHandle : TFileHandle; Position : uint32; Buffer : puint8; Length : uint32; Callback : TIOCallback; CallbackData : pointer);
+procedure OpenFileAsync(Filename : pchar; OpenMode : TOpenMode; WriteMode : TWriteMode; var OutHandle : TFileHandle; Error : PError; Callback : TIOCallback; CallbackData : pointer);
+function FileSize(Filename : pchar; error : PError) : uint32;
 function CreateDirectory(Handle : uint32; Path : pchar) : TError;
 function GetDirectories(Handle : uint32; Path : pchar) : PHashMap;
 function PathValid(Path : pchar) : TIsPathValid;
@@ -73,6 +79,7 @@ function getWorkingDirectory : pchar;
 function makeAbsolutePathFrom(Path : pchar; BaseDir : pchar) : pchar;
 function resolvePathFrom(Path : pchar; BaseDir : pchar) : TIsPathValid;
 function GetDirectoryListingFrom(Path : pchar; BaseDir : pchar) : PHashMap;
+procedure FreeDirectoryListing(map : PHashMap);
 function changeDirectoryFrom(Path : pchar; BaseDir : pchar; var NewDir : pchar) : TIsPathValid;
 function MakeAbsolutePath(Path : PChar) : pchar;
 
@@ -82,14 +89,70 @@ function newVirtualDirectory(Path : pchar) : TError;
 //Volume Mount Functions
 function mountVolume(mountPath : pchar; volume : PStorage_Volume) : TRegError;
 procedure auto_mount_volumes(); //TODO, need to change this when os can be installled to disk and have a config file
+procedure UnitTest;
 
 implementation
 
 uses
     filesystemmanager,
+    processmanager,
+    proctypes,
     stdio,
     util,
     volumemanager;
+
+{ ===================== Async helpers ========================================
+  Used by OpenFileAsync to stitch results back into the file descriptor.
+  =========================================================================== }
+
+type
+    { Used by OpenFileAsync to update the FD when the async read finishes }
+    TVFSOpenAsyncCtx = record
+        FD          : PFileDescriptor;
+        DataBuf     : puint32;    { holder for data pointer — freed by vfs_open_complete }
+        DataSize    : puint32;    { holder for byte count  — freed by vfs_open_complete }
+        OpenMode    : TOpenMode;
+        UserError   : PError;
+        UserCallback: TIOCallback;
+        UserData    : pointer;
+    end;
+    PVFSOpenAsyncCtx = ^TVFSOpenAsyncCtx;
+
+{ Completion callback for OpenFileAsync: stitches data into the FD,
+  frees temporary holders, then fires the caller's callback. }
+procedure vfs_open_complete(error : TError; userdata : pointer);
+var
+    ctx : PVFSOpenAsyncCtx;
+begin
+    ctx := PVFSOpenAsyncCtx(userdata);
+    if error = eNone then begin
+        ctx^.FD^.DataBuffer := puint32(ctx^.DataBuf^);
+        ctx^.FD^.DataSize   := ctx^.DataSize^;
+        ctx^.FD^.Loaded     := true;
+        if ctx^.UserError <> nil then ctx^.UserError^ := eNone;
+    end else begin
+        { File not found — OK for ReadWrite mode, error for ReadOnly }
+        if ctx^.OpenMode = omReadWrite then begin
+            if ctx^.UserError <> nil then ctx^.UserError^ := eNone;
+        end else begin
+            if ctx^.UserError <> nil then ctx^.UserError^ := eFileDoesNotExist;
+            ctx^.FD^.InUse := false;
+            if ctx^.FD^.Directory <> nil then begin
+                kfree(void(ctx^.FD^.Directory));
+                ctx^.FD^.Directory := nil;
+            end;
+            if ctx^.FD^.FileName <> nil then begin
+                kfree(void(ctx^.FD^.FileName));
+                ctx^.FD^.FileName := nil;
+            end;
+        end;
+    end;
+    kfree(puint32(ctx^.DataBuf));
+    kfree(puint32(ctx^.DataSize));
+    if ctx^.UserCallback <> nil then
+        ctx^.UserCallback(error, ctx^.UserData);
+    kfree(void(ctx));
+end;
 
 { Internal Functions }
 
@@ -235,6 +298,7 @@ function MakeAbsolutePath(Path : PChar) : pchar;
 var
     AbsPath : pchar;
     TempPath : pchar;
+    cwd : pchar;
 
 begin
     tracer.push_trace('vfs.MakeAbsolutePath.enter');
@@ -245,14 +309,19 @@ begin
         exit;
     end;
     if Path[0] = '/' then AbsPath:= stringCopy(Path) else begin
-        if (CurrentDirectory = nil) or (StringSize(CurrentDirectory) = 0) then begin
+        { Get per-process working directory }
+        cwd := nil;
+        if (processmanager.CurrentProcess <> nil) and
+           (processmanager.CurrentProcess^.Cwd <> nil) then
+            cwd := processmanager.CurrentProcess^.Cwd;
+        if (cwd = nil) or (StringSize(cwd) = 0) then begin
             TempPath := stringNew(1);
             TempPath[0] := '/';
         end else begin
-            if CurrentDirectory[StringSize(CurrentDirectory)-1] <> '/' then
-                TempPath:= StringConcat(CurrentDirectory, '/')
+            if cwd[StringSize(cwd)-1] <> '/' then
+                TempPath:= StringConcat(cwd, '/')
             else
-                TempPath:= stringCopy(CurrentDirectory);
+                TempPath:= stringCopy(cwd);
         end;
         AbsPath:= StringConcat(TempPath, Path);
         kfree(void(TempPath));
@@ -288,6 +357,14 @@ begin
                 exit;
             end;
             item:= STRLL_Get(SplitPath, i);
+            { Handle dot/dotdot traversal }
+            if stringEquals(item, '.') then
+                continue;
+            if stringEquals(item, '..') then begin
+                if Obj^.Parent <> nil then
+                    Obj := Obj^.Parent;
+                continue;
+            end;
             NewObj:= PVFSObject(hashmap.get(ht, item));                                            
             if NewObj = nil then begin                                                              
                 GetObjectFromPath:= nil;
@@ -313,11 +390,15 @@ begin
 end;
 
 Procedure ChangeCurrentDirectoryValue(new : pchar);
+var
+    ctx : proctypes.PProcessContext;
 begin
     tracer.push_trace('vfs.ChangeCurrentDirectoryValue.enter');
-    if CurrentDirectory <> nil then kfree(void(CurrentDirectory));
-    CurrentDirectory:= nil;
-    CurrentDirectory:= stringCopy(new);
+    ctx := processmanager.CurrentProcess;
+    if ctx <> nil then begin
+        if ctx^.Cwd <> nil then kfree(void(ctx^.Cwd));
+        ctx^.Cwd := stringCopy(new);
+    end;
     tracer.push_trace('vfs.ChangeCurrentDirectoryValue.exit');
 end;
 
@@ -346,7 +427,7 @@ begin
 
     resultMap := hashmap.new();
 
-    if (dirList <> nil) and (status^ = 0) then begin
+    if (dirList <> nil) and (status^ = 0) and (LL_Size(dirList) > 0) then begin
         for i := 0 to LL_Size(dirList) - 1 do begin
             entry := PDirectory_Entry(LL_Get(dirList, i));
             newObj := PVFSObject(kalloc(sizeof(TVFSObject)));
@@ -361,9 +442,13 @@ begin
             { Filesystem provides the display name directly in entry^.fileName }
             newObj^.ObjectName := stringCopy(entry^.fileName);
             hashmap.add(resultMap, stringCopy(entry^.fileName), void(newObj));
+            { Free the fileName allocated by the filesystem's readDirCallback }
+            kfree(void(entry^.fileName));
+            entry^.fileName := nil;
         end;
         LL_Free(dirList);
-    end;
+    end else if dirList <> nil then
+        LL_Free(dirList);
 
     volumeGetDirectories := resultMap;
     kfree(puint32(status));
@@ -372,9 +457,15 @@ end;
 
 Function GetDirectoryListing(Path : pchar) : PHashMap;
 var
-    Obj : PVFSObject;
-    ObjPath : pchar;
-    RelPath : pchar;
+    Obj      : PVFSObject;
+    ObjPath  : pchar;
+    RelPath  : pchar;
+    liveMap  : PHashMap;
+    snap     : PHashMap;
+    si       : uint32;
+    liveItem : PHashItem;
+    liveObj  : PVFSObject;
+    snapObj  : PVFSObject;
 
 begin
     tracer.push_trace('vfs.GetDirectoryListing.enter');
@@ -382,7 +473,28 @@ begin
     if Obj <> nil then begin
         Case Obj^.ObjectType of
             otVDIRECTORY:begin
-                GetDirectoryListing:= PHashMap(Obj^.Reference);
+                { Return a snapshot copy — FreeDirectoryListing owns the
+                  returned map and must NOT free live-tree VFSObjects. }
+                liveMap := PHashMap(Obj^.Reference);
+                snap    := hashmap.new();
+                if liveMap <> nil then begin
+                    for si := 0 to liveMap^.Size - 1 do begin
+                        liveItem := liveMap^.Table[si];
+                        while liveItem <> nil do begin
+                            liveObj := PVFSObject(liveItem^.Data);
+                            if liveObj <> nil then begin
+                                snapObj := PVFSObject(kalloc(sizeof(TVFSObject)));
+                                snapObj^.ObjectType := liveObj^.ObjectType;
+                                snapObj^.ObjectName := stringCopy(liveItem^.Key);
+                                snapObj^.Reference  := liveObj^.Reference;
+                                snapObj^.Parent     := liveObj^.Parent;
+                                hashmap.add(snap, stringCopy(liveItem^.Key), void(snapObj));
+                            end;
+                            liveItem := liveItem^.Next;
+                        end;
+                    end;
+                end;
+                GetDirectoryListing := snap;
             end;
             otDRIVE:begin
                 ObjPath:= getAbsolutePath(Obj);
@@ -479,31 +591,17 @@ end;
 
 { Filesystem Functions }
 
-const
-    MAX_OPEN_FILES = 16;
-
-type
-    TOpenFileEntry = record
-        inUse      : boolean;
-        volume     : PStorage_Volume;
-        directory  : pchar;     { Directory path within volume, e.g. 'SYSTEM' or '' for root }
-        fileName   : pchar;     { Full filename including extension, e.g. 'README.TXT' }
-        openMode   : TOpenMode;
-        writeMode  : TWriteMode;
-        dataBuffer : puint32;   { Pointer to loaded data (nil for omStream) }
-        dataSize   : uint32;    { Size of loaded data in bytes }
-        loaded     : boolean;   { True if data has been read from disk }
-        { Current byte position for omStream mode; 0 on open, advanced by each ReadFile call }
-        streamOffset : uint32;
-    end;
-    POpenFileEntry = ^TOpenFileEntry;
-
-var
-    OpenFiles : array[0..15] of TOpenFileEntry;
-
 type
     PPStorage_Volume = ^PStorage_Volume;
     PPChar = ^pchar;
+
+{ Return the current process's FD table, or nil if no process is running. }
+function currentFDTable : PFDTable;
+begin
+    currentFDTable := nil;
+    if processmanager.CurrentProcess <> nil then
+        currentFDTable := PFDTable(processmanager.CurrentProcess^.FDTable);
+end;
 
 { Resolve a full VFS path into a volume + relative dir + filename.
   Returns true if successful.
@@ -604,10 +702,11 @@ begin
     tracer.push_trace('vfs.ResolveFilePath.exit');
 end;
 
-Function OpenFile(Filename : pchar; OpenMode : TOpenMode; WriteMode : TWriteMode; Lock : Boolean; Error : PError) : TFileHandle;
+Function OpenFile(Filename : pchar; OpenMode : TOpenMode; WriteMode : TWriteMode; Error : PError) : TFileHandle;
 var
-    i        : uint32;
-    slot     : sint32;
+    tbl      : PFDTable;
+    slot     : uint32;
+    fd       : PFileDescriptor;
     vol      : PStorage_Volume;
     dir      : pchar;
     fname    : pchar;
@@ -625,15 +724,16 @@ begin
         exit;
     end;
 
-    { Find a free slot }
-    slot := -1;
-    for i := 0 to MAX_OPEN_FILES - 1 do begin
-        if not OpenFiles[i].inUse then begin
-            slot := i;
-            break;
-        end;
+    { Get per-process FD table }
+    tbl := currentFDTable;
+    if tbl = nil then begin
+        if Error <> nil then Error^ := eUnknown;
+        exit;
     end;
-    if slot = -1 then begin
+
+    { Find a free slot }
+    slot := fd_alloc(tbl);
+    if slot = 0 then begin
         if Error <> nil then Error^ := eTooManyOpenFiles;
         exit;
     end;
@@ -652,32 +752,39 @@ begin
         exit;
     end;
 
-    { Set up the entry }
-    OpenFiles[slot].inUse := true;
-    OpenFiles[slot].volume := vol;
-    OpenFiles[slot].directory := dir;
-    OpenFiles[slot].fileName := fname;
-    OpenFiles[slot].openMode := OpenMode;
-    OpenFiles[slot].writeMode := WriteMode;
-    OpenFiles[slot].dataBuffer := nil;
-    OpenFiles[slot].dataSize := 0;
-    OpenFiles[slot].loaded := false;
-    OpenFiles[slot].streamOffset := 0;
+    { Set up the descriptor }
+    fd := @tbl^.Entries[slot - 1];
+    fd^.InUse := true;
+    fd^.Volume := vol;
+    fd^.Directory := dir;
+    fd^.FileName := fname;
+    fd^.OpenMode := uint8(ord(OpenMode));
+    fd^.WriteMode := uint8(ord(WriteMode));
+    fd^.DataBuffer := nil;
+    fd^.DataSize := 0;
+    fd^.Loaded := false;
+    fd^.StreamOff := 0;
 
     { If reading, load the file data now }
     if (OpenMode = omReadOnly) or (OpenMode = omReadWrite) then begin
-        if (vol^.filesystem <> nil) and (vol^.filesystem^.readCallback <> nil) then begin
+        if vol^.filesystem <> nil then begin
             dataBuf := puint32(kalloc(4));
             dataBuf^ := 0;
             dataSize := puint32(kalloc(4));
             dataSize^ := 0;
 
-            readErr := vol^.filesystem^.readCallback(vol, dir, fname, dataBuf, dataSize);
+            if vol^.filesystem^.readCallback <> nil then begin
+                { Sync path: fat32 uses submit_io_wait which parks the calling
+                  process via psAwaiting until the AHCI ISR completes the I/O. }
+                readErr := vol^.filesystem^.readCallback(vol, dir, fname, dataBuf, dataSize);
+            end else begin
+                readErr := 1;
+            end;
 
             if readErr = 0 then begin
-                OpenFiles[slot].dataBuffer := puint32(dataBuf^);
-                OpenFiles[slot].dataSize := dataSize^;
-                OpenFiles[slot].loaded := true;
+                fd^.DataBuffer := puint32(dataBuf^);
+                fd^.DataSize := dataSize^;
+                fd^.Loaded := true;
                 if Error <> nil then Error^ := eNone;
             end else begin
                 { File doesn't exist on disk — OK for write mode }
@@ -685,9 +792,11 @@ begin
                     if Error <> nil then Error^ := eNone;
                 end else begin
                     if Error <> nil then Error^ := eFileDoesNotExist;
-                    OpenFiles[slot].inUse := false;
+                    fd^.InUse := false;
                     kfree(void(dir));
                     kfree(void(fname));
+                    fd^.Directory := nil;
+                    fd^.FileName := nil;
                     kfree(puint32(dataBuf));
                     kfree(puint32(dataSize));
                     exit;
@@ -702,42 +811,35 @@ begin
         if Error <> nil then Error^ := eNone;
     end;
 
-    OpenFile := slot + 1; { Handle is 1-based, 0 = invalid }
+    OpenFile := slot; { Handle is 1-based from fd_alloc }
     tracer.push_trace('vfs.OpenFile.exit');
 end;
 
 function WriteFile(FileHandle : TFileHandle; Position : uint32; Buffer : puint8; Length : uint32) : uint32;
 var
-    idx    : uint32;
-    entry  : POpenFileEntry;
-    vol    : PStorage_Volume;
+    fd       : PFileDescriptor;
+    vol      : PStorage_Volume;
     dirEntry : TDirectory_Entry;
-    status : puint32;
-    padBuf : puint32;
-    padSize : uint32;
+    status   : puint32;
+    padBuf   : puint32;
+    padSize  : uint32;
 begin
     tracer.push_trace('vfs.WriteFile.enter');
     WriteFile := 0;
 
-    if (FileHandle = 0) or (FileHandle > MAX_OPEN_FILES) then exit;
-    idx := FileHandle - 1;
-    entry := @OpenFiles[idx];
+    fd := fd_get(currentFDTable, FileHandle);
+    if fd = nil then exit;
 
-    if not entry^.inUse then exit;
-    if (entry^.openMode <> omWriteOnly) and (entry^.openMode <> omReadWrite) then exit;
+    if (TOpenMode(fd^.OpenMode) <> omWriteOnly) and (TOpenMode(fd^.OpenMode) <> omReadWrite) then exit;
     if Buffer = nil then exit;
 
-    vol := entry^.volume;
+    vol := fd^.Volume;
     if vol = nil then exit;
     if vol^.filesystem = nil then exit;
-    if vol^.filesystem^.writeCallback = nil then exit;
 
     { Build a TDirectory_Entry for the write callback }
-    dirEntry.fileName := entry^.fileName;
+    dirEntry.fileName  := fd^.FileName;
     dirEntry.entryType := fileEntry;
-
-    status := puint32(kalloc(4));
-    status^ := 0;
 
     { Filesystem writeFile may read full sectors from the buffer regardless of Length.
       Pad to at least 4096 bytes to prevent reading past the allocation. }
@@ -748,123 +850,289 @@ begin
     if Length > 0 then
         util.memcpy(uint32(Buffer), uint32(padBuf), Length);
 
-    vol^.filesystem^.writeCallback(vol, entry^.directory, @dirEntry, Length, padBuf, status);
+    if vol^.filesystem^.writeCallback <> nil then begin
+        { Sync path: fat32 uses submit_io_wait which parks the calling process
+          via psAwaiting until the AHCI ISR completes the I/O. }
+        status := puint32(kalloc(4));
+        status^ := 0;
+        vol^.filesystem^.writeCallback(vol, fd^.Directory, @dirEntry, Length, padBuf, status);
+        if status^ = 0 then
+            WriteFile := Length
+        else
+            WriteFile := 0;
+        kfree(puint32(status));
+        kfree(padBuf);
+    end else begin
+        kfree(padBuf);
+    end;
 
-    { Only report success if the filesystem callback reports no error }
-    if status^ = 0 then
-        WriteFile := Length
-    else
-        WriteFile := 0;
-
-    kfree(padBuf);
-    kfree(puint32(status));
     tracer.push_trace('vfs.WriteFile.exit');
 end;
 
 function ReadFile(FileHandle : TFileHandle; Position : uint32; Buffer : puint8; Length : uint32) : uint32;
 var
-    idx      : uint32;
-    entry    : POpenFileEntry;
+    fd       : PFileDescriptor;
     copyLen  : uint32;
 begin
     tracer.push_trace('vfs.ReadFile.enter');
     ReadFile := 0;
 
-    if (FileHandle = 0) or (FileHandle > MAX_OPEN_FILES) then exit;
-    idx := FileHandle - 1;
-    entry := @OpenFiles[idx];
-
-    if not entry^.inUse then exit;
+    fd := fd_get(currentFDTable, FileHandle);
+    if fd = nil then exit;
 
     { Streaming mode: call readOffsetCallback on demand — no pre-loaded buffer needed }
-    if entry^.openMode = omStream then begin
+    if TOpenMode(fd^.OpenMode) = omStream then begin
         if Buffer = nil then exit;
-        if entry^.volume = nil then exit;
-        if entry^.volume^.filesystem = nil then exit;
-        if entry^.volume^.filesystem^.readOffsetCallback = nil then exit;
-        ReadFile := entry^.volume^.filesystem^.readOffsetCallback(
-            entry^.volume, entry^.directory, entry^.fileName,
-            entry^.streamOffset, puint32(Buffer), Length);
-        entry^.streamOffset := entry^.streamOffset + ReadFile;
+        if fd^.Volume = nil then exit;
+        if fd^.Volume^.filesystem = nil then exit;
+        if fd^.Volume^.filesystem^.readOffsetCallback = nil then exit;
+        ReadFile := fd^.Volume^.filesystem^.readOffsetCallback(
+            fd^.Volume, fd^.Directory, fd^.FileName,
+            fd^.StreamOff, puint32(Buffer), Length);
+        fd^.StreamOff := fd^.StreamOff + ReadFile;
         tracer.push_trace('vfs.ReadFile.exit');
         exit;
     end;
 
-    if not entry^.loaded then exit;
-    if entry^.dataBuffer = nil then exit;
+    if not fd^.Loaded then exit;
+    if fd^.DataBuffer = nil then exit;
     if Buffer = nil then exit;
 
     { Copy from loaded buffer at Position into caller's buffer }
-    if Position >= entry^.dataSize then exit;
+    if Position >= fd^.DataSize then exit;
 
     { Clamp copyLen without relying on (Position + copyLen) which can overflow }
-    copyLen := entry^.dataSize - Position;
+    copyLen := fd^.DataSize - Position;
     if Length < copyLen then
         copyLen := Length;
 
     if copyLen > 0 then
-        util.memcpy(uint32(entry^.dataBuffer) + Position, uint32(Buffer), copyLen);
+        util.memcpy(uint32(fd^.DataBuffer) + Position, uint32(Buffer), copyLen);
 
     ReadFile := copyLen;
     tracer.push_trace('vfs.ReadFile.exit');
 end;
 
-function CloseFile(Filehandle : TFileHandle) : boolean;
-var
-    idx   : uint32;
-    entry : POpenFileEntry;
+function CloseFile(Filehandle : TFileHandle) : TError;
 begin
     tracer.push_trace('vfs.CloseFile.enter');
-    CloseFile := false;
-
-    if (FileHandle = 0) or (FileHandle > MAX_OPEN_FILES) then exit;
-    idx := FileHandle - 1;
-    entry := @OpenFiles[idx];
-
-    if not entry^.inUse then exit;
-
-    { Free loaded data buffer }
-    if entry^.dataBuffer <> nil then begin
-        kfree(entry^.dataBuffer);
-        entry^.dataBuffer := nil;
-    end;
-
-    { Free path strings }
-    if entry^.directory <> nil then begin
-        kfree(void(entry^.directory));
-        entry^.directory := nil;
-    end;
-    if entry^.fileName <> nil then begin
-        kfree(void(entry^.fileName));
-        entry^.fileName := nil;
-    end;
-
-    entry^.inUse := false;
-    entry^.loaded := false;
-    entry^.dataSize := 0;
-
-    CloseFile := true;
+    if fd_close(currentFDTable, FileHandle) then
+        CloseFile := eNone
+    else
+        CloseFile := eInvalidHandle;
     tracer.push_trace('vfs.CloseFile.exit');
 end;
 
-function FileSize(Filename : pchar; error : puint8) : uint32;
+function FileSize(Filename : pchar; error : PError) : uint32;
 var
     fError  : TError;
     fHandle : TFileHandle;
-    idx     : uint32;
+    fd      : PFileDescriptor;
 begin
     tracer.push_trace('vfs.FileSize.enter');
     FileSize := 0;
-    if error <> nil then error^ := 1;
+    if error <> nil then error^ := eUnknown;
 
-    fHandle := OpenFile(Filename, omReadOnly, wmRewrite, false, @fError);
+    fHandle := OpenFile(Filename, omReadOnly, wmRewrite, @fError);
     if (fHandle <> 0) and (fError = eNone) then begin
-        idx := fHandle - 1;
-        FileSize := OpenFiles[idx].dataSize;
-        if error <> nil then error^ := 0;
+        fd := fd_get(currentFDTable, fHandle);
+        if fd <> nil then
+            FileSize := fd^.DataSize;
+        if error <> nil then error^ := eNone;
         CloseFile(fHandle);
     end;
     tracer.push_trace('vfs.FileSize.exit');
+end;
+
+{ === Async public API === }
+
+{ WriteFileAsync — set up a write and return immediately.
+  fat32 deep-copies the buffer on entry so the caller can free it after this returns.
+  Callback fires with eNone on success, or a TError code on failure. }
+procedure WriteFileAsync(FileHandle : TFileHandle; Position : uint32; Buffer : puint8; Length : uint32; Callback : TIOCallback; CallbackData : pointer);
+var
+    fd       : PFileDescriptor;
+    vol      : PStorage_Volume;
+    dirEntry : TDirectory_Entry;
+    padBuf   : puint32;
+    padSize  : uint32;
+begin
+    tracer.push_trace('vfs.WriteFileAsync.enter');
+
+    fd := fd_get(currentFDTable, FileHandle);
+    if fd = nil then begin
+        if Callback <> nil then Callback(eInvalidHandle, CallbackData);
+        exit;
+    end;
+
+    if (TOpenMode(fd^.OpenMode) <> omWriteOnly) and (TOpenMode(fd^.OpenMode) <> omReadWrite) then begin
+        if Callback <> nil then Callback(eReadOnly, CallbackData);
+        exit;
+    end;
+
+    if Buffer = nil then begin
+        if Callback <> nil then Callback(eInvalidArgument, CallbackData);
+        exit;
+    end;
+
+    vol := fd^.Volume;
+    if (vol = nil) or (vol^.filesystem = nil) then begin
+        if Callback <> nil then Callback(eInvalidArgument, CallbackData);
+        exit;
+    end;
+
+    { Prefer async hook; fall back to sync if not available }
+    if vol^.filesystem^.writeAsyncCallback <> nil then begin
+        dirEntry.fileName  := fd^.FileName;
+        dirEntry.entryType := fileEntry;
+        padSize := Length;
+        if padSize < 4096 then padSize := 4096;
+        padBuf := puint32(kalloc(padSize));
+        util.memset(uint32(padBuf), 0, padSize);
+        if Length > 0 then
+            util.memcpy(uint32(Buffer), uint32(padBuf), Length);
+        { fat32 writeFile_async deep-copies padBuf synchronously before returning }
+        vol^.filesystem^.writeAsyncCallback(vol, fd^.Directory, @dirEntry, Length, padBuf, Callback, CallbackData);
+        kfree(padBuf);
+    end else if vol^.filesystem^.writeCallback <> nil then begin
+        { Sync fallback — call directly and fake immediate completion }
+        dirEntry.fileName  := fd^.FileName;
+        dirEntry.entryType := fileEntry;
+        padSize := Length;
+        if padSize < 4096 then padSize := 4096;
+        padBuf := puint32(kalloc(padSize));
+        util.memset(uint32(padBuf), 0, padSize);
+        if Length > 0 then
+            util.memcpy(uint32(Buffer), uint32(padBuf), Length);
+        vol^.filesystem^.writeCallback(vol, fd^.Directory, @dirEntry, Length, padBuf, nil);
+        kfree(padBuf);
+        if Callback <> nil then Callback(eNone, CallbackData);
+    end else begin
+        if Callback <> nil then Callback(eNotSupported, CallbackData);
+    end;
+
+    tracer.push_trace('vfs.WriteFileAsync.exit');
+end;
+
+{ OpenFileAsync — resolve the path, allocate an FD, kick off async data load.
+  OutHandle is set before returning; the FD is not usable until Callback fires.
+  If OpenMode is write-only or stream, Callback fires immediately (no disk read). }
+procedure OpenFileAsync(Filename : pchar; OpenMode : TOpenMode; WriteMode : TWriteMode; var OutHandle : TFileHandle; Error : PError; Callback : TIOCallback; CallbackData : pointer);
+var
+    tbl     : PFDTable;
+    slot    : uint32;
+    fd      : PFileDescriptor;
+    vol     : PStorage_Volume;
+    dir     : pchar;
+    fname   : pchar;
+    dataBuf : puint32;
+    dataSize: puint32;
+    octx    : PVFSOpenAsyncCtx;
+begin
+    tracer.push_trace('vfs.OpenFileAsync.enter');
+    OutHandle := 0;
+    if Error <> nil then Error^ := eUnknown;
+
+    if (Filename = nil) or (Filename[0] = char(0)) then begin
+        if Error <> nil then Error^ := eInvalidPath;
+        if Callback <> nil then Callback(eInvalidPath, CallbackData);
+        exit;
+    end;
+
+    tbl := currentFDTable;
+    if tbl = nil then begin
+        if Callback <> nil then Callback(eUnknown, CallbackData);
+        exit;
+    end;
+
+    slot := fd_alloc(tbl);
+    if slot = 0 then begin
+        if Error <> nil then Error^ := eTooManyOpenFiles;
+        if Callback <> nil then Callback(eTooManyOpenFiles, CallbackData);
+        exit;
+    end;
+
+    if not ResolveFilePath(Filename, PPStorage_Volume(@vol), PPChar(@dir), PPChar(@fname)) then begin
+        if Error <> nil then Error^ := eFileDoesNotExist;
+        if Callback <> nil then Callback(eFileDoesNotExist, CallbackData);
+        exit;
+    end;
+
+    if (fname = nil) or (fname[0] = char(0)) then begin
+        if Error <> nil then Error^ := eInvalidFileName;
+        if Callback <> nil then Callback(eInvalidFileName, CallbackData);
+        if dir <> nil then kfree(void(dir));
+        if fname <> nil then kfree(void(fname));
+        exit;
+    end;
+
+    fd := @tbl^.Entries[slot - 1];
+    fd^.InUse     := true;
+    fd^.Volume    := vol;
+    fd^.Directory := dir;
+    fd^.FileName  := fname;
+    fd^.OpenMode  := uint8(ord(OpenMode));
+    fd^.WriteMode := uint8(ord(WriteMode));
+    fd^.DataBuffer:= nil;
+    fd^.DataSize  := 0;
+    fd^.Loaded    := false;
+    fd^.StreamOff := 0;
+    OutHandle := slot;
+
+    if (OpenMode = omReadOnly) or (OpenMode = omReadWrite) then begin
+        if (vol^.filesystem <> nil) and (vol^.filesystem^.readAsyncCallback <> nil) then begin
+            { True async: build completion context; callback fires when data is loaded }
+            dataBuf  := puint32(kalloc(4));
+            dataBuf^ := 0;
+            dataSize  := puint32(kalloc(4));
+            dataSize^ := 0;
+            octx := PVFSOpenAsyncCtx(kalloc(sizeof(TVFSOpenAsyncCtx)));
+            octx^.FD           := fd;
+            octx^.DataBuf      := dataBuf;
+            octx^.DataSize     := dataSize;
+            octx^.OpenMode     := OpenMode;
+            octx^.UserError    := Error;
+            octx^.UserCallback := Callback;
+            octx^.UserData     := CallbackData;
+            vol^.filesystem^.readAsyncCallback(vol, dir, fname, dataBuf, dataSize, @vfs_open_complete, octx);
+            { Return immediately — caller must not use OutHandle until Callback fires }
+        end else if (vol^.filesystem <> nil) and (vol^.filesystem^.readCallback <> nil) then begin
+            { Sync fallback: load now, then fire callback }
+            dataBuf  := puint32(kalloc(4));
+            dataBuf^ := 0;
+            dataSize  := puint32(kalloc(4));
+            dataSize^ := 0;
+            if vol^.filesystem^.readCallback(vol, dir, fname, dataBuf, dataSize) = 0 then begin
+                fd^.DataBuffer := puint32(dataBuf^);
+                fd^.DataSize   := dataSize^;
+                fd^.Loaded     := true;
+                if Error <> nil then Error^ := eNone;
+            end else begin
+                if OpenMode = omReadWrite then begin
+                    if Error <> nil then Error^ := eNone;
+                end else begin
+                    if Error <> nil then Error^ := eFileDoesNotExist;
+                    fd^.InUse := false;
+                    kfree(void(dir));
+                    kfree(void(fname));
+                    fd^.Directory := nil;
+                    fd^.FileName  := nil;
+                    OutHandle := 0;
+                end;
+            end;
+            kfree(puint32(dataBuf));
+            kfree(puint32(dataSize));
+            if Callback <> nil then Callback(Error^, CallbackData);
+        end else begin
+            if Callback <> nil then Callback(eNone, CallbackData);
+        end;
+    end else begin
+        { Write-only or streaming mode — no file data read needed }
+        if Error <> nil then Error^ := eNone;
+        if Callback <> nil then Callback(eNone, CallbackData);
+    end;
+
+    tracer.push_trace('vfs.OpenFileAsync.exit');
 end;
 
 function CreateDirectory(Handle : uint32; Path : pchar) : TError;
@@ -1049,6 +1317,7 @@ begin
             Entry^.ObjectName := stringCopy(ObjectName);
             Entry^.Parent := Obj;
             hashmap.add(Map, stringCopy(Key), void(Entry));
+            newVirtualDirectory := eNone;
         end else begin
             newVirtualDirectory := eDirectoryAlreadyExists;
         end;
@@ -1059,11 +1328,17 @@ begin
 end;
 
 function getWorkingDirectory : pchar;
+var
+    cwd : pchar;
 begin
     tracer.push_trace('vfs.getWorkingDirectory.enter');
     { Return a copy so callers cannot hold a dangling pointer after a cd }
-    if CurrentDirectory <> nil then
-        getWorkingDirectory := stringCopy(CurrentDirectory)
+    cwd := nil;
+    if (processmanager.CurrentProcess <> nil) and
+       (processmanager.CurrentProcess^.Cwd <> nil) then
+        cwd := processmanager.CurrentProcess^.Cwd;
+    if cwd <> nil then
+        getWorkingDirectory := stringCopy(cwd)
     else
         getWorkingDirectory := nil;
     tracer.push_trace('vfs.getWorkingDirectory.exit');
@@ -1111,6 +1386,35 @@ begin
     kfree(void(AbsPath));
 end;
 
+{ Free a map returned by GetDirectoryListingFrom / volumeGetDirectories.
+  Only call this on maps returned for real volumes (otDRIVE / otMOUNT paths),
+  NOT on maps for virtual VFS directories (otVDIRECTORY). }
+procedure FreeDirectoryListing(map : PHashMap);
+var
+    i    : uint32;
+    item : PHashItem;
+    next : PHashItem;
+    obj  : PVFSObject;
+begin
+    if map = nil then exit;
+    for i := 0 to map^.Size - 1 do begin
+        item := map^.Table[i];
+        while item <> nil do begin
+            next := item^.Next;
+            obj  := PVFSObject(item^.Data);
+            if obj <> nil then begin
+                if obj^.ObjectName <> nil then kfree(void(obj^.ObjectName));
+                kfree(void(obj));
+            end;
+            if item^.Key <> nil then kfree(void(item^.Key));
+            kfree(void(item));
+            item := next;
+        end;
+    end;
+    if map^.Table <> nil then kfree(void(map^.Table));
+    kfree(void(map));
+end;
+
 function changeDirectoryFrom(Path : pchar; BaseDir : pchar; var NewDir : pchar) : TIsPathValid;
 var
     TempPath : pchar;
@@ -1138,10 +1442,11 @@ var
     WD     : pchar;
 
 begin
-    WD:= StringCopy(CurrentDirectory);
+    WD:= getWorkingDirectory;
+    if WD = nil then exit;
     STRLL_Add(PushPopDirectory, WD);
     Output:= StringConcat(WD, ' saved to stack.');
-    syslog.writestringln(Output);
+    stdio.bufWriteStrLn(stdout_buf, Output);
     kfree(void(Output));
 end;
 
@@ -1155,16 +1460,16 @@ begin
         WD:= STRLL_Get(PushPopDirectory, STRLL_Size(PushPopDirectory)-1);
         if changeDirectory(WD) = pvDirectory then begin
             Output:= StringConcat(WD, ' popped from the stack.');
-            syslog.writestringln(Output);
+            stdio.bufWriteStrLn(stdout_buf, Output);
             kfree(void(Output));
         end else begin
             Output:= StringConcat(WD, ' popped, but was invalid!');
-            syslog.writestringln(Output);
+            stdio.bufWriteStrLn(stdout_buf, Output);
             kfree(void(Output));
         end;
         STRLL_Delete(PushPopDirectory, STRLL_Size(PushPopDirectory)-1);
     end else begin
-        syslog.writestringln('No working directory in the stack!');
+        stdio.bufWriteStrLn(stdout_buf, 'No working directory in the stack!');
     end;
 end;
 
@@ -1210,19 +1515,22 @@ var
     i        : uint32;
     col      : uint32;
     mapOwned : boolean;
+    wd       : pchar;
 
 begin
     tracer.push_trace('vfs.VFS_COMMAND_LS.enter');
+    wd := getWorkingDirectory;
     { Determine if GetDirectoryListing will return a caller-owned (freshly allocated) map }
-    dirObj := GetObjectFromPath(CurrentDirectory);
+    dirObj := GetObjectFromPath(wd);
     mapOwned := (dirObj <> nil) and (dirObj^.ObjectType = otDRIVE);
-    Map := GetDirectoryListing(CurrentDirectory);
+    Map := GetDirectoryListing(wd);
+    kfree(void(wd));
     if Map <> nil then begin
         for i:=0 to Map^.Size-1 do begin
             Item:= Map^.Table[i];
             while Item <> nil do begin
                 obj:= PVFSObject(Item^.Data);
-                syslog.writestring(' ');
+                stdio.bufWriteStr(stdout_buf, ' ');
                 case obj^.ObjectType of
                     otVDIRECTORY : col:= 0;
                     otDRIVE      : col:= 0;
@@ -1232,14 +1540,14 @@ begin
                     otFILE       : col:= 0;
                     otDIRECTORY  : col:= 0;
                 end;
-                syslog.writestringln(Item^.Key);
+                stdio.bufWriteStrLn(stdout_buf, Item^.Key);
                 Item:= Item^.Next;
             end;
         end;
         if mapOwned then
             freeOwnedDirListing(Map);
     end else begin
-        syslog.writestringln('An internal error occured!');
+        stdio.bufWriteStrLn(stdout_buf, 'An internal error occured!');
     end;
     tracer.push_trace('vfs.VFS_COMMAND_LS.exit');
 end;
@@ -1270,14 +1578,14 @@ begin
         Result:= changeDirectory(Path);
         case Result of
             pvInvalid:begin
-                syslog.writestring('"');
-                syslog.writestring(Path);
-                syslog.writestringln('" is not a valid path.');
+                stdio.bufWriteStr(stdout_buf, '"');
+                stdio.bufWriteStr(stdout_buf, Path);
+                stdio.bufWriteStrLn(stdout_buf, '" is not a valid path.');
             end;
             pvFile:begin
-                syslog.writestring('"');
-                syslog.writestring(Path);
-                syslog.writestringln('" is not a directory.');
+                stdio.bufWriteStr(stdout_buf, '"');
+                stdio.bufWriteStr(stdout_buf, Path);
+                stdio.bufWriteStrLn(stdout_buf, '" is not a directory.');
             end;
         end;
         kfree(void(Path));
@@ -1298,7 +1606,7 @@ var
 begin
     tracer.push_trace('vfs.VFS_COMMAND_MKDIR.enter');
     if ParamCount(params) < 1 then begin
-        syslog.writestringln('Usage: MKDIR <path>');
+        stdio.bufWriteStrLn(stdout_buf, 'Usage: MKDIR <path>');
         tracer.push_trace('vfs.VFS_COMMAND_MKDIR.exit');
         exit;
     end;
@@ -1307,15 +1615,15 @@ begin
 
     { Resolve the path into volume + parent directory + new directory name }
     if not ResolveFilePath(Path, PPStorage_Volume(@vol), PPChar(@dir), PPChar(@dirName)) then begin
-        syslog.writestring('Invalid path: ');
-        syslog.writestringln(Path);
+        stdio.bufWriteStr(stdout_buf, 'Invalid path: ');
+        stdio.bufWriteStrLn(stdout_buf, Path);
         kfree(void(Path));
         tracer.push_trace('vfs.VFS_COMMAND_MKDIR.exit');
         exit;
     end;
 
     if vol^.filesystem = nil then begin
-        syslog.writestringln('Volume has no filesystem.');
+        stdio.bufWriteStrLn(stdout_buf, 'Volume has no filesystem.');
         kfree(void(Path));
         kfree(void(dir));
         kfree(void(dirName));
@@ -1324,7 +1632,7 @@ begin
     end;
 
     if vol^.filesystem^.createDirCallback = nil then begin
-        syslog.writestringln('Filesystem does not support creating directories.');
+        stdio.bufWriteStrLn(stdout_buf, 'Filesystem does not support creating directories.');
         kfree(void(Path));
         kfree(void(dir));
         kfree(void(dirName));
@@ -1340,21 +1648,21 @@ begin
     errCode := TError(status^);
     case errCode of
         eNone:
-            syslog.writestringln('Directory created.');
+            stdio.bufWriteStrLn(stdout_buf, 'Directory created.');
         eDirectoryDoesNotExist: begin
-            syslog.writestring('Parent directory does not exist: ');
-            syslog.writestringln(dir);
+            stdio.bufWriteStr(stdout_buf, 'Parent directory does not exist: ');
+            stdio.bufWriteStrLn(stdout_buf, dir);
         end;
         eDirectoryAlreadyExists:
-            syslog.writestringln('Directory already exists.');
+            stdio.bufWriteStrLn(stdout_buf, 'Directory already exists.');
         eInvalidFileName:
-            syslog.writestringln('Invalid directory name.');
+            stdio.bufWriteStrLn(stdout_buf, 'Invalid directory name.');
         eDiskFull:
-            syslog.writestringln('Disk is full.');
+            stdio.bufWriteStrLn(stdout_buf, 'Disk is full.');
         eDirectoryFull:
-            syslog.writestringln('Parent directory is full.');
+            stdio.bufWriteStrLn(stdout_buf, 'Parent directory is full.');
     else
-        syslog.writestringln('Failed to create directory.');
+        stdio.bufWriteStrLn(stdout_buf, 'Failed to create directory.');
     end;
 
     kfree(puint32(status));
@@ -1379,7 +1687,7 @@ var
 begin
     tracer.push_trace('vfs.VFS_COMMAND_RM.enter');
     if ParamCount(params) < 1 then begin
-        syslog.writestringln('Usage: RM <file_path>');
+        stdio.bufWriteStrLn(stdout_buf, 'Usage: RM <file_path>');
         tracer.push_trace('vfs.VFS_COMMAND_RM.exit');
         exit;
     end;
@@ -1387,15 +1695,15 @@ begin
     Path := StringCopy(GetParam(0, params));
 
     if not ResolveFilePath(Path, PPStorage_Volume(@vol), PPChar(@dir), PPChar(@fname)) then begin
-        syslog.writestring('Invalid path: ');
-        syslog.writestringln(Path);
+        stdio.bufWriteStr(stdout_buf, 'Invalid path: ');
+        stdio.bufWriteStrLn(stdout_buf, Path);
         kfree(void(Path));
         tracer.push_trace('vfs.VFS_COMMAND_RM.exit');
         exit;
     end;
 
     if vol^.filesystem = nil then begin
-        syslog.writestringln('Volume has no filesystem.');
+        stdio.bufWriteStrLn(stdout_buf, 'Volume has no filesystem.');
         kfree(void(Path));
         kfree(void(dir));
         kfree(void(fname));
@@ -1404,7 +1712,7 @@ begin
     end;
 
     if vol^.filesystem^.deleteFileCallback = nil then begin
-        syslog.writestringln('Filesystem does not support file deletion.');
+        stdio.bufWriteStrLn(stdout_buf, 'Filesystem does not support file deletion.');
         kfree(void(Path));
         kfree(void(dir));
         kfree(void(fname));
@@ -1432,17 +1740,17 @@ begin
     errCode := TError(status^);
     case errCode of
         eNone: begin
-            syslog.writestring('Deleted: ');
-            syslog.writestringln(fname);
+            stdio.bufWriteStr(stdout_buf, 'Deleted: ');
+            stdio.bufWriteStrLn(stdout_buf, fname);
         end;
         eFileDoesNotExist:
-            syslog.writestringln('File not found.');
+            stdio.bufWriteStrLn(stdout_buf, 'File not found.');
         ePermissionDenied:
-            syslog.writestringln('Permission denied.');
+            stdio.bufWriteStrLn(stdout_buf, 'Permission denied.');
         eNotADirectory:
-            syslog.writestringln('Is a directory. Use RMDIR instead.');
+            stdio.bufWriteStrLn(stdout_buf, 'Is a directory. Use RMDIR instead.');
     else
-        syslog.writestringln('Failed to delete file.');
+        stdio.bufWriteStrLn(stdout_buf, 'Failed to delete file.');
     end;
 
     kfree(puint32(status));
@@ -1466,7 +1774,7 @@ var
 begin
     tracer.push_trace('vfs.VFS_COMMAND_RMDIR.enter');
     if ParamCount(params) < 1 then begin
-        syslog.writestringln('Usage: RMDIR <path>');
+        stdio.bufWriteStrLn(stdout_buf, 'Usage: RMDIR <path>');
         tracer.push_trace('vfs.VFS_COMMAND_RMDIR.exit');
         exit;
     end;
@@ -1474,15 +1782,15 @@ begin
     Path := StringCopy(GetParam(0, params));
 
     if not ResolveFilePath(Path, PPStorage_Volume(@vol), PPChar(@dir), PPChar(@dirName)) then begin
-        syslog.writestring('Invalid path: ');
-        syslog.writestringln(Path);
+        stdio.bufWriteStr(stdout_buf, 'Invalid path: ');
+        stdio.bufWriteStrLn(stdout_buf, Path);
         kfree(void(Path));
         tracer.push_trace('vfs.VFS_COMMAND_RMDIR.exit');
         exit;
     end;
 
     if vol^.filesystem = nil then begin
-        syslog.writestringln('Volume has no filesystem.');
+        stdio.bufWriteStrLn(stdout_buf, 'Volume has no filesystem.');
         kfree(void(Path));
         kfree(void(dir));
         kfree(void(dirName));
@@ -1491,7 +1799,7 @@ begin
     end;
 
     if vol^.filesystem^.deleteDirCallback = nil then begin
-        syslog.writestringln('Filesystem does not support directory deletion.');
+        stdio.bufWriteStrLn(stdout_buf, 'Filesystem does not support directory deletion.');
         kfree(void(Path));
         kfree(void(dir));
         kfree(void(dirName));
@@ -1519,19 +1827,19 @@ begin
     errCode := TError(status^);
     case errCode of
         eNone: begin
-            syslog.writestring('Removed directory: ');
-            syslog.writestringln(dirName);
+            stdio.bufWriteStr(stdout_buf, 'Removed directory: ');
+            stdio.bufWriteStrLn(stdout_buf, dirName);
         end;
         eDirectoryDoesNotExist:
-            syslog.writestringln('Directory not found.');
+            stdio.bufWriteStrLn(stdout_buf, 'Directory not found.');
         eNotADirectory:
-            syslog.writestringln('Not a directory.');
+            stdio.bufWriteStrLn(stdout_buf, 'Not a directory.');
         eDirectoryNotEmpty:
-            syslog.writestringln('Directory is not empty.');
+            stdio.bufWriteStrLn(stdout_buf, 'Directory is not empty.');
         ePermissionDenied:
-            syslog.writestringln('Permission denied.');
+            stdio.bufWriteStrLn(stdout_buf, 'Permission denied.');
     else
-        syslog.writestringln('Failed to remove directory.');
+        stdio.bufWriteStrLn(stdout_buf, 'Failed to remove directory.');
     end;
 
     kfree(puint32(status));
@@ -1557,24 +1865,24 @@ var
 begin
     tracer.push_trace('vfs.VFS_COMMAND_MOUNT.enter');
     if ParamCount(params) < 2 then begin
-        syslog.writestringln('Usage: MOUNT <vol_index> <path> [p]');
-        syslog.writestringln('  vol_index  Volume number (see VOL LIST)');
-        syslog.writestringln('  path       VFS mount point, e.g. /mnt/data');
-        syslog.writestringln('  p          Persistent: remount on boot');
+        stdio.bufWriteStrLn(stdout_buf, 'Usage: MOUNT <vol_index> <path> [p]');
+        stdio.bufWriteStrLn(stdout_buf, '  vol_index  Volume number (see VOL LIST)');
+        stdio.bufWriteStrLn(stdout_buf, '  path       VFS mount point, e.g. /mnt/data');
+        stdio.bufWriteStrLn(stdout_buf, '  p          Persistent: remount on boot');
         tracer.push_trace('vfs.VFS_COMMAND_MOUNT.exit');
         exit;
     end;
 
     volIdx := stringToInt(GetParam(0, params));
     if volIdx >= volumemanager.get_volume_count() then begin
-        syslog.writestringln('Invalid volume index.');
+        stdio.bufWriteStrLn(stdout_buf, 'Invalid volume index.');
         tracer.push_trace('vfs.VFS_COMMAND_MOUNT.exit');
         exit;
     end;
 
     vol := volumemanager.get_volume(volIdx);
     if vol = nil then begin
-        syslog.writestringln('Volume not found.');
+        stdio.bufWriteStrLn(stdout_buf, 'Volume not found.');
         tracer.push_trace('vfs.VFS_COMMAND_MOUNT.exit');
         exit;
     end;
@@ -1585,7 +1893,7 @@ begin
     end;
 
     if vol^.filesystem = nil then begin
-        syslog.writestringln('Volume has no detected filesystem. Format it first.');
+        stdio.bufWriteStrLn(stdout_buf, 'Volume has no detected filesystem. Format it first.');
         tracer.push_trace('vfs.VFS_COMMAND_MOUNT.exit');
         exit;
     end;
@@ -1602,14 +1910,14 @@ begin
     res := mountVolume(path, vol);
     case res of
         pvRegistered: begin
-            syslog.writestring('Mounted volume ');
+            stdio.bufWriteStr(stdout_buf, 'Mounted volume ');
             volIdxStr := intToString(volIdx);
-            syslog.writestring(volIdxStr);
+            stdio.bufWriteStr(stdout_buf, volIdxStr);
             kfree(void(volIdxStr));
-            syslog.writestring(' (');
-            syslog.writestring(vol^.filesystem^.sName);
-            syslog.writestring(') at ');
-            syslog.writestringln(path);
+            stdio.bufWriteStr(stdout_buf, ' (');
+            stdio.bufWriteStr(stdout_buf, vol^.filesystem^.sName);
+            stdio.bufWriteStr(stdout_buf, ') at ');
+            stdio.bufWriteStrLn(stdout_buf, path);
 
             { Write asr.mnt to volume root if persistent }
             if persist then begin
@@ -1630,19 +1938,19 @@ begin
                     kfree(padBuf);
 
                     if status^ = 0 then
-                        syslog.writestringln('Persistent mount saved (asr.mnt).')
+                        stdio.bufWriteStrLn(stdout_buf, 'Persistent mount saved (asr.mnt).')
                     else
-                        syslog.writestringln('Warning: could not write asr.mnt.');
+                        stdio.bufWriteStrLn(stdout_buf, 'Warning: could not write asr.mnt.');
 
                     kfree(puint32(status));
                     kfree(void(dirEntry.fileName));
                 end else begin
-                    syslog.writestringln('Warning: filesystem is read-only, cannot persist.');
+                    stdio.bufWriteStrLn(stdout_buf, 'Warning: filesystem is read-only, cannot persist.');
                 end;
             end;
         end;
     else
-        syslog.writestringln('Failed to mount volume.');
+        stdio.bufWriteStrLn(stdout_buf, 'Failed to mount volume.');
     end;
 
     kfree(void(path));
@@ -1660,7 +1968,7 @@ var
 begin
     tracer.push_trace('vfs.VFS_COMMAND_UMOUNT.enter');
     if ParamCount(params) < 1 then begin
-        syslog.writestringln('Usage: UMOUNT <path>');
+        stdio.bufWriteStrLn(stdout_buf, 'Usage: UMOUNT <path>');
         tracer.push_trace('vfs.VFS_COMMAND_UMOUNT.exit');
         exit;
     end;
@@ -1669,15 +1977,15 @@ begin
 
     obj := GetObjectFromPath(path);
     if obj = nil then begin
-        syslog.writestring('Path not found: ');
-        syslog.writestringln(path);
+        stdio.bufWriteStr(stdout_buf, 'Path not found: ');
+        stdio.bufWriteStrLn(stdout_buf, path);
         kfree(void(path));
         tracer.push_trace('vfs.VFS_COMMAND_UMOUNT.exit');
         exit;
     end;
 
     if obj^.ObjectType <> otDRIVE then begin
-        syslog.writestringln('Path is not a mount point.');
+        stdio.bufWriteStrLn(stdout_buf, 'Path is not a mount point.');
         kfree(void(path));
         tracer.push_trace('vfs.VFS_COMMAND_UMOUNT.exit');
         exit;
@@ -1694,8 +2002,8 @@ begin
     kfree(void(obj^.ObjectName));
     kfree(void(obj));
 
-    syslog.writestring('Unmounted ');
-    syslog.writestringln(path);
+    stdio.bufWriteStr(stdout_buf, 'Unmounted ');
+    stdio.bufWriteStrLn(stdout_buf, path);
 
     kfree(void(path));
     tracer.push_trace('vfs.VFS_COMMAND_UMOUNT.exit');
@@ -1820,8 +2128,7 @@ begin
     { Init Push/Pop Stack for PUSHD & POPD }
     PushPopDirectory:= STRLL_New;
 
-    { Move to root of VFS }
-    ChangeCurrentDirectoryValue('/');
+    { Per-process Cwd is initialised to '/' by processmanager.create }
 
     { Create the Default VFS Directories }
     newVirtualDirectory('/dev');
@@ -1841,6 +2148,103 @@ begin
     stdio.registerCommand('UMOUNT',  @VFS_COMMAND_UMOUNT,'Unmount a mounted path.');
 
     tracer.push_trace('vfs.init.exit');
+end;
+
+{ ---- VFS Unit Tests ---- }
+procedure UnitTest;
+var
+    passed, failed : uint32;
+    result         : TIsPathValid;
+    errCode        : TError;
+    absPath        : pchar;
+    map            : PHashMap;
+
+    procedure Assert(condition : boolean; testName : pchar);
+    var
+        msg : pchar;
+    begin
+        if condition then
+            inc(passed)
+        else begin
+            inc(failed);
+            msg := stringConcat('FAIL: ', testName);
+            syslog.logln('VFS', msg);
+            kfree(void(msg));
+        end;
+    end;
+
+    procedure PrintSummary;
+    var
+        pStr, fStr, msg, tmp : pchar;
+    begin
+        pStr := intToString(passed);
+        fStr := intToString(failed);
+        msg  := stringConcat(pStr, ' passed, ');
+        tmp  := stringConcat(msg, fStr);
+        kfree(void(msg));
+        msg  := stringConcat(tmp, ' failed.');
+        kfree(void(tmp));
+        syslog.logln('VFS', msg);
+        kfree(void(msg));
+        kfree(void(pStr));
+        kfree(void(fStr));
+    end;
+
+begin
+    passed := 0;
+    failed := 0;
+    syslog.logln('VFS', 'Unit tests starting...');
+
+    { === PathValid: virtual directories created at init === }
+    Assert(PathValid('/')      = pvDirectory, 'PathValid(/) = dir');
+    Assert(PathValid('/dev')   = pvDirectory, 'PathValid(/dev) = dir');
+    Assert(PathValid('/disk')  = pvDirectory, 'PathValid(/disk) = dir');
+    Assert(PathValid('/mnt')   = pvDirectory, 'PathValid(/mnt) = dir');
+    Assert(PathValid('/cfg')   = pvDirectory, 'PathValid(/cfg) = dir');
+
+    { === PathValid: non-existent paths === }
+    Assert(PathValid('/doesnotexist999') = pvInvalid, 'PathValid(nonexistent) = invalid');
+    Assert(PathValid('/dev/fakefile')    = pvInvalid, 'PathValid(dev/fake) = invalid');
+
+    { === MakeAbsolutePath: absolute input returned unchanged === }
+    absPath := MakeAbsolutePath('/already/abs');
+    Assert(stringEquals(absPath, '/already/abs'), 'MakeAbsolutePath absolute passthrough');
+    kfree(void(absPath));
+
+    absPath := MakeAbsolutePath('/');
+    Assert(stringEquals(absPath, '/'), 'MakeAbsolutePath root');
+    kfree(void(absPath));
+
+    { === MakeAbsolutePath: nil/empty becomes root === }
+    absPath := MakeAbsolutePath('');
+    Assert(absPath <> nil, 'MakeAbsolutePath empty not nil');
+    Assert(absPath[0] = '/', 'MakeAbsolutePath empty returns /');
+    kfree(void(absPath));
+
+    { === newVirtualDirectory: create a test directory === }
+    errCode := newVirtualDirectory('/utest_vfs');
+    Assert(errCode = eNone, 'newVirtualDirectory /utest_vfs = eNone');
+    Assert(PathValid('/utest_vfs') = pvDirectory, 'PathValid /utest_vfs after create');
+
+    { === newVirtualDirectory: create a nested directory === }
+    errCode := newVirtualDirectory('/utest_vfs/sub');
+    Assert(errCode = eNone, 'newVirtualDirectory /utest_vfs/sub = eNone');
+    Assert(PathValid('/utest_vfs/sub') = pvDirectory, 'PathValid /utest_vfs/sub after create');
+
+    { === newVirtualDirectory: duplicate creation === }
+    errCode := newVirtualDirectory('/utest_vfs');
+    Assert(errCode <> eNone, 'newVirtualDirectory duplicate fails');
+
+    { === GetDirectoryListingFrom: root should have entries === }
+    map := GetDirectoryListingFrom('/', '/');
+    Assert(map <> nil, 'GetDirectoryListingFrom(/) not nil');
+    { Do not free: root map is VFS-owned, not caller-owned }
+
+    { === GetDirectoryListingFrom: with known virtual dir === }
+    map := GetDirectoryListingFrom('/utest_vfs', '/');
+    Assert(map <> nil, 'GetDirectoryListingFrom(/utest_vfs) not nil');
+
+    PrintSummary;
 end;
 
 end.

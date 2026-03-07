@@ -22,6 +22,7 @@ unit storagetypes;
 interface
 
 uses
+    dstypes,
     lists;
 
 type
@@ -52,12 +53,69 @@ type
     { Directory entry types }
     TDirectory_Entry_Type = (directoryEntry, fileEntry, mountEntry);
 
-    { Storage error codes — shared between VFS and filesystem drivers }
-    TError          = (eNone, eUnknown, eFileInUse, eWriteOnly, eReadOnly, eFileDoesNotExist, 
-                       eDirectoryDoesNotExist, eDirectoryAlreadyExists, eNotADirectory, 
-                       eDiskFull, eFilenameTooLong, eDirectoryFull, eInvalidPath, ePermissionDenied,
-                       eInvalidFileName, eInvalidFileExtension, eTooManyOpenFiles, eDirectoryNotEmpty);
-    PError          = ^TError;
+    { Storage error codes — shared across I/O layer, drivers, FS, and VFS }
+    TError = (
+        { Success }
+        eNone,
+
+        { Generic }
+        eUnknown,                 { catch-all — replace with specific code wherever possible }
+        eNotSupported,            { operation not supported (e.g., write on RO FS, seek on non-stream) }
+        eOutOfMemory,             { kalloc/heap allocation failed }
+        eInvalidArgument,         { nil pointer, zero-length, or otherwise invalid parameter }
+
+        { File errors }
+        eFileInUse,               { file is open by another process (relevant for delete/unmount) }
+        eFileDoesNotExist,        { path resolves but file not found }
+        eInvalidFileName,         { illegal characters or format in filename }
+        eInvalidFileExtension,    { reserved — FS rejects extension }
+        eFilenameTooLong,         { exceeds FS name length limit }
+
+        { Directory errors }
+        eDirectoryDoesNotExist,   { directory component of path not found }
+        eDirectoryAlreadyExists,  { CreateDirectory target already exists }
+        eDirectoryNotEmpty,       { RemoveDirectory on non-empty dir }
+        eDirectoryFull,           { FS directory entry table full }
+        eNotADirectory,           { path component is a file, not a dir }
+
+        { Access / mode errors }
+        eWriteOnly,               { attempted read on write-only handle }
+        eReadOnly,                { attempted write on read-only handle or read-only FS }
+        ePermissionDenied,        { generic access denied }
+
+        { Path errors }
+        eInvalidPath,             { malformed path string }
+
+        { VFS / FD errors }
+        eTooManyOpenFiles,        { per-process FD table full }
+        eInvalidHandle,           { TFileHandle does not refer to an open FD }
+        eNotStreamMode,           { SeekFile called on a non-omStream handle }
+
+        { Disk / capacity errors }
+        eDiskFull,                { FS reports no free clusters/blocks }
+
+        { I/O layer errors }
+        eIOError,                 { generic I/O failure (DMA error, bad status) }
+        eIOTimeout,               { driver timed out waiting for hardware }
+        eIOCancelled,             { request cancelled (task killed or device removed) }
+        eDeviceNotReady,          { device exists but not ready (spin-up, reset) }
+        eDeviceRemoved,           { device hot-unplugged (USB disconnect) }
+        eDeviceNotFound,          { submit_io with nil or unregistered device }
+        eQueueFull,               { per-device CFIFO cannot accept more requests }
+        eNoFreeSlot,              { driver has no free command slot — transient, retry }
+
+        { Filesystem integrity errors }
+        eCorruptFilesystem,       { bad cluster chain, invalid FAT entry, broken metadata }
+        eBadSector,               { sector-level CRC/ECC failure }
+
+        { Mount / volume errors }
+        eAlreadyMounted,          { mount point already has a volume attached }
+        eNotMounted,              { unmount target is not a mount point }
+        eUnsupportedFilesystem,   { no FS driver could identify the volume }
+        eInvalidPartitionTable,   { GPT/MBR signature or CRC validation failed }
+        eVolumeNotFound           { volume ID/path does not match any known volume }
+    );
+    PError = ^TError;
 
     { Forward declarations }
     PStorage_device  = ^TStorage_Device;
@@ -65,28 +123,25 @@ type
     PFilesystem      = ^TFilesystem;
     PDirectory_Entry = ^TDirectory_Entry;
     PDrive_Error     = ^TDrive_Error;
+    PIORequest       = ^TIORequest;
 
-    { Block I/O callback for raw device access }
-    PPHIOHook  = procedure(drive : PStorage_device; addr : uint32; sectors : uint32; buffer : puint32);
-    PPHIOHook_ = procedure;
+    { === Driver dispatch type (Phase 2+) === }
 
-    { Completion callback fired from IRQ context after async block I/O.
-      Must be short — set a flag or post to a queue.
-      Never call kalloc/kfree/VFS from within this callback. }
-    TStorageCompletion = procedure(success : boolean; userdata : puint32);
+    { Unified driver dispatch — driver receives PIORequest, fires complete_io on finish }
+    TDriverDispatch = procedure(device : PStorage_Device; request : PIORequest);
 
-    { Async block I/O callback — issues the command and returns immediately;
-      calls completion from IRQ context when done. }
-    PPHIOHookAsync = procedure(drive : PStorage_Device; addr : uint32; sectors : uint32; buffer : puint32; completion : TStorageCompletion; userdata : puint32);
+    { === I/O callback type === }
 
-    { Poll callback — called by sync bridge after each hlt wake-up to process
-      completions when the hardware interrupt isn't delivered through the PIC. }
-    PPPollHook = procedure;
+    { Async I/O completion callback — fired from ISR context when a request finishes.
+      error = eNone on success; specific code on failure.
+      userdata is the opaque pointer passed by the submitter. }
+    TIOCallback = procedure(error : TError; userdata : pointer);
 
     { Filesystem callback types }
     PPWriteHook     = procedure(volume : PStorage_volume; directory : pchar; entry : PDirectory_Entry; byteCount : uint32; buffer : puint32; statusOut : puint32);
     PPReadHook      = function(volume : PStorage_Volume; directory : pchar; fileName : pchar; buffer : puint32; bytecount : puint32) : uint32;
     PPCreateHook    = procedure(volume : PStorage_volume; start : uint32; size : uint32; config : puint32);
+    PPCreateAsyncHook = procedure(volume : PStorage_volume; start : uint32; size : uint32; config : puint32; callback : TIOCallback; callbackData : pointer);
     PPDetectHook    = procedure(disk : PStorage_Device);
     PPCreateDirHook  = procedure(volume : PStorage_volume; directory : pchar; dirname : pchar; attributes : uint32; status : puint32);
     PPReadDirHook    = function(volume : PStorage_volume; directory : pchar; status : puint32) : PLinkedListBase;
@@ -99,6 +154,39 @@ type
       to the load-all readCallback behaviour. }
     PPReadOffsetHook = function(volume : PStorage_Volume; directory : pchar; fileName : pchar; offset : uint32; buffer : puint32; byteCount : uint32) : uint32;
 
+    { === Async filesystem hook types ===
+      Each mirrors the corresponding sync hook but receives a TIOCallback + callbackData.
+      The implementation must return immediately; the callback is fired when the
+      operation completes from worker-process context (IF=1, safe to block). }
+    PPLinkedListBase      = ^PLinkedListBase;   { needed for PPReadDirAsyncHook parameter }
+    PPWriteAsyncHook      = procedure(volume : PStorage_Volume; directory : pchar; entry : PDirectory_Entry; byteCount : uint32; buffer : puint32; callback : TIOCallback; callbackData : pointer);
+    PPReadAsyncHook       = procedure(volume : PStorage_Volume; directory : pchar; fileName : pchar; buffer : puint32; byteCount : puint32; callback : TIOCallback; callbackData : pointer);
+    PPCreateDirAsyncHook  = procedure(volume : PStorage_Volume; directory : pchar; dirname : pchar; attributes : uint32; status : puint32; callback : TIOCallback; callbackData : pointer);
+    PPReadDirAsyncHook    = procedure(volume : PStorage_Volume; directory : pchar; resultList : PPLinkedListBase; status : puint32; callback : TIOCallback; callbackData : pointer);
+    PPDeleteFileAsyncHook = procedure(volume : PStorage_Volume; filePath : pchar; status : puint32; callback : TIOCallback; callbackData : pointer);
+    PPDeleteDirAsyncHook  = procedure(volume : PStorage_Volume; path : pchar; status : puint32; callback : TIOCallback; callbackData : pointer);
+
+    { === I/O Request types === }
+
+    TIORequestType  = (ioRead, ioWrite);
+    TIORequestState = (iosPending, iosDispatched, iosComplete, iosCancelled, iosError);
+
+    { Core I/O request — one per disk operation in flight }
+    TIORequest = record
+        RequestType  : TIORequestType;
+        State        : TIORequestState;
+        Device       : PStorage_Device;
+        LBA          : uint32;
+        SectorCount  : uint32;
+        Buffer       : pointer;
+        ByteCount    : uint32;          { actual bytes transferred (filled by driver) }
+        Error        : TError;          { eNone on success; specific code on failure }
+        Caller       : pointer;         { PProcessContext — owning process for sleep/wake (blocking path) }
+        UserData     : pointer;         { points back to caller's stack-local request (blocking path) }
+        Callback     : TIOCallback;     { async completion callback (nil for blocking path) }
+        CallbackData : pointer;         { opaque data passed to Callback }
+    end;
+
     byteArray8  = array[0..7] of char;
     PByteArray8 = ^byteArray8;
 
@@ -108,19 +196,19 @@ type
         controller       : TControllerType;
         controllerId0    : uint32;
         writable         : boolean;
+        removed          : boolean;       { true if device was hot-unplugged }
         volumes          : PDList;
-        writeCallback    : PPHIOHook;
-        readCallback     : PPHIOHook;
-        { Async block I/O callbacks — nil if the driver does not support async }
-        readCallbackAsync  : PPHIOHookAsync;
-        writeCallbackAsync : PPHIOHookAsync;
-        { Poll callback — processes pending completions inline when the
-          hardware interrupt is not delivered. Called from storage_read/write
-          sync bridge after each hlt wake-up.  nil if not needed. }
-        pollCallback       : PPPollHook;
+
+        { === New dispatch interface (Phase 2+) === }
+        dispatchRead     : TDriverDispatch;   { nil if driver not yet migrated }
+        dispatchWrite    : TDriverDispatch;   { nil if driver not yet migrated }
+        requestQueue     : PCFIFOQueue;       { per-device I/O request CFIFO }
+        activeRequest    : PIORequest;        { currently dispatched to HW, or nil }
+
         maxSectorCount   : uint32;
         sectorSize       : uint32; //in bytes
         start            : uint32; //start of device in sectors
+        cachedMBR        : pointer;           { cached MBR data, nil if not yet read }
     end;
 
     { Filesystem driver descriptor }
@@ -138,6 +226,16 @@ type
         identifyCallback   : PPIdentifyHook;
         { Offset-based read for streaming mode — nil if not implemented }
         readOffsetCallback : PPReadOffsetHook;
+        { Async format — nil if FS only supports synchronous create }
+        createAsyncCallback : PPCreateAsyncHook;
+        { Async variants of the main I/O hooks — nil if FS only supports sync.
+          Sync VFS functions will call these + spin-wait when available. }
+        writeAsyncCallback      : PPWriteAsyncHook;
+        readAsyncCallback       : PPReadAsyncHook;
+        createDirAsyncCallback  : PPCreateDirAsyncHook;
+        readDirAsyncCallback    : PPReadDirAsyncHook;
+        deleteFileAsyncCallback : PPDeleteFileAsyncHook;
+        deleteDirAsyncCallback  : PPDeleteDirAsyncHook;
     end;
 
     { Generic storage volume }

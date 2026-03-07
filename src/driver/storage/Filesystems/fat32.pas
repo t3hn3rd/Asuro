@@ -1,3 +1,17 @@
+//  Copyright 2021 Kieron Morris
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//  http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+
 { 
 	Driver->storage->fat32 - fat32 filesystem driver
 	
@@ -12,6 +26,8 @@ uses
     filesystemmanager,
     lists,
     lmemorymanager,
+    processmanager,
+    proctypes,
     rtc,
     stdio,
     storagemanager,
@@ -90,11 +106,41 @@ type
     end;
     PFatVolumeInfo = ^TFatVolumeInfo;
 
+    { Async format state machine steps }
+    TFmtStep = (
+        fmtBootSector,
+        fmtZeroFAT,
+        fmtFATEntries,
+        fmtRootDir,
+        fmtSystemDir,
+        fmtDone
+    );
+
+    PFmtContext = ^TFmtContext;
+    TFmtContext = record
+        Step         : TFmtStep;
+        Volume       : PStorage_Volume;
+        Disk         : PStorage_Device;
+        SectorStart  : uint32;
+        FATStart     : uint32;
+        DataStart    : uint32;
+        FATSize      : uint32;
+        BatchPos     : uint32;
+        BatchSize    : uint32;
+        RootCluster  : uint32;
+        SPC          : uint32;
+        Buffer       : puint32;
+        ZeroBuffer   : puint32;
+        Callback     : TIOCallback;
+        CallbackData : pointer;
+    end;
+
 var
     filesystem : TFilesystem;
 
 procedure init;
 procedure create_volume(volume : PStorage_Volume; sectors : uint32; start : uint32; config : puint32);
+procedure create_volume_async(volume : PStorage_Volume; sectors : uint32; start : uint32; config : puint32; callback : TIOCallback; callbackData : pointer);
 procedure detect_volumes(disk : PStorage_Device);
 //function writeDirectory(volume : PStorage_volume; directory : pchar; attributes : uint32) : uint8; // need to handle parent table cluster overflow, need to take attributes
 //function readDirectory(volume : PStorage_volume; directory : pchar; listPtr : PLinkedListBase) : uint8; //returns: 0 = success, 1 = dir not exsist, 2 = not directory, 3 = error
@@ -265,9 +311,11 @@ var
     buffer : puint32;
 begin
     push_trace('fat32.readBootRecord.enter');
+    syslog.logln('FAT32', 'readBootRecord: enter');
     buffer:= puint32(kalloc(512));
     memset(uint32(buffer), 0, 512);
-    storagemanager.storage_read(volume^.device, volume^.sectorStart + 1, 1, buffer, nil, nil);
+    storagemanager.storage_read(volume^.device, volume^.sectorStart + 1, 1, buffer);
+    syslog.logln('FAT32', 'readBootRecord: done');
     readBootRecord:= PBootRecord(buffer);
 end;
 
@@ -281,16 +329,18 @@ var
     dataStart : uint32;
 begin
     push_trace('fat32.readFat.enter');
+    syslog.logln('FAT32', 'readFat: enter');
     buffer:= puint32(kalloc(bootRecord^.sectorsize));
     memset(uint32(buffer), 0, bootRecord^.sectorsize);
     fatEntriesPerSector:= bootRecord^.sectorsize div 4;
     sectorLocation:= cluster div fatEntriesPerSector;
     dataStart:= (volume^.sectorStart + 1 + bootRecord^.rsvSectors);
 
-    storagemanager.storage_read(volume^.device, datastart + sectorLocation, 1, buffer, nil, nil); 
+    storagemanager.storage_read(volume^.device, datastart + sectorLocation, 1, buffer); 
     readFat:= buffer[cluster - (sectorLocation * fatEntriesPerSector)];
 
     kfree(buffer);
+    syslog.logln('FAT32', 'readFat: done');
 end;
 
 procedure writeFat(volume : PStorage_volume; cluster : uint32; value : uint32; bootRecord : PBootRecord);
@@ -301,17 +351,19 @@ var
     dataStart           : uint32;
 begin
     push_trace('fat32.writeFat.enter');
+    syslog.logln('FAT32', 'writeFat: enter');
     buffer:= puint32(kalloc(bootRecord^.sectorsize));
     memset(uint32(buffer), 0, bootRecord^.sectorsize);
     fatEntriesPerSector:= bootRecord^.sectorsize div 4;
     sectorLocation:= cluster div fatEntriesPerSector;
     dataStart:= (volume^.sectorStart + 1 + bootRecord^.rsvSectors);
 
-    storagemanager.storage_read(volume^.device, dataStart + sectorLocation, 1, buffer, nil, nil);
+    storagemanager.storage_read(volume^.device, dataStart + sectorLocation, 1, buffer);
     buffer[cluster - (sectorLocation * fatEntriesPerSector)]:= value;
-    storagemanager.storage_write(volume^.device, dataStart + sectorLocation, 1, buffer, nil, nil);
+    storagemanager.storage_write(volume^.device, dataStart + sectorLocation, 1, buffer);
 
     kfree(buffer);
+    syslog.logln('FAT32', 'writeFat: done');
 end;
 
 function getFatChain(volume : PStorage_volume; cluster : uint32; bootRecord : PBootRecord) : PLinkedListBase;
@@ -322,6 +374,7 @@ var
     dirElm              : puint32;
 begin
     push_trace('fat32.getFatChain.enter');
+    syslog.logln('FAT32', 'getFatChain: enter');
     clusters:= LL_New(sizeof(uint32));
     currentCluster:= cluster;
     currentClusterValue:= cluster;
@@ -331,6 +384,7 @@ begin
 
         if (currentClusterValue and $0FFFFFFF) = $0FFFFFF7 then begin
             push_trace('fat32.getFatChain.badCluster');
+            syslog.logln('FAT32', 'getFatChain: bad cluster, stopping');
             break;
         end else if (currentClusterValue and $0FFFFFFF) >= $0FFFFFF8 then begin
             dirElm:= LL_add(clusters);
@@ -338,6 +392,7 @@ begin
             break;
         end else if currentClusterValue = 0 then begin
             push_trace('fat32.getFatChain.freeCluster');
+            syslog.logln('FAT32', 'getFatChain: free cluster hit, stopping');
             break;
         end else begin
             dirElm:= LL_add(clusters);
@@ -348,6 +403,7 @@ begin
     end;
 
     getFatChain:= clusters;
+    syslog.logln('FAT32', 'getFatChain: done');
 end;
 
 //TODO improve with FSINFO
@@ -361,6 +417,7 @@ var
     dirElm              : puint32;
 begin
     push_trace('fat32.findFreeClusters.enter');
+    syslog.logln('FAT32', 'findFreeClusters: enter');
     clusters := LL_New(8);
 
     { Calculate total number of data clusters on this volume }
@@ -386,11 +443,13 @@ begin
 
     { If we couldn't find enough free clusters, the disk is full }
     if currentAmount < amount then begin
+        syslog.logln('FAT32', 'findFreeClusters: not enough free clusters - disk full');
         LL_Free(clusters);
         findFreeClusters := nil;
         exit;
     end;
 
+    syslog.logln('FAT32', 'findFreeClusters: done');
     findFreeClusters:= clusters;
 end;
 
@@ -408,9 +467,11 @@ var
     dirElm : puint32;
 begin
     push_trace('fat32.getDirEntries.enter');
+    syslog.logln('FAT32', 'getDirEntries: enter');
     directories:= LL_New(sizeof(TDirectory));
 
     clusters:= PLinkedListBase(getFatChain(volume, cluster, bootRecord));
+    syslog.logln('FAT32', 'getDirEntries: got FAT chain');
     push_trace('fat32.getDirEntries.allocBuffer');
     buffer:= puint32(kalloc( (bootRecord^.sectorSize * bootRecord^.spc) * LL_size(clusters) ));
     memset(uint32(buffer), 0, (bootRecord^.sectorSize * bootRecord^.spc) * LL_size(clusters) );
@@ -421,7 +482,7 @@ begin
     for i:=0 to LL_size(clusters) - 1 do begin
         sectorLocation:= bootRecord^.spc * (i + cluster);
         bufferI:= puint32(uint32(buffer) + uint32(i * bootRecord^.spc * bootRecord^.sectorSize));
-        storagemanager.storage_read(volume^.device, datastart + sectorLocation, bootRecord^.spc, bufferI, nil, nil); //datastart + spc(i + cluster)
+        storagemanager.storage_read(volume^.device, datastart + sectorLocation, bootRecord^.spc, bufferI); //datastart + spc(i + cluster)
     end;
 
     i:=0;
@@ -438,6 +499,7 @@ begin
     LL_Free(clusters);
     kfree(buffer);
     push_trace('fat32.getDirEntries.exit');
+    syslog.logln('FAT32', 'getDirEntries: exit');
 end;
 
 function compareByteArray8(str1 : byteArray8; str2 : byteArray8) : boolean;
@@ -529,6 +591,7 @@ var
 begin
     status:= puint32(kalloc(sizeof(uint32)));
     push_trace('fat32.readDirectory.enter');
+    syslog.logln('FAT32', 'readDirectory: enter');
     status^:= ord(eNone);
     bootRecord:= readBootRecord(volume);
     directoryStrings:= LL_fromString(directory, '/');
@@ -541,6 +604,7 @@ begin
             while true do begin
                 if ii > LL_Size(directories) - 1 then begin
                     status^:= ord(eDirectoryDoesNotExist);
+                    syslog.logln('FAT32', 'readDirectory: component not found');
                     break; 
                 end;
                 dirEntry:= PDirectory(LL_Get(directories, ii));
@@ -575,6 +639,7 @@ begin
     LL_Free(directoryStrings);
     kfree(puint32(bootRecord));
     push_trace('fat32.readDirectory.exit');
+    syslog.logln('FAT32', 'readDirectory: exit');
 end;
 
 function readDirectoryGen(volume : PStorage_volume; directory : pchar; status : puint32) : PLinkedListBase; //returns: 0 = success, 1 = dir not exsist, 2 = not directory, 3 = invalid name, 4= already exists
@@ -609,12 +674,14 @@ var
     extPart  : pchar;
 begin
     push_trace('fat32.writeDirectory.enter');
+    syslog.logln('FAT32', 'writeDirectory: enter');
     writeDirectory := 0;
     status:= puint32(kalloc(sizeof(uint32)));
     status^:= ord(eNone);
 
     { Validate the directory name as a valid FAT32 8.3 name }
     if not isValidFAT32Name(dirName) then begin
+        syslog.logln('FAT32', 'writeDirectory: invalid FAT32 name, aborting');
         statusOut^:= ord(eInvalidFileName);
         kfree(status);
         exit;
@@ -625,6 +692,7 @@ begin
 
     { If the parent directory does not exist, bail out }
     if status^ <> ord(eNone) then begin
+        syslog.logln('FAT32', 'writeDirectory: parent directory not found');
         statusOut^:= status^;
         kfree(status);
         LL_Free(directories);
@@ -639,6 +707,7 @@ begin
             if compareByteArray8(PDirectory(LL_get(directories, i))^.fileName, cleanString( namePart , status))
                and matchExtension(PDirectory(LL_get(directories, i))^.fileExtension, extPart) then begin
                 status^:= ord(eDirectoryAlreadyExists);
+                syslog.logln('FAT32', 'writeDirectory: entry already exists');
             end;
         end;
     end;
@@ -656,6 +725,7 @@ begin
         EntriesPerSector:= uint32(bootRecord^.sectorSize) div uint32(sizeof(TDirectory));
         if LL_size(directories) >= EntriesPerSector then begin
             { Current sector is full — would need cluster chain extension (not yet supported) }
+            syslog.logln('FAT32', 'writeDirectory: directory sector full');
             statusOut^:= ord(eDirectoryFull);
             kfree(status);
             kfree(puint32(bootRecord));
@@ -669,6 +739,7 @@ begin
         clusters:= findFreeClusters(volume, 1, bootRecord);
         if clusters = nil then begin
             { No free clusters available — disk is full }
+            syslog.logln('FAT32', 'writeDirectory: disk full');
             statusOut^:= ord(eDiskFull);
             kfree(status);
             kfree(puint32(bootRecord));
@@ -676,6 +747,7 @@ begin
             exit;
         end;
         cluster:= uint32(LL_Get(clusters, 0)^);
+        syslog.logln('FAT32', 'writeDirectory: allocated cluster');
         LL_Free(clusters);
         buffer:= puint32(kalloc(bootRecord^.sectorSize));
 
@@ -696,7 +768,7 @@ begin
             bufferPointer^.clusterHigh:= uint16((parentCluster shr 16) and $0000FFFF);
 
             //write to disk
-            storagemanager.storage_write(volume^.device, dataStart + (cluster * bootRecord^.spc), 1, buffer, nil, nil);
+            storagemanager.storage_write(volume^.device, dataStart + (cluster * bootRecord^.spc), 1, buffer);
 
             //write fat
             writeFat(volume, cluster, $FFFFFFF8, bootRecord);
@@ -707,7 +779,7 @@ begin
         sectorLocation:= sectorLocation + (parentCluster * bootRecord^.spc);
 
         //dataOffset:= datastart + ( (LL_size(directories) * sizeof(PDirectory)) - (sizeUsed * bootRecord^.sectorSize));
-        storagemanager.storage_read(volume^.device, dataStart + sectorLocation, 1, buffer, nil, nil);
+        storagemanager.storage_read(volume^.device, dataStart + sectorLocation, 1, buffer);
 
         //construct my dir entry
         EntriesPerSector:= uint32(bootRecord^.sectorSize) div uint32(sizeof(TDirectory));
@@ -743,7 +815,8 @@ begin
 
         push_trace('fat32.writeDirectory.writeToDisk');
         //write to disk
-        storagemanager.storage_write(volume^.device, dataStart + sectorLocation, 1, buffer, nil, nil);
+        storagemanager.storage_write(volume^.device, dataStart + sectorLocation, 1, buffer);
+        syslog.logln('FAT32', 'writeDirectory: entry written to disk');
         kfree(buffer);
     end;
 
@@ -751,6 +824,7 @@ begin
     kfree(status);
     kfree(puint32(bootRecord));
     LL_Free(directories);
+    syslog.logln('FAT32', 'writeDirectory: exit');
 
 end;
 
@@ -842,6 +916,7 @@ var
     EntriesPerSector : uint32;
 begin
     push_trace('fat32.deleteFile.enter');
+    syslog.logln('FAT32', 'deleteFile: enter');
     status := puint32(kalloc(4));
     status^ := ord(eNone);
 
@@ -849,6 +924,7 @@ begin
     splitPathParts(filePath, parentDir, fileName);
 
     if (fileName = nil) or (stringSize(fileName) = 0) then begin
+        syslog.logln('FAT32', 'deleteFile: invalid filename');
         if statusOut <> nil then statusOut^ := ord(eInvalidFileName);
         kfree(status);
         if parentDir <> nil then kfree(void(parentDir));
@@ -860,6 +936,7 @@ begin
     directories := readDirectory(volume, parentDir, status);
 
     if status^ <> ord(eNone) then begin
+        syslog.logln('FAT32', 'deleteFile: parent directory error');
         if statusOut <> nil then statusOut^ := status^;
         LL_Free(directories);
         kfree(status);
@@ -871,6 +948,7 @@ begin
 
     { Get parent cluster from the '.' entry }
     if LL_size(directories) < 1 then begin
+        syslog.logln('FAT32', 'deleteFile: parent directory empty/missing');
         if statusOut <> nil then statusOut^ := ord(eDirectoryDoesNotExist);
         LL_Free(directories);
         kfree(status);
@@ -895,6 +973,7 @@ begin
            and matchExtension(dir^.fileExtension, extPart) then begin
             { Don't allow deleting . or .. entries, or directories via deleteFile }
             if (dir^.attributes and $10) = $10 then begin
+                syslog.logln('FAT32', 'deleteFile: target is a directory, not a file');
                 if statusOut <> nil then statusOut^ := ord(eNotADirectory);
                 LL_Free(directories);
                 kfree(status);
@@ -916,6 +995,7 @@ begin
     kfree(void(extPart));
 
     if not found then begin
+        syslog.logln('FAT32', 'deleteFile: file not found');
         if statusOut <> nil then statusOut^ := ord(eFileDoesNotExist);
         LL_Free(directories);
         kfree(status);
@@ -925,6 +1005,7 @@ begin
         exit;
     end;
 
+    syslog.logln('FAT32', 'deleteFile: freeing FAT chain');
     { Free the FAT chain for this file }
     if cluster >= 2 then
         freeFatChain(volume, cluster, bootRecord);
@@ -935,11 +1016,11 @@ begin
     sectorLocation := (foundIdx div EntriesPerSector) + (parentCluster * bootRecord^.spc);
 
     buffer := puint32(kalloc(bootRecord^.sectorSize));
-    storagemanager.storage_read(volume^.device, dataStart + sectorLocation, 1, buffer, nil, nil);
+    storagemanager.storage_read(volume^.device, dataStart + sectorLocation, 1, buffer);
 
     PDirectory(buffer)[foundIdx mod EntriesPerSector].fileName[0] := char($E5);
 
-    storagemanager.storage_write(volume^.device, dataStart + sectorLocation, 1, buffer, nil, nil);
+    storagemanager.storage_write(volume^.device, dataStart + sectorLocation, 1, buffer);
     kfree(buffer);
 
     if statusOut <> nil then statusOut^ := ord(eNone);
@@ -950,6 +1031,7 @@ begin
     kfree(void(parentDir));
     kfree(void(fileName));
     push_trace('fat32.deleteFile.exit');
+    syslog.logln('FAT32', 'deleteFile: done');
 end;
 
 { Delete a directory from the volume. path is relative to volume root. Directory must be empty. }
@@ -977,6 +1059,7 @@ var
     childCount  : uint32;
 begin
     push_trace('fat32.deleteDir.enter');
+    syslog.logln('FAT32', 'deleteDir: enter');
     status := puint32(kalloc(4));
     status^ := ord(eNone);
 
@@ -984,6 +1067,7 @@ begin
     splitPathParts(path, parentDir, dirName);
 
     if (dirName = nil) or (stringSize(dirName) = 0) then begin
+        syslog.logln('FAT32', 'deleteDir: invalid directory name');
         if statusOut <> nil then statusOut^ := ord(eInvalidFileName);
         kfree(status);
         if parentDir <> nil then kfree(void(parentDir));
@@ -1050,6 +1134,7 @@ begin
     kfree(void(extPart));
 
     if not found then begin
+        syslog.logln('FAT32', 'deleteDir: directory not found');
         if statusOut <> nil then statusOut^ := ord(eDirectoryDoesNotExist);
         LL_Free(directories);
         kfree(status);
@@ -1065,6 +1150,7 @@ begin
     LL_Free(childDirs);
 
     if childCount > 2 then begin
+        syslog.logln('FAT32', 'deleteDir: directory not empty, refusing to delete');
         { Directory is not empty }
         if statusOut <> nil then statusOut^ := ord(eDirectoryNotEmpty);
         LL_Free(directories);
@@ -1085,11 +1171,11 @@ begin
     sectorLocation := (foundIdx div EntriesPerSector) + (parentCluster * bootRecord^.spc);
 
     buffer := puint32(kalloc(bootRecord^.sectorSize));
-    storagemanager.storage_read(volume^.device, dataStart + sectorLocation, 1, buffer, nil, nil);
+    storagemanager.storage_read(volume^.device, dataStart + sectorLocation, 1, buffer);
 
     PDirectory(buffer)[foundIdx mod EntriesPerSector].fileName[0] := char($E5);
 
-    storagemanager.storage_write(volume^.device, dataStart + sectorLocation, 1, buffer, nil, nil);
+    storagemanager.storage_write(volume^.device, dataStart + sectorLocation, 1, buffer);
     kfree(buffer);
 
     if statusOut <> nil then statusOut^ := ord(eNone);
@@ -1100,6 +1186,7 @@ begin
     kfree(void(parentDir));
     kfree(void(dirName));
     push_trace('fat32.deleteDir.exit');
+    syslog.logln('FAT32', 'deleteDir: done');
 end;
 
 procedure writeFile(volume : PStorage_volume; directory : pchar; entry : PDirectory_Entry; byteCount : uint32; buffer : puint32; statusOut : puint32);
@@ -1125,11 +1212,13 @@ var
     extPart  : pchar;
 begin
     push_trace('fat32.writeFile.enter');
+    syslog.logln('FAT32', 'writeFile: enter');
     status:= kalloc(4);
     status^:= ord(eNone);
 
     { Validate the filename before doing any I/O }
     if not isValidFAT32Name(entry^.fileName) then begin
+        syslog.logln('FAT32', 'writeFile: invalid FAT32 filename');
         if statusOut <> nil then statusOut^:= ord(eInvalidFileName);
         kfree(status);
         exit;
@@ -1142,6 +1231,7 @@ begin
 
     { If the parent directory does not exist, bail out }
     if status^ <> ord(eNone) then begin
+        syslog.logln('FAT32', 'writeFile: parent directory error');
         if statusOut <> nil then statusOut^:= status^;
         LL_Free(directories);
         kfree(status);
@@ -1170,6 +1260,7 @@ begin
 
     if exists then begin //saving to existing file
         push_trace('fat32.writeFile.existingFile');
+        syslog.logln('FAT32', 'writeFile: updating existing file');
         startCluster:= uint32(dir^.clusterlow) or uint32(dir^.clusterhigh shl 16);
         clusters:= getFatChain(volume, startCluster, bootRecord); //check no clusters and check if needs to be more or less, add/remove clusters
         clusterCount := LL_size(clusters);
@@ -1188,6 +1279,7 @@ begin
             clusters:= findFreeClusters(volume, clusterDifference, bootRecord);
             if clusters = nil then begin
                 { Disk full — cannot expand file }
+                syslog.logln('FAT32', 'writeFile: disk full, cannot expand file');
                 if statusOut <> nil then statusOut^:= ord(eDiskFull);
                 LL_Free(directories);
                 kfree(status);
@@ -1206,11 +1298,13 @@ begin
 
     end else begin
         push_trace('fat32.writeFile.newFile');
+        syslog.logln('FAT32', 'writeFile: creating new file');
 
         startCluster:= writeDirectory(volume, directory, entry^.fileName, 0, status);
 
         { If writeDirectory failed (disk full, dir full, invalid name, etc.), propagate error }
         if status^ <> ord(eNone) then begin
+            syslog.logln('FAT32', 'writeFile: writeDirectory failed');
             if statusOut <> nil then statusOut^:= status^;
             LL_Free(directories);
             kfree(status);
@@ -1230,19 +1324,21 @@ begin
     end;
 
     push_trace('fat32.writeFile.writeSectors');
+    syslog.logln('FAT32', 'writeFile: writing sectors');
 
     iterations:= (bytecount div bootRecord^.sectorSize) div bootRecord^.spc; //no of clusters
 
     for i:=0 to iterations do begin
         dataPosition:= i * uint32(bootRecord^.sectorsize * 4); //needs to be bytes / 4
         bufferPointer:= @buffer[dataPosition div 4]; //todo change to puint8
-        storagemanager.storage_write(volume^.device, dataStart + (startCluster * bootRecord^.spc) + (i * 4), 1, bufferPointer, nil, nil); //i * 4 needs to be changed, TODO fix fucking IDE driver, it suks
-        storagemanager.storage_write(volume^.device, dataStart + (startCluster * bootRecord^.spc) + (i * 4) + 1, 1, @bufferPointer[512 div 4], nil, nil); 
-        storagemanager.storage_write(volume^.device, dataStart + (startCluster * bootRecord^.spc) + (i * 4) + 2, 1, @bufferPointer[1024 div 4], nil, nil); 
-        storagemanager.storage_write(volume^.device, dataStart + (startCluster * bootRecord^.spc) + (i * 4) + 3, 1, @bufferPointer[1536 div 4], nil, nil); 
+        storagemanager.storage_write(volume^.device, dataStart + (startCluster * bootRecord^.spc) + (i * 4), 1, bufferPointer); //i * 4 needs to be changed, TODO fix fucking IDE driver, it suks
+        storagemanager.storage_write(volume^.device, dataStart + (startCluster * bootRecord^.spc) + (i * 4) + 1, 1, @bufferPointer[512 div 4]); 
+        storagemanager.storage_write(volume^.device, dataStart + (startCluster * bootRecord^.spc) + (i * 4) + 2, 1, @bufferPointer[1024 div 4]); 
+        storagemanager.storage_write(volume^.device, dataStart + (startCluster * bootRecord^.spc) + (i * 4) + 3, 1, @bufferPointer[1536 div 4]); 
     end;
 
     { Write succeeded }
+    syslog.logln('FAT32', 'writeFile: done');
     if statusOut <> nil then statusOut^:= ord(eNone);
 
     LL_Free(directories);
@@ -1271,6 +1367,7 @@ var
     extPart  : pchar;
 begin
     push_trace('fat32.readFile.enter');
+    syslog.logln('FAT32', 'readFile: enter');
     statusOut := puint32(kalloc(sizeof(uint32)));
     statusOut^ := 0;
     bootRecord := readBootRecord(volume);
@@ -1303,12 +1400,14 @@ begin
 
     if exists = false then begin
         push_trace('fat32.readFile.notFound');
+        syslog.logln('FAT32', 'readFile: file not found');
         LL_Free(dirs);
         kfree(puint32(bootRecord));
         kfree(puint32(statusOut));
         exit(1);
     end else begin
         push_trace('fat32.readFile.found');
+        syslog.logln('FAT32', 'readFile: file found, reading clusters');
         cluster := uint32(dir^.clusterlow) or uint32(dir^.clusterhigh shl 16);
         clusters := getFatChain(volume, cluster, bootRecord);
         noClusters := LL_size(clusters);
@@ -1316,17 +1415,19 @@ begin
         data := puint32(kalloc(noClusters * bootRecord^.spc * bootRecord^.sectorSize + bootRecord^.sectorSize));
         if data = puint32(0) then begin
             push_trace('UNABLE TO ALLOCATE MEMORY');
+            syslog.logln('FAT32', 'readFile: OOM allocating data buffer');
         end;
         memset(uint32(data), 0, noClusters * bootRecord^.spc * bootRecord^.sectorSize + bootRecord^.sectorSize);
 
         readbuffer := puint32(kalloc(bootRecord^.sectorSize * 2));
         if readbuffer = puint32(0) then begin
             push_trace('UNABLE TO ALLOCATE MEMORY');
+            syslog.logln('FAT32', 'readFile: OOM allocating read buffer');
         end;
         memset(uint32(readbuffer), 0, bootRecord^.sectorSize * 2);
 
         for i:=0 to noClusters * bootRecord^.spc do begin
-            storagemanager.storage_read(volume^.device, dataStart + ((cluster * bootRecord^.spc)+ i), 1, readbuffer, nil, nil);
+            storagemanager.storage_read(volume^.device, dataStart + ((cluster * bootRecord^.spc)+ i), 1, readbuffer);
             memcpy(uint32(readbuffer), uint32(@data[i*bootRecord^.sectorSize div 4]), bootRecord^.sectorSize);
         end;
 
@@ -1334,6 +1435,7 @@ begin
         buffer^ := uint32(data);
         bytecount^ := noClusters * bootRecord^.spc * bootRecord^.sectorSize + bootRecord^.sectorSize;//maybe need to spc
         readFile:= statusOut^;
+        syslog.logln('FAT32', 'readFile: done');
         LL_Free(dirs);
         LL_Free(clusters);
         kfree(puint32(bootRecord));
@@ -1375,6 +1477,281 @@ end;
 
 //TODO check directory commands for errors with a clean disk
 
+{ ========================================================================== }
+{            Async format state machine (create_volume_async)                }
+{ ========================================================================== }
+
+procedure fmt_step_complete(error : TError; userdata : pointer); forward;
+
+procedure fmt_run_next(ctx : PFmtContext);
+var
+    writeCount : uint32;
+begin
+    case ctx^.Step of
+        fmtBootSector: begin
+            syslog.logln('FAT32', 'fmt: fmtBootSector');
+            { Write boot sector at start + 1 }
+            storagemanager.storage_write_async(ctx^.Disk, ctx^.SectorStart + 1, 1,
+                ctx^.Buffer, @fmt_step_complete, pointer(ctx));
+        end;
+        fmtZeroFAT: begin
+            syslog.logln('FAT32', 'fmt: fmtZeroFAT batch');
+            { Issue next FAT zero batch }
+            if ctx^.BatchPos >= ctx^.FATSize then begin
+                syslog.logln('FAT32', 'fmt: FAT zero complete, moving to fmtFATEntries');
+                { FAT zeroing complete — move to FAT entries }
+                kfree(ctx^.ZeroBuffer);
+                ctx^.ZeroBuffer := nil;
+                kfree(ctx^.Buffer);
+                ctx^.Buffer := puint32(kalloc(ctx^.Disk^.sectorSize));
+                memset(uint32(ctx^.Buffer), 0, ctx^.Disk^.sectorSize);
+                puint32(ctx^.Buffer)[0] := $0FFFFFF8;  { media type (reserved entry 0) }
+                puint32(ctx^.Buffer)[1] := $0FFFFFFF;  { clean marker (reserved entry 1) }
+                puint32(ctx^.Buffer)[2] := $0FFFFFF8;  { root cluster EOC (entry 2) }
+                puint32(ctx^.Buffer)[3] := $0FFFFFF8;  { SYSTEM dir cluster EOC (entry 3) }
+                ctx^.Step := fmtFATEntries;
+                fmt_run_next(ctx);
+                exit;
+            end;
+            if (ctx^.FATSize - ctx^.BatchPos) >= ctx^.BatchSize then
+                writeCount := ctx^.BatchSize
+            else
+                writeCount := ctx^.FATSize - ctx^.BatchPos;
+            storagemanager.storage_write_async(ctx^.Disk,
+                ctx^.FATStart + ctx^.BatchPos, writeCount, ctx^.ZeroBuffer,
+                @fmt_step_complete, pointer(ctx));
+        end;
+        fmtFATEntries: begin
+            syslog.logln('FAT32', 'fmt: fmtFATEntries');
+            { Write FAT entries sector }
+            storagemanager.storage_write_async(ctx^.Disk, ctx^.FATStart, 1,
+                ctx^.Buffer, @fmt_step_complete, pointer(ctx));
+        end;
+        fmtRootDir: begin
+            syslog.logln('FAT32', 'fmt: fmtRootDir');
+            { Build root directory: "." + ".." + "SYSTEM" entries }
+            memset(uint32(ctx^.Buffer), 0, ctx^.Disk^.sectorSize);
+            { "." entry — volume label }
+            PDirectory(ctx^.Buffer)[0].fileName[0] := '.';
+            PDirectory(ctx^.Buffer)[0].fileName[1] := ' ';
+            PDirectory(ctx^.Buffer)[0].fileName[2] := ' ';
+            PDirectory(ctx^.Buffer)[0].fileName[3] := ' ';
+            PDirectory(ctx^.Buffer)[0].fileName[4] := ' ';
+            PDirectory(ctx^.Buffer)[0].fileName[5] := ' ';
+            PDirectory(ctx^.Buffer)[0].fileName[6] := ' ';
+            PDirectory(ctx^.Buffer)[0].fileName[7] := ' ';
+            PDirectory(ctx^.Buffer)[0].attributes := $08;
+            PDirectory(ctx^.Buffer)[0].clusterLow := ctx^.RootCluster;
+            { ".." entry }
+            PDirectory(ctx^.Buffer)[1].fileName[0] := '.';
+            PDirectory(ctx^.Buffer)[1].fileName[1] := '.';
+            PDirectory(ctx^.Buffer)[1].fileName[2] := ' ';
+            PDirectory(ctx^.Buffer)[1].fileName[3] := ' ';
+            PDirectory(ctx^.Buffer)[1].fileName[4] := ' ';
+            PDirectory(ctx^.Buffer)[1].fileName[5] := ' ';
+            PDirectory(ctx^.Buffer)[1].fileName[6] := ' ';
+            PDirectory(ctx^.Buffer)[1].fileName[7] := ' ';
+            PDirectory(ctx^.Buffer)[1].attributes := $10;
+            PDirectory(ctx^.Buffer)[1].clusterLow := ctx^.RootCluster;
+            { "SYSTEM" directory entry pointing to cluster 3 }
+            PDirectory(ctx^.Buffer)[2].fileName[0] := 'S';
+            PDirectory(ctx^.Buffer)[2].fileName[1] := 'Y';
+            PDirectory(ctx^.Buffer)[2].fileName[2] := 'S';
+            PDirectory(ctx^.Buffer)[2].fileName[3] := 'T';
+            PDirectory(ctx^.Buffer)[2].fileName[4] := 'E';
+            PDirectory(ctx^.Buffer)[2].fileName[5] := 'M';
+            PDirectory(ctx^.Buffer)[2].fileName[6] := ' ';
+            PDirectory(ctx^.Buffer)[2].fileName[7] := ' ';
+            PDirectory(ctx^.Buffer)[2].attributes := $10;
+            PDirectory(ctx^.Buffer)[2].clusterLow := 3;
+            storagemanager.storage_write_async(ctx^.Disk,
+                ctx^.DataStart + (ctx^.SPC * ctx^.RootCluster), 1, ctx^.Buffer,
+                @fmt_step_complete, pointer(ctx));
+        end;
+        fmtSystemDir: begin
+            syslog.logln('FAT32', 'fmt: fmtSystemDir');
+            { Build SYSTEM directory: "." and ".." }
+            memset(uint32(ctx^.Buffer), 0, ctx^.Disk^.sectorSize);
+            PDirectory(ctx^.Buffer)[0].fileName[0] := '.';
+            PDirectory(ctx^.Buffer)[0].fileName[1] := ' ';
+            PDirectory(ctx^.Buffer)[0].fileName[2] := ' ';
+            PDirectory(ctx^.Buffer)[0].fileName[3] := ' ';
+            PDirectory(ctx^.Buffer)[0].fileName[4] := ' ';
+            PDirectory(ctx^.Buffer)[0].fileName[5] := ' ';
+            PDirectory(ctx^.Buffer)[0].fileName[6] := ' ';
+            PDirectory(ctx^.Buffer)[0].fileName[7] := ' ';
+            PDirectory(ctx^.Buffer)[0].attributes := $10;
+            PDirectory(ctx^.Buffer)[0].clusterLow := 3;
+            PDirectory(ctx^.Buffer)[1].fileName[0] := '.';
+            PDirectory(ctx^.Buffer)[1].fileName[1] := '.';
+            PDirectory(ctx^.Buffer)[1].fileName[2] := ' ';
+            PDirectory(ctx^.Buffer)[1].fileName[3] := ' ';
+            PDirectory(ctx^.Buffer)[1].fileName[4] := ' ';
+            PDirectory(ctx^.Buffer)[1].fileName[5] := ' ';
+            PDirectory(ctx^.Buffer)[1].fileName[6] := ' ';
+            PDirectory(ctx^.Buffer)[1].fileName[7] := ' ';
+            PDirectory(ctx^.Buffer)[1].attributes := $10;
+            PDirectory(ctx^.Buffer)[1].clusterLow := ctx^.RootCluster;
+            storagemanager.storage_write_async(ctx^.Disk,
+                ctx^.DataStart + (ctx^.SPC * 3), 1, ctx^.Buffer,
+                @fmt_step_complete, pointer(ctx));
+        end;
+        fmtDone: begin
+            syslog.logln('FAT32', 'fmt: fmtDone — format complete');
+            { All done — clean up and notify caller }
+            kfree(ctx^.Buffer);
+            ctx^.Buffer := nil;
+            if ctx^.Callback <> nil then
+                ctx^.Callback(eNone, ctx^.CallbackData);
+            kfree(puint32(ctx));
+        end;
+    end;
+end;
+
+procedure fmt_step_complete(error : TError; userdata : pointer);
+var
+    ctx : PFmtContext;
+begin
+    ctx := PFmtContext(userdata);
+    if error <> eNone then begin
+        syslog.logln('FAT32', 'fmt_step_complete: I/O error — aborting format');
+        { Error — abort format, clean up, notify caller }
+        if ctx^.Buffer <> nil then kfree(ctx^.Buffer);
+        if ctx^.ZeroBuffer <> nil then kfree(ctx^.ZeroBuffer);
+        if ctx^.Callback <> nil then
+            ctx^.Callback(error, ctx^.CallbackData);
+        kfree(puint32(ctx));
+        exit;
+    end;
+
+    { Advance to next step }
+    case ctx^.Step of
+        fmtBootSector: begin
+            ctx^.Step := fmtZeroFAT;
+            ctx^.BatchPos := 0;
+        end;
+        fmtZeroFAT: begin
+            ctx^.BatchPos := ctx^.BatchPos + ctx^.BatchSize;
+            { Step stays fmtZeroFAT — fmt_run_next checks if more batches remain }
+        end;
+        fmtFATEntries: begin
+            ctx^.Step := fmtRootDir;
+        end;
+        fmtRootDir: begin
+            ctx^.Step := fmtSystemDir;
+        end;
+        fmtSystemDir: begin
+            ctx^.Step := fmtDone;
+        end;
+    end;
+    fmt_run_next(ctx);
+end;
+
+procedure create_volume_async(volume : PStorage_Volume; sectors : uint32; start : uint32;
+                              config : puint32; callback : TIOCallback; callbackData : pointer);
+var
+    ctx        : PFmtContext;
+    bootRecord : PBootRecord;
+    spc        : uint32;
+begin
+    push_trace('fat32.create_volume_async');
+    syslog.logln('FAT32', 'create_volume_async: enter');
+
+    ctx := PFmtContext(kalloc(sizeof(TFmtContext)));
+    if ctx = nil then begin
+        syslog.logln('FAT32', 'create_volume_async: OOM allocating context');
+        if callback <> nil then callback(eOutOfMemory, callbackData);
+        exit;
+    end;
+
+    ctx^.Volume       := volume;
+    ctx^.Disk         := volume^.device;
+    ctx^.SectorStart  := start;
+    ctx^.RootCluster  := 2;
+    ctx^.Callback     := callback;
+    ctx^.CallbackData := callbackData;
+    ctx^.ZeroBuffer   := nil;
+
+    if config <> nil then
+        spc := config^
+    else
+        spc := 1;
+    if spc = 0 then spc := 1;
+    ctx^.SPC := spc;
+
+    ctx^.FATSize  := ((sectors div spc) * 4) div ctx^.Disk^.sectorSize;
+    ctx^.FATStart := start + 1 + 32;   { boot sector + 32 reserved sectors }
+    ctx^.DataStart := ctx^.FATStart + ctx^.FATSize;
+
+    { Allocate boot sector buffer and build boot record }
+    ctx^.Buffer := puint32(kalloc(ctx^.Disk^.sectorSize + 512));
+    if ctx^.Buffer = nil then begin
+        if callback <> nil then callback(eOutOfMemory, callbackData);
+        kfree(puint32(ctx));
+        exit;
+    end;
+    memset(uint32(ctx^.Buffer), 0, ctx^.Disk^.sectorSize);
+
+    bootRecord := PBootRecord(ctx^.Buffer);
+    bootRecord^.jmp2boot        := $0;
+    bootRecord^.OEMName[0]      := 'A';
+    bootRecord^.OEMName[1]      := 'S';
+    bootRecord^.OEMName[2]      := 'U';
+    bootRecord^.OEMName[3]      := 'R';
+    bootRecord^.OEMName[4]      := 'O';
+    bootRecord^.OEMName[5]      := ' ';
+    bootRecord^.OEMName[6]      := 'V';
+    bootRecord^.OEMName[7]      := '1';
+    bootRecord^.sectorSize      := ctx^.Disk^.sectorSize;
+    bootRecord^.spc             := 1;
+    bootRecord^.rsvSectors      := 32;
+    bootRecord^.numFats         := 1;
+    bootRecord^.mediaDescp      := $F8;
+    bootRecord^.hiddenSectors   := start;
+    bootRecord^.manySectors     := sectors;
+    bootRecord^.FATSize         := ctx^.FATSize;
+    bootRecord^.rootCluster     := ctx^.RootCluster;
+    bootRecord^.FSInfoCluster   := 0;
+    bootRecord^.driveNumber     := $80;
+    bootRecord^.volumeID        := 62;
+    bootRecord^.bsignature      := $29;
+    bootRecord^.identString[0]  := 'F';
+    bootRecord^.identString[1]  := 'A';
+    bootRecord^.identString[2]  := 'T';
+    bootRecord^.identString[3]  := '3';
+    bootRecord^.identString[4]  := '2';
+    bootRecord^.identString[5]  := ' ';
+    bootRecord^.identString[6]  := ' ';
+    bootRecord^.identString[7]  := ' ';
+
+    { Boot sector signature at bytes 508-511 }
+    puint32(ctx^.Buffer)[127] := $55AA;
+
+    { Allocate zero buffer for FAT batches }
+    if ctx^.FATSize > 128 then
+        ctx^.BatchSize := 128
+    else
+        ctx^.BatchSize := ctx^.FATSize;
+    ctx^.BatchPos := 0;
+    ctx^.ZeroBuffer := puint32(kalloc(ctx^.Disk^.sectorSize * ctx^.BatchSize));
+    if ctx^.ZeroBuffer = nil then begin
+        kfree(ctx^.Buffer);
+        if callback <> nil then callback(eOutOfMemory, callbackData);
+        kfree(puint32(ctx));
+        exit;
+    end;
+    memset(uint32(ctx^.ZeroBuffer), 0, ctx^.Disk^.sectorSize * ctx^.BatchSize);
+
+    { Kick off the first step: write boot sector }
+    syslog.logln('FAT32', 'create_volume_async: kicking off fmtBootSector');
+    ctx^.Step := fmtBootSector;
+    fmt_run_next(ctx);
+end;
+
+{ ========================================================================== }
+{              Synchronous create_volume (task context only)                  }
+{ ========================================================================== }
+
 procedure create_volume(volume : PStorage_Volume; sectors : uint32; start : uint32; config : puint32);
 var
     buffer     : puint32;
@@ -1406,6 +1783,7 @@ var
 
 begin
     push_trace('fat32.create_volume()');
+    syslog.logln('FAT32', 'create_volume (sync): enter');
 
     disk := volume^.device;
 
@@ -1450,7 +1828,8 @@ begin
     { Write the boot sector signature marker at bytes 508-511 }
     puint32(buffer)[127] := $55AA;
 
-    storagemanager.storage_write(disk, start + 1, 1, puint32(buffer), nil, nil);
+    storagemanager.storage_write(disk, start + 1, 1, puint32(buffer));
+    syslog.logln('FAT32', 'create_volume (sync): boot sector written');
 
     fatStart:= start + 1 + bootRecord^.rsvSectors;
     dataStart:= fatStart + bootRecord^.FATSize;
@@ -1468,12 +1847,13 @@ begin
         if (FATSize - batchPos) >= batchSize then
             storagemanager.storage_write(disk, fatStart + batchPos, batchSize, zeroBuffer)
         else
-            storagemanager.storage_write(disk, fatStart + batchPos, FATSize - batchPos, zeroBuffer, nil, nil);
+            storagemanager.storage_write(disk, fatStart + batchPos, FATSize - batchPos, zeroBuffer);
         batchPos += batchSize;
     end;
 
     kfree(buffer);
     kfree(zeroBuffer);
+    syslog.logln('FAT32', 'create_volume (sync): FAT zeroed');
 
     buffer:= puint32(kalloc(disk^.sectorSize));
     memset(uint32(buffer), 0, disk^.sectorSize);
@@ -1482,7 +1862,8 @@ begin
     puint32(buffer)[1]:= $0FFFFFFF; //clean/dirty marker (reserved entry 1)
     puint32(buffer)[2]:= $0FFFFFF8; //root cluster end-of-chain (entry 2)
 
-    storagemanager.storage_write(disk, fatStart, 1, buffer, nil, nil);
+    storagemanager.storage_write(disk, fatStart, 1, buffer);
+    syslog.logln('FAT32', 'create_volume (sync): FAT entries written');
 
     kfree(buffer);
 
@@ -1497,15 +1878,18 @@ begin
     PDirectory(buffer)[1].attributes := $10;
     PDirectory(buffer)[1].clusterLow := rootCluster;
     
-    storagemanager.storage_write(disk, dataStart + (spc * rootCluster), 1, buffer, nil, nil);
+    storagemanager.storage_write(disk, dataStart + (spc * rootCluster), 1, buffer);
+    syslog.logln('FAT32', 'create_volume (sync): root dir written');
 
     memset(uint32(buffer), 0, disk^.sectorsize);
 
     status := puint32(kalloc(sizeof(uint32)));
     writeDirectory(volume, '', 'SYSTEM', $10, status);
+    syslog.logln('FAT32', 'create_volume (sync): SYSTEM dir created');
     kfree(status);
 
     kfree(buffer);
+    syslog.logln('FAT32', 'create_volume (sync): done');
 
 
 
@@ -1538,7 +1922,7 @@ begin
 
     for sectorIdx := 0 to fatSectors - 1 do begin
         if sectorIdx * entriesPerSect >= maxCluster then break;
-        storagemanager.storage_read(volume^.device, fatStart + sectorIdx, 1, fatBuffer, nil, nil);
+        storagemanager.storage_read(volume^.device, fatStart + sectorIdx, 1, fatBuffer);
         for entryIdx := 0 to entriesPerSect - 1 do begin
             clusterNum := sectorIdx * entriesPerSect + entryIdx;
             if clusterNum < 2 then continue;
@@ -1556,21 +1940,28 @@ function identify_volume(volume : PStorage_Volume) : boolean;
 var
     buffer     : puint32;
     bootRecord : PBootRecord;
+    bufSize    : uint32;
 begin
     push_trace('fat32.identify_volume');
+    syslog.logln('FAT32', 'identify_volume: enter');
     identify_volume := false;
     if volume^.device = nil then exit;
-    if (volume^.device^.readCallback = nil) and (volume^.device^.readCallbackAsync = nil) then exit;
+    if volume^.device^.dispatchRead = nil then exit;
 
-    buffer := puint32(kalloc(512));
-    memset(uint32(buffer), 0, 512);
+    bufSize := volume^.device^.sectorSize;
+    if bufSize < 512 then bufSize := 512;
+    buffer := puint32(kalloc(bufSize));
+    memset(uint32(buffer), 0, bufSize);
 
-    storagemanager.storage_read(volume^.device, volume^.sectorStart + 1, 1, buffer, nil, nil);
+    storagemanager.storage_read(volume^.device, volume^.sectorStart + 1, 1, buffer);
     bootRecord := PBootRecord(buffer);
 
     if (bootRecord^.bsignature = $29) then begin
+        syslog.logln('FAT32', 'identify_volume: FAT32 signature matched');
         identify_volume := true;
         volume^.freeSectors := countFreeFATClusters(volume, bootRecord) * bootRecord^.spc;
+    end else begin
+        syslog.logln('FAT32', 'identify_volume: not a FAT32 volume');
     end;
 
     kfree(buffer);
@@ -1579,22 +1970,25 @@ end;
 procedure detect_volumes(disk : PStorage_Device);
 var
     buffer : puint32;
+    bufSize : uint32;
     i : uint8;
     volume : PStorage_volume;
 begin
     push_trace('fat32.detectVolumes()');
 
-    buffer := puint32(kalloc(512));
-    memset(uint32(buffer), 0, 512);
+    bufSize := disk^.sectorSize;
+    if bufSize < 512 then bufSize := 512;
+    buffer := puint32(kalloc(bufSize));
+    memset(uint32(buffer), 0, bufSize);
 
     { Read from sector 2 to check for FAT32 boot record }
-    if (disk^.readCallback = nil) and (disk^.readCallbackAsync = nil) then begin
-        syslog.writestringln('FAT32: detect_volumes: device has no read callback.');
+    if disk^.dispatchRead = nil then begin
+        syslog.writestringln('FAT32: detect_volumes: device has no read dispatch.');
         kfree(buffer);
         exit;
     end;
 
-    storagemanager.storage_read(disk, 2, 1, buffer, nil, nil);
+    storagemanager.storage_read(disk, 2, 1, buffer);
 
     if (puint32(buffer)[127] = $55AA) and (PBootRecord(buffer)^.bsignature = $29) then begin
         syslog.writestringln('FAT32: volume found!');
@@ -1651,6 +2045,7 @@ var
     remaining       : uint32;
 begin
     push_trace('fat32.readFileAtOffset.enter');
+    syslog.logln('FAT32', 'readFileAtOffset: enter');
     readFileAtOffset := 0;
     exists := false;
 
@@ -1679,6 +2074,7 @@ begin
     kfree(void(extPart));
 
     if not exists then begin
+        syslog.logln('FAT32', 'readFileAtOffset: file not found');
         LL_Free(dirs);
         kfree(puint32(bootRecord));
         kfree(puint32(statusOut));
@@ -1698,6 +2094,7 @@ begin
     inSectorOffset := offset mod bootRecord^.sectorSize;
 
     if startSector >= totalSectors then begin
+        syslog.logln('FAT32', 'readFileAtOffset: offset past EOF');
         LL_Free(dirs);
         LL_Free(clusters);
         kfree(puint32(bootRecord));
@@ -1712,7 +2109,7 @@ begin
     sectorIdx  := 0;
 
     while (sectorIdx < totalSectors - startSector) and (remaining > 0) do begin
-        storagemanager.storage_read(volume^.device, baseLBA + startSector + sectorIdx, 1, readbuffer, nil, nil);
+        storagemanager.storage_read(volume^.device, baseLBA + startSector + sectorIdx, 1, readbuffer);
 
         if sectorIdx = 0 then begin
             { First sector: skip inSectorOffset bytes at the start }
@@ -1736,17 +2133,20 @@ begin
     kfree(puint32(bootRecord));
     kfree(puint32(statusOut));
     readFileAtOffset := destPos;
+    syslog.logln('FAT32', 'readFileAtOffset: done');
     push_trace('fat32.readFileAtOffset.exit');
 end;
 
 procedure init();
 begin
     push_trace('fat32.init()');
+    syslog.logln('FAT32', 'init: registering FAT32 filesystem');
     filesystem.sName:= 'FAT32'; 
     filesystem.system_id:= $01; 
     filesystem.readDirCallback:= @readDirectoryGen;
     filesystem.createDirCallback:= @writeDirectoryGen;
     filesystem.createcallback:= @create_volume;
+    filesystem.createAsyncCallback := @create_volume_async;
     filesystem.detectcallback:= @detect_volumes;
     filesystem.writecallback:= @writeFile;
     filesystem.readcallback := @readFile;
@@ -1754,8 +2154,18 @@ begin
     filesystem.identifyCallback := @identify_volume;
     filesystem.deleteFileCallback := @deleteFile;
     filesystem.deleteDirCallback := @deleteDir;
+    { Async callbacks: nil - VFS falls through to the sync callbacks above.
+      All disk I/O uses psAwaiting in submit_io_wait: the calling process is
+      parked cleanly (CPU-free) while the AHCI ISR completes the request. }
+    filesystem.writeAsyncCallback      := nil;
+    filesystem.readAsyncCallback       := nil;
+    filesystem.createDirAsyncCallback  := nil;
+    filesystem.readDirAsyncCallback    := nil;
+    filesystem.deleteFileAsyncCallback := nil;
+    filesystem.deleteDirAsyncCallback  := nil;
 
     filesystemmanager.register_filesystem(@filesystem);
+    syslog.logln('FAT32', 'init: done');
 end;
 
 end.

@@ -65,7 +65,7 @@ begin
 
     { ---- READ ---- }
     if op[0] = '<' then begin
-        fHandle := vfs.OpenFile(absPath, omReadOnly, wmRewrite, false, @fError);
+        fHandle := vfs.OpenFile(absPath, omReadOnly, wmRewrite, @fError);
         if (fHandle = 0) or (fError <> eNone) then begin
             syslog.writestringln('Error: cannot open file for reading.');
             kfree(void(absPath));
@@ -112,10 +112,10 @@ begin
         contentLen := stringSize(content);
 
         { Try read-write rewrite first (existing file) }
-        fHandle := vfs.OpenFile(absPath, omReadWrite, wmRewrite, false, @fError);
+        fHandle := vfs.OpenFile(absPath, omReadWrite, wmRewrite, @fError);
         if (fHandle = 0) or (fError <> eNone) then begin
             { Try creating new file }
-            fHandle := vfs.OpenFile(absPath, omWriteOnly, wmNew, false, @fError);
+            fHandle := vfs.OpenFile(absPath, omWriteOnly, wmNew, @fError);
         end;
 
         if (fHandle = 0) or (fError <> eNone) then begin

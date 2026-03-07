@@ -76,7 +76,6 @@ var
 
 procedure init;
 function kalloc(size : uint32) : void;
-function kalloc(size : uint32; isPersistent : boolean) : void;
 function klalloc(size : uint32) : void;
 procedure klfree(address : uint32);
 function kpalloc(address : uint32) : void;

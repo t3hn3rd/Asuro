@@ -16,6 +16,7 @@
 	ProgManager - Central initialization for terminal registered, baked-in programs.
 	
 	@author(Kieron Morris <kjm@kieronmorris.me>)
+    @author(Aaron Hance <ah@aaronhance.me>)
 }
 unit progmanager;
 
@@ -36,7 +37,7 @@ uses
     //command provider units
     kernel, cpu, drivermanagement, processmanager,
     arp, ipv4, tcp,
-    storagemanagement, usbcore;
+    diskcmd, usbcore;
 
 procedure init();
 begin
@@ -53,7 +54,7 @@ begin
     stdio.registerCommand('TCPCONNECT', @tcp.terminal_command_tcpconnect, 'Connect to a TCP host and send Hello World.');
     stdio.registerCommand('TCPLISTEN', @tcp.terminal_command_tcplisten, 'Listen on a TCP port and log received data.');
     stdio.registerCommand('TCPHTTP', @tcp.terminal_command_tcphttp, 'Send HTTP GET to a host IP (port 80 default).');
-    stdio.registerCommand('DISK', @storagemanagement.disk_command, 'Disk utility');
+    diskcmd.init();
     stdio.registerCommand('USB', @usbcore.terminal_command_usb, 'USB subsystem information.');
 
     { Initialize baked-in programs }

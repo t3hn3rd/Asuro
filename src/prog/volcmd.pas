@@ -17,7 +17,6 @@ procedure init();
 implementation
 
 uses
-    syslog,
     lists,
     lmemorymanager,
     storagemanager,
@@ -26,6 +25,9 @@ uses
     stdio,
     tracer,
     volumemanager;
+
+var
+    g_out : POutBuf;
 
 { ---------- helpers ---------- }
 
@@ -56,22 +58,22 @@ end;
 
 procedure print(s : pchar);
 begin
-    syslog.writestring(s);
+    stdio.bufWriteStr(g_out, s);
 end;
 
 procedure println(s : pchar);
 begin
-    syslog.writestringln(s);
+    stdio.bufWriteStrLn(g_out, s);
 end;
 
 procedure printint(v : uint32);
 begin
-    syslog.writeint(v);
+    stdio.bufWriteInt(g_out, integer(v));
 end;
 
 procedure printhex(v : uint32);
 begin
-    syslog.writehex(v);
+    stdio.bufWriteHex(g_out, v);
 end;
 
 { Print a byte count in human-readable form: B, KB, MB or GB }
@@ -203,6 +205,7 @@ procedure command_vol(params : PParamList; stdin_buf, stdout_buf, stderr_buf: PO
 var
     subcmd : pchar;
 begin
+    g_out := stdout_buf;
     push_trace('VolCmd.command_vol');
 
     if paramCount(params) = 0 then begin

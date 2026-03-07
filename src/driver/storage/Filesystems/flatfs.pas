@@ -23,15 +23,15 @@ unit flatfs;
 interface
 
 uses
-    tracer,
-    strings,
     filesystemmanager,
     lists,
-    syslog,
+    lmemorymanager,
     stdio,
     storagemanager,
     storagetypes,
-    lmemorymanager,
+    strings,
+    syslog,
+    tracer,
     util,
     volumemanager;
 
@@ -592,15 +592,18 @@ end;
 procedure detect_volumes(disk : PStorage_Device);
 var
     buffer : puint32;
+    bufSize : uint32;
     volume : PStorage_volume;
 begin
     push_trace('flatfs.detectVolumes()');
 
-    buffer := puint32(kalloc(512));
-    memset(uint32(buffer), 0, 512);
+    bufSize := disk^.sectorSize;
+    if bufSize < 512 then bufSize := 512;
+    buffer := puint32(kalloc(bufSize));
+    memset(uint32(buffer), 0, bufSize);
 
-    if (disk^.readCallback = nil) and (disk^.readCallbackAsync = nil) then begin
-        syslog.writestringln('FlatFS: detect_volumes: device has no read callback.');
+    if disk^.dispatchRead = nil then begin
+        syslog.writestringln('FlatFS: detect_volumes: device has no read dispatch.');
         kfree(buffer);
         exit;
     end;
@@ -759,14 +762,17 @@ end;
 
 function identify_volume(volume : PStorage_Volume) : boolean;
 var
-    buffer : puint32;
+    buffer  : puint32;
+    bufSize : uint32;
 begin
     push_trace('flatfs.identify_volume');
     identify_volume := false;
-    if (volume^.device^.readCallback = nil) and (volume^.device^.readCallbackAsync = nil) then exit;
+    if volume^.device^.dispatchRead = nil then exit;
 
-    buffer := puint32(kalloc(512));
-    memset(uint32(buffer), 0, 512);
+    bufSize := volume^.device^.sectorSize;
+    if bufSize < 512 then bufSize := 512;
+    buffer := puint32(kalloc(bufSize));
+    memset(uint32(buffer), 0, bufSize);
 
     storagemanager.storage_read(volume^.device, volume^.sectorStart, 1, buffer);
 

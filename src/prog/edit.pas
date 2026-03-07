@@ -138,7 +138,7 @@ begin
 
     { Open for writing }
     tracer.push_trace('edit.SaveFile.openRW');
-    fHandle := vfs.OpenFile(FilePath, omReadWrite, wmRewrite, false, @fError);
+    fHandle := vfs.OpenFile(FilePath, omReadWrite, wmRewrite, @fError);
     if fHandle <> 0 then begin
         tracer.push_trace('edit.SaveFile.writeFile');
         vfs.WriteFile(fHandle, 0, puint8(buf), totalLen);
@@ -149,7 +149,7 @@ begin
     end else begin
         { Try write-only for new file }
         tracer.push_trace('edit.SaveFile.openWO');
-        fHandle := vfs.OpenFile(FilePath, omWriteOnly, wmNew, false, @fError);
+        fHandle := vfs.OpenFile(FilePath, omWriteOnly, wmNew, @fError);
         if fHandle <> 0 then begin
             tracer.push_trace('edit.SaveFile.writeFileNew');
             vfs.WriteFile(fHandle, 0, puint8(buf), totalLen);
@@ -181,7 +181,7 @@ begin
     if FilePath = nil then exit;
 
     tracer.push_trace('edit.LoadFile.openFile');
-    fHandle := vfs.OpenFile(FilePath, omReadOnly, wmRewrite, false, @fError);
+    fHandle := vfs.OpenFile(FilePath, omReadOnly, wmRewrite, @fError);
     tracer.push_trace('edit.LoadFile.openFile.done');
     if (fHandle = 0) or (fError <> eNone) then begin
         syslog.writestringln('New file.');

@@ -372,6 +372,7 @@ var
     lba     : uint32;
     part    : TPartition_table;
     mbr_rec : PMaster_Boot_Record;
+    needsInit : boolean;
 begin
     code := lv_event_get_code(e);
     if code <> LV_EVENT_CLICKED then exit;
@@ -379,7 +380,15 @@ begin
     device := storagemanager.get_device(sel_dev_idx);
     if device = nil then begin closeMsgBox; exit; end;
 
-    freeSec := volumemanager.get_free_sector_count(device);
+    { Check cached MBR to decide if disk needs initialisation }
+    mbr_rec := storagemanager.get_cached_mbr(device);
+    needsInit := (mbr_rec = nil) or (mbr_rec^.boot_sector <> $AA55);
+
+    if needsInit then
+        freeSec := device^.maxSectorCount - 1
+    else
+        freeSec := volumemanager.get_free_sector_count(device);
+
     text := lv_textarea_get_text(add_textarea);
     sectors := 0;
 
@@ -416,34 +425,32 @@ begin
 
     if sectors = 0 then begin closeMsgBox; exit; end;
 
-    { Ensure MBR exists }
-    mbr_rec := storagemanager.read_mbr(device);
-    if mbr_rec = nil then begin
-        volumemanager.init_disk(device);
+    { If disk needs init, do it now (async write, but cache updated synchronously) }
+    if needsInit then begin
+        volumemanager.init_disk_async(device, nil, nil);
+        { Cache is now fresh MBR with $AA55 signature, all slots empty }
+        slot := 0;
+        lba := 1;
     end else begin
-        if mbr_rec^.boot_sector <> $AA55 then
-            volumemanager.init_disk(device);
-        kfree(puint32(mbr_rec));
-    end;
+        slot := volumemanager.find_free_slot(device);
+        if slot < 0 then begin closeMsgBox; exit; end;
 
-    slot := volumemanager.find_free_slot(device);
-    if slot < 0 then begin closeMsgBox; exit; end;
-
-    lba := volumemanager.find_free_space(device, sectors);
-    if lba = 0 then begin
-        if add_err_lbl <> nil then
-            lv_label_set_text(add_err_lbl, 'Could not find contiguous free space.')
-        else begin
-            add_err_lbl := lv_label_create(lv_msgbox_get_content(active_mbox));
-            lv_label_set_text(add_err_lbl, 'Could not find contiguous free space.');
-            lv_obj_set_style_text_color(add_err_lbl, lv_color_make(230, 80, 80), 0);
-            lv_obj_set_style_text_font(add_err_lbl, @lv_font_montserrat_14, 0);
+        lba := volumemanager.find_free_space(device, sectors);
+        if lba = 0 then begin
+            if add_err_lbl <> nil then
+                lv_label_set_text(add_err_lbl, 'Could not find contiguous free space.')
+            else begin
+                add_err_lbl := lv_label_create(lv_msgbox_get_content(active_mbox));
+                lv_label_set_text(add_err_lbl, 'Could not find contiguous free space.');
+                lv_obj_set_style_text_color(add_err_lbl, lv_color_make(230, 80, 80), 0);
+                lv_obj_set_style_text_font(add_err_lbl, @lv_font_montserrat_14, 0);
+            end;
+            exit;
         end;
-        exit;
     end;
 
     MBR.setup_partition(@part, lba, sectors);
-    volumemanager.add_partition(device, uint32(slot), part);
+    volumemanager.add_partition_async(device, uint32(slot), part, nil, nil);
 
     closeMsgBox;
     refreshSidebar;
@@ -473,7 +480,7 @@ begin
     if device = nil then begin closeMsgBox; exit; end;
 
     if (pending_del_slot >= 0) and (pending_del_slot <= 3) then
-        volumemanager.remove_partition(device, uint32(pending_del_slot));
+        volumemanager.remove_partition_async(device, uint32(pending_del_slot), nil, nil);
 
     closeMsgBox;
     refreshSidebar;
@@ -511,7 +518,7 @@ begin
 
     device := storagemanager.get_device(sel_dev_idx);
     if device <> nil then begin
-        mbr_rec := storagemanager.read_mbr(device);
+        mbr_rec := storagemanager.get_cached_mbr(device);
         if mbr_rec <> nil then begin
             part := mbr_rec^.partition[slot];
             if part.sector_count > 0 then begin
@@ -519,7 +526,6 @@ begin
                 txt := stringConcat(txt, formatSizeStr(part.sector_count * device^.sectorSize));
                 txt := stringConcat(txt, ')');
             end;
-            kfree(puint32(mbr_rec));
         end;
     end;
     txt := stringConcat(txt, '?');
@@ -540,6 +546,16 @@ end;
 { ============================================================
   Dialog callbacks — Format Volume
   ============================================================ }
+
+{ Async completion callback — fired from ISR context when format finishes.
+  Safe to touch LVGL here because LVGL and AHCI ISRs are naturally
+  serialised (both run with IF=0). }
+procedure fmt_done_cb(error : TError; userdata : pointer);
+begin
+    refreshSidebar;
+    showVolumeDetail(sel_vol_idx);
+end;
+
 procedure fmt_ok_cb(e: Plv_event); cdecl;
 var
     code   : uint32;
@@ -557,11 +573,11 @@ begin
     fs := filesystemmanager.get_filesystem(selIdx);
     if fs = nil then begin closeMsgBox; exit; end;
 
-    volumemanager.format_volume(vol^.device, sel_vol_idx, fs^.sName, nil);
-
     closeMsgBox;
-    refreshSidebar;
-    showVolumeDetail(sel_vol_idx);
+
+    { Submit async format — returns immediately, fmt_done_cb fires on completion }
+    volumemanager.format_volume_async(vol^.device, sel_vol_idx, fs^.sName, nil,
+        @fmt_done_cb, nil);
 end;
 
 procedure fmt_cancel_cb(e: Plv_event); cdecl;
@@ -869,20 +885,24 @@ end;
   ============================================================ }
 procedure showDeviceDetail(devIdx: uint32);
 var
-    device     : PStorage_Device;
-    mbr_rec    : PMaster_Boot_Record;
-    part       : TPartition_table;
-    btn_row    : Plv_obj;
-    btn        : Plv_obj;
-    dw         : sint32;
-    i          : uint32;
-    totalBytes : uint32;
-    freeBytes  : uint32;
-    volCnt     : uint32;
-    devVolCnt  : uint32;
-    vol        : PStorage_Volume;
-    partCount  : uint32;
-    hasValidMBR: boolean;
+    device      : PStorage_Device;
+    btn_row     : Plv_obj;
+    btn         : Plv_obj;
+    dw          : sint32;
+    i           : uint32;
+    totalBytes  : uint32;
+    usedSectors : uint32;
+    freeBytes   : uint32;
+    volCnt      : uint32;
+    devVolCnt   : uint32;
+    vol         : PStorage_Volume;
+    fsName      : pchar;
+    row         : Plv_obj;
+    lbl         : Plv_obj;
+    sizeStr     : pchar;
+    freeStr     : pchar;
+    totalB      : uint32;
+    freeB       : uint32;
 begin
     clearDetail;
     sel_mode := SEL_DEVICE;
@@ -904,30 +924,24 @@ begin
     addInfoRow(detail, dw, 'Sector Size', stringConcat(intToString(device^.sectorSize), ' bytes'));
     totalBytes := device^.maxSectorCount * device^.sectorSize;
     addInfoRow(detail, dw, 'Total Size', formatSizePrecise(totalBytes));
-    freeBytes := volumemanager.get_free_sector_count(device) * device^.sectorSize;
-    addInfoRow(detail, dw, 'Free Space', formatSizePrecise(freeBytes));
 
-    { Count volumes on this device }
+    { Compute free space from in-memory volume data (no I/O) }
+    usedSectors := 0;
     devVolCnt := 0;
     volCnt := volumemanager.get_volume_count();
     for i := 0 to volCnt - 1 do begin
         vol := volumemanager.get_volume(i);
-        if (vol <> nil) and (vol^.device = device) then
+        if (vol <> nil) and (vol^.device = device) then begin
             devVolCnt := devVolCnt + 1;
+            usedSectors := usedSectors + vol^.sectorCount;
+        end;
     end;
+    if device^.maxSectorCount > usedSectors then
+        freeBytes := (device^.maxSectorCount - usedSectors) * device^.sectorSize
+    else
+        freeBytes := 0;
+    addInfoRow(detail, dw, 'Free Space', formatSizePrecise(freeBytes));
     addInfoRow(detail, dw, 'Volumes', intToString(devVolCnt));
-
-    { Check for MBR }
-    mbr_rec := storagemanager.read_mbr(device);
-    hasValidMBR := false;
-    if mbr_rec <> nil then begin
-        if mbr_rec^.boot_sector = $AA55 then begin
-            hasValidMBR := true;
-            addInfoRow(detail, dw, 'MBR', 'Present');
-        end else
-            addInfoRow(detail, dw, 'MBR', 'Invalid (bad signature)');
-    end else
-        addInfoRow(detail, dw, 'MBR', 'Not found');
 
     { Usage bar }
     if totalBytes > 0 then
@@ -935,25 +949,67 @@ begin
 
     addSeparator(detail, dw);
 
-    { ---- Partitions ---- }
-    addSectionHeader(detail, 'Partitions');
+    { ---- Volumes on this device (from cached data — no disk I/O) ---- }
+    addSectionHeader(detail, 'Volumes');
 
-    partCount := 0;
-    if (mbr_rec <> nil) and hasValidMBR then begin
-        for i := 0 to 3 do begin
-            part := mbr_rec^.partition[i];
-            if (part.LBA_start <> 0) or (part.sector_count <> 0) then begin
-                addPartitionRow(detail, dw, i, part, device^.sectorSize, device, device^.writable);
-                partCount := partCount + 1;
-            end;
+    if devVolCnt = 0 then
+        addStatusLabel(detail, 'No volumes found.', 120, 125, 145)
+    else begin
+        for i := 0 to volCnt - 1 do begin
+            vol := volumemanager.get_volume(i);
+            if (vol = nil) or (vol^.device <> device) then continue;
+
+            row := lv_obj_create(detail);
+            lv_obj_remove_style_all(row);
+            lv_obj_set_size(row, dw - 24, 30);
+            lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+            lv_obj_set_style_layout(row, LV_LAYOUT_FLEX, 0);
+            lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+            lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+            lv_obj_set_style_pad_column(row, 6, 0);
+            lv_obj_set_style_pad_left(row, 6, 0);
+            lv_obj_set_style_pad_right(row, 6, 0);
+            lv_obj_set_style_bg_color(row, lv_color_make(42, 46, 58), 0);
+            lv_obj_set_style_bg_opa(row, LV_OPA_COVER, 0);
+            lv_obj_set_style_radius(row, 4, 0);
+
+            { Filesystem name }
+            if vol^.filesystem <> nil then
+                fsName := vol^.filesystem^.sName
+            else
+                fsName := 'Unknown';
+            lbl := lv_label_create(row);
+            lv_label_set_text(lbl, fsName);
+            lv_obj_set_style_text_color(lbl, lv_color_make(100, 160, 255), 0);
+            lv_obj_set_style_text_font(lbl, @lv_font_montserrat_14, 0);
+            lv_obj_set_width(lbl, 70);
+
+            { LBA start }
+            lbl := lv_label_create(row);
+            lv_label_set_text(lbl, stringConcat('LBA:', intToString(vol^.sectorStart)));
+            lv_obj_set_style_text_color(lbl, lv_color_make(160, 170, 190), 0);
+            lv_obj_set_style_text_font(lbl, @lv_font_montserrat_14, 0);
+            lv_obj_set_width(lbl, 80);
+
+            { Size }
+            totalB := vol^.sectorCount * vol^.sectorSize;
+            sizeStr := formatSizeStr(totalB);
+            lbl := lv_label_create(row);
+            lv_label_set_text(lbl, sizeStr);
+            lv_obj_set_style_text_color(lbl, lv_color_make(220, 225, 240), 0);
+            lv_obj_set_style_text_font(lbl, @lv_font_montserrat_14, 0);
+            lv_obj_set_width(lbl, 70);
+
+            { Free space }
+            freeB := vol^.freeSectors * vol^.sectorSize;
+            freeStr := stringConcat(formatSizeStr(freeB), ' free');
+            lbl := lv_label_create(row);
+            lv_label_set_text(lbl, freeStr);
+            lv_obj_set_style_text_color(lbl, lv_color_make(100, 180, 130), 0);
+            lv_obj_set_style_text_font(lbl, @lv_font_montserrat_14, 0);
+            lv_obj_set_width(lbl, 80);
         end;
     end;
-
-    if mbr_rec <> nil then
-        kfree(puint32(mbr_rec));
-
-    if partCount = 0 then
-        addStatusLabel(detail, 'No partitions found.', 120, 125, 145);
 
     addSeparator(detail, dw);
 

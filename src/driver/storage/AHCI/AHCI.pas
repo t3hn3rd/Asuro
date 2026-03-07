@@ -24,7 +24,6 @@ interface
 
 uses
     AHCITypes,
-    syslog,
     drivermanagement,
     drivertypes,
     idetypes,
@@ -35,6 +34,7 @@ uses
     PCI,
     storagemanager,
     storagetypes,
+    syslog,
     util,
     vmemorymanager;
 
@@ -57,12 +57,10 @@ function send_write_dma_async(device : PAHCI_Device; lba : uint64; count : uint3
 function read_atapi_async(device : PAHCI_Device; lba : uint64; count : uint32; buffer : puint32; completion : TIOCompletion; userdata : puint32) : boolean;
 
 { Storage-manager async callback wrappers }
-procedure ahci_read_hook_async(drive : PStorage_Device; addr : uint32; sectors : uint32; buffer : puint32; completion : TStorageCompletion; userdata : puint32);
-procedure ahci_write_hook_async(drive : PStorage_Device; addr : uint32; sectors : uint32; buffer : puint32; completion : TStorageCompletion; userdata : puint32);
-procedure ahci_atapi_read_hook_async(drive : PStorage_Device; addr : uint32; sectors : uint32; buffer : puint32; completion : TStorageCompletion; userdata : puint32);
-
-{ Poll hook — drives ahci_isr inline when the PIC does not deliver the IRQ }
-procedure ahci_poll_hook();
+{ Phase 3: TDriverDispatch procedures — bridge PIORequest to AHCI DMA }
+procedure ahci_dispatch_read(device : PStorage_Device; request : PIORequest);
+procedure ahci_dispatch_write(device : PStorage_Device; request : PIORequest);
+procedure ahci_dispatch_atapi_read(device : PStorage_Device; request : PIORequest);
 
 function send_read_capacity(device : PAHCI_Device; sectorCount : puint32; blockSize : puint32) : boolean;
 
@@ -395,22 +393,18 @@ begin
     // Check if the command slot is still set (command didn't complete)
     if (device^.port^.cmd_issue and $1) <> 0 then begin
         syslog.writestringln('AHCI: Error sending identify command');
-
-        // Check the error register for more information
         syslog.writestring('AHCI: Error sata register: ');
         syslog.writehexln(device^.port^.sata_error);
 
-        //print out busy flag
-        // syslog.writestring('AHCI: Status: ');
-        // syslog.writehexln(device^.port^.sata_status);
+        { Cancel the pending command by stopping/starting the port so
+          no DMA fires after we free the buffer. }
+        stop_port(device^.port);
+        start_port(device^.port);
 
-        //print sata active flag
-        // syslog.writestring('AHCI: Active flag: ');
-        // syslog.writehexln(device^.port^.sata_active);
-
-        //print tfd
-        // syslog.writestring('AHCI: TFD: ');
-        // syslog.writehexln(device^.port^.tfd);
+        { Re-enable port interrupts and bail — device is non-functional. }
+        device^.port^.int_enable := $40000003;
+        kfree(buffer);
+        exit;
     end;
 
     { Re-enable port interrupts now that IDENTIFY polling is done.
@@ -436,12 +430,6 @@ begin
         end;
     end else begin
         storageDev_sectorSize := 512;
-        memset(uint32(buffer), $77, 2048);
-        send_write_dma_async(device, 22, 512, buffer, nil, nil);
-        while device^.port^.cmd_issue <> 0 do ;  { init-time poll; runs once per device at boot }
-        memset(uint32(buffer), 0, 2048);
-        send_read_dma_async(device, 22, 512, buffer, nil, nil);
-        while device^.port^.cmd_issue <> 0 do ;  { init-time poll }
     end;
     
     { Register this device with the storage manager.
@@ -459,19 +447,13 @@ begin
         if isATAPI then begin
             storageDev^.controller := TControllerType.ControllerAHCI_ATAPI;
             storageDev^.writable   := false;
-            storageDev^.readCallback       := PPHIOHook(nil);
-            storageDev^.writeCallback      := PPHIOHook(nil);
-            storageDev^.readCallbackAsync  := PPHIOHookAsync(@ahci_atapi_read_hook_async);
-            storageDev^.writeCallbackAsync := PPHIOHookAsync(nil);
-            storageDev^.pollCallback       := PPPollHook(@ahci_poll_hook);
+            storageDev^.dispatchRead       := TDriverDispatch(@ahci_dispatch_atapi_read);
+            storageDev^.dispatchWrite      := TDriverDispatch(nil);
         end else begin
             storageDev^.controller := TControllerType.ControllerAHCI;
             storageDev^.writable   := true;
-            storageDev^.readCallback       := PPHIOHook(nil);
-            storageDev^.writeCallback      := PPHIOHook(nil);
-            storageDev^.readCallbackAsync  := PPHIOHookAsync(@ahci_read_hook_async);
-            storageDev^.writeCallbackAsync := PPHIOHookAsync(@ahci_write_hook_async);
-            storageDev^.pollCallback       := PPPollHook(@ahci_poll_hook);
+            storageDev^.dispatchRead       := TDriverDispatch(@ahci_dispatch_read);
+            storageDev^.dispatchWrite      := TDriverDispatch(@ahci_dispatch_write);
         end;
 
         storagemanager.register_device(storageDev);
@@ -1031,42 +1013,62 @@ end;
 
 { ---------- StorageManager async callback wrappers ---------- }
 
-{ Async SATA read hook }
-procedure ahci_read_hook_async(drive : PStorage_Device; addr : uint32; sectors : uint32; buffer : puint32; completion : TStorageCompletion; userdata : puint32);
+{ ========================================================================== }
+{              Phase 3: TDriverDispatch bridge to AHCI DMA                   }
+{ ========================================================================== }
+
+{ ISR-safe completion — bridges from per-slot TIOCompletion callback to
+  storagemanager.complete_io.  userdata is the PIORequest pointer. }
+procedure ahci_io_completion(success : boolean; userdata : puint32);
 var
-    ahciDev    : PAHCI_Device;
+    request : PIORequest;
+    err     : TError;
 begin
-    ahciDev := PAHCI_Device(drive^.controllerId0);
-    { Forward to the AHCI async primitive.
-      TStorageCompletion and TIOCompletion share the same binary signature,
-      so the cast is safe. }
-    send_read_dma_async(ahciDev, addr, sectors * drive^.sectorSize, buffer, TIOCompletion(completion), userdata);
+    request := PIORequest(userdata);
+    if success then
+        err := eNone
+    else
+        err := eIOError;
+    storagemanager.complete_io(request, success, err);
 end;
 
-{ Async SATA write hook }
-procedure ahci_write_hook_async(drive : PStorage_Device; addr : uint32; sectors : uint32; buffer : puint32; completion : TStorageCompletion; userdata : puint32);
-var
-    ahciDev : PAHCI_Device;
-begin
-    ahciDev := PAHCI_Device(drive^.controllerId0);
-    send_write_dma_async(ahciDev, addr, sectors * drive^.sectorSize, buffer, TIOCompletion(completion), userdata);
-end;
-
-{ Async ATAPI read hook }
-procedure ahci_atapi_read_hook_async(drive : PStorage_Device; addr : uint32; sectors : uint32; buffer : puint32; completion : TStorageCompletion; userdata : puint32);
+{ TDriverDispatch — SATA read via DMA }
+procedure ahci_dispatch_read(device : PStorage_Device; request : PIORequest);
 var
     ahciDev : PAHCI_Device;
 begin
-    ahciDev := PAHCI_Device(drive^.controllerId0);
-    read_atapi_async(ahciDev, addr, sectors * drive^.sectorSize, buffer, TIOCompletion(completion), userdata);
+    ahciDev := PAHCI_Device(device^.controllerId0);
+    if not send_read_dma_async(ahciDev, request^.LBA,
+            request^.SectorCount * device^.sectorSize,
+            puint32(request^.Buffer),
+            @ahci_io_completion, puint32(request)) then
+        storagemanager.complete_io(request, false, eIOError);
 end;
 
-{ Poll hook — called from storage_read/write sync bridge when the AHCI
-  hardware interrupt is not delivered through the PIC.  Simply drives
-  ahci_isr() inline so pending completions are processed. }
-procedure ahci_poll_hook();
+{ TDriverDispatch — SATA write via DMA }
+procedure ahci_dispatch_write(device : PStorage_Device; request : PIORequest);
+var
+    ahciDev : PAHCI_Device;
 begin
-    ahci_isr();
+    ahciDev := PAHCI_Device(device^.controllerId0);
+    if not send_write_dma_async(ahciDev, request^.LBA,
+            request^.SectorCount * device^.sectorSize,
+            puint32(request^.Buffer),
+            @ahci_io_completion, puint32(request)) then
+        storagemanager.complete_io(request, false, eIOError);
+end;
+
+{ TDriverDispatch — ATAPI read via SCSI READ(12) }
+procedure ahci_dispatch_atapi_read(device : PStorage_Device; request : PIORequest);
+var
+    ahciDev : PAHCI_Device;
+begin
+    ahciDev := PAHCI_Device(device^.controllerId0);
+    if not read_atapi_async(ahciDev, request^.LBA,
+            request^.SectorCount * device^.sectorSize,
+            puint32(request^.Buffer),
+            @ahci_io_completion, puint32(request)) then
+        storagemanager.complete_io(request, false, eIOError);
 end;
 
 end.

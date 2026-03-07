@@ -38,11 +38,9 @@ begin
     if size = 0 then exit;
 
     { Round up to a whole number of sectors so DMA / block I/O is safe }
-    sectorSize := volume^.device^.sectorSize; //TODO need fileystsem function to get thing size, like cluster size, for file-level IO buffer allocation. For now we just assume sector size.
+    sectorSize := volume^.device^.sectorSize;
     if sectorSize = 0 then
         sectorSize := 512; 
-
-    sectorSize := 512*4; { safe default } //TODO
 
     alignedSize := ((size + sectorSize - 1) div sectorSize) * sectorSize;
 

@@ -18,7 +18,6 @@ procedure init();
 implementation
 
 uses
-    syslog,
     lists,
     lmemorymanager,
     storagemanager,
@@ -28,6 +27,9 @@ uses
     tracer,
     util,
     volumemanager;
+
+var
+    g_out : POutBuf;
 
 { ---------- helpers ---------- }
 
@@ -57,22 +59,22 @@ end;
 
 procedure print(s : pchar);
 begin
-    syslog.writestring(s);
+    stdio.bufWriteStr(g_out, s);
 end;
 
 procedure println(s : pchar);
 begin
-    syslog.writestringln(s);
+    stdio.bufWriteStrLn(g_out, s);
 end;
 
 procedure printint(v : uint32);
 begin
-    syslog.writeint(v);
+    stdio.bufWriteInt(g_out, integer(v));
 end;
 
 procedure printhex(v : uint32);
 begin
-    syslog.writehex(v);
+    stdio.bufWriteHex(g_out, v);
 end;
 
 procedure printsize(bytes : uint32);
@@ -230,7 +232,7 @@ begin
         exit;
     end;
 
-    if (device^.writeCallback = nil) and (device^.writeCallbackAsync = nil) then begin
+    if device^.dispatchWrite = nil then begin
         println('Error: device has no write support.');
         exit;
     end;
@@ -274,6 +276,7 @@ procedure command_disk(params : PParamList; stdin_buf, stdout_buf, stderr_buf: P
 var
     subcmd : pchar;
 begin
+    g_out := stdout_buf;
     push_trace('DiskCmd.command_disk');
 
     if paramCount(params) = 0 then begin

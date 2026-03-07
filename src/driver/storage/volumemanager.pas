@@ -18,6 +18,7 @@ uses
     lists,
     lmemorymanager,
     MBR,
+    gpt,
     storagemanager,
     storagetypes,
     strings,
@@ -50,8 +51,17 @@ function find_free_space(device : PStorage_Device; needed : uint32) : uint32;
 function find_free_slot(device : PStorage_Device) : sint32;
 function get_free_sector_count(device : PStorage_Device) : uint32;
 
+{ --- Async partition operations (ISR-safe — no blocking I/O) --- }
+procedure add_partition_async(device : PStorage_Device; slot : uint32; partition : TPartition_table;
+                              callback : TIOCallback; callbackData : pointer);
+procedure remove_partition_async(device : PStorage_Device; slot : uint32;
+                                 callback : TIOCallback; callbackData : pointer);
+procedure init_disk_async(device : PStorage_Device;
+                          callback : TIOCallback; callbackData : pointer);
+
 { --- Filesystem operations --- }
 function format_volume(device : PStorage_Device; volIndex : uint32; filesystemName : pchar; config : puint32) : boolean;
+function format_volume_async(device : PStorage_Device; volIndex : uint32; filesystemName : pchar; config : puint32; callback : TIOCallback; callbackData : pointer) : boolean;
 procedure delete_volume(volume : PStorage_Volume);
 
 implementation
@@ -189,15 +199,14 @@ end;
 
 function get_partition(device : PStorage_Device; index : uint32) : TPartition_table;
 var
-    bootrecord : PMaster_Boot_Record;
+    mbr : PMaster_Boot_Record;
 begin
     push_trace('VolumeManager.get_partition');
     memset(uint32(@get_partition), 0, sizeof(TPartition_table));
     if (device = nil) or (index > 3) then exit;
-    bootrecord := storagemanager.read_mbr(device);
-    if bootrecord = nil then exit;
-    get_partition := bootrecord^.partition[index];
-    kfree(puint32(bootrecord));
+    mbr := storagemanager.get_cached_mbr(device);
+    if mbr = nil then exit;
+    get_partition := mbr^.partition[index];
 end;
 
 { Write a partition entry to the MBR and create a matching volume }
@@ -268,36 +277,112 @@ begin
 end;
 
 { Read MBR and create volumes for all non-empty partitions.
-  If the MBR contains no partitions, or no partition was identified
-  by any filesystem, fall back to asking each registered filesystem's
-  detectCallback to probe the raw disk (e.g. ISO 9660 media may have
-  a hybrid MBR with dummy partitions that don't match any FS). }
+  If the MBR contains a protective GPT partition (type 0xEE), try GPT
+  detection first.  If GPT is valid, create volumes from the GPT partition
+  array.  Otherwise, fall back to classic MBR parsing.
+
+  If no partition was identified by any filesystem, fall back to asking
+  each registered filesystem's detectCallback to probe the raw disk
+  (e.g. ISO 9660 media may have a hybrid MBR). }
 procedure discover_volumes(device : PStorage_Device);
 var
     bootrecord : PMaster_Boot_Record;
+    gptHeader  : PGPTHeader;
+    gptEntries : PGPTPartitionEntry;
+    entry      : PGPTPartitionEntry;
     i          : uint32;
     found      : uint32;
     identified : uint32;
     fsCount    : uint32;
     fs         : PFilesystem;
     v          : PStorage_Volume;
+    hasGPT     : boolean;
 begin
     push_trace('VolumeManager.discover_volumes');
     if device = nil then exit;
+
+    { ATAPI / CD-ROM devices do not use MBR partitions — skip directly
+      to filesystem detect callbacks (ISO 9660, etc.) }
+    if (device^.controller = ControllerATAPI) or
+       (device^.controller = ControllerAHCI_ATAPI) then begin
+        fsCount := filesystemmanager.get_filesystem_count();
+        for i := 0 to fsCount - 1 do begin
+            fs := filesystemmanager.get_filesystem(i);
+            if (fs <> nil) and (fs^.detectCallback <> nil) then
+                fs^.detectCallback(device);
+        end;
+        exit;
+    end;
+
+    hasGPT := false;
+
+    { Read MBR (LBA 0) }
     bootrecord := storagemanager.read_mbr(device);
     if bootrecord = nil then exit;
 
-    found := 0;
+    { Check for protective GPT MBR (any partition with type 0xEE) }
     for i := 0 to 3 do begin
-        if bootrecord^.partition[i].LBA_start <> 0 then begin
-            create_volume_from_partition(device, bootrecord^.partition[i].LBA_start, bootrecord^.partition[i].sector_count);
-            found := found + 1;
+        if bootrecord^.partition[i].system_id = MBR_TYPE_GPT_PROTECTIVE then begin
+            hasGPT := true;
+            break;
         end;
     end;
 
-    kfree(puint32(bootrecord));
+    found := 0;
 
-    { Check whether any MBR volume was actually identified }
+    if hasGPT then begin
+        { ---- GPT path ---- }
+        kfree(puint32(bootrecord));
+        bootrecord := nil;
+
+        gptHeader := gpt_read_header(device);
+        if gptHeader <> nil then begin
+            gptEntries := gpt_read_entries(device, gptHeader);
+            if gptEntries <> nil then begin
+                { Iterate partition entries }
+                for i := 0 to gptHeader^.NumPartEntries - 1 do begin
+                    entry := PGPTPartitionEntry(uint32(gptEntries) + i * gptHeader^.PartEntrySize);
+                    if gpt_guid_is_zero(entry^.TypeGUID) then continue;  { empty slot }
+                    if entry^.StartLBA_Hi <> 0 then continue;  { LBA beyond 32-bit range }
+                    if entry^.EndLBA_Hi <> 0 then continue;
+                    if entry^.StartLBA = 0 then continue;
+                    if entry^.EndLBA < entry^.StartLBA then continue;
+
+                    create_volume_from_partition(device,
+                        entry^.StartLBA,
+                        entry^.EndLBA - entry^.StartLBA + 1);
+                    found := found + 1;
+                end;
+                kfree(puint32(gptEntries));
+            end else begin
+                syslog.logln('VOLMGR', 'GPT entry read failed — falling back to MBR.');
+                hasGPT := false;  { fall through to MBR below }
+            end;
+            kfree(puint32(gptHeader));
+        end else begin
+            syslog.logln('VOLMGR', 'GPT header invalid — falling back to MBR.');
+            hasGPT := false;  { fall through to MBR below }
+        end;
+    end;
+
+    if not hasGPT then begin
+        { ---- MBR path ---- }
+        if bootrecord = nil then
+            bootrecord := storagemanager.read_mbr(device);
+        if bootrecord <> nil then begin
+            for i := 0 to 3 do begin
+                if bootrecord^.partition[i].LBA_start <> 0 then begin
+                    create_volume_from_partition(device,
+                        bootrecord^.partition[i].LBA_start,
+                        bootrecord^.partition[i].sector_count);
+                    found := found + 1;
+                end;
+            end;
+            kfree(puint32(bootrecord));
+        end;
+    end;
+
+    { Check whether any volume was actually identified }
     identified := 0;
     if (found > 0) and (device^.volumes <> nil) then begin
         for i := 0 to DL_Size(device^.volumes) - 1 do begin
@@ -322,27 +407,25 @@ end;
   Returns 0 if no space available. Minimum result is 1 (after MBR). }
 function find_free_space(device : PStorage_Device; needed : uint32) : uint32;
 var
-    bootrecord : PMaster_Boot_Record;
-    i          : uint32;
-    partEnd    : uint32;
-    nextLBA    : uint32;
+    mbr     : PMaster_Boot_Record;
+    i       : uint32;
+    partEnd : uint32;
+    nextLBA : uint32;
 begin
     push_trace('VolumeManager.find_free_space');
     find_free_space := 0;
 
-    bootrecord := storagemanager.read_mbr(device);
-    if bootrecord = nil then exit;
+    mbr := storagemanager.get_cached_mbr(device);
+    if mbr = nil then exit;
     nextLBA := 1;
 
     for i := 0 to 3 do begin
-        if bootrecord^.partition[i].LBA_start <> 0 then begin
-            partEnd := bootrecord^.partition[i].LBA_start + bootrecord^.partition[i].sector_count;
+        if mbr^.partition[i].LBA_start <> 0 then begin
+            partEnd := mbr^.partition[i].LBA_start + mbr^.partition[i].sector_count;
             if partEnd > nextLBA then
                 nextLBA := partEnd;
         end;
     end;
-
-    kfree(puint32(bootrecord));
 
     if (nextLBA + needed) <= device^.maxSectorCount then
         find_free_space := nextLBA;
@@ -351,25 +434,22 @@ end;
 { Find first empty MBR partition slot (0-3). Returns -1 if all occupied. }
 function find_free_slot(device : PStorage_Device) : sint32;
 var
-    bootrecord : PMaster_Boot_Record;
-    i          : uint32;
+    mbr : PMaster_Boot_Record;
+    i   : uint32;
 begin
     push_trace('VolumeManager.find_free_slot');
     find_free_slot := -1;
 
-    bootrecord := storagemanager.read_mbr(device);
-    if bootrecord = nil then exit;
+    mbr := storagemanager.get_cached_mbr(device);
+    if mbr = nil then exit;
 
     for i := 0 to 3 do begin
-        if (bootrecord^.partition[i].LBA_start = 0) and
-           (bootrecord^.partition[i].sector_count = 0) then begin
+        if (mbr^.partition[i].LBA_start = 0) and
+           (mbr^.partition[i].sector_count = 0) then begin
             find_free_slot := i;
-            kfree(puint32(bootrecord));
             exit;
         end;
     end;
-
-    kfree(puint32(bootrecord));
 end;
 
 { Return number of free sectors remaining after all partitions. }
@@ -385,6 +465,117 @@ begin
 
     if device^.maxSectorCount > lba then
         get_free_sector_count := device^.maxSectorCount - lba;
+end;
+
+{ ===================== Async partition operations ===================== }
+
+{ Modify cached MBR in-place, create volume in memory, fire-and-forget write.
+  All in-memory changes happen synchronously so the caller can refresh UI
+  immediately.  The disk write completes asynchronously. }
+procedure add_partition_async(device : PStorage_Device; slot : uint32; partition : TPartition_table;
+                              callback : TIOCallback; callbackData : pointer);
+var
+    mbr : PMaster_Boot_Record;
+    vol : PStorage_Volume;
+begin
+    push_trace('VolumeManager.add_partition_async');
+    if (device = nil) or (slot > 3) or (not device^.writable) then begin
+        if callback <> nil then callback(eInvalidArgument, callbackData);
+        exit;
+    end;
+
+    mbr := storagemanager.get_cached_mbr(device);
+    if mbr = nil then begin
+        if callback <> nil then callback(eDeviceNotReady, callbackData);
+        exit;
+    end;
+
+    { Modify cache in-place }
+    mbr^.partition[slot] := partition;
+
+    { Create volume in memory — skip probe_volume because
+      (a) the partition is freshly created / unformatted, and
+      (b) probe_volume does blocking I/O which is unsafe here. }
+    if (partition.LBA_start <> 0) and (partition.sector_count <> 0) then begin
+        vol := PStorage_Volume(kalloc(sizeof(TStorage_Volume)));
+        if vol <> nil then begin
+            vol^.device      := device;
+            vol^.sectorStart := partition.LBA_start;
+            vol^.sectorCount := partition.sector_count;
+            vol^.sectorSize  := device^.sectorSize;
+            vol^.freeSectors := 0;
+            vol^.filesystem  := nil;
+            vol^.isBootDrive := false;
+            register_volume(device, vol);
+        end;
+    end;
+
+    { Write cached MBR to disk — buffer is the persistent cache }
+    storagemanager.storage_write_async(device, 0, 1, puint32(mbr), callback, callbackData);
+end;
+
+procedure remove_partition_async(device : PStorage_Device; slot : uint32;
+                                 callback : TIOCallback; callbackData : pointer);
+var
+    mbr       : PMaster_Boot_Record;
+    oldPart   : TPartition_table;
+    emptyPart : TPartition_table;
+begin
+    push_trace('VolumeManager.remove_partition_async');
+    if (device = nil) or (slot > 3) or (not device^.writable) then begin
+        if callback <> nil then callback(eInvalidArgument, callbackData);
+        exit;
+    end;
+
+    mbr := storagemanager.get_cached_mbr(device);
+    if mbr = nil then begin
+        if callback <> nil then callback(eDeviceNotReady, callbackData);
+        exit;
+    end;
+
+    oldPart := mbr^.partition[slot];
+
+    { Zero the slot in cache }
+    memset(uint32(@emptyPart), 0, sizeof(TPartition_table));
+    mbr^.partition[slot] := emptyPart;
+
+    { Remove the corresponding volume from memory }
+    if (oldPart.LBA_start <> 0) and (oldPart.sector_count <> 0) then
+        remove_volume_by_start(device, oldPart.LBA_start);
+
+    { Write cached MBR to disk }
+    storagemanager.storage_write_async(device, 0, 1, puint32(mbr), callback, callbackData);
+end;
+
+procedure init_disk_async(device : PStorage_Device;
+                          callback : TIOCallback; callbackData : pointer);
+var
+    cache : puint32;
+begin
+    push_trace('VolumeManager.init_disk_async');
+    if (device = nil) or (not device^.writable) then begin
+        if callback <> nil then callback(eInvalidArgument, callbackData);
+        exit;
+    end;
+
+    { Remove all volumes first }
+    remove_all_volumes_for_device(device);
+
+    { Create fresh cached MBR }
+    if device^.cachedMBR <> nil then
+        kfree(device^.cachedMBR);
+    cache := puint32(kalloc(sizeof(TMaster_Boot_Record)));
+    if cache = nil then begin
+        device^.cachedMBR := nil;
+        if callback <> nil then callback(eOutOfMemory, callbackData);
+        exit;
+    end;
+    memset(uint32(cache), 0, sizeof(TMaster_Boot_Record));
+    PMaster_Boot_Record(cache)^.boot_sector := $AA55;
+    device^.cachedMBR := pointer(cache);
+
+    { Write to disk }
+    storagemanager.storage_write_async(device, 0, 1, cache, callback, callbackData);
 end;
 
 { ===================== Filesystem operations ===================== }
@@ -408,6 +599,28 @@ begin
     vol^.filesystem := fs;
     fs^.createCallback(vol, vol^.sectorCount, vol^.sectorStart, config);
     format_volume := true;
+end;
+
+function format_volume_async(device : PStorage_Device; volIndex : uint32; filesystemName : pchar;
+                             config : puint32; callback : TIOCallback; callbackData : pointer) : boolean;
+var
+    vol : PStorage_Volume;
+    fs  : PFilesystem;
+begin
+    push_trace('VolumeManager.format_volume_async');
+    format_volume_async := false;
+
+    vol := get_volume(volIndex);
+    if vol = nil then exit;
+    if vol^.device <> device then exit;
+
+    fs := filesystemmanager.find_filesystem_by_name(filesystemName);
+    if fs = nil then exit;
+    if fs^.createAsyncCallback = nil then exit;
+
+    vol^.filesystem := fs;
+    fs^.createAsyncCallback(vol, vol^.sectorCount, vol^.sectorStart, config, callback, callbackData);
+    format_volume_async := true;
 end;
 
 procedure delete_volume(volume : PStorage_Volume);

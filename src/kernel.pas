@@ -65,6 +65,7 @@ uses
     mouse,
     multiboot,
     net,
+    notepad,
     OHCI,
     partcmd,
     PCI,
@@ -79,6 +80,7 @@ uses
     serial,
     stdio,
     storagemanager,
+    storagetest,
     strings,
     syslog,
     testdriver,
@@ -221,6 +223,7 @@ begin
 
      { VFS Init }
      vfs.init();
+     storagetest.init;
 
      { Management Interfaces }
      tracer.push_trace('kmain.DRVMGMT');
@@ -239,6 +242,9 @@ begin
      fat32.init();
      flatfs.init();
      iso9660.init();
+
+     { Init process manager (must be before device drivers — submit_io needs CurrentProcess) }
+     processmanager.init;
 
      { Device Drivers }
      tracer.push_trace('kmain.DEVDRV');
@@ -270,9 +276,6 @@ begin
      { Init Progs }
      progmanager.init();
 
-     { Init process manager }
-     processmanager.init;
-
      { Seed RNG }
      rand.srand((getDateTime.Seconds SHL 24) OR (getDateTime.Minutes SHL 16) OR (getDateTime.Hours SHL 8) OR (getDateTime.Day));
 
@@ -291,6 +294,9 @@ begin
 
      { Initialize disk utility (registers with desktop search) }
      diskutil.init;
+
+     { Initialize notepad (registers with desktop search) }
+     notepad.init;
 
      { Run unit tests }
      strings.UnitTest;
@@ -311,6 +317,8 @@ begin
      minh.UnitTest;
      maxh.UnitTest;
      prio.UnitTest;
+     vfs.UnitTest;
+     storagetest.UnitTest;
 
      { Register timer-driven tasks }
      graphicsrefresh.init;
