@@ -6,22 +6,24 @@
     the round-robin scheduler called from the context switch ISR.
 
     @author(Kieron Morris <kjm@kieronmorris.me>)
+    @author(Aaron Hance <ah@aaronhance.me>)
 }
 unit processmanager;
 
 interface
 
 uses
-    proctypes,
-    stdio,
+    bios_data_area,
+    fdtable,
     lists,
     lmemorymanager,
-    util,
+    proctypes,
     rand,
+    stdio,
     strings,
-    tracer,
     syslog,
-    bios_data_area;
+    tracer,
+    util;
 
 { Core API }
 function  create(name : pchar;
@@ -151,6 +153,12 @@ begin
 
     { Resources }
     ctx^.Resources := void(DL_New(SizeOf(TResourceBinding)));
+
+    { Per-process file descriptor table }
+    ctx^.FDTable := void(fd_table_new);
+
+    { Per-process working directory }
+    ctx^.Cwd := stringCopy('/');
 
     { Allocate per-process kernel stack }
     stack := kalloc(PROCESS_STACK_SIZE);
@@ -355,14 +363,12 @@ end;
 
 procedure proc_await;
 begin
+    { Caller must set CurrentProcess^.State := psAwaiting before calling.
+      This procedure just spin-waits until an ISR sets the state back
+      to something other than psAwaiting. }
     if CurrentProcess <> nil then begin
-        asm pushf; cli end;
-        CurrentProcess^.State := psAwaiting;
-        asm popf end;
-        { Wait for scheduler to switch us out, then back in when woken }
-        asm
-            hlt
-        end;
+        while CurrentProcess^.State = psAwaiting do
+            asm hlt end;
     end;
 end;
 
@@ -542,6 +548,16 @@ begin
                 parent := findByID(ctx^.ParentID);
                 if parent <> nil then
                     sendMessage(parent^.ProcessID, smChildExited, void(ctx^.ProcessID));
+            end;
+            { Clean up file descriptors }
+            if ctx^.FDTable <> nil then begin
+                fd_table_free(PFDTable(ctx^.FDTable));
+                ctx^.FDTable := nil;
+            end;
+            { Free per-process CWD }
+            if ctx^.Cwd <> nil then begin
+                kfree(void(ctx^.Cwd));
+                ctx^.Cwd := nil;
             end;
             { Clean up resources }
             unbindAllResources(ctx);
@@ -748,6 +764,8 @@ begin
     IdleProcess^.Quantum := 1;  { Yield to real processes ASAP }
     IdleProcess^.PendingMsg := smNone;
     IdleProcess^.Resources := void(DL_New(SizeOf(TResourceBinding)));
+    IdleProcess^.FDTable := void(fd_table_new);
+    IdleProcess^.Cwd := stringCopy('/');
     { No stack allocation — idle runs on the kernel's original stack }
     slotPtr := DL_Add(Processes);
     slotPtr^ := uint32(IdleProcess);

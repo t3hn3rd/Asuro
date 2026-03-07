@@ -22,14 +22,17 @@ unit asfs;
 interface
 
 uses
-    storagemanagement,
-    util,
-    lmemorymanager,
-    strings,
+    syslog,
     lists,
-    tracer,
+    lmemorymanager,
+    rtc,
     serial,
-    rtc;
+    storagemanagement,
+    storagemanager,
+    strings,
+    stdio,
+    tracer,
+    util;
 
 type
 
@@ -98,7 +101,7 @@ begin
     filesystemRecord^.endOfData       := filesystemRecord.sectorsPerTable; 
     //filesystemRecord.volumeLabel     := config^
 
-    disk^.writecallback(disk, start, 1, buffer);
+    storagemanager.storage_write(disk, start, 1, buffer);
     memset(uint32(buffer), 0, disk^.sectorSize);
 
     fileEntry            := PFileEntry(buffer)[0];
@@ -111,7 +114,7 @@ begin
     fileEntry^.attributes := 0;
     fileEntry^.location   := 1;
 
-    disk^.writecallback(disk, start + 1, 1, buffer);
+    storagemanager.storage_write(disk, start + 1, 1, buffer);
 
 
 end;

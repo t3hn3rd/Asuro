@@ -30,10 +30,10 @@ unit pmemorymanager;
 interface
 
 uses
-    util,
-    syslog,
     multiboot,
-    tracer;
+    syslog,
+    tracer,
+    util;
 
 { Public interface — signatures unchanged from the original unit }
 procedure init;

@@ -34,7 +34,7 @@ procedure unhook(hook_method : uint32);
 implementation
 
 var
-    Hooks : Array[1..MAX_HOOKS] of pp_hook_method;
+    Hooks : Array[0..MAX_HOOKS-1] of pp_hook_method;
     Registered : boolean = false;
 
 procedure Main; //IRQ0, ~8001hz
@@ -88,8 +88,10 @@ var
     i : uint32;
 begin
     for i:=0 to MAX_HOOKS-1 do begin
-        If uint32(Hooks[i]) = hook_method then Hooks[i]:= nil;
-        exit;
+        If uint32(Hooks[i]) = hook_method then begin
+            Hooks[i]:= nil;
+            exit;
+        end;
     end;
 end;
 

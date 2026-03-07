@@ -5,6 +5,7 @@
     bindings used by processmanager.pas and contextswitcher.pas.
 
     @author(Kieron Morris <kjm@kieronmorris.me>)
+    @author(Aaron Hance <ah@aaronhance.me>)
 }
 unit proctypes;
 
@@ -104,6 +105,12 @@ type
 
         { Resource bindings (PDList of TResourceBinding) }
         Resources   : void;
+
+        { Per-process file descriptor table (PFDTable from fdtable.pas) }
+        FDTable     : void;
+
+        { Per-process working directory — heap-allocated, defaults to '/' }
+        Cwd         : pchar;
 
         { User-defined state }
         Local       : void;

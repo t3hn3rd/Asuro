@@ -23,53 +23,90 @@ unit kernel;
 interface
  
 uses
-     multiboot, bios_data_area,
-     util,
-     gdt, idt, isr, irq,
-     TMR_0_ISR,
-     syslog, stdio,
-     keyboard, mouse,
-     ps2_keyboard, ps2_mouse,
-     vmemorymanager, pmemorymanager, lmemorymanager,
-     tracer,
-     drivermanagement,
-     progmanager,
-     processmanager, contextswitcher,
-     testprocs,
-     PCI,
-     strings,
-     USB,
-     usbtypes,
-     usbcore,
-     usbhub,
-     usb_keyboard,
-     usb_mouse,
-     usb_storage,
-     UHCI,
-     OHCI,
-     EHCI,
-     XHCI,
-     testdriver,
-     E1000,
-     IDE,
-     storagemanagement,
-     lists,
-     net,
-     fat32,
-     isrmanager,
-     faults,
-     fonts,
-     RTC,
-     serial,
-     cpu,
-     md5,
-     base64,
-     rand,
-     hashmap, vfs,
-     video, vesa, doublebuffer, color, lvgl, desktop, uidebug, windows,
-     vterminal,
-     graphicsrefresh, usbhotplug,
-     fifo, cfifo, cfifols, lifo, circ, minh, maxh, prio;
+    AHCI,
+    base64,
+    bios_data_area,
+    cfifo,
+    cfifols,
+    circ,
+    color,
+    contextswitcher,
+    cpu,
+    desktop,
+    diskcmd,
+    diskutil,
+    doublebuffer,
+    drivermanagement,
+    E1000,
+    EHCI,
+    fat32,
+    faults,
+    fifo,
+    filesystemmanager,
+    flatfs,
+    fonts,
+    gdt,
+    graphicsrefresh,
+    hashmap,
+    idt,
+    ioapic,
+    irq,
+    iso9660,
+    isr,
+    isrmanager,
+    keyboard,
+    lifo,
+    lists,
+    lmemorymanager,
+    lvgl,
+    maxh,
+    md5,
+    minh,
+    mouse,
+    multiboot,
+    net,
+    notepad,
+    OHCI,
+    partcmd,
+    PCI,
+    pmemorymanager,
+    prio,
+    processmanager,
+    progmanager,
+    ps2_keyboard,
+    ps2_mouse,
+    rand,
+    RTC,
+    serial,
+    stdio,
+    storagemanager,
+    storagetest,
+    strings,
+    syslog,
+    testdriver,
+    testprocs,
+    TMR_0_ISR,
+    tracer,
+    UHCI,
+    uidebug,
+    USB,
+    usb_keyboard,
+    usb_mouse,
+    usb_storage,
+    usbcore,
+    usbhotplug,
+    usbhub,
+    usbtypes,
+    util,
+    vesa,
+    vfs,
+    video,
+    vmemorymanager,
+    volcmd,
+    volumemanager,
+    vterminal,
+    Windows,
+    XHCI;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
@@ -101,7 +138,7 @@ end;
 
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall; [public, alias: 'kmain'];   
 var
-   dds             : uint32;
+   dds             : uint16;
    keyboard_layout : array [0..1] of TKeyInfo;
    i : uint32;
    
@@ -186,12 +223,16 @@ begin
 
      { VFS Init }
      vfs.init();
+     storagetest.init;
 
      { Management Interfaces }
      tracer.push_trace('kmain.DRVMGMT');
      drivermanagement.init();
      tracer.push_trace('kmain.STRMGMT');
-     storagemanagement.init();
+     storagemanager.init();
+     storagemanager.set_boot_drive_byte((multibootinfo^.boot_device shr 24) and $FF);
+     volumemanager.init();
+     filesystemmanager.init();
 
      { Enable interrupts and hook timer }
      tracer.push_trace('kmain.TMR');
@@ -200,6 +241,11 @@ begin
 
      { Filesystems }
      fat32.init();
+     flatfs.init();
+     iso9660.init();
+
+     { Init process manager (must be before device drivers — submit_io needs CurrentProcess) }
+     processmanager.init;
 
      { Device Drivers }
      tracer.push_trace('kmain.DEVDRV');
@@ -208,7 +254,10 @@ begin
      ps2_mouse.init();
      testdriver.init();
      E1000.init();
-     IDE.init();
+     AHCI.init();
+     diskcmd.init();
+     partcmd.init();
+     volcmd.init();
      syslog.logln('KERNEL', 'DEVICE DRIVERS: INIT END.');
 
      { Bus Drivers }
@@ -218,15 +267,15 @@ begin
      pci.init();
      syslog.logln('KERNEL', 'BUS DRIVERS: INIT END.');
 
+     { Auto-mount discovered volumes into VFS }
+     vfs.auto_mount_volumes();
+
      { Network Stack }
      tracer.push_trace('kmain.NETDRV');
      net.init;
 
      { Init Progs }
      progmanager.init();
-
-     { Init process manager }
-     processmanager.init;
 
      { Seed RNG }
      rand.srand((getDateTime.Seconds SHL 24) OR (getDateTime.Minutes SHL 16) OR (getDateTime.Hours SHL 8) OR (getDateTime.Day));
@@ -243,6 +292,12 @@ begin
 
      { Initialize visual terminal (registers with desktop search) }
      vterminal.init;
+
+     { Initialize disk utility (registers with desktop search) }
+     diskutil.init;
+
+     { Initialize notepad (registers with desktop search) }
+     notepad.init;
 
      { Run unit tests }
      strings.UnitTest;
@@ -263,6 +318,8 @@ begin
      minh.UnitTest;
      maxh.UnitTest;
      prio.UnitTest;
+     vfs.UnitTest;
+     storagetest.UnitTest;
 
      { Register timer-driven tasks }
      graphicsrefresh.init;

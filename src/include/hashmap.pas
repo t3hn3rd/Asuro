@@ -22,7 +22,12 @@ unit hashmap;
 interface
 
 uses
-    md5, util, strings, lmemorymanager, tracer, syslog;
+    lmemorymanager,
+    md5,
+    strings,
+    syslog,
+    tracer,
+    util;
 
 type
     DPHashItem = ^PHashItem;
@@ -45,12 +50,16 @@ const
     HASHMAP_DEFAULT_SIZE = 16;
     HASHMAP_DEFAULT_LOADFACTOR = 0.75;
 
+type
+    THashForEachCb = procedure(key: pchar; data: void; ud: void);
+
 function  new : PHashMap;
 function  newEx(size : uint32; loadFactor : Single) : PHashMap;
 procedure add(map : PHashMap; key : pchar; value : void);
 function  get(map : PHashMap; key : pchar) : void;
 procedure delete(map : PHashMap; key : pchar; freeItem : boolean);
 procedure printMap(map : PHashMap);
+procedure forEach(map : PHashMap; cb : THashForEachCb; ud : void);
 
 implementation
 
@@ -253,6 +262,23 @@ begin
                 kfree(void(Item));
                 dec(map^.count);
             end;
+        end;
+    end;
+end;
+
+procedure forEach(map : PHashMap; cb : THashForEachCb; ud : void);
+var
+    i    : uint32;
+    item : PHashItem;
+begin
+    if (map = nil) or (map^.Size = 0) or (map^.Table = nil) then exit;
+    if cb = nil then exit;
+    for i := 0 to map^.Size - 1 do begin
+        item := map^.Table[i];
+        while item <> nil do begin
+            if item^.Key <> nil then
+                cb(item^.Key, item^.Data, ud);
+            item := item^.Next;
         end;
     end;
 end;

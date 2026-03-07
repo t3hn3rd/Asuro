@@ -14,5 +14,6 @@ localenv.json
 /lvgl/
 dockerout.txt
 AGENTS.md
+lessons_learnt.md
 *.log
 /doc/*.md

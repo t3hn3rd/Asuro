@@ -21,6 +21,29 @@ unit drivertypes;
 
 interface
 
+const
+    PCI_CONFIG_ADDRESS_PORT = $0CF8;
+    PCI_CONFIG_DATA_PORT    = $0CFC;
+
+    PCI_COMMAND_IO_SPACE    = $0001;
+    PCI_COMMAND_MEM_SPACE   = $0002;
+    PCI_COMMAND_BUS_MASTER  = $0004;
+    PCI_COMMAND_SPECIAL_CYC = $0008;
+    PCI_COMMAND_MEM_WRITE   = $0010;
+    PCI_COMMAND_VGA_PALETTE = $0020;
+    PCI_COMMAND_PARITY      = $0040;
+    PCI_COMMAND_WAIT        = $0080;
+    PCI_COMMAND_SERR        = $0100;
+    PCI_COMMAND_FAST_BACK   = $0200;
+    PCI_COMMAND_INT_DISABLE = $0400;
+    PCI_COMMAND_SERR_ENABLE = $8000;
+
+    PCI_CAP_ID_MSI           = $05;
+
+    // Bits in the MSI Control register (16-bit):
+    MSI_CONTROL_ENABLE       = 1 shl 0;  // Bit 0
+    MSI_CONTROL_64BIT        = 1 shl 7;  // Bit 7
+    MSI_CONTROL_PVMASK       = 1 shl 8;  // Bit 8 (optional: per-vector masking)
 type
 
     PPCI_Device = ^TPCI_Device;
@@ -44,6 +67,7 @@ type
         address1       : uint32;
         address2       : uint32;
         address3       : uint32;
+
         address4       : uint32;
         address5       : uint32;
         CIS_pointer    : uint32;

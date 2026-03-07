@@ -91,6 +91,7 @@ function getDeviceInfo(class_code : uint8; subclass_code : uint8; prog_if : uint
 procedure requestConfig(bus : uint8; slot : uint8; func : uint8; row : uint8);
 procedure writeConfig(bus: uint8; slot : uint8; func : uint8; row : uint8; val : uint32);
 procedure setBusMaster(bus : uint8; slot : uint8; func : uint8; master : boolean);
+procedure enableDevice(bus : uint8; slot : uint8; func : uint8);
 
 implementation 
 
@@ -439,6 +440,36 @@ begin
         end;
     end;
     getDeviceInfo := devices_out;
+    pop_trace;
+end;
+
+//Enable device inturrupts and set bus master
+procedure enableDevice(bus : uint8; slot : uint8; func : uint8);
+var
+    addr : uint32;
+    cmd : uint32;
+begin
+    push_trace('PCI.enableDevice');
+
+    addr := ($1 shl 31);
+    addr := addr or (bus shl 16);
+    addr := addr or ((slot) shl 11);
+    addr := addr or ((func) shl 8);
+    addr := addr or ($04 and $FC);
+
+    outl(PCI_CONFIG_ADDRESS_PORT, addr);
+    cmd := inl(PCI_CONFIG_DATA_PORT);
+    cmd := cmd or PCI_COMMAND_MEM_SPACE;
+    cmd := cmd or PCI_COMMAND_BUS_MASTER;
+    cmd := cmd or (3 shl 1);
+
+    //enable interrupts, remove disable interrupt bit maybe
+    cmd := cmd and not PCI_COMMAND_INT_DISABLE;
+    // cmd := cmd and not (1 shl 9);
+
+    outl(PCI_CONFIG_ADDRESS_PORT, addr);
+    outl(PCI_CONFIG_DATA_PORT, cmd);
+
     pop_trace;
 end;
 

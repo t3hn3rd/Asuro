@@ -41,11 +41,11 @@ unit lmemorymanager;
 interface
 
 uses
-    util,
-    vmemorymanager,
     pmemorymanager,
     syslog,
-    tracer;
+    tracer,
+    util,
+    vmemorymanager;
 
 const
     ALLOC_UNIT        = 8;          { bytes per allocation unit }

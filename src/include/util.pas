@@ -16,6 +16,7 @@
 	Include->Util - Data Manipulation Utlities.
 	
 	@author(Kieron Morris <kjm@kieronmorris.me>)
+    @author(Aaron Hance <ah@aaronhance.me>)
 }
 unit util;
 
@@ -24,7 +25,8 @@ unit util;
 interface
 
 uses
-    bios_data_area, tracer;
+    bios_data_area,
+    tracer;
 
 function  INTE : boolean;
 procedure CLI();
@@ -87,7 +89,12 @@ var
 implementation
 
 uses
-    syslog, RTC, cpu, serial, strings, isr_types;
+    cpu,
+    isr_types,
+    RTC,
+    serial,
+    strings,
+    syslog;
 
 function abs(x : sint32) : uint32;
 var
@@ -274,14 +281,35 @@ end;
 procedure psleep(t : uint16);
 var
     t1, t2 : uint16;
-
+    spin   : uint32;
 begin
-    t1:= BDA^.Ticks;
-    t2:= BDA^.Ticks;
-    while t2-t1 < t do begin
-        break;
-        t2:= BDA^.Ticks;
-        if t2 < t1 then break;
+    t1 := BDA^.Ticks;
+
+    { Busy-spin briefly to give the tick counter a chance to advance.
+      If after ~50 000 iterations the counter hasn't moved, the timer
+      ISR isn't installed yet — fall back to a rough CPU busy-wait
+      (~1 ms per requested tick at typical Bochs/VBox speed). }
+    spin := 0;
+    t2 := t1;
+    while t2 = t1 do begin
+        spin := spin + 1;
+        if spin > 50000 then begin
+            { Timer not running — approximate delay with busy loop.
+              Each outer iteration ≈ a few µs; 50000 * t gives a
+              very rough ms-scale delay that is good enough for the
+              hardware settle times that call psleep. }
+            for spin := 1 to uint32(t) * 50000 do
+                asm nop end;
+            exit;
+        end;
+        t2 := BDA^.Ticks;
+    end;
+
+    { Timer is running — use real ticks }
+    t1 := BDA^.Ticks;
+    while t2 - t1 < t do begin
+        t2 := BDA^.Ticks;
+        if t2 < t1 then break; { tick counter wrapped }
     end;
 end;
 
