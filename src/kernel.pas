@@ -34,8 +34,6 @@ uses
     contextswitcher,
     cpu,
     desktop,
-    diskcmd,
-    diskutil,
     doublebuffer,
     drivermanagement,
     E1000,
@@ -67,7 +65,6 @@ uses
     mouse,
     multiboot,
     net,
-    notepad,
     OHCI,
     partcmd,
     PCI,
@@ -277,9 +274,6 @@ begin
      testdriver.init();
      E1000.init();
      AHCI.init();
-     diskcmd.init();
-     partcmd.init();
-     volcmd.init();
      syslog.logln('KERNEL', 'DEVICE DRIVERS: INIT END.');
 
      { Bus Drivers }
@@ -293,6 +287,7 @@ begin
      syslog.logln('KERNEL', 'BUS DRIVERS: INIT END.');
 
      { Auto-mount discovered volumes into VFS }
+     splash.update(38, 'Auto-mounting volumes...');
      vfs.auto_mount_volumes();
 
      { Network Stack }
@@ -353,12 +348,6 @@ begin
      { Register timer-driven tasks }
      graphicsrefresh.init;
      usbhotplug.init;
-
-     { Initialize disk utility (registers with desktop search) }
-     diskutil.init;
-
-     { Initialize notepad (registers with desktop search) }
-     notepad.init;
 
      { Enable preemptive context switching (replaces ISR_32) }
      contextswitcher.init;
