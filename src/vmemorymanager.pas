@@ -62,6 +62,7 @@ procedure free_page_at_address(address : uint32);
 function new_page_directory : uint32;
 function new_kernel_mapped_page_directory : uint32;
 function vtop(address : uint32) : uint32;
+function map_page_user(page_number : uint16; block : uint16) : boolean;
 
 implementation
 
@@ -270,6 +271,24 @@ begin
     push_trace('vmemorymanager.free_page_at_address');
     page_number:= address SHR 22;
     free_page(page_number);
+    pop_trace;
+end;
+
+function map_page_user(page_number : uint16; block : uint16) : boolean;
+var
+    rldpd : uint32;
+
+begin
+    push_trace('vmemorymanager.map_page_user');
+    { Map a page with User bit set (needed for V86 mode access) }
+    map_page_user := map_page_ex(page_number, block, PageDirectory);
+    PageDirectory^[page_number].UserMode := true;
+    { Reload CR3 to flush TLB }
+    rldpd := uint32(PageDirectory) - KERNEL_VIRTUAL_BASE;
+    asm
+        mov eax, rldpd
+        mov CR3, eax
+    end;
     pop_trace;
 end;
 

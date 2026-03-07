@@ -25,7 +25,7 @@ interface
 uses
     tracer,
     //progs
-    base64_prog, md5sum, dhclient, vbeinfo, testcmd, ping, meminfo;
+    base64_prog, md5sum, dhclient, vbeinfo, testcmd, ping, meminfo, setres;
 
 { Initialize all baked-in programs }
 procedure init();
@@ -37,7 +37,7 @@ uses
     //command provider units
     kernel, cpu, drivermanagement, processmanager,
     arp, ipv4, tcp,
-    diskcmd, usbcore;
+    diskcmd, usbcore, diskutil, notepad, partcmd, volcmd;
 
 procedure init();
 begin
@@ -54,10 +54,14 @@ begin
     stdio.registerCommand('TCPCONNECT', @tcp.terminal_command_tcpconnect, 'Connect to a TCP host and send Hello World.');
     stdio.registerCommand('TCPLISTEN', @tcp.terminal_command_tcplisten, 'Listen on a TCP port and log received data.');
     stdio.registerCommand('TCPHTTP', @tcp.terminal_command_tcphttp, 'Send HTTP GET to a host IP (port 80 default).');
-    diskcmd.init();
     stdio.registerCommand('USB', @usbcore.terminal_command_usb, 'USB subsystem information.');
 
     { Initialize baked-in programs }
+    diskcmd.init();
+    partcmd.init();
+    volcmd.init();
+    diskutil.init;
+    notepad.init;
     md5sum.init();
     base64_prog.init();
     dhclient.init();
@@ -65,6 +69,7 @@ begin
     testcmd.init();
     ping.init();
     meminfo.init();
+    setres.init();
 end;
 
 end.
