@@ -18,7 +18,7 @@ const
     PROCESS_STACK_SIZE = 8192;
 
     { Base quantum multiplier: quantum = Priority * BASE_QUANTUM ticks }
-    BASE_QUANTUM = 8;
+    BASE_QUANTUM = 5;
 
 type
     { Forward declaration }

@@ -365,7 +365,7 @@ begin
     now_tick := lvgl_get_ticks;
 
     if (now_tick - last_tick) >= FPS_INTERVAL then begin
-        current_fps := safeDiv32(frame_count * 1000, now_tick - last_tick);
+        current_fps := safeDiv32(frame_count * 8000, now_tick - last_tick);
         frame_count := 0;
         last_tick := now_tick;
 
