@@ -25,9 +25,9 @@ interface
 uses
     tracer, stdio, processmanager,
     //progs
-    base64_prog, md5sum, dhclient, vbeinfo, testcmd, ping, meminfo, setres, testcmd, ping,
+    base64_prog, md5sum, dhclient, vbeinfo, testcmd, ping, meminfo, setres,
     //drivers
-    ramdrive, drivermanagement, storagemanagement,
+    ramdrive, drivermanagement,
     //network
     ipv4, arp, tcp,
     //dispatch
@@ -40,13 +40,10 @@ procedure init();
 
 implementation
 
-uses kernel;
-
 uses
-    stdio,
+    kernel,
     //command provider units
-    kernel, cpu, drivermanagement, processmanager,
-    arp, ipv4, tcp,
+    cpu,
     diskcmd, usbcore, diskutil, notepad, partcmd, volcmd;
 
 procedure init();
@@ -70,8 +67,8 @@ begin
     diskcmd.init();
     partcmd.init();
     volcmd.init();
-    diskutil.init;
-    notepad.init;
+    diskutil.init();
+    notepad.init();
     md5sum.init();
     base64_prog.init();
     dhclient.init();

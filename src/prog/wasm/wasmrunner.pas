@@ -21,7 +21,7 @@ procedure init;
 implementation
 
 uses
-    vfs, lmemorymanager, strings, syslog, util,
+    vfs, storagetypes, lmemorymanager, strings, syslog, util,
     processmanager, proctypes, filedispatch,
     wasmshim, wasmio, wasmcleanup,
     wasm, wasm.types.builtin, wasm.types.context, wasm.types.constants;
@@ -175,7 +175,7 @@ begin
     end;
 
     err := eNone;
-    fh := vfs.OpenFile(path, omReadOnly, wmRewrite, false, @err);
+    fh := vfs.OpenFile(path, omReadOnly, wmRewrite, @err);
     if fh = 0 then begin
         kfree(void(buf));
         stdio.bufWriteStrLn(stderr_buf, 'WASM: cannot open file');

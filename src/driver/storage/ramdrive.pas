@@ -1,7 +1,7 @@
 {
     Driver->Storage->RAMDrive - In-memory VFS drive for testing.
 
-    Provides a simple RAM-backed drive registered at /disk/ram.
+    Provides a simple RAM-backed volume mounted at /disk/ram.
     Files are stored as (name, pointer, size) tuples in a flat table.
     Use storeFile() to pre-load bytecode or other data that can then
     be read via the standard VFS path interface.
@@ -13,7 +13,7 @@ unit ramdrive;
 interface
 
 uses
-    vfs, tracer, syslog;
+    vfs, tracer, syslog, storagetypes;
 
 { Store a file in the RAM drive.  data is NOT copied — the pointer
   is kept as-is, so the caller must ensure it remains valid.
@@ -30,17 +30,16 @@ function storeFileCopy(name : pchar; data : puint8; size : uint32) : boolean;
   If freeBuf is true, kfree the data buffer. }
 procedure removeFile(name : pchar; freeBuf : boolean);
 
-{ Initialise the RAM drive and register it with VFS as /disk/ram }
+{ Initialise the RAM drive and mount it in VFS at /disk/ram }
 procedure init;
 
 implementation
 
 uses
-    strings, lmemorymanager, hashmap, util;
+    strings, lmemorymanager, lists, util;
 
 const
-    MAX_RAM_FILES  = 32;
-    MAX_OPEN_SLOTS = 8;
+    MAX_RAM_FILES = 32;
 
 type
     TRAMFile = record
@@ -50,15 +49,11 @@ type
         Used : boolean;   { slot in use? }
     end;
 
-    TOpenSlot = record
-        FileIdx : uint32;   { index into Files[] }
-        InUse   : boolean;
-    end;
-
 var
-    Files     : array[0..MAX_RAM_FILES-1] of TRAMFile;
-    OpenSlots : array[0..MAX_OPEN_SLOTS-1] of TOpenSlot;
-    FileCount : uint32;
+    Files      : array[0..MAX_RAM_FILES-1] of TRAMFile;
+    FileCount  : uint32;
+    RAMVolume  : TStorage_Volume;
+    RAMFS      : TFilesystem;
 
 { ---- Internal helpers ---- }
 
@@ -75,8 +70,8 @@ begin
     end;
 end;
 
-{ Strip a leading '/' from a relative path. ramdrive callbacks receive
-  paths like '/hello.wasm'; we need just 'hello.wasm' for lookup. }
+{ Strip a leading '/' from a relative path. VFS passes paths like
+  '/hello.wasm'; we need just 'hello.wasm' for internal lookup. }
 function stripLeadingSlash(path : pchar) : pchar;
 begin
     if (path <> nil) and (path[0] = '/') then
@@ -85,136 +80,84 @@ begin
         stripLeadingSlash := path;
 end;
 
-{ ---- VFS drive callbacks ---- }
+{ ---- Filesystem hook callbacks ---- }
 
-function rd_PathValid(Handle : uint32; Path : pchar) : TIsPathValid;
+{ PPReadHook — load entire file into a new kalloc'd buffer.
+  Sets buffer^ to the data pointer, bytecount^ to the size.
+  Returns 0 on success, 1 on failure. }
+function rd_Read(volume : PStorage_Volume; directory : pchar;
+                 fileName : pchar; buffer : puint32;
+                 bytecount : puint32) : uint32;
 var
     clean : pchar;
     idx   : sint32;
+    dest  : puint8;
 begin
-    rd_PathValid := pvInvalid;
-    clean := stripLeadingSlash(Path);
-    if (clean = nil) or (clean[0] = #0) then begin
-        { Root of drive = directory }
-        rd_PathValid := pvDirectory;
-        exit;
-    end;
-    idx := findFileByName(clean);
-    if idx >= 0 then
-        rd_PathValid := pvFile
-    else
-        rd_PathValid := pvInvalid;
-end;
-
-function rd_FileSize(Handle : uint32; Filename : pchar; error : puint8) : uint32;
-var
-    clean : pchar;
-    idx   : sint32;
-begin
-    rd_FileSize := 0;
-    clean := stripLeadingSlash(Filename);
+    rd_Read := 1;
+    clean := stripLeadingSlash(fileName);
     if clean = nil then exit;
     idx := findFileByName(clean);
-    if idx >= 0 then begin
-        rd_FileSize := Files[idx].Size;
-        if error <> nil then error^ := 0;
-    end else begin
-        if error <> nil then error^ := 1;
-    end;
+    if idx < 0 then exit;
+
+    { VFS expects a fresh buffer it can own }
+    dest := puint8(kalloc(Files[idx].Size));
+    if dest = nil then exit;
+    memcpy(uint32(Files[idx].Data), uint32(dest), Files[idx].Size);
+
+    buffer^ := uint32(dest);
+    bytecount^ := Files[idx].Size;
+    rd_Read := 0;
 end;
 
-function rd_OpenFile(Handle : uint32; Filename : pchar; OpenMode : TOpenMode;
-                     WriteMode : TWriteMode; Lock : Boolean;
-                     Error : PError) : TFileHandle;
+{ PPReadOffsetHook — read byteCount bytes at offset into caller buffer.
+  Returns actual bytes copied. }
+function rd_ReadOffset(volume : PStorage_Volume; directory : pchar;
+                       fileName : pchar; offset : uint32;
+                       buffer : puint32; byteCount : uint32) : uint32;
 var
-    clean : pchar;
-    fidx  : sint32;
-    i     : uint32;
-begin
-    rd_OpenFile := 0;
-    clean := stripLeadingSlash(Filename);
-    if clean = nil then begin
-        if Error <> nil then Error^ := eFileDoesNotExist;
-        exit;
-    end;
-    fidx := findFileByName(clean);
-    if fidx < 0 then begin
-        if Error <> nil then Error^ := eFileDoesNotExist;
-        exit;
-    end;
-    { Find a free open slot }
-    for i := 0 to MAX_OPEN_SLOTS - 1 do begin
-        if not OpenSlots[i].InUse then begin
-            OpenSlots[i].InUse := true;
-            OpenSlots[i].FileIdx := uint32(fidx);
-            rd_OpenFile := i + 1; { handles are 1-based }
-            if Error <> nil then Error^ := eNone;
-            exit;
-        end;
-    end;
-    { No free slots }
-    if Error <> nil then Error^ := eUnknown;
-end;
-
-function rd_ReadFile(Handle : uint32; FileHandle : TFileHandle;
-                     Position : uint32; Buffer : puint8;
-                     Length : uint32) : uint32;
-var
-    slot : uint32;
-    fidx : uint32;
-    avail : uint32;
+    clean   : pchar;
+    idx     : sint32;
+    avail   : uint32;
     copyLen : uint32;
 begin
-    rd_ReadFile := 0;
-    if (FileHandle = 0) or (FileHandle > MAX_OPEN_SLOTS) then exit;
-    slot := FileHandle - 1;
-    if not OpenSlots[slot].InUse then exit;
-    fidx := OpenSlots[slot].FileIdx;
-    if not Files[fidx].Used then exit;
-    if Position >= Files[fidx].Size then exit;
-    avail := Files[fidx].Size - Position;
-    if Length < avail then copyLen := Length else copyLen := avail;
-    memcpy(uint32(Files[fidx].Data) + Position,
-           uint32(Buffer), copyLen);
-    rd_ReadFile := copyLen;
+    rd_ReadOffset := 0;
+    clean := stripLeadingSlash(fileName);
+    if clean = nil then exit;
+    idx := findFileByName(clean);
+    if idx < 0 then exit;
+    if offset >= Files[idx].Size then exit;
+
+    avail := Files[idx].Size - offset;
+    if byteCount < avail then copyLen := byteCount else copyLen := avail;
+    memcpy(uint32(Files[idx].Data) + offset, uint32(buffer), copyLen);
+    rd_ReadOffset := copyLen;
 end;
 
-function rd_CloseFile(Handle : uint32; FileHandle : TFileHandle) : boolean;
+{ PPReadDirHook — return a linked list of TDirectory_Entry for all files.
+  VFS owns the returned list and frees each entry^.fileName. }
+function rd_ReadDir(volume : PStorage_Volume; directory : pchar;
+                    status : puint32) : PLinkedListBase;
 var
-    slot : uint32;
+    dirList : PLinkedListBase;
+    entry   : PDirectory_Entry;
+    i       : uint32;
 begin
-    rd_CloseFile := false;
-    if (FileHandle = 0) or (FileHandle > MAX_OPEN_SLOTS) then exit;
-    slot := FileHandle - 1;
-    if OpenSlots[slot].InUse then begin
-        OpenSlots[slot].InUse := false;
-        rd_CloseFile := true;
-    end;
-end;
-
-function rd_GetDirectories(Handle : uint32; Path : pchar) : PHashMap;
-var
-    ht : PHashMap;
-    i  : uint32;
-begin
-    ht := hashmap.new();
+    dirList := LL_New(sizeof(TDirectory_Entry));
     for i := 0 to MAX_RAM_FILES - 1 do begin
-        if Files[i].Used then
-            hashmap.add(ht, stringCopy(Files[i].Name), nil);
+        if Files[i].Used then begin
+            entry := PDirectory_Entry(LL_Add(dirList));
+            entry^.fileName := stringCopy(Files[i].Name);
+            entry^.entryType := fileEntry;
+        end;
     end;
-    rd_GetDirectories := ht;
+    if status <> nil then status^ := 0;
+    rd_ReadDir := dirList;
 end;
 
-function rd_MakeDirectory(Handle : uint32; Path : pchar) : TError;
+{ PPIdentifyHook — always claim ownership }
+function rd_Identify(volume : PStorage_Volume) : boolean;
 begin
-    rd_MakeDirectory := eUnknown; { not supported }
-end;
-
-function rd_WriteFile(Handle : uint32; FileHandle : TFileHandle;
-                      Position : uint32; Buffer : puint8;
-                      Length : uint32) : uint32;
-begin
-    rd_WriteFile := 0; { read-only for now }
+    rd_Identify := true;
 end;
 
 { ---- Public API ---- }
@@ -310,31 +253,29 @@ begin
     tracer.push_trace('ramdrive.init');
     syslog.logln('RAMDRIVE', 'INIT BEGIN.');
 
-    { Zero all slots }
+    { Zero all file slots }
     for i := 0 to MAX_RAM_FILES - 1 do begin
         Files[i].Used := false;
         Files[i].Name := nil;
         Files[i].Data := nil;
         Files[i].Size := 0;
     end;
-    for i := 0 to MAX_OPEN_SLOTS - 1 do begin
-        OpenSlots[i].InUse := false;
-    end;
     FileCount := 0;
 
-    { Register with VFS as /disk/ram }
-    vfs.registerDrive(
-        0,
-        'ram',
-        @rd_MakeDirectory,
-        @rd_GetDirectories,
-        @rd_OpenFile,
-        @rd_CloseFile,
-        @rd_ReadFile,
-        @rd_WriteFile,
-        @rd_FileSize,
-        @rd_PathValid
-    );
+    { Set up a minimal filesystem descriptor with our callbacks }
+    memset(uint32(@RAMFS), 0, sizeof(TFilesystem));
+    RAMFS.sName := 'ramfs';
+    RAMFS.readCallback := @rd_Read;
+    RAMFS.readDirCallback := @rd_ReadDir;
+    RAMFS.readOffsetCallback := @rd_ReadOffset;
+    RAMFS.identifyCallback := @rd_Identify;
+
+    { Set up a virtual volume backed by our filesystem }
+    memset(uint32(@RAMVolume), 0, sizeof(TStorage_Volume));
+    RAMVolume.filesystem := @RAMFS;
+
+    { Mount into VFS at /disk/ram }
+    vfs.mountVolume('/disk/ram', @RAMVolume);
 
     { Pre-load built-in WASM programs }
     loadBuiltins;

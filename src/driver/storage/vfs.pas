@@ -82,10 +82,6 @@ function GetDirectoryListingFrom(Path : pchar; BaseDir : pchar) : PHashMap;
 procedure FreeDirectoryListing(map : PHashMap);
 function changeDirectoryFrom(Path : pchar; BaseDir : pchar; var NewDir : pchar) : TIsPathValid;
 function MakeAbsolutePath(Path : PChar) : pchar;
-function makeAbsolutePathFrom(Path : pchar; BaseDir : pchar) : pchar;
-function resolvePathFrom(Path : pchar; BaseDir : pchar) : TIsPathValid;
-function GetDirectoryListingFrom(Path : pchar; BaseDir : pchar) : PHashMap;
-function changeDirectoryFrom(Path : pchar; BaseDir : pchar; var NewDir : pchar) : TIsPathValid;
 
 //VFS Functions
 function newVirtualDirectory(Path : pchar) : TError;
@@ -1161,6 +1157,13 @@ var
     pvVol    : PStorage_Volume;
     pvStatus : puint32;
     pvDirList: PLinkedListBase;
+    pvSplitRel  : PLinkedListBase;
+    pvSegCount  : uint32;
+    pvIdx       : uint32;
+    pvLeafName  : pchar;
+    pvParentDir : pchar;
+    pvTmpConcat : pchar;
+    pvEntry     : PDirectory_Entry;
 
 begin
     tracer.push_trace('vfs.PathValid.enter');
@@ -1179,22 +1182,69 @@ begin
                     RelPath[0] := '/';
                 end;
                 pvVol := PStorage_Volume(Obj^.Reference);
-                { Actually verify the path exists on the volume }
+                { Verify the path exists on the volume }
                 if (pvVol^.filesystem <> nil) and (pvVol^.filesystem^.readDirCallback <> nil) then begin
                     { If RelPath is just '/' we're at volume root — always valid }
                     if StringEquals(RelPath, '/') then begin
                         PathValid := pvDirectory;
                     end else begin
-                        { Ask the filesystem if this directory actually exists }
-                        pvStatus := puint32(kalloc(4));
-                        pvStatus^ := 0;
-                        pvDirList := pvVol^.filesystem^.readDirCallback(pvVol, RelPath, pvStatus);
-                        if pvStatus^ = 0 then
-                            PathValid := pvDirectory
-                        else
+                        { Split RelPath into parent directory and leaf name,
+                          then list the parent and look for the leaf entry. }
+                        pvSplitRel := STRLL_FromString(RelPath, '/');
+                        pvSegCount := STRLL_Size(pvSplitRel);
+                        if pvSegCount = 0 then begin
                             PathValid := pvInvalid;
-                        if pvDirList <> nil then LL_Free(pvDirList);
-                        kfree(puint32(pvStatus));
+                        end else begin
+                            pvLeafName := STRLL_Get(pvSplitRel, pvSegCount - 1);
+                            { Build parent directory path from all segments except the last }
+                            if pvSegCount <= 1 then begin
+                                pvParentDir := stringNew(1);
+                                pvParentDir[0] := '/';
+                            end else begin
+                                pvParentDir := stringNew(0);
+                                for pvIdx := 0 to pvSegCount - 2 do begin
+                                    if stringSize(pvParentDir) > 0 then begin
+                                        pvTmpConcat := stringConcat(pvParentDir, '/');
+                                        kfree(void(pvParentDir));
+                                        pvParentDir := pvTmpConcat;
+                                    end;
+                                    pvTmpConcat := stringConcat(pvParentDir, STRLL_Get(pvSplitRel, pvIdx));
+                                    kfree(void(pvParentDir));
+                                    pvParentDir := pvTmpConcat;
+                                end;
+                            end;
+                            { List parent directory }
+                            pvStatus := puint32(kalloc(4));
+                            pvStatus^ := 0;
+                            pvDirList := pvVol^.filesystem^.readDirCallback(pvVol, pvParentDir, pvStatus);
+                            PathValid := pvInvalid;
+                            if (pvDirList <> nil) and (pvStatus^ = 0) and (LL_Size(pvDirList) > 0) then begin
+                                for pvIdx := 0 to LL_Size(pvDirList) - 1 do begin
+                                    pvEntry := PDirectory_Entry(LL_Get(pvDirList, pvIdx));
+                                    if (pvEntry <> nil) and (pvEntry^.fileName <> nil) then begin
+                                        if stringEquals(pvEntry^.fileName, pvLeafName) then begin
+                                            case pvEntry^.entryType of
+                                                fileEntry:      PathValid := pvFile;
+                                                directoryEntry: PathValid := pvDirectory;
+                                                mountEntry:     PathValid := pvDirectory;
+                                            end;
+                                            break;
+                                        end;
+                                    end;
+                                end;
+                                { Free entry file names and list }
+                                for pvIdx := 0 to LL_Size(pvDirList) - 1 do begin
+                                    pvEntry := PDirectory_Entry(LL_Get(pvDirList, pvIdx));
+                                    if (pvEntry <> nil) and (pvEntry^.fileName <> nil) then
+                                        kfree(void(pvEntry^.fileName));
+                                end;
+                                LL_Free(pvDirList);
+                            end else if pvDirList <> nil then
+                                LL_Free(pvDirList);
+                            kfree(puint32(pvStatus));
+                            kfree(void(pvParentDir));
+                        end;
+                        STRLL_Free(pvSplitRel);
                     end;
                 end else
                     PathValid := pvInvalid;

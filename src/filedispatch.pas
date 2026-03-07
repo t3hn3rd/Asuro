@@ -50,7 +50,7 @@ procedure init;
 implementation
 
 uses
-    vfs, lmemorymanager, strings, tracer, syslog, util;
+    vfs, storagetypes, lmemorymanager, strings, tracer, syslog, util;
 
 type
     TFileHandlerEntry = record
@@ -135,7 +135,7 @@ begin
 
     { 2. Open the file and read the header bytes }
     err := eNone;
-    fh := vfs.OpenFile(absPath, omReadOnly, wmRewrite, false, @err);
+    fh := vfs.OpenFile(absPath, omReadOnly, wmRewrite, @err);
     if fh = 0 then exit;
 
     memset(uint32(@headerBuf[0]), 0, MAX_MAGIC_LEN);
