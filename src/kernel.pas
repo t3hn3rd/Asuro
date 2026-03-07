@@ -106,6 +106,10 @@ uses
     volcmd,
     volumemanager,
     vterminal,
+    wasm, 
+    wasm.vm.io, 
+    wasm.test, 
+    wasm.test.framework,
     Windows,
     XHCI;
  
@@ -243,6 +247,10 @@ begin
      vfs.init();
      storagetest.init;
 
+     { Let's test Wasuro! }
+     wasm.vm.io.io_set_writechar(@syslog.logchar);
+     wasm.wasm_init;
+
      { Management Interfaces }
      tracer.push_trace('kmain.STRMGMT');
      splash.update(10, 'Initializing storage management...');
@@ -328,6 +336,7 @@ begin
      cfifols.UnitTest;
      lifo.UnitTest;
      circ.UnitTest;
+     wasm.test.run_all_tests;
      splash.update(90, 'Running test suite...');
      minh.UnitTest;
      maxh.UnitTest;

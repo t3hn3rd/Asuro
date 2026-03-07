@@ -29,6 +29,9 @@ procedure relayout;
 
 implementation
 
+uses
+    syslog, lists, lmemorymanager;
+
 const
     DOCK_HEIGHT   = 48;
     DOCK_MARGIN   = 8;
@@ -47,8 +50,6 @@ const
     SYSINFO_W     = 480;
     SYSINFO_H     = 560;
 
-    MAX_PROGRAMS  = 16;
-
     { Animation }
     ANIM_SPEED    = 12;      { pixels per frame to slide }
 
@@ -59,10 +60,10 @@ type
         launch  : TProgLaunchProc;
         active  : boolean;
     end;
+    PProgEntry = ^TProgEntry;
 
 var
-    programs      : array[0..MAX_PROGRAMS-1] of TProgEntry;
-    prog_count    : uint32;
+    programs : PLinkedListBase;
 
 { ---- Desktop UI elements ---- }
 var
@@ -99,12 +100,15 @@ var
   Program Registry
   ============================================================ }
 procedure registerProgram(name: pchar; launcher: TProgLaunchProc);
+var
+    entry : PProgEntry;
 begin
-    if prog_count >= MAX_PROGRAMS then exit;
-    programs[prog_count].name   := name;
-    programs[prog_count].launch := launcher;
-    programs[prog_count].active := true;
-    inc(prog_count);
+    if programs = nil then
+        programs := LL_New(sizeof(TProgEntry));
+    entry := PProgEntry(LL_Add(programs));
+    entry^.name   := name;
+    entry^.launch := launcher;
+    entry^.active := true;
 end;
 
 { ============================================================
@@ -435,6 +439,7 @@ var
     code   : uint32;
     target : Plv_obj;
     i, pi  : uint32;
+    entry  : PProgEntry;
 begin
     code := lv_event_get_code(e);
     if code <> LV_EVENT_CLICKED then exit;
@@ -443,10 +448,13 @@ begin
     for i := 0 to RESULTS_MAX_VISIBLE - 1 do begin
         if result_btns[i] = target then begin
             pi := result_prog[i];
-            if (pi < prog_count) and programs[pi].active then begin
-                serial.sendString('[Desktop] Launching program' + #10);
-                clearAndClose;
-                programs[pi].launch;
+            if (programs <> nil) and (pi < LL_Size(programs)) then begin
+                entry := PProgEntry(LL_Get(programs, pi));
+                if (entry <> nil) and entry^.active then begin
+                    syslog.logln('Desktop', 'Launching program');
+                    clearAndClose;
+                    entry^.launch;
+                end;
             end;
             exit;
         end;
@@ -547,6 +555,7 @@ var
     query   : pchar;
     i, vis  : uint32;
     panel_h : sint32;
+    fentry  : PProgEntry;
 begin
     if not results_open then exit;
     if results_panel = nil then exit;
@@ -554,15 +563,18 @@ begin
     query := lv_textarea_get_text(search_ta);
 
     vis := 0;
-    for i := 0 to prog_count - 1 do begin
-        if vis >= RESULTS_MAX_VISIBLE then break;
-        if not programs[i].active then continue;
+    if programs <> nil then begin
+        for i := 0 to LL_Size(programs) - 1 do begin
+            if vis >= RESULTS_MAX_VISIBLE then break;
+            fentry := PProgEntry(LL_Get(programs, i));
+            if (fentry = nil) or (not fentry^.active) then continue;
 
-        if (query = nil) or (query^ = #0) or ciContains(programs[i].name, query) then begin
-            lv_label_set_text(result_lbls[vis], programs[i].name);
-            result_prog[vis] := i;
-            lv_obj_remove_flag(result_btns[vis], LV_OBJ_FLAG_HIDDEN);
-            inc(vis);
+            if (query = nil) or (query^ = #0) or ciContains(fentry^.name, query) then begin
+                lv_label_set_text(result_lbls[vis], fentry^.name);
+                result_prog[vis] := i;
+                lv_obj_remove_flag(result_btns[vis], LV_OBJ_FLAG_HIDDEN);
+                inc(vis);
+            end;
         end;
     end;
 
@@ -588,7 +600,8 @@ end;
   ============================================================ }
 procedure search_event_cb(e: Plv_event); cdecl;
 var
-    code : uint32;
+    code   : uint32;
+    rentry : PProgEntry;
 begin
     code := lv_event_get_code(e);
 
@@ -618,9 +631,12 @@ begin
     else if code = LV_EVENT_READY then begin
         { Enter pressed (one-line textarea) — launch first result }
         if results_visible > 0 then begin
-            if result_prog[0] < prog_count then begin
-                clearAndClose;
-                programs[result_prog[0]].launch;
+            if (programs <> nil) and (result_prog[0] < LL_Size(programs)) then begin
+                rentry := PProgEntry(LL_Get(programs, result_prog[0]));
+                if rentry <> nil then begin
+                    clearAndClose;
+                    rentry^.launch;
+                end;
             end;
         end;
     end;
@@ -701,7 +717,6 @@ begin
     tracer.push_trace('desktop.init.enter');
 
     sysinfo_win_id := 0;
-    prog_count     := 0;
     results_open   := false;
     results_panel  := nil;
     anim_closing   := false;
