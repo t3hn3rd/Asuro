@@ -13,7 +13,7 @@
 //  limitations under the License.
 
 { 
-	Driver->Timer->TMR_0_ISR - 1024hz Timer Driver.
+	Driver->Timer->TMR_0_ISR - 8khz Timer Driver.
 	
 	@author(Kieron Morris <kjm@kieronmorris.me>)
 }
@@ -37,7 +37,7 @@ var
     Hooks : Array[1..MAX_HOOKS] of pp_hook_method;
     Registered : boolean = false;
 
-procedure Main; //IRQ0, 1024.19hz aprox
+procedure Main; //IRQ0, ~8001hz
 var
     i : integer;
 
@@ -54,7 +54,7 @@ procedure register();
 begin
     if not registered then begin
         asm
-            mov ax, 1193
+            mov ax, 149
             out $40, al
             mov al, ah
             out $40, al

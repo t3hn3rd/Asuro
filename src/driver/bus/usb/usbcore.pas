@@ -957,11 +957,14 @@ end;
 procedure usb_check_hotplug;
 var
     i    : uint32;
+    count: uint32;
     hc   : PUSBHCDriver;
     port : uint8;
 begin
     if HCList = nil then exit;
-    for i := 0 to LL_Size(HCList) - 1 do begin
+    count := LL_Size(HCList);
+    if count = 0 then exit;
+    for i := 0 to count - 1 do begin
         hc := PUSBHCDriver(LL_Get(HCList, i));
         if (hc <> nil) and hc^.PortChangePending then begin
             hc^.PortChangePending := false;

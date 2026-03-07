@@ -119,8 +119,12 @@ var
     x32, y32 : sint32;
     r : pchar;
 begin
+    { mouse_wait(0) checks OBF with a short timeout (100 iterations).
+      When it returns true, data is ready — read it directly with inb($60).
+      Do NOT call mouse_read here: it uses mouse_wait_long (100k iterations)
+      and would spin-block the ISR if the next packet byte hasn't arrived yet. }
     while mouse_wait(0) do begin
-        b := mouse_read;
+        b := inb($60);
         if Cycle = 0 then begin
             if (b AND $08) = $08 then begin
                 Mouse_Byte[Cycle] := b;

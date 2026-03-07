@@ -25,7 +25,7 @@ interface
 uses
      multiboot, bios_data_area,
      util,
-     gdt, idt, isr, irq, tss,
+     gdt, idt, isr, irq,
      TMR_0_ISR,
      syslog, stdio,
      keyboard, mouse,
@@ -33,7 +33,6 @@ uses
      vmemorymanager, pmemorymanager, lmemorymanager,
      tracer,
      drivermanagement,
-     scheduler,
      progmanager,
      processmanager, contextswitcher,
      testprocs,
@@ -67,7 +66,7 @@ uses
      base64,
      rand,
      hashmap, vfs,
-     video, vesa, doublebuffer, color, lvgl, desktop, uidebug,
+     video, vesa, doublebuffer, color, lvgl, desktop, uidebug, windows,
      vterminal,
      graphicsrefresh, usbhotplug,
      fifo, cfifo, cfifols, lifo, circ, minh, maxh, prio;
@@ -169,9 +168,6 @@ begin
      { Stdio Init }
      stdio.init();
      stdio.registerCommand('BSOD', @terminal_command_bsod, 'Force a Panic Screen.');
-
-     tss.init();
-     scheduler.init();
 
      { CPUID }
      syslog.logln('CPU', 'Init begin');
