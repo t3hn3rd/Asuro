@@ -12,7 +12,7 @@ type
     PTARGAColor = ^TTARGAColor;
 
     TTARGAHeader = packed record
-        Magic: uint8;
+        IDLength: uint8;
         ColorMapType: uint8;
         ImageType: uint8;
         ColorMapOrigin: uint16;
@@ -24,7 +24,6 @@ type
         Height: uint16;
         PixelDepth: uint8;
         ImageDescriptor: uint8;
-        Data : PTARGAColor;
     end;
     PTARGAHeader = ^TTARGAHeader;
 
@@ -35,29 +34,40 @@ implementation
 Function Parse(buffer : puint8; len : uint32) : PTexture;
 var
     header : PTARGAHeader;
-    i, j : uint32;
-    data : PTARGAColor;
-    tex : PTexture;
+    src    : PTARGAColor;
+    tex    : PTexture;
+    x, y   : uint32;
+    dstRow : uint32;
+    topDown: boolean;
 
 begin
-    if (len < sizeof(TTARGAHeader)) then exit;
+    Parse := nil;
+    if len < sizeof(TTARGAHeader) then exit;
 
     header := PTARGAHeader(buffer);
-    if (header^.Magic <> $0) or (header^.ImageType <> 2) or (header^.PixelDepth <> 32) then exit;
-    
-    //Create a new texture
-    tex:= texture.newTexture(header^.Width, header^.Height);
-    tex^.Width:= header^.Width;
-    tex^.Height:= header^.Height;
-    
-    //Copy the data
-    data := PTARGAColor(header^.Data);
-    for i := 0 to header^.Height - 1 do begin
-        for j := 0 to header^.Width - 1 do begin
-            tex^.Pixels[i * header^.Width + j].r := data^.r;
-            tex^.Pixels[i * header^.Width + j].g := data^.g;
-            tex^.Pixels[i * header^.Width + j].b := data^.b;
-            tex^.Pixels[i * header^.Width + j].a := data^.a;
+    if (header^.ImageType <> 2) or (header^.PixelDepth <> 32) then exit;
+
+    { Pixel data starts after the 18-byte header + any ID field. }
+    src := PTARGAColor(buffer + sizeof(TTARGAHeader) + header^.IDLength);
+
+    { Bit 5 of ImageDescriptor: 1 = top-to-bottom, 0 = bottom-to-top. }
+    topDown := (header^.ImageDescriptor AND $20) <> 0;
+
+    tex := texture.newTexture(header^.Width, header^.Height);
+
+    for y := 0 to header^.Height - 1 do begin
+        { Flip vertically when origin is bottom-left (the TGA default). }
+        if topDown then
+            dstRow := y
+        else
+            dstRow := (header^.Height - 1) - y;
+
+        for x := 0 to header^.Width - 1 do begin
+            tex^.Pixels[dstRow * header^.Width + x].b := src^.b;
+            tex^.Pixels[dstRow * header^.Width + x].g := src^.g;
+            tex^.Pixels[dstRow * header^.Width + x].r := src^.r;
+            tex^.Pixels[dstRow * header^.Width + x].a := src^.a;
+            Inc(src);
         end;
     end;
 

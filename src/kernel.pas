@@ -79,6 +79,7 @@ uses
      vterminal,
      graphicsrefresh, 
      usbhotplug,
+     splash,
      fifo, 
      cfifo, 
      cfifols, 
@@ -211,12 +212,22 @@ begin
      video.enable('VESA');
      video.enable('BASIC_DOUBLE_BUFFER');
 
+     { Initialize LVGL early so the splash screen can use it }
+     syslog.logln('KERNEL', 'LVGL: INIT BEGIN.');
+     lvgl_init(video.frontBufferWidth, video.frontBufferHeight);
+     syslog.logln('KERNEL', 'LVGL: INIT COMPLETE.');
+
+     { Safe to init splash screen now that Video & LVGL are ready }
+     splash.init;
+
      { VFS Init }
+     splash.update(5, 'Initializing VFS...');
      vfs.init();
      storagetest.init;
 
      { Management Interfaces }
      tracer.push_trace('kmain.STRMGMT');
+     splash.update(10, 'Initializing storage management...');
      storagemanager.init();
      storagemanager.set_boot_drive_byte((multibootinfo^.boot_device shr 24) and $FF);
      volumemanager.init();
@@ -224,6 +235,7 @@ begin
 
      { Enable interrupts and hook timer }
      tracer.push_trace('kmain.TMR');
+     splash.update(15, 'Enabling interrupts...');
      STI;
      TMR_0_ISR.hook(uint32(@bios_data_area.tick_update));
 
@@ -237,6 +249,7 @@ begin
 
      { Device Drivers }
      tracer.push_trace('kmain.DEVDRV');
+     splash.update(20, 'Loading device drivers...');
      syslog.logln('KERNEL', 'DEVICE DRIVERS: INIT BEGIN.');
      ps2_keyboard.init(keyboard_layout);
      ps2_mouse.init();
@@ -250,8 +263,11 @@ begin
 
      { Bus Drivers }
      tracer.push_trace('kmain.BUSDRV');
+     splash.update(25, 'Loading bus drivers...');
      syslog.logln('KERNEL', 'BUS DRIVERS: INIT BEGIN.');
+     splash.update(30, 'Loading bus drivers (USB)...');
      USB.init();
+     splash.update(35, 'Loading bus drivers (PCI)...');
      pci.init();
      syslog.logln('KERNEL', 'BUS DRIVERS: INIT END.');
 
@@ -259,21 +275,53 @@ begin
      vfs.auto_mount_volumes();
 
      { Network Stack }
+     splash.update(40, 'Initializing network...');
      tracer.push_trace('kmain.NETDRV');
      net.init;
 
      { Init Progs }
+     splash.update(45, 'Initializing progmon...');
      progmanager.init();
 
+     { Init process manager }
+     splash.update(50, 'Initializing process manager...');
+     processmanager.init;
+
      { Seed RNG }
+     splash.update(55, 'Seeding RNG...');
      rand.srand((getDateTime.Seconds SHL 24) OR (getDateTime.Minutes SHL 16) OR (getDateTime.Hours SHL 8) OR (getDateTime.Day));
 
-     { Initialize LVGL }
-     syslog.logln('KERNEL', 'LVGL: INIT BEGIN.');
-     lvgl_init(video.frontBufferWidth, video.frontBufferHeight);
-     syslog.logln('KERNEL', 'LVGL: INIT COMPLETE.');
+     { Run unit tests }
+     splash.update(65, 'Running test suite...');
+     strings.UnitTest;
+     usbtypes.UnitTest;
+     usbcore.UnitTest;
+     splash.update(70, 'Running test suite...');
+     UHCI.UnitTest;
+     OHCI.UnitTest;
+     EHCI.UnitTest;
+     splash.update(75, 'Running test suite...');
+     XHCI.UnitTest;
+     usbhub.UnitTest;
+     usb_keyboard.UnitTest;
+     splash.update(80, 'Running test suite...');
+     usb_mouse.UnitTest;
+     fifo.UnitTest;
+     cfifo.UnitTest;
+     splash.update(85, 'Running test suite...');
+     cfifols.UnitTest;
+     lifo.UnitTest;
+     circ.UnitTest;
+     splash.update(90, 'Running test suite...');
+     minh.UnitTest;
+     maxh.UnitTest;
+     prio.UnitTest;
+     vfs.UnitTest;
+     storagetest.UnitTest;
 
      { Initialize desktop environment }
+     splash.update(100, 'Booting desktop...');
+     splash.teardown;
      syslog.logln('KERNEL', 'DESKTOP: INIT BEGIN.');
      desktop.init;
      syslog.logln('KERNEL', 'DESKTOP: INIT COMPLETE.');
@@ -281,40 +329,15 @@ begin
      { Initialize visual terminal (registers with desktop search) }
      vterminal.init;
 
+     { Register timer-driven tasks }
+     graphicsrefresh.init;
+     usbhotplug.init;
+
      { Initialize disk utility (registers with desktop search) }
      diskutil.init;
 
      { Initialize notepad (registers with desktop search) }
      notepad.init;
-
-     { Run unit tests }
-     strings.UnitTest;
-     usbtypes.UnitTest;
-     usbcore.UnitTest;
-     UHCI.UnitTest;
-     OHCI.UnitTest;
-     EHCI.UnitTest;
-     XHCI.UnitTest;
-     usbhub.UnitTest;
-     usb_keyboard.UnitTest;
-     usb_mouse.UnitTest;
-     fifo.UnitTest;
-     cfifo.UnitTest;
-     cfifols.UnitTest;
-     lifo.UnitTest;
-     circ.UnitTest;
-     minh.UnitTest;
-     maxh.UnitTest;
-     prio.UnitTest;
-     vfs.UnitTest;
-     storagetest.UnitTest;
-
-     { Register timer-driven tasks }
-     graphicsrefresh.init;
-     usbhotplug.init;
-
-     { Spawn test processes (before preemption is enabled) }
-     //testprocs.init;
 
      { Enable preemptive context switching (replaces ISR_32) }
      contextswitcher.init;
