@@ -20,7 +20,7 @@ unit v86;
 interface
 
 uses
-    util, syslog, tracer, vmemorymanager, tss, idt, isr_types;
+    util, syslog, tracer, vmemorymanager, gdt, idt, isr_types;
 
 const
     { V86 EFLAGS: VM=1 ($20000), IOPL=3 ($3000), IF=0 }
@@ -34,6 +34,12 @@ const
     V86_EXIT_INT    = $FF;
     { Size of the ring-0 stack used for V86 GPF handling }
     V86_R0_STACK_SIZE = 4096;
+    { GDT gate index for the TSS descriptor }
+    V86_TSS_GDT_GATE = 5;
+    { TSS segment selector: gate 5 * 8 bytes per descriptor }
+    V86_TSS_SELECTOR = V86_TSS_GDT_GATE * 8;
+    { Minimum x86 TSS size (104 bytes / $68) }
+    V86_TSS_SIZE     = 104;
 
 type
     { Register state for V86 BIOS calls }
@@ -102,6 +108,11 @@ var
 
     { Ring-0 stack for V86 exception handling }
     V86Ring0Stack   : array[0..V86_R0_STACK_SIZE - 1] of uint8;
+
+    { Minimal TSS — only ESP0 (offset 4) and SS0 (offset 8) matter.
+      We allocate the full 104-byte minimum so the CPU is happy. }
+    V86TSS          : array[0..V86_TSS_SIZE - 1] of uint8;
+    V86TSSPtr       : PUInt32 = nil;
 
 { ========================================================================= }
 { V86 real-mode memory helpers (access via kernel mapping at 0xC0000000)     }
@@ -608,8 +619,8 @@ asm
       TSS ESP0 is restored by the exit handler so that normal interrupts
       use the correct ring-0 stack again. }
     mov eax, dword ptr [V86OldESP0]
-    mov ebx, dword ptr [ptrTaskStateSegment]
-    mov dword ptr [ebx + 4], eax   { TTaskStateSegment.esp0 is at offset 4 }
+    mov ebx, dword ptr [V86TSSPtr]
+    mov dword ptr [ebx + 4], eax   { TSS esp0 is at offset 4 }
 
     { Restore kernel stack frame and jump back into v86_int }
     mov esp, dword ptr [V86SavedESP]
@@ -646,11 +657,9 @@ begin
     V86ShadowIF := true;
     V86RegsPtr := @regs;
 
-    { Save current TSS ESP0 }
-    V86OldESP0 := tss.get_esp0;
-
-    { Set TSS ESP0 to our dedicated ring-0 stack for V86 traps }
-    tss.set_esp0(uint32(@V86Ring0Stack) + V86_R0_STACK_SIZE);
+    { Save current TSS ESP0 and point it to our dedicated ring-0 stack }
+    V86OldESP0 := PUInt32(uint32(@V86TSS) + 4)^;
+    PUInt32(uint32(@V86TSS) + 4)^ := uint32(@V86Ring0Stack) + V86_R0_STACK_SIZE;
 
     { Write thunk code into physical memory at 0x7C00 }
     setup_thunk(intNo);
@@ -730,9 +739,26 @@ end;
 { ========================================================================= }
 
 procedure init;
+var
+    tss_base : uint32;
 begin
     push_trace('v86.init');
     syslog.logln('V86', 'INIT BEGIN.');
+
+    { Set up a minimal TSS so the CPU can find ESP0 on V86 ring 3→0 traps }
+    memset(uint32(@V86TSS[0]), 0, V86_TSS_SIZE);
+    tss_base := uint32(@V86TSS[0]);
+    V86TSSPtr := PUInt32(tss_base);
+    { SS0 at offset 8 = kernel data segment $10 }
+    PUInt16(tss_base + 8)^ := $10;
+    { Install TSS descriptor in GDT gate 5 (access $89 = present, DPL 0, TSS available) }
+    gdt.set_gate(V86_TSS_GDT_GATE, tss_base, V86_TSS_SIZE - 1, $89, $00);
+    gdt.reload;
+    { Load the task register }
+    asm
+        mov ax, V86_TSS_SELECTOR
+        ltr ax
+    end;
 
     { Identity-map the first 4MB at virtual 0x00000000 with User bit.
       This allows V86 code to access the IVT, BDA, video ROM, and
