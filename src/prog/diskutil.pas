@@ -23,6 +23,8 @@ uses
     lmemorymanager,
     lvgl,
     MBR,
+    processmanager,
+    proctypes,
     storagemanager,
     storagetypes,
     strings,
@@ -43,6 +45,7 @@ const
 
 var
     win_id             : uint32;
+    proc_pid           : uint32;
     sidebar            : Plv_obj;
     detail             : Plv_obj;
     { Current selection }
@@ -64,6 +67,7 @@ var
   Forward declarations
   ============================================================ }
 procedure launch; forward;
+procedure diskutil_entry(ctx : PProcessContext); forward;
 procedure onClose(wid: uint32); forward;
 procedure refreshSidebar; forward;
 procedure showDeviceDetail(devIdx: uint32); forward;
@@ -1278,10 +1282,20 @@ end;
 { ============================================================
   Window close handler
   ============================================================ }
+procedure diskutil_entry(ctx : PProcessContext);
+begin
+    while (ctx^.State <> psFinished) and (ctx^.PendingMsg <> smKill) and (ctx^.PendingMsg <> smTerminate) do
+        processmanager.proc_yield;
+end;
+
 procedure onClose(wid: uint32);
 begin
     tracer.push_trace('diskutil.onClose');
     closeMsgBox;
+    if proc_pid <> 0 then begin
+        processmanager.kill(proc_pid);
+        proc_pid := 0;
+    end;
     windows.destroyWindow(wid);
     win_id := 0;
     sidebar := nil;
@@ -1299,6 +1313,7 @@ var
     wx, wy       : sint32;
     content      : Plv_obj;
     lbl          : Plv_obj;
+    ctx          : PProcessContext;
 begin
     tracer.push_trace('diskutil.launch');
 
@@ -1387,6 +1402,13 @@ begin
 
     refreshSidebar;
 
+    { Create process so diskutil appears in PS and is manageable }
+    ctx := processmanager.create('Disk Utility', @diskutil_entry, nil, 1);
+    if ctx <> nil then begin
+        proc_pid := ctx^.ProcessID;
+        windows.setWindowOwner(win_id, ctx^.ProcessID);
+    end;
+
     tracer.pop_trace;
 end;
 
@@ -1397,6 +1419,7 @@ procedure init();
 begin
     tracer.push_trace('diskutil.init');
     win_id := 0;
+    proc_pid := 0;
     sidebar := nil;
     detail := nil;
     sel_mode := SEL_NONE;

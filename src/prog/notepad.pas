@@ -34,6 +34,8 @@ uses
     keyboard,
     lmemorymanager,
     lvgl,
+    processmanager,
+    proctypes,
     storagetypes,
     strings,
     syslog,
@@ -74,6 +76,7 @@ type
     PNotepadState = ^TNotepadState;
     TNotepadState = record
         win_id             : uint32;
+        pid          : uint32;
         ta           : Plv_obj;
         status_label : Plv_obj;
         dirty_label  : Plv_obj;
@@ -92,6 +95,7 @@ var
 { ============================================================
   Forward declarations
   ============================================================ }
+procedure notepad_entry(ctx: PProcessContext); forward;
 procedure launch; forward;
 procedure onClose(wid: uint32); forward;
 procedure updateStatusBar(state: PNotepadState); forward;
@@ -281,9 +285,19 @@ end;
   doCloseWindow — unconditionally destroy window + free state.
   Called by discard-confirm dialogs and by onClose when clean.
   ============================================================ }
+procedure notepad_entry(ctx : PProcessContext);
+begin
+    while (ctx^.State <> psFinished) and (ctx^.PendingMsg <> smKill) and (ctx^.PendingMsg <> smTerminate) do
+        processmanager.proc_yield;
+end;
+
 procedure doCloseWindow;
 begin
     if g_state <> nil then begin
+        if g_state^.pid <> 0 then begin
+            processmanager.kill(g_state^.pid);
+            g_state^.pid := 0;
+        end;
         freeState(g_state);
         g_state := nil;
     end;
@@ -834,6 +848,7 @@ var
     sl    : Plv_obj;
     dl    : Plv_obj;
     state : PNotepadState;
+    ctx   : PProcessContext;
 begin
     tracer.push_trace('notepad.launch');
 
@@ -955,6 +970,13 @@ begin
     lv_obj_set_style_text_color(dl, lv_color_make(255, 180, 60), 0);
     lv_obj_set_style_text_font(dl, @lv_font_montserrat_14, 0);
     state^.dirty_label := dl;
+
+    { Create process so notepad appears in PS and is manageable }
+    ctx := processmanager.create('Notepad', @notepad_entry, void(state), 1);
+    if ctx <> nil then begin
+        state^.pid := ctx^.ProcessID;
+        windows.setWindowOwner(win_id, ctx^.ProcessID);
+    end;
 
     tracer.pop_trace;
 end;
