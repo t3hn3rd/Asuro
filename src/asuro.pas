@@ -25,8 +25,10 @@ interface
 uses
     driver.storage.ctl.ahci,
     core.enc.base64,
+    core.panic,
     driver.video.bga,
     arch.x86.bda,
+    arch.x86.panic,
     core.ds.cfifo,
     core.ds.cfifols,
     core.ds.circ,
@@ -123,7 +125,7 @@ begin
     push_trace('kernel.terminal_command_bsod');
 
     if paramCount(params) > 1 then begin
-      bsod(getparam(0, params), getparam(1, params));
+      core.panic.panic(getparam(0, params), getparam(1, params), nil);
     end else begin
         io.stdio.bufWriteStrLn(stderr_buf, 'Invalid number of params.');
         io.stdio.bufWriteStrLn(stderr_buf, 'Usage: bsod <error> <info>');
@@ -171,8 +173,7 @@ begin
      if (multibootmagic <> MULTIBOOT_BOOTLOADER_MAGIC) then begin
         io.syslog.logln('KERNEL', 'Multiboot Compliant Boot-Loader Needed!');
         io.syslog.logln('KERNEL', 'HALTING.');
-        BSOD('Multiboot Error', 'Multiboot Compliant Boot-Loader Needed!');
-        arch.x86.util.halt_and_catch_fire;
+        core.panic.panic('Multiboot Error', 'Multiboot Compliant Boot-Loader Needed!', nil);
      end;
 
      { GDT Init }
@@ -185,7 +186,7 @@ begin
      end else begin
         io.syslog.logln('KERNEL', 'GDT: LOAD FAIL.');
         io.syslog.logln('KERNEL', 'HALTING.');
-        BSOD('GDT', 'Failed to load the GDT correctly.');
+        core.panic.panic('GDT', 'Failed to load the GDT correctly.', nil);
      end;
 
      io.syslog.log('MULTIBOOT', 'Assigned Framebuffer: ');
@@ -239,6 +240,10 @@ begin
      io.syslog.logln('KERNEL', 'LVGL: INIT BEGIN.');
      lvgl_init(driver.video.frontBufferWidth, driver.video.frontBufferHeight);
      io.syslog.logln('KERNEL', 'LVGL: INIT COMPLETE.');
+
+     { Initialize the BSOD panic screen (must be after LVGL, before anything that could fault) }
+     arch.x86.panic.init;
+     io.syslog.logln('KERNEL', 'PANIC SCREEN: INIT COMPLETE.');
 
      { Safe to init boot.splash screen now that Video & LVGL are ready }
      boot.splash.init;

@@ -31,7 +31,7 @@ uses
     core.strings,
     terminal,
     debug.tracer,
-    core.util, arch.x86.util,
+    core.util, arch.x86.util, core.panic,
     arch.x86.memory.virtual;
 
 var
@@ -171,7 +171,7 @@ begin
 
     if not ready then begin
         console.writestringln('Device not ready in time!');
-        BSOD('Device not ready in time!', 'ATA DEVICE NOT READY IN TIME FOR READ COMMAND');
+        core.panic.panic('ATA', 'ATA DEVICE NOT READY IN TIME FOR READ COMMAND', nil);
     end;
 
     for i:=0 to count-1 do begin
@@ -217,7 +217,7 @@ begin
 
     if not ready then begin
         console.writestringln('Device not ready in time!');
-        BSOD('Device not ready in time!', 'ATA DEVICE NOT READY IN TIME FOR WRITE COMMAND');
+        core.panic.panic('ATA', 'ATA DEVICE NOT READY IN TIME FOR WRITE COMMAND', nil);
     end;
 
     for i:=0 to count-1 do begin
@@ -234,7 +234,7 @@ begin
 
         if not ready then begin
             console.writestringln('Device not ready in time!');
-        BSOD('Device not ready in time!', 'ATA DEVICE NOT READY IN TIME FOR WRITE');
+        core.panic.panic('ATA', 'ATA DEVICE NOT READY IN TIME FOR WRITE', nil);
     end;
     end;
 

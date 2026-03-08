@@ -28,8 +28,7 @@ unit arch.x86.util;
 interface
 
 uses
-    arch.x86.bda,
-    debug.tracer;
+    arch.x86.bda;
 
 function  INTE : boolean;
 procedure CLI();
@@ -48,7 +47,6 @@ procedure __SSE_128_memcpy(source : uint32; dest : uint32);
 
 procedure halt_and_catch_fire();
 procedure halt_and_dont_catch_fire();
-procedure BSOD(fault : pchar; info : pchar);
 procedure psleep(t : uint16);
 procedure sleep(seconds : uint32);
 
@@ -78,8 +76,7 @@ uses
     arch.x86.cpu,
     arch.x86.isr.types,
     driver.timer.rtc,
-    driver.io.serial,
-    io.syslog;
+    driver.io.serial;
 
 function MsSinceSystemBoot : uint64;
 begin
@@ -413,65 +410,6 @@ begin
         POP EAX
     end;
     RorDWord:= result;
-end;
-
-procedure BSOD(fault : pchar; info : pchar);
-var
-    trace : pchar;
-    i     : uint32;
-    z     : uint32;
-
-begin
-    if not BSOD_ENABLE then exit;
-    io.syslog.writestringln('=== KERNEL PANIC ===');
-    io.syslog.writestringln('ASURO DID A WHOOPSIE!  :(');
-    io.syslog.writestringln(' ');
-    io.syslog.writestringln('Asuro encountered an error and your computer is now a teapot.');
-    io.syslog.writestringln('Your data is almost certainly safe.');
-    io.syslog.writestringln(' ');
-    io.syslog.writestringln('Details of the fault (for those boring enough to read) are as follows: ');
-    io.syslog.writestringln(' ');
-    io.syslog.writestring('Fault ID:   ');
-    io.syslog.writestringln(fault);
-    io.syslog.writestring('Fault Info: ');
-    io.syslog.writestringln(info);
-    io.syslog.writestringln(' ');
-    if IntReg <> nil then begin
-        io.syslog.writestringln('Processor Info: ');
-        io.syslog.writestring('   EBP: '); io.syslog.writehex(IntReg^.EBP);  io.syslog.writestring('  EAX: '); io.syslog.writehex(IntReg^.EAX);  io.syslog.writestring('  EBX: '); io.syslog.writehexln(IntReg^.EBX);
-        io.syslog.writestring('   ECX: '); io.syslog.writehex(IntReg^.ECX);  io.syslog.writestring('  EDX: '); io.syslog.writehex(IntReg^.EDX);  io.syslog.writestring('  ESI: '); io.syslog.writehexln(IntReg^.ESI);
-        io.syslog.writestring('   EDI: '); io.syslog.writehex(IntReg^.EDI);  io.syslog.writestring('   DS: '); io.syslog.writehex(IntReg^.DS);   io.syslog.writestring('   ES: '); io.syslog.writehexln(IntReg^.ES);
-        io.syslog.writestring('    FS: '); io.syslog.writehex(IntReg^.FS);   io.syslog.writestring('   GS: '); io.syslog.writehex(IntReg^.GS);   io.syslog.writestring('  ERROR: '); io.syslog.writehexln(IntErr^.Error);
-        io.syslog.writestring('   EIP: '); io.syslog.writehex(IntSpec^.EIP); io.syslog.writestring('   CS: '); io.syslog.writehex(IntSpec^.CS);  io.syslog.writestring('  EFLAGS: '); io.syslog.writehexln(IntSpec^.EFLAGS);
-        io.syslog.writestringln(' ');
-    end;
-    debug.tracer.freeze;
-    io.syslog.writestring('Call Stack:     ');
-    trace:= debug.tracer.get_last_trace;
-    if trace <> nil then begin
-        io.syslog.writestring('[-0] ');
-        io.syslog.writestringln(trace);
-        for i:=1 to debug.tracer.get_trace_count-1 do begin
-            trace:= debug.tracer.get_trace_N(i);
-            if trace <> nil then begin
-                io.syslog.writestring('                [');
-                io.syslog.writestring('-');
-                io.syslog.writeint(i);
-                io.syslog.writestring('] ');
-                io.syslog.writestringln(trace);
-            end else begin
-                io.syslog.writestring('                [');
-                io.syslog.writestring('-');
-                io.syslog.writeint(i);
-                io.syslog.writestring('] ');
-                io.syslog.writestringln('?????????');
-            end;
-        end;
-    end else begin
-        io.syslog.writestringln('Unknown.');
-    end;
-    io.syslog.writestringln('=== END KERNEL PANIC ===');
-    halt_and_catch_fire();
 end;
 
 procedure resetSystem();
