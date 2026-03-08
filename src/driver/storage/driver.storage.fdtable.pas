@@ -41,11 +41,12 @@ type
         Directory   : pchar;       { directory path within the volume }
         FileName    : pchar;       { filename within that directory }
         OpenMode    : uint8;       { TOpenMode ordinal — avoids VFS type dependency }
-        WriteMode   : uint8;       { TWriteMode ordinal }
         DataBuffer  : puint32;     { pre-loaded data for small files, nil otherwise }
         DataSize    : uint32;      { size of pre-loaded data in bytes }
         Loaded      : boolean;     { true if pre-loaded into DataBuffer }
         StreamOff   : uint32;      { current byte offset for streaming / on-demand reads }
+        DeviceOps   : pointer;     { PVFSDeviceOps — non-nil for device FDs }
+        DeviceData  : pointer;     { opaque data passed to device callbacks }
     end;
 
     PFDTable = ^TFDTable;
@@ -113,6 +114,8 @@ begin
     entry^.Loaded := false;
     entry^.DataSize := 0;
     entry^.StreamOff := 0;
+    entry^.DeviceOps := nil;
+    entry^.DeviceData := nil;
 end;
 
 procedure fd_table_free(table : PFDTable);

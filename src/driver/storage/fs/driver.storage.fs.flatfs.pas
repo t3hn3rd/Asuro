@@ -827,6 +827,10 @@ begin
                 dirEntry^.entryType := TDirectory_Entry_Type.directoryEntry
             else
                 dirEntry^.entryType := TDirectory_Entry_Type.fileEntry;
+            dirEntry^.fileSize     := fileEntrys[i].size;
+            dirEntry^.modifiedDate := 0;
+            dirEntry^.modifiedTime := 0;
+            dirEntry^.attributes   := fileEntrys[i].attribues;
         end;
 
         kfree(void(compString));

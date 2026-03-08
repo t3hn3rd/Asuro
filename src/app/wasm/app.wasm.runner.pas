@@ -152,33 +152,32 @@ var
     fh       : TFileHandle;
     err      : TError;
     fsize    : uint32;
-    errb     : uint8;
     bytesRead : uint32;
     processCtx : PProcessContext;
 begin
     debug.tracer.push_trace('wasmrunner.handler');
     wasm_file_handler := 0;
 
-    { 1. Get file size }
-    errb := 0;
-    fsize := driver.storage.vfs.FileSize(path, @errb);
-    if (fsize = 0) or (errb <> 0) then begin
-        io.stdio.bufWriteStrLn(stderr_buf, 'WASM: cannot determine file size');
+    { 1. Open file once — omRead pre-loads the data and gives us the size }
+    err := eNone;
+    fh := driver.storage.vfs.OpenFile(path, omRead, @err);
+    if (fh = 0) or (err <> eNone) then begin
+        io.stdio.bufWriteStrLn(stderr_buf, 'WASM: cannot open file');
+        exit;
+    end;
+
+    fsize := driver.storage.vfs.FileSizeFromHandle(fh);
+    if fsize = 0 then begin
+        driver.storage.vfs.CloseFile(fh);
+        io.stdio.bufWriteStrLn(stderr_buf, 'WASM: file is empty or cannot determine size');
         exit;
     end;
 
     { 2. Allocate buffer and read file }
     buf := puint8(kalloc(fsize));
     if buf = nil then begin
+        driver.storage.vfs.CloseFile(fh);
         io.stdio.bufWriteStrLn(stderr_buf, 'WASM: out of memory');
-        exit;
-    end;
-
-    err := eNone;
-    fh := driver.storage.vfs.OpenFile(path, omReadOnly, wmRewrite, @err);
-    if fh = 0 then begin
-        kfree(void(buf));
-        io.stdio.bufWriteStrLn(stderr_buf, 'WASM: cannot open file');
         exit;
     end;
 

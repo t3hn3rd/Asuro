@@ -372,9 +372,9 @@ begin
     buf := pchar(kalloc(FILE_BUF_SIZE));
     memset(uint32(buf), 0, FILE_BUF_SIZE);
     memcpy(uint32(txt), uint32(buf), len);
-    fHandle := driver.storage.vfs.OpenFile(state^.currentPath, omReadWrite, wmRewrite, @fError);
+    fHandle := driver.storage.vfs.OpenFile(state^.currentPath, omReadWrite, @fError);
     if fHandle = 0 then
-        fHandle := driver.storage.vfs.OpenFile(state^.currentPath, omWriteOnly, wmNew, @fError);
+        fHandle := driver.storage.vfs.OpenFile(state^.currentPath, omCreate, @fError);
     if fHandle = 0 then begin
         kfree(void(buf));
         io.syslog.logln('NOTEPAD', 'saveFile: OpenFile failed');
@@ -413,7 +413,7 @@ var
     buf     : pchar;
 begin
     debug.tracer.push_trace('notepad.loadFile');
-    fHandle := driver.storage.vfs.OpenFile(path, omReadOnly, wmRewrite, @fError);
+    fHandle := driver.storage.vfs.OpenFile(path, omRead, @fError);
     if (fHandle = 0) or (fError <> eNone) then begin
         io.syslog.logln('NOTEPAD', 'loadFile: could not open file');
         showErrorMsgbox('Open Failed', 'Could not open file for reading.');

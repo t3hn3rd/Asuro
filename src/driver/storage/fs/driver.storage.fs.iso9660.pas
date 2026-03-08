@@ -562,6 +562,19 @@ begin
         else
             dirEntry^.entryType := TDirectory_Entry_Type.fileEntry;
 
+        dirEntry^.fileSize     := rec^.dataLen_LSB;
+        dirEntry^.attributes   := rec^.fileFlags;
+        { Convert ISO 9660 date (year-1900,month,day,hour,min,sec) to FAT-style }
+        if rec^.recDate[0] >= 80 then
+            dirEntry^.modifiedDate := (uint16(rec^.recDate[0] - 80) shl 9)
+                                   or (uint16(rec^.recDate[1]) shl 5)
+                                   or  uint16(rec^.recDate[2])
+        else
+            dirEntry^.modifiedDate := 0;
+        dirEntry^.modifiedTime := (uint16(rec^.recDate[3]) shl 11)
+                               or (uint16(rec^.recDate[4]) shl 5)
+                               or (uint16(rec^.recDate[5]) shr 1);
+
         offset := offset + rec^.recLen;
     end;
 
@@ -722,6 +735,7 @@ begin
     filesystem.createDirCallback := nil;
     filesystem.deleteFileCallback := nil;
     filesystem.deleteDirCallback := nil;
+    filesystem.renameFileCallback := nil;
     filesystem.readAsyncCallback    := nil;
     filesystem.readDirAsyncCallback := nil;
 

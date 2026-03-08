@@ -138,7 +138,7 @@ begin
 
     { Open for writing }
     debug.tracer.push_trace('edit.SaveFile.openRW');
-    fHandle := driver.storage.vfs.OpenFile(FilePath, omReadWrite, wmRewrite, @fError);
+    fHandle := driver.storage.vfs.OpenFile(FilePath, omReadWrite, @fError);
     if fHandle <> 0 then begin
         debug.tracer.push_trace('edit.SaveFile.writeFile');
         driver.storage.vfs.WriteFile(fHandle, 0, puint8(buf), totalLen);
@@ -149,7 +149,7 @@ begin
     end else begin
         { Try write-only for new file }
         debug.tracer.push_trace('edit.SaveFile.openWO');
-        fHandle := driver.storage.vfs.OpenFile(FilePath, omWriteOnly, wmNew, @fError);
+        fHandle := driver.storage.vfs.OpenFile(FilePath, omCreate, @fError);
         if fHandle <> 0 then begin
             debug.tracer.push_trace('edit.SaveFile.writeFileNew');
             driver.storage.vfs.WriteFile(fHandle, 0, puint8(buf), totalLen);
@@ -181,7 +181,7 @@ begin
     if FilePath = nil then exit;
 
     debug.tracer.push_trace('edit.LoadFile.openFile');
-    fHandle := driver.storage.vfs.OpenFile(FilePath, omReadOnly, wmRewrite, @fError);
+    fHandle := driver.storage.vfs.OpenFile(FilePath, omRead, @fError);
     debug.tracer.push_trace('edit.LoadFile.openFile.done');
     if (fHandle = 0) or (fError <> eNone) then begin
         io.syslog.writestringln('New file.');

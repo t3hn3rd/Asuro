@@ -104,68 +104,71 @@ begin
 
     { ---- makeAbsolutePathFrom ---- }
     { Absolute path should be returned unchanged }
-    p := driver.storage.vfs.makeAbsolutePathFrom('/foo/bar', '/base');
-    Assert(stringEquals(p, '/foo/bar'), 'makeAbsolutePathFrom: abs passthrough');
+    p := driver.storage.vfs.MakeAbsolutePathFrom('/foo/bar', '/base');
+    Assert(stringEquals(p, '/foo/bar'), 'MakeAbsolutePathFrom: abs passthrough');
     kfree(void(p));
 
     { Relative path joined to base (base has trailing slash) }
-    p := driver.storage.vfs.makeAbsolutePathFrom('file.txt', '/home/');
-    Assert(stringEquals(p, '/home/file.txt'), 'makeAbsolutePathFrom: rel+base trailing /');
+    p := driver.storage.vfs.MakeAbsolutePathFrom('file.txt', '/home/');
+    Assert(stringEquals(p, '/home/file.txt'), 'MakeAbsolutePathFrom: rel+base trailing /');
     kfree(void(p));
 
     { Relative path joined to base (base has no trailing slash) }
-    p := driver.storage.vfs.makeAbsolutePathFrom('file.txt', '/home');
-    Assert(stringEquals(p, '/home/file.txt'), 'makeAbsolutePathFrom: rel+base no trailing /');
+    p := driver.storage.vfs.MakeAbsolutePathFrom('file.txt', '/home');
+    Assert(stringEquals(p, '/home/file.txt'), 'MakeAbsolutePathFrom: rel+base no trailing /');
     kfree(void(p));
 
     { ---- resolvePathFrom ---- }
     { Known virtual dirs resolve to pvDirectory }
-    res := driver.storage.vfs.resolvePathFrom('disk', '/');
-    Assert(res = pvDirectory, 'resolvePathFrom: /disk from /');
+    res := driver.storage.vfs.ResolvePathFrom('disk', '/');
+    Assert(res = pvDirectory, 'ResolvePathFrom: /disk from /');
 
-    res := driver.storage.vfs.resolvePathFrom('dev', '/');
-    Assert(res = pvDirectory, 'resolvePathFrom: /dev from /');
+    res := driver.storage.vfs.ResolvePathFrom('dev', '/');
+    Assert(res = pvDirectory, 'ResolvePathFrom: /dev from /');
 
-    res := driver.storage.vfs.resolvePathFrom('mnt', '/');
-    Assert(res = pvDirectory, 'resolvePathFrom: /mnt from /');
+    res := driver.storage.vfs.ResolvePathFrom('mnt', '/');
+    Assert(res = pvDirectory, 'ResolvePathFrom: /mnt from /');
 
-    res := driver.storage.vfs.resolvePathFrom('cfg', '/');
-    Assert(res = pvDirectory, 'resolvePathFrom: /cfg from /');
+    res := driver.storage.vfs.ResolvePathFrom('cfg', '/');
+    Assert(res = pvDirectory, 'ResolvePathFrom: /cfg from /');
 
     { Non-existent names resolve to pvInvalid }
-    res := driver.storage.vfs.resolvePathFrom('zzznope', '/');
-    Assert(res = pvInvalid, 'resolvePathFrom: nonexistent from /');
+    res := driver.storage.vfs.ResolvePathFrom('zzznope', '/');
+    Assert(res = pvInvalid, 'ResolvePathFrom: nonexistent from /');
 
     { ---- changeDirectoryFrom ---- }
     newDir := nil;
-    res := driver.storage.vfs.changeDirectoryFrom('disk', '/', newDir);
-    Assert(res = pvDirectory, 'changeDirectoryFrom /disk: returns dir');
+    res := driver.storage.vfs.ChangeDirectoryFrom('disk', '/', newDir);
+    Assert(res = pvDirectory, 'ChangeDirectoryFrom /disk: returns dir');
     Assert((newDir <> nil) and stringEquals(newDir, '/disk'),
-           'changeDirectoryFrom /disk: newDir = /disk');
+           'ChangeDirectoryFrom /disk: newDir = /disk');
     if newDir <> nil then kfree(void(newDir));
 
     newDir := nil;
-    res := driver.storage.vfs.changeDirectoryFrom('zzznope', '/', newDir);
-    Assert(res = pvInvalid, 'changeDirectoryFrom nonexistent: returns invalid');
-    Assert(newDir = nil, 'changeDirectoryFrom nonexistent: newDir nil');
+    res := driver.storage.vfs.ChangeDirectoryFrom('zzznope', '/', newDir);
+    Assert(res = pvInvalid, 'ChangeDirectoryFrom nonexistent: returns invalid');
+    Assert(newDir = nil, 'ChangeDirectoryFrom nonexistent: newDir nil');
 
     { ---- GetDirectoryListingFrom ---- }
     { Root listing should be non-nil (in-memory VFS always populated) }
     map := driver.storage.vfs.GetDirectoryListingFrom('/', '/');
     Assert(map <> nil, 'GetDirectoryListingFrom(/) not nil');
+    driver.storage.vfs.FreeDirectoryListing(map);
 
     { /disk, /dev, /mnt, /cfg created at init — must appear in root listing }
     map := driver.storage.vfs.GetDirectoryListingFrom('/', '/');
     Assert(map <> nil, 'GetDirectoryListingFrom(/) not nil (2)');
-    { Note: we don't free this map — it's the live VFS in-memory reference,
-      NOT a caller-owned alloc.  Freeing it would corrupt the VFS tree. }
+    { All maps are now caller-owned snapshots — always safe to free }
+    driver.storage.vfs.FreeDirectoryListing(map);
 
     { Listing a leaf vdir returns non-nil (even if empty) }
     map := driver.storage.vfs.GetDirectoryListingFrom('/dev', '/');
     Assert(map <> nil, 'GetDirectoryListingFrom(/dev) not nil');
+    driver.storage.vfs.FreeDirectoryListing(map);
 
     map := driver.storage.vfs.GetDirectoryListingFrom('/cfg', '/');
     Assert(map <> nil, 'GetDirectoryListingFrom(/cfg) not nil');
+    driver.storage.vfs.FreeDirectoryListing(map);
 
     { Non-existent path returns nil (no crash) }
     map := driver.storage.vfs.GetDirectoryListingFrom('/zzznope', '/');
@@ -309,7 +312,7 @@ begin
     for i := 0 to 511 do
         wbuf[i] := $A5;
     err := eNone;
-    fh := driver.storage.vfs.OpenFile('/disk/dt_vol/TEST.TXT', omWriteOnly, wmNew, @err);
+    fh := driver.storage.vfs.OpenFile('/disk/dt_vol/TEST.TXT', omCreate, @err);
     Assert(err = eNone, 'OpenFile for write: err = eNone');
     n := driver.storage.vfs.WriteFile(fh, 0, wbuf, 512);
     Assert(n = 512, 'WriteFile 512 bytes');
@@ -319,7 +322,7 @@ begin
     rbuf := puint8(kalloc(512));
     memset(uint32(rbuf), 0, 512);
     err := eNone;
-    fh := driver.storage.vfs.OpenFile('/disk/dt_vol/TEST.TXT', omReadOnly, wmRewrite, @err);
+    fh := driver.storage.vfs.OpenFile('/disk/dt_vol/TEST.TXT', omRead, @err);
     Assert(err = eNone, 'OpenFile for read: err = eNone');
     n := driver.storage.vfs.ReadFile(fh, 0, rbuf, 512);
     Assert(n = 512, 'ReadFile 512 bytes');

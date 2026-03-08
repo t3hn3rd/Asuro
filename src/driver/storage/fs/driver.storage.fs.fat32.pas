@@ -575,6 +575,11 @@ begin
                 entry^.entryType:= TDirectory_Entry_Type.fileEntry;
             end;
 
+            entry^.fileSize     := dir^.byteSize;
+            entry^.modifiedDate := dir^.modifiedDate;
+            entry^.modifiedTime := dir^.modifiedTime;
+            entry^.attributes   := dir^.attributes;
+
             //add to list
             dirElm:= LL_add(fat2GenericEntries);
             PDirectory_Entry(dirElm)^:= entry^;
@@ -1196,6 +1201,159 @@ begin
     kfree(void(dirName));
     push_trace('driver.storage.fs.fat32.deleteDir.exit');
     io.syslog.logln('FAT32', 'deleteDir: done');
+end;
+
+{ Rename a file or directory on disk. filePath is the current relative path,
+  newName is the new leaf name (e.g. 'NEWFILE.TXT'). Only changes the 8.3
+  directory entry in-place — does not move between directories. }
+procedure renameFile(volume : PStorage_Volume; filePath : pchar; newName : pchar; statusOut : puint32);
+var
+    parentDir       : pchar;
+    fileName        : pchar;
+    namePart        : pchar;
+    extPart         : pchar;
+    newNamePart     : pchar;
+    newExtPart      : pchar;
+    bootRecord      : PBootRecord;
+    directories     : PLinkedListBase;
+    dir             : PDirectory;
+    parentEntry     : PDirectory;
+    parentCluster   : uint32;
+    found           : boolean;
+    foundIdx        : uint32;
+    i               : uint32;
+    j               : uint32;
+    status          : puint32;
+    dataStart       : uint32;
+    sectorLocation  : uint32;
+    buffer          : puint32;
+    EntriesPerSector: uint32;
+    cleanName       : byteArray8;
+begin
+    push_trace('driver.storage.fs.fat32.renameFile.enter');
+    io.syslog.logln('FAT32', 'renameFile: enter');
+    status := puint32(kalloc(4));
+    status^ := ord(eNone);
+
+    { Split path into parent directory and current filename }
+    splitPathParts(filePath, parentDir, fileName);
+
+    if (fileName = nil) or (stringSize(fileName) = 0) then begin
+        io.syslog.logln('FAT32', 'renameFile: invalid filename');
+        if statusOut <> nil then statusOut^ := ord(eInvalidFileName);
+        kfree(status);
+        if parentDir <> nil then kfree(void(parentDir));
+        if fileName <> nil then kfree(void(fileName));
+        exit;
+    end;
+
+    if (newName = nil) or (stringSize(newName) = 0) then begin
+        io.syslog.logln('FAT32', 'renameFile: invalid new name');
+        if statusOut <> nil then statusOut^ := ord(eInvalidFileName);
+        kfree(status);
+        kfree(void(parentDir));
+        kfree(void(fileName));
+        exit;
+    end;
+
+    bootRecord := readBootRecord(volume);
+    directories := readDirectory(volume, parentDir, status);
+
+    if status^ <> ord(eNone) then begin
+        io.syslog.logln('FAT32', 'renameFile: parent directory error');
+        if statusOut <> nil then statusOut^ := status^;
+        LL_Free(directories);
+        kfree(status);
+        kfree(puint32(bootRecord));
+        kfree(void(parentDir));
+        kfree(void(fileName));
+        exit;
+    end;
+
+    if LL_size(directories) < 1 then begin
+        io.syslog.logln('FAT32', 'renameFile: parent directory empty');
+        if statusOut <> nil then statusOut^ := ord(eDirectoryDoesNotExist);
+        LL_Free(directories);
+        kfree(status);
+        kfree(puint32(bootRecord));
+        kfree(void(parentDir));
+        kfree(void(fileName));
+        exit;
+    end;
+
+    parentEntry := PDirectory(LL_Get(directories, 0));
+    parentCluster := uint32(parentEntry^.clusterLow) or uint32(parentEntry^.clusterHigh shl 16);
+
+    { Split current filename for 8.3 matching }
+    splitFileNameParts(fileName, namePart, extPart);
+
+    { Find the entry in the directory }
+    found := false;
+    foundIdx := 0;
+    for i := 0 to LL_size(directories) - 1 do begin
+        dir := PDirectory(LL_Get(directories, i));
+        if compareByteArray8(dir^.fileName, cleanString(namePart, status))
+           and matchExtension(dir^.fileExtension, extPart) then begin
+            found := true;
+            foundIdx := i;
+            break;
+        end;
+    end;
+
+    kfree(void(namePart));
+    kfree(void(extPart));
+
+    if not found then begin
+        io.syslog.logln('FAT32', 'renameFile: file not found');
+        if statusOut <> nil then statusOut^ := ord(eFileDoesNotExist);
+        LL_Free(directories);
+        kfree(status);
+        kfree(puint32(bootRecord));
+        kfree(void(parentDir));
+        kfree(void(fileName));
+        exit;
+    end;
+
+    { Read the sector containing the entry, modify the name, write back }
+    dataStart := volume^.sectorStart + 1 + bootRecord^.rsvSectors + bootRecord^.FATSize;
+    EntriesPerSector := uint32(bootRecord^.sectorSize) div uint32(sizeof(TDirectory));
+    sectorLocation := (foundIdx div EntriesPerSector) + (parentCluster * bootRecord^.spc);
+
+    buffer := puint32(kalloc(bootRecord^.sectorSize));
+    driver.storage.mgr.storage_read(volume^.device, dataStart + sectorLocation, 1, buffer);
+
+    { Split new name into 8.3 parts and write into the directory entry }
+    splitFileNameParts(newName, newNamePart, newExtPart);
+    cleanName := cleanString(newNamePart, status);
+
+    for j := 0 to 7 do
+        PDirectory(buffer)[foundIdx mod EntriesPerSector].fileName[j] := cleanName[j];
+
+    { Write extension — pad with spaces }
+    for j := 0 to 2 do begin
+        if (newExtPart <> nil) and (j < stringSize(newExtPart)) then begin
+            if (newExtPart[j] >= 'a') and (newExtPart[j] <= 'z') then
+                PDirectory(buffer)[foundIdx mod EntriesPerSector].fileExtension[j] := char(uint8(newExtPart[j]) - 32)
+            else
+                PDirectory(buffer)[foundIdx mod EntriesPerSector].fileExtension[j] := newExtPart[j];
+        end else
+            PDirectory(buffer)[foundIdx mod EntriesPerSector].fileExtension[j] := ' ';
+    end;
+
+    driver.storage.mgr.storage_write(volume^.device, dataStart + sectorLocation, 1, buffer);
+    kfree(buffer);
+    kfree(void(newNamePart));
+    kfree(void(newExtPart));
+
+    if statusOut <> nil then statusOut^ := ord(eNone);
+
+    LL_Free(directories);
+    kfree(status);
+    kfree(puint32(bootRecord));
+    kfree(void(parentDir));
+    kfree(void(fileName));
+    push_trace('driver.storage.fs.fat32.renameFile.exit');
+    io.syslog.logln('FAT32', 'renameFile: done');
 end;
 
 procedure writeFile(volume : PStorage_volume; directory : pchar; entry : PDirectory_Entry; byteCount : uint32; buffer : puint32; statusOut : puint32);
@@ -2028,30 +2186,35 @@ end;
   reads O(1) per call instead of O(n) in the FAT chain length. }
 function readFileAtOffset(volume : PStorage_Volume; directory : pchar; fileName : pchar; offset : uint32; buffer : puint32; byteCount : uint32) : uint32;
 var
-    bootRecord      : PBootRecord;
-    dirs            : PLinkedListBase;
-    dir             : PDirectory;
-    statusOut       : puint32;
-    i               : uint32;
-    exists          : boolean;
-    cluster         : uint32;
-    clusters        : PLinkedListBase;
-    noClusters      : uint32;
-    dataStart       : uint32;
-    cleanFileName   : byteArray8;
-    otherCFN        : byteArray8;
-    tempdir         : PDirectory;
-    namePart        : pchar;
-    extPart         : pchar;
-    readbuffer      : puint32;
-    totalSectors    : uint32;
-    startSector     : uint32;
-    inSectorOffset  : uint32;
-    destPos         : uint32;
-    sectorIdx       : uint32;
-    baseLBA         : uint32;
-    bytesToCopy     : uint32;
-    remaining       : uint32;
+    bootRecord       : PBootRecord;
+    dirs             : PLinkedListBase;
+    dir              : PDirectory;
+    statusOut        : puint32;
+    i                : uint32;
+    exists           : boolean;
+    cluster          : uint32;
+    clusters         : PLinkedListBase;
+    noClusters       : uint32;
+    dataStart        : uint32;
+    cleanFileName    : byteArray8;
+    otherCFN         : byteArray8;
+    tempdir          : PDirectory;
+    namePart         : pchar;
+    extPart          : pchar;
+    readbuffer       : puint32;
+    bytesPerCluster  : uint32;
+    startClusterIdx  : uint32;
+    inClusterOffset  : uint32;
+    startSecInClust  : uint32;
+    secByteOff       : uint32;
+    chainPos         : uint32;
+    curCluster       : uint32;
+    clusterLBA       : uint32;
+    sectorIdx        : uint32;
+    destPos          : uint32;
+    remaining        : uint32;
+    bytesToCopy      : uint32;
+    fileSize         : uint32;
 begin
     push_trace('driver.storage.fs.fat32.readFileAtOffset.enter');
     io.syslog.logln('FAT32', 'readFileAtOffset: enter');
@@ -2091,18 +2254,12 @@ begin
         exit;
     end;
 
+    fileSize   := dir^.byteSize;
     cluster    := uint32(dir^.clusterlow) or uint32(dir^.clusterhigh shl 16);
     clusters   := getFatChain(volume, cluster, bootRecord);
     noClusters := LL_size(clusters);
 
-    { Total sectors spanned by this file (matches readFile formula) }
-    totalSectors := noClusters * bootRecord^.spc + 1;
-
-    { Sector within the file that contains the first byte of 'offset' }
-    startSector    := offset div bootRecord^.sectorSize;
-    inSectorOffset := offset mod bootRecord^.sectorSize;
-
-    if startSector >= totalSectors then begin
+    if offset >= fileSize then begin
         io.syslog.logln('FAT32', 'readFileAtOffset: offset past EOF');
         LL_Free(dirs);
         LL_Free(clusters);
@@ -2111,29 +2268,65 @@ begin
         exit;
     end;
 
-    baseLBA    := dataStart + (cluster * bootRecord^.spc);
+    { Clamp read length to not exceed file size }
+    remaining := byteCount;
+    if offset + remaining > fileSize then
+        remaining := fileSize - offset;
+
+    bytesPerCluster := uint32(bootRecord^.spc) * uint32(bootRecord^.sectorSize);
+
+    { Determine which cluster in the chain contains the starting offset }
+    startClusterIdx := offset div bytesPerCluster;
+    inClusterOffset := offset mod bytesPerCluster;
+
+    if startClusterIdx >= noClusters then begin
+        io.syslog.logln('FAT32', 'readFileAtOffset: startCluster past chain');
+        LL_Free(dirs);
+        LL_Free(clusters);
+        kfree(puint32(bootRecord));
+        kfree(puint32(statusOut));
+        exit;
+    end;
+
     readbuffer := puint32(kalloc(bootRecord^.sectorSize));
     destPos    := 0;
-    remaining  := byteCount;
-    sectorIdx  := 0;
+    chainPos   := startClusterIdx;
 
-    while (sectorIdx < totalSectors - startSector) and (remaining > 0) do begin
-        driver.storage.mgr.storage_read(volume^.device, baseLBA + startSector + sectorIdx, 1, readbuffer);
+    while (remaining > 0) and (chainPos < noClusters) do begin
+        curCluster := puint32(LL_Get(clusters, chainPos))^;
+        clusterLBA := dataStart + (curCluster * uint32(bootRecord^.spc));
 
-        if sectorIdx = 0 then begin
-            { First sector: skip inSectorOffset bytes at the start }
-            bytesToCopy := bootRecord^.sectorSize - inSectorOffset;
-            if bytesToCopy > remaining then bytesToCopy := remaining;
-            core.util.memcpy(uint32(readbuffer) + inSectorOffset, uint32(buffer) + destPos, bytesToCopy);
+        { Determine starting sector and byte offset within this cluster }
+        if chainPos = startClusterIdx then begin
+            startSecInClust := inClusterOffset div uint32(bootRecord^.sectorSize);
+            secByteOff      := inClusterOffset mod uint32(bootRecord^.sectorSize);
         end else begin
-            bytesToCopy := bootRecord^.sectorSize;
-            if bytesToCopy > remaining then bytesToCopy := remaining;
-            core.util.memcpy(uint32(readbuffer), uint32(buffer) + destPos, bytesToCopy);
+            startSecInClust := 0;
+            secByteOff      := 0;
         end;
 
-        destPos   := destPos + bytesToCopy;
-        remaining := remaining - bytesToCopy;
-        sectorIdx := sectorIdx + 1;
+        sectorIdx := startSecInClust;
+        while (sectorIdx < uint32(bootRecord^.spc)) and (remaining > 0) do begin
+            driver.storage.mgr.storage_read(volume^.device, clusterLBA + sectorIdx, 1, readbuffer);
+
+            if secByteOff > 0 then begin
+                { Partial first sector — skip bytes before the offset }
+                bytesToCopy := uint32(bootRecord^.sectorSize) - secByteOff;
+                if bytesToCopy > remaining then bytesToCopy := remaining;
+                core.util.memcpy(uint32(readbuffer) + secByteOff, uint32(buffer) + destPos, bytesToCopy);
+                secByteOff := 0;  { Only applies to the very first sector }
+            end else begin
+                bytesToCopy := uint32(bootRecord^.sectorSize);
+                if bytesToCopy > remaining then bytesToCopy := remaining;
+                core.util.memcpy(uint32(readbuffer), uint32(buffer) + destPos, bytesToCopy);
+            end;
+
+            destPos   := destPos + bytesToCopy;
+            remaining := remaining - bytesToCopy;
+            sectorIdx := sectorIdx + 1;
+        end;
+
+        chainPos := chainPos + 1;
     end;
 
     kfree(readbuffer);
@@ -2163,6 +2356,7 @@ begin
     filesystem.identifyCallback := @identify_volume;
     filesystem.deleteFileCallback := @deleteFile;
     filesystem.deleteDirCallback := @deleteDir;
+    filesystem.renameFileCallback := @renameFile;
     { Async callbacks: nil - VFS falls through to the sync callbacks above.
       All disk I/O uses psAwaiting in submit_io_wait: the calling process is
       parked cleanly (CPU-free) while the driver.storage.ctl.ahci ISR completes the request. }

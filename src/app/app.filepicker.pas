@@ -77,12 +77,15 @@ type
     { Flat name buffer — heap-alloc'd in do_refresh to avoid stack bloat }
     TNameBuf  = array[0..ENTRY_MAX - 1] of pchar;
     PNameBuf  = ^TNameBuf;
+    TSizeBuf  = array[0..ENTRY_MAX - 1] of uint32;
+    PSizeBuf  = ^TSizeBuf;
 
     { Per-call context passed to the forEach collect callback }
     PFPCollectCtx = ^TFPCollectCtx;
     TFPCollectCtx = record
         dir_names  : PNameBuf;
         file_names : PNameBuf;
+        file_sizes : PSizeBuf;
         dir_count  : uint32;
         file_count : uint32;
         filter     : pchar;
@@ -350,6 +353,28 @@ begin
     end;
 end;
 
+{ Insertion sort on name array, swapping a parallel size array in lockstep }
+procedure sortNamesWithSizes(var names: array of pchar; var sizes: array of uint32; n: uint32);
+var
+    i, j  : uint32;
+    tmpN  : pchar;
+    tmpS  : uint32;
+begin
+    if n < 2 then exit;
+    for i := 1 to n - 1 do begin
+        tmpN := names[i];
+        tmpS := sizes[i];
+        j    := i;
+        while (j > 0) and strLess(tmpN, names[j - 1]) do begin
+            names[j] := names[j - 1];
+            sizes[j] := sizes[j - 1];
+            j := j - 1;
+        end;
+        names[j] := tmpN;
+        sizes[j] := tmpS;
+    end;
+end;
+
 { ============================================================
   fp_collect_cb
   core.ds.hashmap.forEach callback: classifies each VFS entry as dir or file
@@ -373,6 +398,7 @@ begin
             if matchesFilter(key, ctx^.filter) then
                 if ctx^.file_count < ENTRY_MAX then begin
                     ctx^.file_names^[ctx^.file_count] := key;
+                    ctx^.file_sizes^[ctx^.file_count] := obj^.FileSize;
                     ctx^.file_count := ctx^.file_count + 1;
                 end;
     end;
@@ -390,12 +416,14 @@ var
     ctx        : TFPCollectCtx;
     dir_names  : PNameBuf;   { heap-alloc'd to avoid blowing the core.version stack }
     file_names : PNameBuf;
+    file_sizes : PSizeBuf;
     dir_count  : uint32;
     file_count : uint32;
     i          : uint32;
     row, name_lbl, size_lbl : Plv_obj;
     sep        : pchar;
     copy       : pchar;
+    szStr      : pchar;
     s1, s2, s3 : pchar;
 begin
     debug.tracer.push_trace('filepicker.do_refresh');
@@ -408,8 +436,10 @@ begin
     io.syslog.logln('FPCIK', 'do_refresh: kalloc name bufs');
     dir_names  := PNameBuf(kalloc(sizeof(TNameBuf)));
     file_names := PNameBuf(kalloc(sizeof(TNameBuf)));
+    file_sizes := PSizeBuf(kalloc(sizeof(TSizeBuf)));
     memset(uint32(dir_names),  0, sizeof(TNameBuf));
     memset(uint32(file_names), 0, sizeof(TNameBuf));
+    memset(uint32(file_sizes), 0, sizeof(TSizeBuf));
 
     { Sync path bar }
     if p^.path_bar <> nil then
@@ -429,6 +459,7 @@ begin
             lv_label_set_text(p^.status_label, 'Could not read directory');
         kfree(void(dir_names));
         kfree(void(file_names));
+        kfree(void(file_sizes));
         debug.tracer.pop_trace;
         exit;
     end;
@@ -437,6 +468,7 @@ begin
         driver.storage.vfs.FreeDirectoryListing(Map);
         kfree(void(dir_names));
         kfree(void(file_names));
+        kfree(void(file_sizes));
         debug.tracer.pop_trace;
         exit;
     end;
@@ -444,6 +476,7 @@ begin
 
     ctx.dir_names  := dir_names;
     ctx.file_names := file_names;
+    ctx.file_sizes := file_sizes;
     ctx.dir_count  := 0;
     ctx.file_count := 0;
     ctx.filter     := p^.filter;
@@ -455,7 +488,7 @@ begin
 
     { --- Sort both collections alphabetically --- }
     if dir_count  > 0 then sortNames(dir_names^,  dir_count);
-    if file_count > 0 then sortNames(file_names^, file_count);
+    if file_count > 0 then sortNamesWithSizes(file_names^, file_sizes^, file_count);
 
     { --- Build directory rows --- }
     if dir_count > 0 then
@@ -524,10 +557,11 @@ begin
         lv_obj_set_style_text_color(name_lbl, lv_color_make(210, 215, 230), 0);
         lv_obj_set_style_text_font(name_lbl, @lv_font_montserrat_14, 0);
 
-        { File size column: skipped here to avoid blocking disk I/O
-          inside the LVGL timer callback context. }
+        { File size column: use metadata from directory listing }
         size_lbl := lv_label_create(row);
-        lv_label_set_text(size_lbl, '--');
+        szStr := fmtFileSize(file_sizes^[i]);
+        lv_label_set_text(size_lbl, szStr);
+        kfree(void(szStr));
         lv_obj_set_width(size_lbl, 70);
         lv_obj_set_style_text_color(size_lbl, lv_color_make(100, 110, 130), 0);
         lv_obj_set_style_text_font(size_lbl, @lv_font_montserrat_14, 0);
@@ -543,6 +577,7 @@ begin
 
     kfree(void(dir_names));
     kfree(void(file_names));
+    kfree(void(file_sizes));
 
     { Update status label: "X dirs, Y files" }
     if p^.status_label <> nil then begin

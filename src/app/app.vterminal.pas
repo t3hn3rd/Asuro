@@ -343,7 +343,7 @@ begin
         end;
     end;
     { Resolve relative to per-terminal cwd }
-    Validity := driver.storage.vfs.changeDirectoryFrom(Path, state^.cwd, NewDir);
+    Validity := driver.storage.vfs.ChangeDirectoryFrom(Path, state^.cwd, NewDir);
     case Validity of
         pvDirectory: begin
             kfree(void(state^.cwd));
@@ -410,7 +410,7 @@ var
 begin
     if STRLL_Size(state^.dir_stack) > 0 then begin
         wd := STRLL_Get(state^.dir_stack, STRLL_Size(state^.dir_stack) - 1);
-        Validity := driver.storage.vfs.changeDirectoryFrom(wd, state^.cwd, NewDir);
+        Validity := driver.storage.vfs.ChangeDirectoryFrom(wd, state^.cwd, NewDir);
         if Validity = pvDirectory then begin
             kfree(void(state^.cwd));
             state^.cwd := NewDir;
@@ -696,7 +696,7 @@ begin
             end;
         end else begin
             { No built-in command found — try file dispatch }
-            absPath := driver.storage.vfs.makeAbsolutePathFrom(params^.Param, state^.cwd);
+            absPath := driver.storage.vfs.MakeAbsolutePathFrom(params^.Param, state^.cwd);
             if absPath <> nil then begin
                 if is_bg then begin
                     { Background file dispatch }

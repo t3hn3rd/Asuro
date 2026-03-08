@@ -65,7 +65,7 @@ begin
 
     { ---- READ ---- }
     if op[0] = '<' then begin
-        fHandle := driver.storage.vfs.OpenFile(absPath, omReadOnly, wmRewrite, @fError);
+        fHandle := driver.storage.vfs.OpenFile(absPath, omRead, @fError);
         if (fHandle = 0) or (fError <> eNone) then begin
             io.syslog.writestringln('Error: cannot open file for reading.');
             kfree(void(absPath));
@@ -112,10 +112,10 @@ begin
         contentLen := stringSize(content);
 
         { Try read-write rewrite first (existing file) }
-        fHandle := driver.storage.vfs.OpenFile(absPath, omReadWrite, wmRewrite, @fError);
+        fHandle := driver.storage.vfs.OpenFile(absPath, omReadWrite, @fError);
         if (fHandle = 0) or (fError <> eNone) then begin
             { Try creating new file }
-            fHandle := driver.storage.vfs.OpenFile(absPath, omWriteOnly, wmNew, @fError);
+            fHandle := driver.storage.vfs.OpenFile(absPath, omCreate, @fError);
         end;
 
         if (fHandle = 0) or (fError <> eNone) then begin

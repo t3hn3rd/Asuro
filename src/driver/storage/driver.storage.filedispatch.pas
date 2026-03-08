@@ -133,9 +133,10 @@ begin
     validity := driver.storage.vfs.PathValid(absPath);
     if validity <> pvFile then exit;
 
-    { 2. Open the file and read the header bytes }
+    { 2. Open the file in stream mode — only reads the bytes we ask for,
+         avoids pre-loading the entire file just to check a few magic bytes. }
     err := eNone;
-    fh := driver.storage.vfs.OpenFile(absPath, omReadOnly, wmRewrite, @err);
+    fh := driver.storage.vfs.OpenFile(absPath, omStream, @err);
     if fh = 0 then exit;
 
     memset(uint32(@headerBuf[0]), 0, MAX_MAGIC_LEN);
