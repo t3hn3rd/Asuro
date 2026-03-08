@@ -16,6 +16,7 @@
 	Include->Hashmap - Basic Hashmap Implementation.
 	
 	@author(Kieron Morris <kjm@kieronmorris.me>)
+    @author(Aaron Hance <ah@aaronhance.me>)
 }
 unit core.ds.hashmap;
 
@@ -23,7 +24,7 @@ interface
 
 uses
     memory.heap,
-    core.enc.md5,
+    core.enc.fnv1a,
     core.strings,
     io.syslog,
     debug.tracer,
@@ -64,19 +65,8 @@ procedure forEach(map : PHashMap; cb : THashForEachCb; ud : void);
 implementation
 
 function KeyHash(key : pchar) : uint32;
-var
-    KeyLength  : uint32;
-    MD5_Hash   : PMD5Digest;
-    Hash128    : puint128;
-    Hash32     : uint32;
-
 begin
-    KeyLength:= StringSize(key);
-    MD5_Hash:= MD5Buffer(puint8(key), KeyLength);
-    Hash128:= puint128(MD5_Hash);
-    Hash32:= MD5To32(Hash128);
-    KeyHash:= Hash32;
-    kfree(void(MD5_Hash));
+    KeyHash := Hash_FNV1a32(void(uint32(key)), StringSize(key));
 end;
 
 function hashIndex(size : uint32; hash : uint32) : uint32;
