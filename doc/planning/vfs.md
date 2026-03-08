@@ -574,7 +574,7 @@ All functions that return `TError` use the shared error codes defined in `driver
 | `eFileNotLoaded` | Read on handle whose data hasn't loaded |
 | `eReadOnly` | Write on read-only handle |
 
-See [driver.storage.types.pas](../src/driver/storage/driver.storage.types.pas) for the full `TError` enumeration.
+See [driver.storage.types.pas](../src/driver/storage/driver.storage.types.md) for the full `TError` enumeration.
 
 ---
 

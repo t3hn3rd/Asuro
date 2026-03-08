@@ -30,6 +30,7 @@ declare -a run_steps=(
 	"compile_sources.sh" "Failed to compile FPC Sources!"
 	"compile_link.sh" "Failed linking!"
 	"compile_isogen.sh" "Failed to create ISO!"
+	"compile_docs.sh" "Failed to generate documentation!"
 )
 
 for ((i=0; i<${#run_steps[@]}; i+=2))

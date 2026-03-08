@@ -16,6 +16,7 @@ dockerout.txt
 AGENTS.md
 lessons_learnt.md
 *.log
-/doc/*.md
 wasuro
 src/core/core.version.pas
+site/*
+!site/.gitkeep
