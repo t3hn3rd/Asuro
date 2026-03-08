@@ -7,11 +7,11 @@ echo " "
 
 if ! command -v mkdocs &> /dev/null; then
     echo "Installing mkdocs-material..."
-    pip install --quiet "mkdocs>=1.6,<2" mkdocs-material
+    pip3 install --quiet --break-system-packages "mkdocs>=1.6,<2" mkdocs-material
 fi
 
 echo "Building static site..."
-mkdocs build --strict
+python3 -m mkdocs build --strict
 
 if [ $? -eq 0 ]; then
     echo "Documentation built successfully. Output: site/"
