@@ -2,7 +2,7 @@
     Syslog - Kernel logging with multi-hook fan-out.
 
     All core.version/driver logging goes through this unit. Output is dispatched
-    to all registered hooks (driver.intf.serial, file, debug panel, etc.) simultaneously.
+    to all registered hooks (driver.io.serial, file, debug panel, etc.) simultaneously.
     Replaces the logging portion of the old console.pas.
 
     @author(Kieron Morris <kjm@kieronmorris.me>)
@@ -39,13 +39,13 @@ procedure writebin16ln(b: uint16);
 procedure writebin32(b: uint32);
 procedure writebin32ln(b: uint32);
 
-{ Initialization — registers driver.intf.serial as default hook }
+{ Initialization — registers driver.io.serial as default hook }
 procedure init;
 
 implementation
 
 uses
-    driver.intf.serial, core.strings;
+    driver.io.serial, core.strings;
 
 const
     MAX_HOOKS = 8;
@@ -109,8 +109,8 @@ end;
 
 procedure logChar(c: char);
 begin
-    { Also send each char to driver.intf.serial directly for immediate byte-level output }
-    driver.intf.serial.send(COM1, uint8(c), 10000);
+    { Also send each char to driver.io.serial directly for immediate byte-level output }
+    driver.io.serial.send(COM1, uint8(c), 10000);
     if c = #10 then begin
         dispatchLine;
     end else if c <> #13 then begin
@@ -270,9 +270,9 @@ end;
 
 procedure serialHook(msg: pchar);
 begin
-    { driver.intf.serial.sendString already sends CR+LF, but our dispatchLine sends
+    { driver.io.serial.sendString already sends CR+LF, but our dispatchLine sends
       the raw line without CR+LF, so sendString is appropriate here. }
-    driver.intf.serial.sendString(msg);
+    driver.io.serial.sendString(msg);
 end;
 
 { ---- Initialization ---- }
@@ -286,9 +286,9 @@ begin
     HookCount := 0;
     LinePos := 0;
     { Note: We don't register serialHook here because logChar already sends
-      each character to driver.intf.serial directly. The hook system is for line-level
+      each character to driver.io.serial directly. The hook system is for line-level
       consumers (file logging, debug panels, etc.) that want complete lines.
-      If we registered serialHook, driver.intf.serial would get double output. }
+      If we registered serialHook, driver.io.serial would get double output. }
 end;
 
 end.

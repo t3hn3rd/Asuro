@@ -11,7 +11,7 @@ unit driver.video.windows;
 interface
 
 uses
-    driver.video.lvgl, driver.hid.mouse, driver.intf.serial, debug.tracer, proc.mgr, proc.types;
+    driver.video.lvgl, driver.hid.mouse, driver.io.serial, debug.tracer, proc.mgr, proc.types;
 
 const
     MAX_WINDOWS      = 16;

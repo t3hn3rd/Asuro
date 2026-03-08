@@ -110,7 +110,7 @@ procedure init;
 implementation
 
 uses
-    core.version, driver.timer.rtc, driver.intf.serial, driver.storage.vfs, io.syslog;
+    core.version, driver.timer.rtc, driver.io.serial, driver.storage.vfs, io.syslog;
 
 const
     INITIAL_CMD_CAP = 64;

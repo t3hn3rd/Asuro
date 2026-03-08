@@ -17,14 +17,14 @@
 	
 	@author(Kieron Morris <kjm@kieronmorris.me>)
 }
-unit driver.net.udp;
+unit driver.net.proto.udp;
 
 interface
 
 uses
     memory.heap,
     driver.net.types, driver.net.util,
-    driver.net.ipv4, driver.net,
+    driver.net.proto.ipv4, driver.net,
     debug.tracer, core.util, arch.x86.util;
 
 procedure register();
@@ -71,7 +71,7 @@ begin
             nullend:= true;
         end;
         pseudoBuffer:= kalloc(sizeof(TUDPPseudoHeader) + pseudoSize);
-        push_trace('driver.net.udp.CalculateChecksum');
+        push_trace('driver.net.proto.udp.CalculateChecksum');
         pseudoBuffer8:= puint8(pseudoBuffer);
         pseudoBuffer16:= puint16(pseudoBuffer);
         pseudoBuffer32:= puint32(pseudoBuffer);
@@ -119,7 +119,7 @@ var
 
 
 begin
-    push_trace('driver.net.udp.send');
+    push_trace('driver.net.proto.udp.send');
     if udpContext <> nil then begin
         size:= p_len + sizeof(TUDPHeader);
         buffer:= kalloc(size);
@@ -141,7 +141,7 @@ begin
 
         udpContext^.context^.Protocol.L4:= $11;       
 
-        driver.net.ipv4.send(buffer, size, udpContext^.context);
+        driver.net.proto.ipv4.send(buffer, size, udpContext^.context);
 
         kfree(buffer);
         kfree(void(hdr));
@@ -154,7 +154,7 @@ var
     context : PUDPBindContext;
 
 begin
-    push_trace('driver.net.udp.bind');
+    push_trace('driver.net.proto.udp.bind');
     result:= tueGenericError;
     if bindContext <> nil then begin
         if Ports[bindContext^.port] = nil then begin
@@ -177,7 +177,7 @@ var
     context : PUDPBindContext;
 
 begin
-    push_trace('driver.net.udp.unbind');
+    push_trace('driver.net.proto.udp.unbind');
     result:= tueGenericError;
     if bindContext <> nil then begin
         context:= Ports[bindContext^.port];
@@ -207,7 +207,7 @@ var
     size    : uint16;
 
 begin
-    push_trace('driver.net.udp.ProcessPacket');
+    push_trace('driver.net.proto.udp.ProcessPacket');
     header:= PUDPHeader(p_data);
     if Ports[switchendian16(header^.DstPort)] <> nil then begin
         context:= PUDPPacketContext(kalloc(sizeof(TUDPPacketContext)));
@@ -250,7 +250,7 @@ var
     Checksum      : uint32;
 
 begin
-    push_trace('driver.net.udp.register');
+    push_trace('driver.net.proto.udp.register');
     writeToLogLn('        L4/UDP: register');
     for i:=0 to 65535 do begin
         Ports[i]:= nil;
@@ -269,7 +269,7 @@ begin
     //writehexln(Checksum);
     //while true do begin end;
 
-    driver.net.ipv4.registerProtocol($11, @ProcessPacket);
+    driver.net.proto.ipv4.registerProtocol($11, @ProcessPacket);
 end;
 
 end.

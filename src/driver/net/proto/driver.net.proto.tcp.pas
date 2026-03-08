@@ -17,14 +17,14 @@
 	
 	@author(Kieron Morris <kjm@kieronmorris.me>)
 }
-unit driver.net.tcp;
+unit driver.net.proto.tcp;
 
 interface
 
 uses
     debug.tracer, io.stdio,
     driver.net.types, driver.net.util,
-    driver.net.ipv4;
+    driver.net.proto.ipv4;
 
 procedure register();
 function  connect(context : PTCPConnectContext) : PTCPSocket;
@@ -42,7 +42,7 @@ implementation
 uses
     memory.heap, core.util, arch.x86.util, io.syslog, core.rand, core.ds.lists,
     driver.net, arch.x86.isr.tmr0, arch.x86.bda,
-    core.strings, driver.net.arp,
+    core.strings, driver.net.proto.arp,
     proc.mgr, proc.types;
 
 const
@@ -113,7 +113,7 @@ var
     data16       : puint16;
     remaining    : uint16;
 begin
-    push_trace('driver.net.tcp.CalculateChecksum');
+    push_trace('driver.net.proto.tcp.CalculateChecksum');
     pseudoSize := sizeof(TTCPPseudoHeader) + tcpLen;
     { Pad to even length for checksum }
     if (pseudoSize mod 2) = 1 then
@@ -158,7 +158,7 @@ var
     tcb : PTCB;
     i   : uint32;
 begin
-    push_trace('driver.net.tcp.CreateTCB');
+    push_trace('driver.net.proto.tcp.CreateTCB');
     tcb := PTCB(kalloc(sizeof(TTCB)));
     memset(uint32(tcb), 0, sizeof(TTCB));
     tcb^.State := tssClosed;
@@ -223,7 +223,7 @@ function CreateSocket(tcb : PTCB; onRecv : TTCPReceiveCallback; onEvt : TTCPEven
 var
     sock : PTCPSocket;
 begin
-    push_trace('driver.net.tcp.CreateSocket');
+    push_trace('driver.net.proto.tcp.CreateSocket');
     sock := PTCPSocket(kalloc(sizeof(TTCPSocket)));
     sock^.TCB := tcb;
     sock^.OnReceive := onRecv;
@@ -238,7 +238,7 @@ procedure DestroyTCB(tcb : PTCB);
 var
     i : uint32;
 begin
-    push_trace('driver.net.tcp.DestroyTCB');
+    push_trace('driver.net.proto.tcp.DestroyTCB');
     if tcb <> nil then begin
         if tcb^.SendBuf <> nil then kfree(tcb^.SendBuf);
         if tcb^.RecvBuf <> nil then kfree(tcb^.RecvBuf);
@@ -270,7 +270,7 @@ procedure DestroySocket(sock : PTCPSocket);
 var
     owner : PProcessContext;
 begin
-    push_trace('driver.net.tcp.DestroySocket');
+    push_trace('driver.net.proto.tcp.DestroySocket');
     if sock <> nil then begin
         { Remove resource binding from owning process }
         if sock^.OwnerPID <> 0 then begin
@@ -293,7 +293,7 @@ var
     tcb  : PTCB;
     p    : void;
 begin
-    push_trace('driver.net.tcp.FindTCB');
+    push_trace('driver.net.proto.tcp.FindTCB');
     FindTCB := nil;
     if Connections = nil then exit;
     for i := 0 to DL_Size(Connections) - 1 do begin
@@ -320,7 +320,7 @@ var
     tcb  : PTCB;
     p    : void;
 begin
-    push_trace('driver.net.tcp.FindListenTCB');
+    push_trace('driver.net.proto.tcp.FindListenTCB');
     FindListenTCB := nil;
     if Connections = nil then exit;
     for i := 0 to DL_Size(Connections) - 1 do begin
@@ -341,7 +341,7 @@ procedure AddTCB(tcb : PTCB);
 var
     p : puint32;
 begin
-    push_trace('driver.net.tcp.AddTCB');
+    push_trace('driver.net.proto.tcp.AddTCB');
     if Connections = nil then
         Connections := DL_New(sizeof(uint32));
     p := puint32(DL_Add(Connections));
@@ -354,7 +354,7 @@ var
     p   : void;
     cur : PTCB;
 begin
-    push_trace('driver.net.tcp.RemoveTCB');
+    push_trace('driver.net.proto.tcp.RemoveTCB');
     if Connections = nil then exit;
     for i := 0 to DL_Size(Connections) - 1 do begin
         p := DL_Get(Connections, i);
@@ -378,7 +378,7 @@ var
     port : uint16;
     i    : uint32;
 begin
-    push_trace('driver.net.tcp.AllocEphemeralPort');
+    push_trace('driver.net.proto.tcp.AllocEphemeralPort');
     { Try random ports in ephemeral range 49152-65535 }
     for i := 0 to 1000 do begin
         port := 49152 + (rand16 mod 16384);
@@ -400,7 +400,7 @@ var
     tcb : PTCB;
     p   : void;
 begin
-    push_trace('driver.net.tcp.CountPendingForPort');
+    push_trace('driver.net.proto.tcp.CountPendingForPort');
     CountPendingForPort := 0;
     if Connections = nil then exit;
     for i := 0 to DL_Size(Connections) - 1 do begin
@@ -423,7 +423,7 @@ var
     tcb : PTCB;
     p   : void;
 begin
-    push_trace('driver.net.tcp.FindAcceptable');
+    push_trace('driver.net.proto.tcp.FindAcceptable');
     FindAcceptable := nil;
     if Connections = nil then exit;
     for i := 0 to DL_Size(Connections) - 1 do begin
@@ -452,7 +452,7 @@ var
     kind   : uint8;
     optLen : uint8;
 begin
-    push_trace('driver.net.tcp.ParseMSSOption');
+    push_trace('driver.net.proto.tcp.ParseMSSOption');
     ParseMSSOption := 0;
     idx := 0;
     while idx < optsLen do begin
@@ -482,7 +482,7 @@ var
     delta : sint32;
     rto   : uint32;
 begin
-    push_trace('driver.net.tcp.UpdateRTT');
+    push_trace('driver.net.proto.tcp.UpdateRTT');
     if tcb^.SRTT = 0 then begin
         { First measurement }
         tcb^.SRTT := measured SHL 3;     { SRTT = R * 8 }
@@ -511,7 +511,7 @@ var
     oldest: uint32;
     oldIdx: uint32;
 begin
-    push_trace('driver.net.tcp.InsertOOOSegment');
+    push_trace('driver.net.proto.tcp.InsertOOOSegment');
     { Check for duplicate }
     for i := 0 to TCP_OOO_MAX - 1 do begin
         if tcb^.OOOSegments[i].Valid and (tcb^.OOOSegments[i].SeqNum = seqNum) then
@@ -555,7 +555,7 @@ var
     found   : boolean;
     copyLen : uint16;
 begin
-    push_trace('driver.net.tcp.FlushOOOSegments');
+    push_trace('driver.net.proto.tcp.FlushOOOSegments');
     flushed := false;
     repeat
         found := false;
@@ -600,7 +600,7 @@ var
     opts     : puint8;
     isSYN    : boolean;
 begin
-    push_trace('driver.net.tcp.SendSegment');
+    push_trace('driver.net.proto.tcp.SendSegment');
     isSYN := (flags AND TCP_FLAG_SYN) <> 0;
 
     { Header size: 24 bytes if SYN (with MSS option), 20 otherwise }
@@ -675,7 +675,7 @@ begin
         tcb^.KeepAliveCount := 0;
     end;
 
-    driver.net.ipv4.send(buffer, totalLen, context);
+    driver.net.proto.ipv4.send(buffer, totalLen, context);
 
     { Save retransmission buffer if this is a data or SYN/FIN segment }
     if ((flags AND (TCP_FLAG_SYN OR TCP_FLAG_FIN)) <> 0) or (payloadLen > 0) then begin
@@ -699,7 +699,7 @@ var
     context : PPacketContext;
     chk     : uint16;
 begin
-    push_trace('driver.net.tcp.SendRST');
+    push_trace('driver.net.proto.tcp.SendRST');
     buffer := kalloc(sizeof(TTCPHeader));
     memset(uint32(buffer), 0, sizeof(TTCPHeader));
 
@@ -725,11 +725,11 @@ begin
     copyMAC(driver.net.getMAC, @context^.MAC.Source[0]);
     { RST has no TCB; resolve destination MAC via ARP }
     if sameSubnetIPv4(remoteIP, @getIPv4Config^.Address[0], @getIPv4Config^.Netmask[0]) then
-        copyMAC(driver.net.arp.resolveIP(remoteIP), @context^.MAC.Destination[0])
+        copyMAC(driver.net.proto.arp.resolveIP(remoteIP), @context^.MAC.Destination[0])
     else
-        copyMAC(driver.net.arp.resolveIP(@getIPv4Config^.Gateway[0]), @context^.MAC.Destination[0]);
+        copyMAC(driver.net.proto.arp.resolveIP(@getIPv4Config^.Gateway[0]), @context^.MAC.Destination[0]);
 
-    driver.net.ipv4.send(buffer, sizeof(TTCPHeader), context);
+    driver.net.proto.ipv4.send(buffer, sizeof(TTCPHeader), context);
     freePacketContext(context);
     kfree(buffer);
 end;
@@ -752,7 +752,7 @@ var
     acked    : uint32;
     effMSS   : uint16;
 begin
-    push_trace('driver.net.tcp.ProcessSegment');
+    push_trace('driver.net.proto.tcp.ProcessSegment');
     flags  := GetFlags(hdr^.DataOff_Flags);
     seqNum := switchendian32(hdr^.SeqNum);
     ackNum := switchendian32(hdr^.AckNum);
@@ -1113,7 +1113,7 @@ var
     optsLen    : uint16;
     mss        : uint16;
 begin
-    push_trace('driver.net.tcp.ProcessPacket');
+    push_trace('driver.net.proto.tcp.ProcessPacket');
     if p_len < sizeof(TTCPHeader) then exit;
 
     hdr := PTCPHeader(p_data);
@@ -1260,7 +1260,7 @@ begin
                             context^.TTL := 64;
                             copyMAC(driver.net.getMAC, @context^.MAC.Source[0]);
                             copyMAC(@tcb^.RemoteMAC[0], @context^.MAC.Destination[0]);
-                            driver.net.ipv4.send(tcb^.RetransBuf, tcb^.RetransBufLen, context);
+                            driver.net.proto.ipv4.send(tcb^.RetransBuf, tcb^.RetransBufLen, context);
                             freePacketContext(context);
 
                             { Invalidate RTT measurement (Karn's algorithm) }
@@ -1357,7 +1357,7 @@ var
     tcb    : PTCB;
     sock   : PTCPSocket;
 begin
-    push_trace('driver.net.tcp.connect');
+    push_trace('driver.net.proto.tcp.connect');
     connect := nil;
     if context = nil then exit;
 
@@ -1382,9 +1382,9 @@ begin
 
     { Resolve destination MAC }
     if sameSubnetIPv4(@context^.RemoteIP[0], @getIPv4Config^.Address[0], @getIPv4Config^.Netmask[0]) then
-        copyMAC(driver.net.arp.resolveIP(@context^.RemoteIP[0]), @tcb^.RemoteMAC[0])
+        copyMAC(driver.net.proto.arp.resolveIP(@context^.RemoteIP[0]), @tcb^.RemoteMAC[0])
     else
-        copyMAC(driver.net.arp.resolveIP(@getIPv4Config^.Gateway[0]), @tcb^.RemoteMAC[0]);
+        copyMAC(driver.net.proto.arp.resolveIP(@getIPv4Config^.Gateway[0]), @tcb^.RemoteMAC[0]);
 
     { Generate ISN }
     tcb^.ISS := GenerateISN;
@@ -1414,7 +1414,7 @@ var
     tcb  : PTCB;
     sock : PTCPSocket;
 begin
-    push_trace('driver.net.tcp.listen');
+    push_trace('driver.net.proto.tcp.listen');
     listen := nil;
     if context = nil then exit;
 
@@ -1449,7 +1449,7 @@ var
     tcb      : PTCB;
     childTcb : PTCB;
 begin
-    push_trace('driver.net.tcp.accept');
+    push_trace('driver.net.proto.tcp.accept');
     accept := nil;
     if listener = nil then exit;
     if listener^.TCB = nil then exit;
@@ -1472,7 +1472,7 @@ var
     canSend : boolean;
     copyLen : uint16;
 begin
-    push_trace('driver.net.tcp.send');
+    push_trace('driver.net.proto.tcp.send');
     send := tteGenericError;
     if socket = nil then exit;
     if socket^.TCB = nil then exit;
@@ -1540,7 +1540,7 @@ function close(socket : PTCPSocket) : TTCPError;
 var
     tcb : PTCB;
 begin
-    push_trace('driver.net.tcp.close');
+    push_trace('driver.net.proto.tcp.close');
     close := tteGenericError;
     if socket = nil then exit;
     if socket^.TCB = nil then exit;
@@ -1592,7 +1592,7 @@ function abort_connection(socket : PTCPSocket) : TTCPError;
 var
     tcb : PTCB;
 begin
-    push_trace('driver.net.tcp.abort_connection');
+    push_trace('driver.net.proto.tcp.abort_connection');
     abort_connection := tteGenericError;
     if socket = nil then exit;
     if socket^.TCB = nil then exit;
@@ -1638,7 +1638,7 @@ end;
 
 procedure tcpconnect_on_event(socket : PTCPSocket; event : TTCPEvent);
 begin
-    push_trace('driver.net.tcp.tcpconnect_on_event');
+    push_trace('driver.net.proto.tcp.tcpconnect_on_event');
     case event of
         tteConnected: begin
             io.syslog.logln('TCP', 'Connected! Sending Hello, World!...');
@@ -1662,7 +1662,7 @@ var
     dest_mac : puint8;
     ctx      : TTCPConnectContext;
 begin
-    push_trace('driver.net.tcp.terminal_command_tcpconnect');
+    push_trace('driver.net.proto.tcp.terminal_command_tcpconnect');
     if paramCount(params) < 2 then begin
         io.syslog.logln('TCP', 'Usage: tcpconnect <ip> <port>');
         exit;
@@ -1686,9 +1686,9 @@ begin
 
     { Resolve MAC before connecting }
     if sameSubnetIPv4(ip, @getIPv4Config^.Address[0], @getIPv4Config^.Netmask[0]) then
-        dest_mac := driver.net.arp.resolveIP(ip)
+        dest_mac := driver.net.proto.arp.resolveIP(ip)
     else
-        dest_mac := driver.net.arp.resolveIP(@getIPv4Config^.Gateway[0]);
+        dest_mac := driver.net.proto.arp.resolveIP(@getIPv4Config^.Gateway[0]);
 
     if dest_mac = nil then begin
         io.syslog.logln('TCP', 'Failed to resolve MAC address for target.');
@@ -1720,7 +1720,7 @@ var
     buf : puint8;
     i   : uint16;
 begin
-    push_trace('driver.net.tcp.tcplisten_on_recv');
+    push_trace('driver.net.proto.tcp.tcplisten_on_recv');
     buf := puint8(p_data);
     io.syslog.writestring('[TCP Listen Recv] ');
     for i := 0 to p_len - 1 do
@@ -1730,7 +1730,7 @@ end;
 
 procedure tcplisten_on_event(socket : PTCPSocket; event : TTCPEvent);
 begin
-    push_trace('driver.net.tcp.tcplisten_on_event');
+    push_trace('driver.net.proto.tcp.tcplisten_on_event');
     case event of
         tteConnected:
             io.syslog.logln('TCP', 'Listen: client connected.');
@@ -1749,7 +1749,7 @@ var
     port     : uint16;
     ctx      : TTCPListenContext;
 begin
-    push_trace('driver.net.tcp.terminal_command_tcplisten');
+    push_trace('driver.net.proto.tcp.terminal_command_tcplisten');
     if paramCount(params) < 1 then begin
         io.syslog.logln('TCP', 'Usage: tcplisten <port>');
         exit;
@@ -1787,7 +1787,7 @@ var
     buf : puint8;
     i   : uint16;
 begin
-    push_trace('driver.net.tcp.tcphttp_on_recv');
+    push_trace('driver.net.proto.tcp.tcphttp_on_recv');
     buf := puint8(p_data);
     io.syslog.writestring('[HTTP Response] ');
     for i := 0 to p_len - 1 do
@@ -1802,7 +1802,7 @@ var
     i       : uint16;
     src     : pchar;
 begin
-    push_trace('driver.net.tcp.tcphttp_on_event');
+    push_trace('driver.net.proto.tcp.tcphttp_on_event');
     case event of
         tteConnected: begin
             io.syslog.logln('TCP', 'HTTP: Connected, sending GET request...');
@@ -1848,7 +1848,7 @@ var
     ctx      : TTCPConnectContext;
     i        : uint16;
 begin
-    push_trace('driver.net.tcp.terminal_command_tcphttp');
+    push_trace('driver.net.proto.tcp.terminal_command_tcphttp');
     if paramCount(params) < 1 then begin
         io.syslog.logln('TCP', 'Usage: tcphttp <ip> [port]');
         exit;
@@ -1897,11 +1897,11 @@ end;
 
 procedure register();
 begin
-    push_trace('driver.net.tcp.register');
+    push_trace('driver.net.proto.tcp.register');
     writeToLogLn('        L4/TCP: register');
     if not Registered then begin
         Connections := DL_New(sizeof(uint32));
-        driver.net.ipv4.registerProtocol(TCP_PROTOCOL_ID, @ProcessPacket);
+        driver.net.proto.ipv4.registerProtocol(TCP_PROTOCOL_ID, @ProcessPacket);
         arch.x86.isr.tmr0.hook(uint32(@TimerTick));
         Registered := true;
         io.syslog.logln('TCP', 'TCP registered.');

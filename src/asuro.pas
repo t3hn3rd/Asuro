@@ -36,10 +36,10 @@ uses
     driver.video.desktop,
     driver.video.doublebuffer,
     driver.mgr,
-    driver.netdev.e1000,
+    driver.net.dev.e1000,
     driver.bus.usb.ehci,
     driver.storage.fs.fat32,
-    arch.x86.faults,
+    arch.x86.fault,
     core.ds.fifo,
     driver.storage.fs.mgr,
     driver.storage.fs.flatfs,
@@ -76,7 +76,7 @@ uses
     driver.hid.ps2.mouse,
     core.rand,
     driver.timer.rtc,
-    driver.intf.serial,
+    driver.io.serial,
     boot.splash,
     io.stdio,
     driver.storage.mgr,
@@ -153,9 +153,9 @@ begin
      System.init();
 
      { Serial Init }
-     driver.intf.serial.init();
+     driver.io.serial.init();
 
-     { Syslog Init — right after driver.intf.serial so log hooks work }
+     { Syslog Init — right after driver.io.serial so log hooks work }
      io.syslog.init();
      io.syslog.writestringln('Booting Asuro...');
 
@@ -201,7 +201,7 @@ begin
      arch.x86.idt.init();
      arch.x86.irq.init();
      arch.x86.isr.mgr.init();
-     arch.x86.faults.init();
+     arch.x86.fault.init();
      driver.timer.rtc.init();
           
      arch.x86.memory.physical.init();
@@ -281,7 +281,7 @@ begin
      driver.hid.ps2.keyboard.init(keyboard_layout);
      driver.hid.ps2.mouse.init();
      driver.exp.testdriver.init();
-     driver.netdev.e1000.init();
+     driver.net.dev.e1000.init();
      driver.storage.ctl.ahci.init();
      io.syslog.logln('KERNEL', 'DEVICE DRIVERS: INIT END.');
 

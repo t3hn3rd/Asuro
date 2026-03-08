@@ -78,7 +78,7 @@ uses
     arch.x86.cpu,
     arch.x86.isr.types,
     driver.timer.rtc,
-    driver.intf.serial,
+    driver.io.serial,
     io.syslog;
 
 function MsSinceSystemBoot : uint64;

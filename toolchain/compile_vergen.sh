@@ -9,7 +9,7 @@ echo " "
 chmod +x "${TOOLCHAIN_DIR}/compile_checksum.sh"
 "${TOOLCHAIN_DIR}/compile_checksum.sh"
 outfile="src/core/core.version.pas"
-file="version"
+file="toolchain/version"
 {
 	# this script requires semver tool
 	wget -q https://raw.githubusercontent.com/fsaintjacques/semver-tool/master/src/semver -O bin/semver && chmod +x bin/semver

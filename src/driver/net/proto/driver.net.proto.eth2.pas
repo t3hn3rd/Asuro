@@ -17,7 +17,7 @@
 	
 	@author(Kieron Morris <kjm@kieronmorris.me>)
 }
-unit driver.net.eth2;
+unit driver.net.proto.eth2;
 
 interface
 
@@ -36,7 +36,7 @@ procedure register;
 implementation
 
 uses
-    driver.net.arp;
+    driver.net.proto.arp;
 
 var
     Registered : Boolean = false;
@@ -46,7 +46,7 @@ var
 
 procedure registerTypePromisc(eType : uint16; RecvCB : TRecvCallback);
 begin
-    push_trace('driver.net.eth2.registerTypePromisc');
+    push_trace('driver.net.proto.eth2.registerTypePromisc');
     register;
     if EthTypes[eType] = nil then EthTypes[eType]:= RecvCB;
     Promisc[eType]:= true;
@@ -54,7 +54,7 @@ end;
 
 procedure registerType(eType : uint16; RecvCB : TRecvCallback);
 begin
-    push_trace('driver.net.eth2.registerType');
+    push_trace('driver.net.proto.eth2.registerType');
     register;
     if EthTypes[eType] = nil then EthTypes[eType]:= RecvCB;
 end;
@@ -70,8 +70,8 @@ var
 begin
     pad:= 46 - p_len;
     if pad < 0 then pad:= 0;
-    push_trace('driver.net.eth2.send');
-    writeToLogLn('    L2: driver.net.eth2.send');
+    push_trace('driver.net.proto.eth2.send');
+    writeToLogLn('    L2: driver.net.proto.eth2.send');
     if p_context <> nil then begin
         size:= sizeof(TEthernetHeader) + p_len + pad;// + 4;
         buffer:= kalloc(size);
@@ -95,7 +95,7 @@ var
     buf        : puint8;
 
 begin
-    push_trace('driver.net.eth2.recv');
+    push_trace('driver.net.proto.eth2.recv');
     buf:= puint8(p_data);
     
     Header:= PEthernetHeader(buf);
@@ -120,7 +120,7 @@ var
     i : uint16;
 
 begin
-    push_trace('driver.net.eth2.register');
+    push_trace('driver.net.proto.eth2.register');
     if not Registered then begin
         writeToLogLn('    L2/ETH: register');
         for i:=0 to 65535 do begin

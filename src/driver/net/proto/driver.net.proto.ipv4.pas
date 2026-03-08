@@ -17,7 +17,7 @@
 	
 	@author(Kieron Morris <kjm@kieronmorris.me>)
 }
-unit driver.net.ipv4;
+unit driver.net.proto.ipv4;
 
 interface
 
@@ -26,7 +26,7 @@ uses
     core.util, arch.x86.util, core.strings,
     driver.net, driver.net.types, driver.net.util,
     core.ds.lists,
-    driver.net.eth2, io.stdio;
+    driver.net.proto.eth2, io.stdio;
 
 procedure send(p_data : void; p_len : uint16; p_context : PPacketContext);
 procedure registerProtocol(Protocol_ID : uint8; recv_callback : TRecvCallback);
@@ -37,7 +37,7 @@ procedure terminal_command_ifconfig(params : PParamList; stdin_buf, stdout_buf, 
 implementation
 
 uses
-    driver.net.arp;
+    driver.net.proto.arp;
 
 var
     Registered : Boolean = false;
@@ -47,7 +47,7 @@ var
 
 function  getIPv4Config : PIPv4Configuration;
 begin
-    push_trace('driver.net.ipv4.getIPv4Config');
+    push_trace('driver.net.proto.ipv4.getIPv4Config');
     getIPv4Config:= @Config;
     pop_trace;
 end;
@@ -60,7 +60,7 @@ var
     buffer : void;
 
 begin
-    push_trace('driver.net.ipv4.send');
+    push_trace('driver.net.proto.ipv4.send');
     inc(CurrentID);
     Header.version:= 4;
     Header.header_len:= 5;
@@ -86,7 +86,7 @@ begin
     Buffer:= kalloc(Len);
     memcpy(uint32(@Header), uint32(Buffer), Header.header_len * 4);
     memcpy(uint32(p_data), uint32(Buffer) + (Header.header_len * 4), p_len);
-    driver.net.eth2.send(Buffer, (Header.header_len * 4) + p_len, $0800, p_context);
+    driver.net.proto.eth2.send(Buffer, (Header.header_len * 4) + p_len, $0800, p_context);
     kfree(Buffer);
     pop_trace;
 end;
@@ -100,7 +100,7 @@ var
     len     : uint16;
 
 begin
-    push_trace('driver.net.ipv4.recv');
+    push_trace('driver.net.proto.ipv4.recv');
     Header:= PIPV4Header(p_data);
     AHeader.version:= Header^.version;
     AHeader.header_len:= Header^.header_len;
@@ -175,9 +175,9 @@ begin
                 Config.UP:= false;
             end;
         end;
-        driver.net.arp.sendGratuitous;
+        driver.net.proto.arp.sendGratuitous;
         CopyIPv4(@Config.Gateway[0], @Target[0]);
-        driver.net.arp.sendRequest(@Target[0]);
+        driver.net.proto.arp.sendRequest(@Target[0]);
     end else begin
         io.stdio.bufWriteStr(stdout_buf, '   MAC:     ');
         writeMACAddress(driver.net.GetMAC, stdout_buf);
@@ -199,7 +199,7 @@ var
     i : uint8;
 
 begin
-    push_trace('driver.net.ipv4.register');
+    push_trace('driver.net.proto.ipv4.register');
     if not Registered then begin
         writeToLogLn('      L3/IPv4: register');
         for i:=0 to 255 do begin
@@ -211,7 +211,7 @@ begin
             Config.Netmask[i]:= 0;
         end;
         Config.UP:= false;
-        driver.net.eth2.registerType($0800, @recv);
+        driver.net.proto.eth2.registerType($0800, @recv);
         Registered:= true;
     end;
     pop_trace;
@@ -219,7 +219,7 @@ end;
 
 procedure registerProtocol(Protocol_ID : uint8; recv_callback : TRecvCallback);
 begin
-    push_trace('driver.net.ipv4.registerProtocol');
+    push_trace('driver.net.proto.ipv4.registerProtocol');
     register;
     if Protocols[Protocol_ID] = nil then Protocols[Protocol_ID]:= recv_callback;
     pop_trace;

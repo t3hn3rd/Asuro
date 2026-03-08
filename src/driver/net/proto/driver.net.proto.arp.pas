@@ -17,7 +17,7 @@
 	
 	@author(Kieron Morris <kjm@kieronmorris.me>)
 }
-unit driver.net.arp;
+unit driver.net.proto.arp;
 
 interface
 
@@ -25,7 +25,7 @@ uses
     debug.tracer, memory.heap,
     core.util, arch.x86.util, core.ds.lists,
     driver.net, driver.net.types, driver.net.util,
-    driver.net.eth2, driver.net.ipv4, io.stdio;
+    driver.net.proto.eth2, driver.net.proto.ipv4, io.stdio;
 
 type
     PARPCacheRecord = ^TARPCacheRecord;
@@ -58,7 +58,7 @@ var
     r : PARPCacheRecord;
 
 begin
-    push_trace('driver.net.arp.findCacheRecordByMAC');
+    push_trace('driver.net.proto.arp.findCacheRecordByMAC');
     findCacheRecordByMAC:= nil;
     if LL_Size(Cache) > 0 then begin
         for i:=0 to LL_Size(Cache)-1 do begin
@@ -77,7 +77,7 @@ var
     r : PARPCacheRecord;
 
 begin
-    push_trace('driver.net.arp.findCacheRecordByIP');
+    push_trace('driver.net.proto.arp.findCacheRecordByIP');
     findCacheRecordByIP:= nil;
     if LL_Size(Cache) > 0 then begin
         for i:=0 to LL_Size(Cache)-1 do begin
@@ -97,7 +97,7 @@ var
     hSize, pSize : uint8;
 
 begin
-    push_trace('driver.net.arp.send');
+    push_trace('driver.net.proto.arp.send');
     if p_context <> nil then begin
         buf:= kalloc(sizeof(TARPHeader));
         hdr:= PARPHeader(buf);
@@ -126,7 +126,7 @@ begin
             if MACEqual(@p_context^.MAC.Destination[0], @NULL_MAC[0]) then begin
                 CopyMAC(@BROADCAST_MAC[0], @p_context^.MAC.Destination[0]);
             end;
-            driver.net.eth2.send(buf, sizeof(TARPHeader), $0806, p_context);
+            driver.net.proto.eth2.send(buf, sizeof(TARPHeader), $0806, p_context);
         end;
         kfree(buf);
     end;
@@ -137,14 +137,14 @@ var
     context : PPacketContext;
 
 begin
-     push_trace('driver.net.arp.sendGratuitous');
+     push_trace('driver.net.proto.arp.sendGratuitous');
      writeToLogLn('      L3/ARP: sendGratuitous');
      context:= newPacketContext;
      CopyIPv4(@getIPv4Config^.Address[0], @context^.IP.Destination[0]);
      CopyIPv4(@getIPv4Config^.Address[0], @context^.IP.Source[0]);
      CopyMAC(GetMAC, @context^.MAC.Source[0]);
      CopyMAC(@NULL_MAC[0], @context^.MAC.Destination[0]);
-     driver.net.arp.send($1, $0800, $1, context);
+     driver.net.proto.arp.send($1, $0800, $1, context);
      freePacketContext(context);
 end;
 
@@ -154,7 +154,7 @@ var
     CacheRecord : PARPCacheRecord;
 
 begin
-     push_trace('driver.net.arp.sendRequestGateway');
+     push_trace('driver.net.proto.arp.sendRequestGateway');
      context:= newPacketContext;
      CacheRecord:= findCacheRecordByIP(@getIPv4Config^.Gateway[0]);
      if CacheRecord <> nil then begin
@@ -162,7 +162,7 @@ begin
         CopyIPv4(ip, @context^.IP.Destination[0]);
         CopyIPv4(@getIPv4Config^.Address[0], @context^.IP.Source[0]);
         CopyMAC(GetMAC, @context^.MAC.Source[0]);
-        driver.net.arp.send($1, $0800, $1, context);
+        driver.net.proto.arp.send($1, $0800, $1, context);
      end;
      freePacketContext(context);
 end;
@@ -173,7 +173,7 @@ var
     CacheRecord : PARPCacheRecord;
 
 begin
-     push_trace('driver.net.arp.sendRequest');
+     push_trace('driver.net.proto.arp.sendRequest');
      writeToLogLn('      L3/ARP: sendRequest');
      context:= newPacketContext;
      CopyIPv4(ip, @context^.IP.Destination[0]);
@@ -181,7 +181,7 @@ begin
      CopyMAC(GetMAC, @context^.MAC.Source[0]);
      CacheRecord:= findCacheRecordByIP(@getIPv4Config^.Gateway[0]);
      CopyMAC(@NULL_MAC[0], @context^.MAC.Destination[0]);
-     driver.net.arp.send($1, $0800, $1, context);
+     driver.net.proto.arp.send($1, $0800, $1, context);
      freePacketContext(context);
      sendRequestGateway(ip);
 end;
@@ -191,7 +191,7 @@ var
     CacheRecord : PARPCacheRecord;
 
 begin
-    push_trace('driver.net.arp.resolveIP');
+    push_trace('driver.net.proto.arp.resolveIP');
     CacheRecord:= findCacheRecordByIP(ip);
     resolveIP:= nil;
     if CacheRecord = nil then begin
@@ -211,7 +211,7 @@ var
     context      : PPacketContext;
 
 begin
-    push_trace('driver.net.arp.recv');
+    push_trace('driver.net.proto.arp.recv');
     { Get our converted Header }
     Header:= PARPHeader(p_data);
     AHeader.Hardware_Type:= (Header^.Hardware_Type_Hi SHL 8) + Header^.Hardware_Type_Lo;
@@ -305,11 +305,11 @@ end;
 
 procedure register;
 begin
-    push_trace('driver.net.arp.register');
+    push_trace('driver.net.proto.arp.register');
     if not Registered then begin
         writeToLogLn('      L3/ARP: register');
         Cache:= LL_New(sizeof(TARPCacheRecord));
-        driver.net.eth2.registerTypePromisc($0806, @recv);
+        driver.net.proto.eth2.registerTypePromisc($0806, @recv);
         Registered:= true;
     end;
     pop_trace;
@@ -320,7 +320,7 @@ var
      r : PARPCacheRecord;
 
 begin
-    push_trace('driver.net.arp.IPv4ToMAC');
+    push_trace('driver.net.proto.arp.IPv4ToMAC');
     register;
     IPv4ToMAC:= nil;
     r:= findCacheRecordByIP(ip);
@@ -335,7 +335,7 @@ var
      r : PARPCacheRecord;
 
 begin
-    push_trace('driver.net.arp.MACToIPv4');
+    push_trace('driver.net.proto.arp.MACToIPv4');
     register;
     MACToIIPv4:= nil;
     r:= findCacheRecordByMAC(mac);

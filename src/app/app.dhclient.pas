@@ -22,7 +22,7 @@ unit app.dhclient;
 interface
 
 uses
-    io.stdio, core.util, arch.x86.util, core.strings, debug.tracer, driver.net.dhcp;
+    io.stdio, core.util, arch.x86.util, core.strings, debug.tracer, driver.net.proto.dhcp;
 
 procedure init();
 

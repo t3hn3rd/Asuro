@@ -26,7 +26,7 @@ uses
     core.ds.lists,
     memory.heap,
     driver.timer.rtc,
-    driver.intf.serial,
+    driver.io.serial,
     storagemanagement,
     driver.storage.mgr,
     core.strings,

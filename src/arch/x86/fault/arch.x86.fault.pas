@@ -17,7 +17,7 @@
 	
 	@author(Kieron Morris <kjm@kieronmorris.me>)
 }
-unit arch.x86.faults;
+unit arch.x86.fault;
 
 interface
 

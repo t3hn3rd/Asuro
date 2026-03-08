@@ -12,7 +12,7 @@ unit driver.video.lvgl;
 interface
 
 uses
-    driver.video, driver.video.types, core.gfx.color, driver.intf.serial, debug.tracer, memory.heap,
+    driver.video, driver.video.types, core.gfx.color, driver.io.serial, debug.tracer, memory.heap,
     driver.hid.mouse, driver.hid.keyboard, arch.x86.isr.tmr0, core.util, arch.x86.util, io.syslog, driver.video.gpu;
 
 { ============================================================
@@ -1795,12 +1795,12 @@ begin
 end;
 
 { ============================================================
-  Log callback — route LVGL logs to driver.intf.serial
+  Log callback — route LVGL logs to driver.io.serial
   ============================================================ }
 procedure lvgl_log_cb(level: sint32; buf: pchar); cdecl;
 begin
-    driver.intf.serial.sendString('[LVGL] ');
-    driver.intf.serial.sendString(buf);
+    driver.io.serial.sendString('[LVGL] ');
+    driver.io.serial.sendString(buf);
 end;
 
 { ============================================================

@@ -29,7 +29,7 @@ uses
     //drivers
     driver.storage.ctl.ram, driver.mgr,
     //network
-    driver.net.ipv4, driver.net.arp, driver.net.tcp,
+    driver.net.proto.ipv4, driver.net.proto.arp, driver.net.proto.tcp,
     //dispatch
     driver.storage.filedispatch,
     //wasm
@@ -56,11 +56,11 @@ begin
     io.stdio.registerCommand('PS', @proc.mgr.terminal_command_ps, 'List running processes.');
     io.stdio.registerCommand('KILL', @proc.mgr.terminal_command_kill, 'Force-kill a process by PID.');
     io.stdio.registerCommand('TERMINATE', @proc.mgr.terminal_command_terminate, 'Gracefully terminate a process by PID.');
-    io.stdio.registerCommand('ARP', @driver.net.arp.terminal_command_arp, 'Get ARP Table.');
-    io.stdio.registerCommand('IFCONFIG', @driver.net.ipv4.terminal_command_ifconfig, 'Configure Network Settings.');
-    io.stdio.registerCommand('TCPCONNECT', @driver.net.tcp.terminal_command_tcpconnect, 'Connect to a TCP host and send Hello World.');
-    io.stdio.registerCommand('TCPLISTEN', @driver.net.tcp.terminal_command_tcplisten, 'Listen on a TCP port and log received data.');
-    io.stdio.registerCommand('TCPHTTP', @driver.net.tcp.terminal_command_tcphttp, 'Send HTTP GET to a host IP (port 80 default).');
+    io.stdio.registerCommand('ARP', @driver.net.proto.arp.terminal_command_arp, 'Get ARP Table.');
+    io.stdio.registerCommand('IFCONFIG', @driver.net.proto.ipv4.terminal_command_ifconfig, 'Configure Network Settings.');
+    io.stdio.registerCommand('TCPCONNECT', @driver.net.proto.tcp.terminal_command_tcpconnect, 'Connect to a TCP host and send Hello World.');
+    io.stdio.registerCommand('TCPLISTEN', @driver.net.proto.tcp.terminal_command_tcplisten, 'Listen on a TCP port and log received data.');
+    io.stdio.registerCommand('TCPHTTP', @driver.net.proto.tcp.terminal_command_tcphttp, 'Send HTTP GET to a host IP (port 80 default).');
     io.stdio.registerCommand('USB', @driver.bus.usb.core.terminal_command_usb, 'driver.bus.usb subsystem information.');
 
     { Initialize baked-in programs }

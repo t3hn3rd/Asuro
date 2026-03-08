@@ -17,14 +17,14 @@
 	
 	@author(Kieron Morris <kjm@kieronmorris.me>)
 }
-unit driver.net.dhcp;
+unit driver.net.proto.dhcp;
 
 interface
 
 uses
     memory.heap, io.syslog,
-    driver.net.types, driver.net.util, driver.net.udp, driver.net,
-    core.util, arch.x86.util, core.rand, core.ds.lists, debug.tracer, driver.net.ipv4, driver.net.arp;
+    driver.net.types, driver.net.util, driver.net.proto.udp, driver.net,
+    core.util, arch.x86.util, core.rand, core.ds.lists, debug.tracer, driver.net.proto.ipv4, driver.net.proto.arp;
 
 type
     TDHCPOptions = PLinkedListBase;
@@ -80,7 +80,7 @@ var
 
 begin
     { Create a basic header with most values nulled, Hardware type & length is prefilled for ethernet }
-    debug.tracer.push_trace('driver.net.dhcp.newHeader');
+    debug.tracer.push_trace('driver.net.proto.dhcp.newHeader');
     result:= PDHCPHeader(kalloc(sizeof(TDHCPHeader)));
     result^.Message_Type:= $01;
     result^.Hardware_Type:= $01;
@@ -108,7 +108,7 @@ var
 
 begin
     { Add an option to the Options linkedlist, copy data[size] to the Option }
-    debug.tracer.push_trace('driver.net.dhcp.newOption');
+    debug.tracer.push_trace('driver.net.proto.dhcp.newOption');
     Option:= PDHCPOption(LL_Add(PLinkedListBase(DHCPOptions)));
     Option^.Opcode:= Opcode;
     Option^.Size:= Length;
@@ -128,7 +128,7 @@ var
 
 begin
     { Remove an option from the linkedlsit }
-    debug.tracer.push_trace('driver.net.dhcp.deleteOptions');
+    debug.tracer.push_trace('driver.net.proto.dhcp.deleteOptions');
     Option:= PDHCPOption(LL_Get(PLinkedListBase(DHCPOptions), idx));
     if Option <> nil then begin
         if Option^.Value <> nil then begin
@@ -141,21 +141,21 @@ end;
 function getOption(DHCPOptions : PDHCPOptions; idx : uint32) : PDHCPOption;
 begin
     { Get an option by index from the linkedlist }
-    debug.tracer.push_trace('driver.net.dhcp.getOption');
+    debug.tracer.push_trace('driver.net.proto.dhcp.getOption');
     getOption:= PDHCPOption(LL_Get(PLinkedListBase(DHCPOptions),idx));
 end;
 
 function newOptions : PDHCPOptions;
 begin
     { Create a new Options LinkedList }
-    debug.tracer.push_trace('driver.net.dhcp.newOptions');
+    debug.tracer.push_trace('driver.net.proto.dhcp.newOptions');
     newOptions:= PDHCPOptions(LL_New(sizeof(TDHCPOption)));
 end;
 
 procedure freeOptions(Options : PDHCPOptions);
 begin
     { Free all options and free their underlying data buffers }
-    debug.tracer.push_trace('driver.net.dhcp.freeOptions');
+    debug.tracer.push_trace('driver.net.proto.dhcp.freeOptions');
     if Options <> nil then begin
         while LL_Size(PLinkedListBase(Options)) > 0 do begin
             deleteOption(Options, 0);
@@ -167,7 +167,7 @@ end;
 function getOptionsCount(Options : PDHCPOptions) : uint32;
 begin
     { Get the number of options in the linkedlist }
-    debug.tracer.push_trace('driver.net.dhcp.getOptionsCount');
+    debug.tracer.push_trace('driver.net.proto.dhcp.getOptionsCount');
     getOptionsCount:= LL_Size(PLinkedListBase(Options));
 end;    
 
@@ -185,7 +185,7 @@ begin
         n bytes (specified by length) for the data
         total = foreach(element):(sizeof(opcode)+sizeof(length)+length)
     }
-    debug.tracer.push_trace('driver.net.dhcp.calculateOptionsSize');
+    debug.tracer.push_trace('driver.net.proto.dhcp.calculateOptionsSize');
     OptionsSize := 0;
     for i:=0 to getOptionsCount(Options)-1 do begin
         Option:= PDHCPOption(LL_Get(PLinkedListBase(Options),i));
@@ -204,7 +204,7 @@ var
 
 begin
     { Get the value from an Option as an endian corrected (if applicable) uint16 }
-    debug.tracer.push_trace('driver.net.dhcp.getEndianCorrectValue16');
+    debug.tracer.push_trace('driver.net.proto.dhcp.getEndianCorrectValue16');
     Value:= PuInt16(Option^.Value)^;
     if Option^.Reverse_Endian then 
         getEndianCorrectValue16:= switchendian16(Value) 
@@ -217,7 +217,7 @@ var
     Value : uint32;
 begin
     { Get the value from an Option as an endian corrected (if applicable) uint32 }
-    debug.tracer.push_trace('driver.net.dhcp.getEndianCorrectValue32');
+    debug.tracer.push_trace('driver.net.proto.dhcp.getEndianCorrectValue32');
     Value:= puint32(Option^.Value)^;
     if Option^.Reverse_Endian then
         getEndianCorrectValue32:= switchendian32(Value)
@@ -283,7 +283,7 @@ var
     i           : uint32;
 
 begin
-    debug.tracer.push_trace('driver.net.dhcp.writeOptions');
+    debug.tracer.push_trace('driver.net.proto.dhcp.writeOptions');
 
     { Make room in our new packet buffer for the header + options }
     OptionsSize := calculateOptionsSize(Options);
@@ -350,7 +350,7 @@ var
     Option : PDHCPOption;
 
 begin
-    debug.tracer.push_trace('driver.net.dhcp.register');
+    debug.tracer.push_trace('driver.net.proto.dhcp.register');
 
     { Get the beginning & end of the Options buffer }
     HeaderSize:= sizeOf(TDHCPHeader);
@@ -458,8 +458,8 @@ begin
     if Configuration^.Options[Ord(TDHCPOpCode.SUBNET_MASK)] <> nil then
         copyIPv4(puint8(Configuration^.Options[Ord(TDHCPOpCode.SUBNET_MASK)]), puint8(@getIPv4Config^.Netmask[0]));
 
-    driver.net.arp.sendGratuitous;
-    driver.net.arp.sendRequest(@getIPv4Config^.Gateway[0]);
+    driver.net.proto.arp.sendGratuitous;
+    driver.net.proto.arp.sendRequest(@getIPv4Config^.Gateway[0]);
 
     getIPv4Config^.UP:= true;
 end;
@@ -542,7 +542,7 @@ begin
         sendCtx^.socket:= Socket;
 
         { Send the packet }
-        driver.net.udp.send(void(NewSendHeader), NewHeaderSize, sendCtx);
+        driver.net.proto.udp.send(void(NewSendHeader), NewHeaderSize, sendCtx);
 
         { Free everything we allocated }
         freeOptions(SendOptions);
@@ -565,7 +565,7 @@ var
     MsgType : uint8;
 
 begin
-    debug.tracer.push_trace('driver.net.dhcp.processPacket.enter');
+    debug.tracer.push_trace('driver.net.proto.dhcp.processPacket.enter');
     writeToLogLn('          L5/DHCP: processPacket');
     io.syslog.logln('DHCP','processPacket');
     
@@ -621,7 +621,7 @@ begin
     end;
 
     freeOptions(Options);
-    debug.tracer.push_trace('driver.net.dhcp.processPacket.exit');
+    debug.tracer.push_trace('driver.net.proto.dhcp.processPacket.exit');
 end;
 
 procedure DHCPDiscover();
@@ -636,7 +636,7 @@ var
     MAC         : puint8;
 
 begin
-    debug.tracer.push_trace('driver.net.dhcp.DHCPDiscover.begin');
+    debug.tracer.push_trace('driver.net.proto.dhcp.DHCPDiscover.begin');
     writeToLogLn('          L5/DHCP: DHCPDiscover');
     { Ensure we have a socket bound. }
     if Socket <> nil then begin    
@@ -678,7 +678,7 @@ begin
         getIPv4Config^.UP:= true;
 
         { Send }
-        driver.net.udp.send(void(NewHeader), HeaderSize, sendCtx);
+        driver.net.proto.udp.send(void(NewHeader), HeaderSize, sendCtx);
 
         { Free }
         kfree(void(PacketCtx));
@@ -687,7 +687,7 @@ begin
         kfree(void(NewHeader));
         freeOptions(Options);
     end;
-    debug.tracer.push_trace('driver.net.dhcp.DHCPDiscover.exit');
+    debug.tracer.push_trace('driver.net.proto.dhcp.DHCPDiscover.exit');
 end;
 
 procedure bind();
@@ -697,7 +697,7 @@ begin
     Socket^.Port:= 68;
     Socket^.Callback:= @processPacket;
     Socket^.UID:= rand32;
-    case driver.net.udp.bind(Socket) of
+    case driver.net.proto.udp.bind(Socket) of
         tueOK:io.syslog.logln('DHCP', 'Successfully bound port 68.');
         else begin
             kfree(void(Socket));
@@ -712,7 +712,7 @@ var
     i : uint8;
 
 begin
-    debug.tracer.push_trace('driver.net.dhcp.register');
+    debug.tracer.push_trace('driver.net.proto.dhcp.register');
     writeToLogLn('          L5/DHCP: register');
     io.syslog.logln('DHCP', 'Register begin.');
     

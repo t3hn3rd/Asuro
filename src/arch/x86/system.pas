@@ -274,7 +274,7 @@ function Round(d: Double): int64;
 
 implementation
 
-{ ---- Raw driver.intf.serial debug helpers (COM1 $3F8, no dependencies) ---- }
+{ ---- Raw driver.io.serial debug helpers (COM1 $3F8, no dependencies) ---- }
 
 procedure serial_putch(ch: char); assembler;
 asm

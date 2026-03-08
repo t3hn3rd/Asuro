@@ -17,7 +17,7 @@
 	
 	@author(Kieron Morris <kjm@kieronmorris.me>)
 }
-unit driver.intf.serial;
+unit driver.io.serial;
 
 interface
 

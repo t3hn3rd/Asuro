@@ -17,14 +17,14 @@
 	
 	@author(Kieron Morris <kjm@kieronmorris.me>)
 }
-unit driver.net.icmp;
+unit driver.net.proto.icmp;
 
 interface
 
 uses
     arch.x86.bda,
     memory.heap, debug.tracer,
-    driver.net, driver.net.types, driver.net.util, driver.net.ipv4, driver.net.arp, core.util, arch.x86.util;
+    driver.net, driver.net.types, driver.net.util, driver.net.proto.ipv4, driver.net.proto.arp, core.util, arch.x86.util;
 
 type
     TARPErrorCode     = (aecFailedToResolveHost, aecNoRouteToHost, aecTimeout, aecTTLExpired);
@@ -50,7 +50,7 @@ var
     i : uint8;
 
 begin
-    push_trace('driver.net.icmp.nextInactiveHandler');
+    push_trace('driver.net.proto.icmp.nextInactiveHandler');
     nextInactiveHandler:= 0;
     for i:=1 to 255 do begin
         if not Handlers[i].Active then begin
@@ -76,7 +76,7 @@ var
     Size     : uint32;
 
 begin
-    push_trace('driver.net.icmp.sendICMPRequest');
+    push_trace('driver.net.proto.icmp.sendICMPRequest');
     writeToLogLn('        L4/ICMP: sendICMPRequest');
     handle:= nextInactiveHandler;
     Handlers[handle].Active:= true;
@@ -84,9 +84,9 @@ begin
     Handlers[handle].OnError:= OnErr;
     Handlers[handle].UserData:= userData;
     if SameSubnetIPv4(ip, @getIPv4Config^.Address[0], @getIPv4Config^.Netmask[0]) then begin
-        dest_mac:= driver.net.arp.resolveIP(ip);
+        dest_mac:= driver.net.proto.arp.resolveIP(ip);
     end else begin
-        dest_mac:= driver.net.arp.resolveIP(@getIPv4Config^.Gateway[0]);
+        dest_mac:= driver.net.proto.arp.resolveIP(@getIPv4Config^.Gateway[0]);
     end;
     if dest_mac = nil then begin
         if Handlers[handle].OnError <> nil then Handlers[handle].OnError(nil, aecFailedToResolveHost, Handlers[handle].UserData);
@@ -116,7 +116,7 @@ begin
         Header^.ICMP_CHK_Hi:= CHK AND $FF;
         Header^.ICMP_CHK_Lo:= CHK SHR 8;
 
-        driver.net.ipv4.send(Buffer, size, context);
+        driver.net.proto.ipv4.send(Buffer, size, context);
         
         freePacketContext(context);
     end;
@@ -134,7 +134,7 @@ var
     Handle : uint8;
 
 begin
-    push_trace('driver.net.icmp.recv');
+    push_trace('driver.net.proto.icmp.recv');
     writeToLogLn('        L4/ICMP: recv');
     Header:= PICMPHeader(p_data);
     //writehexlnWND(Header^.ICMP_Type, getTerminalHWND); 
@@ -150,7 +150,7 @@ begin
             Header^.ICMP_CHK_Lo:= CHK SHR 8;
             p_context^.Protocol.L4:= $01;
             p_context^.TTL:= 128;
-            driver.net.ipv4.send(p_data, p_len, p_context);    
+            driver.net.proto.ipv4.send(p_data, p_len, p_context);    
         end;
         $00:begin //Reply
             Handle:= Header^.Identifier;
@@ -172,7 +172,7 @@ var
     i : uint32;
 
 begin
-    push_trace('driver.net.icmp.register');
+    push_trace('driver.net.proto.icmp.register');
     writeToLogLn('        L4/ICMP: register');
     for i:=0 to 255 do begin
         Handlers[i].Active:= false;
@@ -180,7 +180,7 @@ begin
         Handlers[i].OnReply:= nil;
         Handlers[i].UserData:= nil;
     end;
-    driver.net.ipv4.registerProtocol($01, @recv);
+    driver.net.proto.ipv4.registerProtocol($01, @recv);
 end;
 
 end.

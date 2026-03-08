@@ -20,7 +20,7 @@ procedure init();
 implementation
 
 uses
-    arch.x86.bda, driver.net.types, driver.net.icmp, driver.net.util, core.strings,
+    arch.x86.bda, driver.net.types, driver.net.proto.icmp, driver.net.util, core.strings,
     proc.mgr, core.util, arch.x86.util, memory.heap;
 
 const
@@ -93,7 +93,7 @@ begin
         { Send ICMP echo request }
         st^.Result := prWaiting;
         st^.SendTime := Counters.c64;
-        driver.net.icmp.sendICMPRequest(ip, i, 128, @on_reply, @on_error, void(st));
+        driver.net.proto.icmp.sendICMPRequest(ip, i, 128, @on_reply, @on_error, void(st));
 
         { Spin-yield until callback fires or timeout }
         tStart := Counters.c32;

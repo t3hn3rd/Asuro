@@ -22,7 +22,7 @@ unit driver.video.doublebuffer;
 interface
 
 uses
-    memory.heap, debug.tracer, driver.video.types, driver.intf.serial, core.util, arch.x86.util;
+    memory.heap, debug.tracer, driver.video.types, driver.io.serial, core.util, arch.x86.util;
 
 //Init the driver, and register with the driver.video interface in a state ready for execution.
 procedure init(Register : FRegisterDriver);

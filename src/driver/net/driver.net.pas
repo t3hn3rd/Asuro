@@ -39,11 +39,11 @@ procedure writeToLogLn(str : pchar);
 implementation
 
 uses  
-    driver.netdev.e1000,              //dev
-    driver.net.eth2,               //L2
-    driver.net.arp, driver.net.ipv4,          //L3
-    driver.net.icmp, driver.net.tcp, driver.net.udp,     //L4
-    driver.net.dhcp;               //L5
+    driver.net.dev.e1000,              //dev
+    driver.net.proto.eth2,               //L2
+    driver.net.proto.arp, driver.net.proto.ipv4,          //L3
+    driver.net.proto.icmp, driver.net.proto.tcp, driver.net.proto.udp,     //L4
+    driver.net.proto.dhcp;               //L5
 
 var
     CBSend : TNetSendCallback = nil;
@@ -130,16 +130,16 @@ begin
     push_trace('driver.net.init');
     writeToLogLn('L1/NET: init');
     //l2
-    driver.net.eth2.register;
+    driver.net.proto.eth2.register;
     //l3
-    driver.net.arp.register;
-    driver.net.ipv4.register;
+    driver.net.proto.arp.register;
+    driver.net.proto.ipv4.register;
     //l4
-    driver.net.icmp.register;
-    driver.net.tcp.register;
-    driver.net.udp.register;
+    driver.net.proto.icmp.register;
+    driver.net.proto.tcp.register;
+    driver.net.proto.udp.register;
     //l5
-    driver.net.dhcp.register;
+    driver.net.proto.dhcp.register;
     pop_trace;
 end;
 

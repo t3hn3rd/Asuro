@@ -3,12 +3,12 @@ unit core.version;
 interface
  
 const
-     VERSION       = '1.1.3-alpha-166-ge922f086';
+     VERSION       = '1.1.3-alpha-167-g6fa008ed';
      VERSION_MAJOR = '1';
      VERSION_MINOR = '1';
      VERSION_SUB   = '3';
-     REVISION      = 'e922f086';
-     RELEASE       = 'alpha-166-ge922f086';
+     REVISION      = '6fa008ed';
+     RELEASE       = 'alpha-167-g6fa008ed';
      LINE_COUNT    = 98036;
      FILE_COUNT    = 170;
      DRIVER_COUNT  = 69;
@@ -16,8 +16,8 @@ const
      NASM_VERSION  = '2.16.01';
      MAKE_VERSION  = '4.3';
      COMPILE_DATE  = '08/03/26';
-     COMPILE_TIME  = '01:23:57';
-     CHECKSUM      = 'cf6e92836483838a6c23a5993ede9b1c';
+     COMPILE_TIME  = '09:59:10';
+     CHECKSUM      = '73cd0068c4c908d288a4ac5b480dc00f';
  
 implementation
  

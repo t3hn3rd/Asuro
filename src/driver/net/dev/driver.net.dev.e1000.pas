@@ -13,11 +13,11 @@
 //  limitations under the License.
 
 { 
-	Driver->NetDev->driver.netdev.e1000 - Intel driver.netdev.e1000/I217/82577LM Network Card Driver.
+	Driver->NetDev->driver.net.dev.e1000 - Intel driver.net.dev.e1000/I217/82577LM Network Card Driver.
 	
 	@author(Kieron Morris <kjm@kieronmorris.me>)
 }
-unit driver.netdev.e1000;
+unit driver.net.dev.e1000;
 
 interface
 
@@ -253,7 +253,7 @@ var
     i   : uint32;
 
 begin
-    push_trace('driver.netdev.e1000.readMACAddress');
+    push_trace('driver.net.dev.e1000.readMACAddress');
     res:= true;
     if (eeprom_exists) then begin
         temp:= EEPROMRead(0);
@@ -307,9 +307,9 @@ begin
 
     outptr:= puint8(vtop(uint32(ptr)));//puint8(uint32(ptr) - KERNEL_VIRTUAL_BASE);
 
-    io.syslog.log('driver.netdev.e1000 Driver', 'RX VMem: ');
+    io.syslog.log('driver.net.dev.e1000 Driver', 'RX VMem: ');
     io.syslog.writehexln(uint32(ptr));
-    io.syslog.log('driver.netdev.e1000 Driver', 'RX Mem: ');
+    io.syslog.log('driver.net.dev.e1000 Driver', 'RX Mem: ');
     io.syslog.writehexln(uint32(outptr));
 
     writeCommand(REG_TXDESCLO, uint32(uint64(outptr) SHR 32));
@@ -399,11 +399,11 @@ end;
 
 procedure writeCardType();
 begin
-    io.syslog.log('driver.netdev.e1000 Driver', 'Card Type: ');
+    io.syslog.log('driver.net.dev.e1000 Driver', 'Card Type: ');
     case card_type of
         ctUnknown:io.syslog.writestringln('Unknown');
         ct82577LM:io.syslog.writestringln('82577LM');
-        ctE1000:io.syslog.writestringln('Generic driver.netdev.e1000');
+        ctE1000:io.syslog.writestringln('Generic driver.net.dev.e1000');
         ctI217:io.syslog.writestringln('I217');
     end;
 end;
@@ -464,7 +464,7 @@ begin
     TestPacket[26]:= mac[4];
     TestPacket[27]:= mac[5];
     sendPacket(void(@TestPacket[0]), 42);
-    io.stdio.bufWriteStrLn(stdout_buf, 'driver.netdev.e1000 ARP Testpacket Sent.');
+    io.stdio.bufWriteStrLn(stdout_buf, 'driver.net.dev.e1000 ARP Testpacket Sent.');
     pop_trace;
 end;
 
@@ -473,7 +473,7 @@ begin
     io.stdio.bufWriteStr(stdout_buf, 'Card: ');
     case card_type of
         ctUnknown:io.stdio.bufWriteStrLn(stdout_buf, 'Unknown');
-        ctE1000:io.stdio.bufWriteStrLn(stdout_buf, 'driver.netdev.e1000 Generic');
+        ctE1000:io.stdio.bufWriteStrLn(stdout_buf, 'driver.net.dev.e1000 Generic');
         ct82577LM:io.stdio.bufWriteStrLn(stdout_buf, '82577LM');
         ctI217:io.stdio.bufWriteStrLn(stdout_buf, 'I217');
         else io.stdio.bufWriteStrLn(stdout_buf, 'UNIDENTIFIED!!!');
@@ -510,9 +510,9 @@ var
     iline    : uint8;
 
 begin
-    push_trace('driver.netdev.e1000.load');
+    push_trace('driver.net.dev.e1000.load');
 
-    io.syslog.logln('driver.netdev.e1000 Driver', 'Load Start.');
+    io.syslog.logln('driver.net.dev.e1000 Driver', 'Load Start.');
 
     writeCardType();
 
@@ -532,12 +532,12 @@ begin
     eeprom_exists:= false;
     
     detectEEPROM();
-    if eeprom_exists then io.syslog.logln('driver.netdev.e1000 Driver', 'EEPROM Exists: YES.') else io.syslog.logln('driver.netdev.e1000 Driver', 'EEPROM Exists: NO.');
+    if eeprom_exists then io.syslog.logln('driver.net.dev.e1000 Driver', 'EEPROM Exists: YES.') else io.syslog.logln('driver.net.dev.e1000 Driver', 'EEPROM Exists: NO.');
     if not readMACAddress() then begin
-        io.syslog.logln('driver.netdev.e1000 Driver', 'MAC Read Failed.');
+        io.syslog.logln('driver.net.dev.e1000 Driver', 'MAC Read Failed.');
         load:= false;
     end else begin
-        io.syslog.log('driver.netdev.e1000 Driver', 'MAC Address: ');
+        io.syslog.log('driver.net.dev.e1000 Driver', 'MAC Address: ');
         io.syslog.writehexpair(mac[0]); io.syslog.writestring(':');
         io.syslog.writehexpair(mac[1]); io.syslog.writestring(':');
         io.syslog.writehexpair(mac[2]); io.syslog.writestring(':');
@@ -561,11 +561,11 @@ begin
 
         load:= true;   
 
-        if load then registercommand('driver.netdev.e1000', @terminal_command_e1000status, 'driver.netdev.e1000 Information.');
+        if load then registercommand('driver.net.dev.e1000', @terminal_command_e1000status, 'driver.net.dev.e1000 Information.');
         if load then registercommand('MAC', @console_command_mac, 'Print MAC Address.');
     end;
 
-    io.syslog.logln('driver.netdev.e1000 Driver', 'Load Finish.');
+    io.syslog.logln('driver.net.dev.e1000 Driver', 'Load Finish.');
 
     pop_trace;
 end;
@@ -602,7 +602,7 @@ var
     dev : TDeviceIdentifier;
 
 begin
-    push_trace('driver.netdev.e1000.init');
+    push_trace('driver.net.dev.e1000.init');
     card_type:= ctUnknown;
     dev.Bus:= biPCI;
     dev.id0:= INTEL_VEND;
@@ -611,7 +611,7 @@ begin
     dev.id3:= idANY;
     dev.id4:= E1000_DEV;
     dev.ex:= nil;
-    driver.mgr.register_driver('driver.netdev.e1000 Ethernet Driver', @dev, @loadE1000);
+    driver.mgr.register_driver('driver.net.dev.e1000 Ethernet Driver', @dev, @loadE1000);
     dev.id4:= I217_DEV;
     driver.mgr.register_driver('I217 Ethernet Driver', @dev, @loadI217);
     dev.id4:= LM82577_DEV;

@@ -39,7 +39,6 @@ src/
 │       ├── arch.x86.irq.pas
 │       ├── arch.x86.isr.pas
 │       ├── arch.x86.cpu.pas
-│       ├── arch.x86.faults.pas
 │       ├── arch.x86.util.pas              # x86 I/O: outb/inb, CLI/STI, TSC, BSOD
 │       ├── arch.x86.multiboot.pas
 │       ├── arch.x86.bda.pas               # BIOS Data Area
@@ -49,6 +48,7 @@ src/
 │       │   └── stub.asm                   # Multiboot boot stub (NASM)
 │       │
 │       ├── fault/
+│       │   ├── arch.x86.fault.pas
 │       │   ├── arch.x86.fault.ace.pas
 │       │   ├── arch.x86.fault.bpe.pas
 │       │   ├── arch.x86.fault.btsse.pas
@@ -171,8 +171,8 @@ src/
 │   │       ├── driver.hid.usb.keyboard.pas
 │   │       └── driver.hid.usb.mouse.pas
 │   │
-│   ├── interface/
-│   │   └── driver.interface.serial.pas
+│   ├── io/
+│   │   └── driver.io.serial.pas
 │   │
 │   ├── timer/
 │   │   └── driver.timer.rtc.pas
@@ -217,16 +217,18 @@ src/
 │   ├── net/
 │   │   ├── driver.net.types.pas
 │   │   ├── driver.net.util.pas
-│   │   ├── driver.net.eth2.pas
-│   │   ├── driver.net.arp.pas
-│   │   ├── driver.net.ipv4.pas
-│   │   ├── driver.net.icmp.pas
-│   │   ├── driver.net.tcp.pas
-│   │   ├── driver.net.udp.pas
-│   │   └── driver.net.dhcp.pas
-│   │
-│   ├── netdev/
-│   │   └── driver.netdev.e1000.pas
+│   │   │
+│   │   ├── proto/
+│   │   │   ├── driver.net.proto.eth2.pas
+│   │   │   ├── driver.net.proto.arp.pas
+│   │   │   ├── driver.net.proto.ipv4.pas
+│   │   │   ├── driver.net.proto.icmp.pas
+│   │   │   ├── driver.net.proto.tcp.pas
+│   │   │   ├── driver.net.proto.udp.pas
+│   │   │   └── driver.net.proto.dhcp.pas
+│   │   │
+│   │   └── dev/
+│   │       └── driver.net.dev.e1000.pas
 │   │
 │   ├── video/
 │   │   ├── driver.video.types.pas
@@ -293,7 +295,7 @@ src/
 | `irq.pas` | `arch/x86/arch.x86.irq.pas` | `irq` | `arch.x86.irq` |
 | `isr.pas` | `arch/x86/arch.x86.isr.pas` | `isr` | `arch.x86.isr` |
 | `cpu.pas` | `arch/x86/arch.x86.cpu.pas` | `cpu` | `arch.x86.cpu` |
-| `faults.pas` | `arch/x86/arch.x86.faults.pas` | `faults` | `arch.x86.faults` |
+| `faults.pas` | `arch/x86/fault/arch.x86.fault.pas` | `faults` | `arch.x86.fault` |
 | `contextswitcher.pas` | `arch/x86/proc/arch.x86.proc.sched.pas` | `contextswitcher` | `arch.x86.proc.sched` |
 | `processloader.pas` | `arch/x86/proc/arch.x86.proc.loader.pas` | `processloader` | `arch.x86.proc.loader` |
 | `v86.pas` | `arch/x86/arch.x86.v86.pas` | `v86` | `arch.x86.v86` |
@@ -462,11 +464,11 @@ src/
 | `driver/hid/usb/usb_keyboard.pas` | `driver/hid/usb/driver.hid.usb.keyboard.pas` | `usb_keyboard` | `driver.hid.usb.keyboard` |
 | `driver/hid/usb/usb_mouse.pas` | `driver/hid/usb/driver.hid.usb.mouse.pas` | `usb_mouse` | `driver.hid.usb.mouse` |
 
-### Driver — Interface (`driver/interface/`)
+### Driver — IO (`driver/io/`)
 
 | Old path | New path | Old unit | New unit |
 |----------|----------|----------|----------|
-| `driver/interface/serial.pas` | `driver/interface/driver.interface.serial.pas` | `serial` | `driver.interface.serial` |
+| `driver/io/serial.pas` | `driver/io/driver.io.serial.pas` | `serial` | `driver.io.serial` |
 
 ### Driver — Timer (`driver/timer/`)
 
@@ -536,21 +538,21 @@ src/
 | `driver/net/l1/net.pas` | `driver/driver.net.pas` | `net` | `driver.net` |
 | `driver/net/include/nettypes.pas` | `driver/net/driver.net.types.pas` | `nettypes` | `driver.net.types` |
 | `driver/net/include/netutils.pas` | `driver/net/driver.net.util.pas` | `netutils` | `driver.net.util` |
-| `driver/net/l2/eth2.pas` | `driver/net/driver.net.eth2.pas` | `eth2` | `driver.net.eth2` |
-| `driver/net/l3/arp.pas` | `driver/net/driver.net.arp.pas` | `arp` | `driver.net.arp` |
-| `driver/net/l3/ipv4.pas` | `driver/net/driver.net.ipv4.pas` | `ipv4` | `driver.net.ipv4` |
-| `driver/net/l4/icmp.pas` | `driver/net/driver.net.icmp.pas` | `icmp` | `driver.net.icmp` |
-| `driver/net/l4/tcp.pas` | `driver/net/driver.net.tcp.pas` | `tcp` | `driver.net.tcp` |
-| `driver/net/l4/udp.pas` | `driver/net/driver.net.udp.pas` | `udp` | `driver.net.udp` |
-| `driver/net/l5/dhcp.pas` | `driver/net/driver.net.dhcp.pas` | `dhcp` | `driver.net.dhcp` |
+| `driver/net/l2/eth2.pas` | `driver/net/proto/driver.net.proto.eth2.pas` | `eth2` | `driver.net.proto.eth2` |
+| `driver/net/l3/arp.pas` | `driver/net/proto/driver.net.proto.arp.pas` | `arp` | `driver.net.proto.arp` |
+| `driver/net/l3/ipv4.pas` | `driver/net/proto/driver.net.proto.ipv4.pas` | `ipv4` | `driver.net.proto.ipv4` |
+| `driver/net/l4/icmp.pas` | `driver/net/proto/driver.net.proto.icmp.pas` | `icmp` | `driver.net.proto.icmp` |
+| `driver/net/l4/tcp.pas` | `driver/net/proto/driver.net.proto.tcp.pas` | `tcp` | `driver.net.proto.tcp` |
+| `driver/net/l4/udp.pas` | `driver/net/proto/driver.net.proto.udp.pas` | `udp` | `driver.net.proto.udp` |
+| `driver/net/l5/dhcp.pas` | `driver/net/proto/driver.net.proto.dhcp.pas` | `dhcp` | `driver.net.proto.dhcp` |
 
-> **Note:** The old layer folders (`l1/`, `l2/`, `l3/`, `l4/`, `l5/`, `include/`) are flattened — protocol names are self-descriptive.
+> **Note:** The old layer folders (`l1/`, `l2/`, `l3/`, `l4/`, `l5/`, `include/`) are now grouped under `proto/` — protocol names are self-descriptive.
 
-### Driver — Network Device (`driver/netdev/`)
+### Driver — Network Device (`driver/net/dev/`)
 
 | Old path | New path | Old unit | New unit |
 |----------|----------|----------|----------|
-| `driver/netdev/E1000.pas` | `driver/netdev/driver.netdev.e1000.pas` | `E1000` | `driver.netdev.e1000` |
+| `driver/netdev/E1000.pas` | `driver/net/dev/driver.net.dev.e1000.pas` | `E1000` | `driver.net.dev.e1000` |
 
 ### Driver — Video (`driver/video/`)
 
