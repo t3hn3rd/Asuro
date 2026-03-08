@@ -90,6 +90,8 @@ type
         eTooManyOpenFiles,        { per-process FD table full }
         eInvalidHandle,           { TFileHandle does not refer to an open FD }
         eNotStreamMode,           { SeekFile called on a non-omStream handle }
+        eFileNotLoaded,           { ReadFile on a pre-load handle whose data is not yet loaded }
+        eAlreadyExists,           { generic: target name already exists (symlink, file, etc.) }
 
         { Disk / capacity errors }
         eDiskFull,                { FS reports no free clusters/blocks }
@@ -148,11 +150,17 @@ type
     PPDeleteFileHook = procedure(volume : PStorage_Volume; filePath : pchar; status : puint32);
     PPDeleteDirHook  = procedure(volume : PStorage_Volume; path : pchar; status : puint32);
     PPIdentifyHook   = function(volume : PStorage_Volume) : boolean;
+    PPRenameFileHook = procedure(volume : PStorage_Volume; filePath : pchar; newName : pchar; status : puint32);
     { Offset-based read: reads byteCount bytes starting at byte offset into the file.
       Returns the number of bytes actually read.
       Filesystems that do not implement this leave the field nil and VFS falls back
       to the load-all readCallback behaviour. }
     PPReadOffsetHook = function(volume : PStorage_Volume; directory : pchar; fileName : pchar; offset : uint32; buffer : puint32; byteCount : uint32) : uint32;
+    { Offset-based write: writes byteCount bytes starting at byte offset into the file.
+      Returns the number of bytes actually written.
+      Filesystems that do not implement this leave the field nil; VFS returns 0
+      for stream-mode writes on volume FDs. }
+    PPWriteOffsetHook = function(volume : PStorage_Volume; directory : pchar; fileName : pchar; offset : uint32; buffer : puint32; byteCount : uint32) : uint32;
 
     { === Async filesystem hook core.types ===
       Each mirrors the corresponding sync hook but receives a TIOCallback + callbackData.
@@ -227,6 +235,8 @@ type
         identifyCallback   : PPIdentifyHook;
         { Offset-based read for streaming mode — nil if not implemented }
         readOffsetCallback : PPReadOffsetHook;
+        { Offset-based write for streaming mode — nil if not implemented }
+        writeOffsetCallback : PPWriteOffsetHook;
         { Async format — nil if FS only supports synchronous create }
         createAsyncCallback : PPCreateAsyncHook;
         { Async variants of the main I/O hooks — nil if FS only supports sync.
@@ -237,6 +247,7 @@ type
         readDirAsyncCallback    : PPReadDirAsyncHook;
         deleteFileAsyncCallback : PPDeleteFileAsyncHook;
         deleteDirAsyncCallback  : PPDeleteDirAsyncHook;
+        renameFileCallback      : PPRenameFileHook;
     end;
 
     { Generic storage volume }
@@ -253,8 +264,12 @@ type
 
     { Generic directory entry }
     TDirectory_Entry = record
-        fileName  : pchar;
-        entryType : TDirectory_Entry_Type;
+        fileName     : pchar;
+        entryType    : TDirectory_Entry_Type;
+        fileSize     : uint32;
+        modifiedDate : uint16;   { FAT-style: bits 15-9=year-1980, 8-5=month, 4-0=day }
+        modifiedTime : uint16;   { FAT-style: bits 15-11=hour, 10-5=min, 4-0=sec/2 }
+        attributes   : uint8;    { FS-specific attribute bits }
     end;
 
     TDrive_Error = record 

@@ -498,13 +498,13 @@ end;
 
 function getWorkingDirectory: pchar;
 begin
-    getWorkingDirectory := driver.storage.vfs.getWorkingDirectory;
+    getWorkingDirectory := driver.storage.vfs.GetWorkingDirectory;
 end;
 
 procedure setWorkingDirectory(str: pchar);
 begin
     if str <> nil then
-        driver.storage.vfs.changeDirectory(str);
+        driver.storage.vfs.ChangeDirectory(str);
 end;
 
 { ---- Halt mechanism ---- }

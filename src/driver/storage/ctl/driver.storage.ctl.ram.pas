@@ -148,6 +148,10 @@ begin
             entry := PDirectory_Entry(LL_Add(dirList));
             entry^.fileName := stringCopy(Files[i].Name);
             entry^.entryType := fileEntry;
+            entry^.fileSize := Files[i].Size;
+            entry^.modifiedDate := 0;
+            entry^.modifiedTime := 0;
+            entry^.attributes := 0;
         end;
     end;
     if status <> nil then status^ := 0;
