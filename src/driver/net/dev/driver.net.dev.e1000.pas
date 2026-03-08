@@ -561,7 +561,7 @@ begin
 
         load:= true;   
 
-        if load then registercommand('driver.net.dev.e1000', @terminal_command_e1000status, 'driver.net.dev.e1000 Information.');
+        if load then registercommand('E1000', @terminal_command_e1000status, 'driver.net.dev.e1000 Information.');
         if load then registercommand('MAC', @console_command_mac, 'Print MAC Address.');
     end;
 

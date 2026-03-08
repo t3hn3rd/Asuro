@@ -384,7 +384,7 @@ begin
 
     { ---- Window count ---- }
     wcount := driver.video.windows.getWindowCount;
-    p := bufAppend('driver.video.windows: ', 0);
+    p := bufAppend('Windows: ', 0);
     p := bufAppendInt(wcount, p);
     lv_label_set_text(lbl_windows, @buf[0]);
 
