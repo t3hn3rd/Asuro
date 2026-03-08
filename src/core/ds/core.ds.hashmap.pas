@@ -16,6 +16,7 @@
 	Include->Hashmap - Basic Hashmap Implementation.
 	
 	@author(Kieron Morris <kjm@kieronmorris.me>)
+    @author(Aaron Hance <ah@aaronhance.me>)
 }
 unit core.ds.hashmap;
 
