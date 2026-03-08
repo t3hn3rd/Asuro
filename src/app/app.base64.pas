@@ -1,0 +1,80 @@
+//  Copyright 2021 Angus C
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//  http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+
+{ 
+	Prog->Base64 - Base64 encode and decode.
+	
+	@author(Angus C <angus@actm.uk>)
+}
+unit app.base64;
+
+interface
+
+uses
+    io.stdio, core.util, arch.x86.util, core.strings, debug.tracer, core.enc.base64, memory.heap;
+
+procedure init();
+
+implementation
+
+procedure run(Params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
+var
+    input     : pchar;
+    pinput    : pchar;
+    encdec    : pchar;
+    result    : pchar;
+    i         : uInt32;
+    PSize     : uInt32;
+
+begin
+    debug.tracer.push_trace('base64_prog.run');
+    if paramCount(Params) > 1 then begin
+        encdec := getParam(0, Params);
+        if stringEquals(encdec, 'encode') then begin
+            PSize := 0;
+            for i := 1 to ParamCount(params) - 1 do begin
+                PSize := PSize + stringSize(getParam(i, Params));
+            end;
+            Psize := PSize + 1 + (ParamCount(params) - 1);
+            input := pchar(kalloc(PSize));
+            pinput := input;
+            for i := 1 to ParamCount(params) - 1 do begin
+                memcpy(uInt32(getParam(i, Params)), uInt32(pinput), stringSize(getParam(i, Params)));
+                inc(pinput, stringSize(getParam(i, Params)));
+                pinput^ := ' ';
+                inc(pinput);
+            end;
+            dec(pinput);
+            pinput^ := #0;
+            result := b64_encode_str(input);
+            io.stdio.bufWriteStrLn(stdout_buf, result);
+            kfree(void(result));
+        end else if stringEquals(encdec, 'decode') then begin
+            input := getParam(1, Params);
+            result := b64_decode_str(input);
+            io.stdio.bufWriteStrLn(stdout_buf, result);
+            kfree(void(result));
+        end else io.stdio.bufWriteStrLn(stderr_buf, 'Usage: core.enc.base64 <encode/decode> <text>');
+    end else begin
+        io.stdio.bufWriteStrLn(stderr_buf, 'Usage: core.enc.base64 <encode/decode> <text>');
+    end;
+end;
+
+procedure init();
+begin
+    debug.tracer.push_trace('base64_prog.init');
+    io.stdio.registerCommand('BASE64', @Run, 'Perform Base64 Encode/Decode.');
+end;
+
+end.
