@@ -4,14 +4,18 @@ echo "======================="
 echo " "
 echo "Generating Documentation..."
 echo " "
-echo "Dowloading Pasdoc..."
-wget https://github.com/pasdoc/pasdoc/releases/download/v0.16.0/pasdoc-0.16.0-linux-x86_64.tar.gz -O pasdoc.tar.gz
-echo "Extracting Pasdoc..."
-tar -xf pasdoc.tar.gz
-echo "Creating doc output directory..."
-mkdir ./doc
-echo "Removing old docs"
-rm -rf ./doc/*
-echo "Generating Docs..."
-./pasdoc/bin/pasdoc -N "Asuro" -T "Asuro OS Documentation" -O "html" -E ./doc/ -S sources.list --use-tipue-search
-echo "Docgen finished."
+
+if ! command -v mkdocs &> /dev/null; then
+    echo "Installing mkdocs-material..."
+    pip install --quiet "mkdocs>=1.6,<2" mkdocs-material
+fi
+
+echo "Building static site..."
+mkdocs build --strict
+
+if [ $? -eq 0 ]; then
+    echo "Documentation built successfully. Output: site/"
+else
+    echo "Documentation build failed."
+    exit 1
+fi

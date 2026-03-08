@@ -25,6 +25,30 @@ steps:
       - chmod +x /drone/src/toolchain/*.sh
       - /drone/src/toolchain/compile.sh
       
+  - name: deploy-docs
+    image: alpine:latest
+    depends_on:
+      - compile
+    when:
+      branch:
+        - master
+        - develop
+        - feature/mkdocs
+    volumes:
+      - name: docs-htdocs
+        path: /htdocs
+    commands:
+      - apk add --no-cache rsync
+      - |
+        if [ "${DRONE_BRANCH}" = "master" ]; then
+          DEST="/htdocs/master"
+        else
+          DEST="/htdocs/develop"
+        fi
+      - mkdir -p "$DEST"
+      - rsync -a --delete site/ "$DEST/"
+      - echo "Documentation deployed to ${DRONE_BRANCH}"
+
   - name: upload-iso-artifact
     image: alpine/git
     depends_on:
@@ -64,3 +88,9 @@ steps:
       webhook_token:
         from_secret: discord_webhook_secret
       message: "**Asuro Build**\n\n{{#success build.status}}✅ Build successful!\n\n{{else}}❌ Build failed!\n\n{{/success}}Repository: `{{repo.namespace}}/{{repo.name}}`\nBranch: `{{commit.branch}}`\nCommit: `{{commit.sha}}`\nAuthor: `{{commit.author}} <{{commit.email}}>`\n\nGitea Diff: [Link](<{{commit.link}}>)\nDrone Build: [Link](<{{build.link}}>)\n\nMessage: {{commit.message}}"
+
+volumes:
+  - name: docs-htdocs
+    host:
+      path: /mnt/user/htdocs/asuro_docs
+

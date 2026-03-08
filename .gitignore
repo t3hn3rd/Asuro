@@ -19,3 +19,5 @@ lessons_learnt.md
 /doc/*.md
 wasuro
 src/core/core.version.pas
+site/*
+!site/.gitkeep

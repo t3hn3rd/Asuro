@@ -1,0 +1,299 @@
+site_name: Asuro OS Documentation
+site_description: Technical documentation for the Asuro operating system kernel
+docs_dir: doc
+site_dir: site
+use_directory_urls: false
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+  icon:
+    repo: fontawesome/brands/git-alt
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - toc:
+      permalink: true
+
+plugins:
+  - search
+
+nav:
+  - Home:
+    - index.md
+
+  - Source:
+    - Kernel Entry: src/asuro.md
+    - Architecture (x86):
+      - CPU: src/arch/x86/arch.x86.cpu.md
+      - GDT: src/arch/x86/arch.x86.gdt.md
+      - IDT: src/arch/x86/arch.x86.idt.md
+      - IRQ: src/arch/x86/arch.x86.irq.md
+      - ISR: src/arch/x86/arch.x86.isr.md
+      - Multiboot: src/arch/x86/arch.x86.multiboot.md
+      - Panic: src/arch/x86/arch.x86.panic.md
+      - Utilities: src/arch/x86/arch.x86.util.md
+      - Virtual 8086: src/arch/x86/arch.x86.v86.md
+      - BIOS Data Area: src/arch/x86/arch.x86.bda.md
+      - System: src/arch/x86/system.md
+      - Fault Handlers:
+        - Overview: src/arch/x86/fault/arch.x86.fault.md
+        - Divide by Zero: src/arch/x86/fault/arch.x86.fault.dbz.md
+        - Debug: src/arch/x86/fault/arch.x86.fault.dbge.md
+        - NMI: src/arch/x86/fault/arch.x86.fault.nmie.md
+        - Breakpoint: src/arch/x86/fault/arch.x86.fault.bpe.md
+        - Overflow: src/arch/x86/fault/arch.x86.fault.oobe.md
+        - Bound Range: src/arch/x86/fault/arch.x86.fault.btsse.md
+        - Invalid Opcode: src/arch/x86/fault/arch.x86.fault.uie.md
+        - No Coprocessor: src/arch/x86/fault/arch.x86.fault.nce.md
+        - Double Fault: src/arch/x86/fault/arch.x86.fault.dfe.md
+        - Coprocessor Segment Overrun: src/arch/x86/fault/arch.x86.fault.csoe.md
+        - Invalid TSS: src/arch/x86/fault/arch.x86.fault.idoe.md
+        - Segment Not Present: src/arch/x86/fault/arch.x86.fault.snpe.md
+        - Stack Fault: src/arch/x86/fault/arch.x86.fault.sfe.md
+        - General Protection Fault: src/arch/x86/fault/arch.x86.fault.gpf.md
+        - Page Fault: src/arch/x86/fault/arch.x86.fault.pf.md
+        - Coprocessor Fault: src/arch/x86/fault/arch.x86.fault.cfe.md
+        - Alignment Check: src/arch/x86/fault/arch.x86.fault.ace.md
+        - Machine Check: src/arch/x86/fault/arch.x86.fault.mce.md
+        - I/O Permission: src/arch/x86/fault/arch.x86.fault.iope.md
+      - Interrupt Service Routines:
+        - Types: src/arch/x86/isr/arch.x86.isr.types.md
+        - Manager: src/arch/x86/isr/arch.x86.isr.mgr.md
+        - I/O APIC: src/arch/x86/isr/arch.x86.isr.ioapic.md
+        - PS/2 Keyboard: src/arch/x86/isr/arch.x86.isr.ps2keyboard.md
+        - Timer 0: src/arch/x86/isr/arch.x86.isr.tmr0.md
+        - Timer 1: src/arch/x86/isr/arch.x86.isr.tmr1.md
+      - Memory:
+        - Physical: src/arch/x86/memory/arch.x86.memory.physical.md
+        - Virtual: src/arch/x86/memory/arch.x86.memory.virtual.md
+      - Processes:
+        - Loader: src/arch/x86/proc/arch.x86.proc.loader.md
+        - Scheduler: src/arch/x86/proc/arch.x86.proc.sched.md
+    - Boot:
+      - Splash Screen: src/boot/boot.splash.md
+    - Core:
+      - Types: src/core/core.types.md
+      - Version: src/core/core.version.md
+      - Utilities: src/core/core.util.md
+      - Strings: src/core/core.strings.md
+      - Random: src/core/core.rand.md
+      - Panic: src/core/core.panic.md
+      - Data Structures:
+        - Types: src/core/ds/core.ds.types.md
+        - Bloom Filter: src/core/ds/core.ds.bloom.md
+        - Binary Heap: src/core/ds/core.ds.bheap.md
+        - FIFO: src/core/ds/core.ds.fifo.md
+        - Circular FIFO: src/core/ds/core.ds.cfifo.md
+        - Circular FIFO (Lock-Safe): src/core/ds/core.ds.cfifols.md
+        - Circular Buffer: src/core/ds/core.ds.circ.md
+        - Hashmap: src/core/ds/core.ds.hashmap.md
+        - LIFO: src/core/ds/core.ds.lifo.md
+        - Linked Lists: src/core/ds/core.ds.lists.md
+        - Max Heap: src/core/ds/core.ds.maxh.md
+        - Min Heap: src/core/ds/core.ds.minh.md
+        - Priority Queue: src/core/ds/core.ds.prio.md
+      - Encoding:
+        - Base64: src/core/enc/core.enc.base64.md
+        - CRC: src/core/enc/core.enc.crc.md
+        - DJB2: src/core/enc/core.enc.djb2.md
+        - FNV-1a: src/core/enc/core.enc.fnv1a.md
+        - MD5: src/core/enc/core.enc.md5.md
+        - SHA-1: src/core/enc/core.enc.sha1.md
+      - Formats:
+        - Targa (TGA): src/core/fmt/core.fmt.targa.md
+      - Graphics:
+        - Color: src/core/gfx/core.gfx.color.md
+        - Fonts: src/core/gfx/core.gfx.fonts.md
+        - Textures: src/core/gfx/core.gfx.texture.md
+    - Memory:
+      - Heap: src/memory/memory.heap.md
+    - Processes:
+      - Types: src/proc/proc.types.md
+      - Manager: src/proc/proc.mgr.md
+      - Test Processes: src/proc/proc.testprocs.md
+    - I/O:
+      - Standard I/O: src/io/io.stdio.md
+      - System Log: src/io/io.syslog.md
+    - Debug:
+      - Tracer: src/debug/debug.tracer.md
+    - Drivers:
+      - Types: src/driver/driver.types.md
+      - Manager: src/driver/driver.mgr.md
+      - Bus:
+        - PCI: src/driver/bus/driver.bus.pci.md
+        - USB: src/driver/bus/driver.bus.usb.md
+        - USB Core: src/driver/bus/usb/driver.bus.usb.core.md
+        - USB Types: src/driver/bus/usb/driver.bus.usb.types.md
+        - EHCI: src/driver/bus/usb/driver.bus.usb.ehci.md
+        - OHCI: src/driver/bus/usb/driver.bus.usb.ohci.md
+        - UHCI: src/driver/bus/usb/driver.bus.usb.uhci.md
+        - XHCI: src/driver/bus/usb/driver.bus.usb.xhci.md
+        - USB Hub: src/driver/bus/usb/driver.bus.usb.hub.md
+      - HID:
+        - Keyboard: src/driver/hid/driver.hid.keyboard.md
+        - Mouse: src/driver/hid/driver.hid.mouse.md
+        - PS/2 Keyboard: src/driver/hid/ps2/driver.hid.ps2.keyboard.md
+        - PS/2 Mouse: src/driver/hid/ps2/driver.hid.ps2.mouse.md
+        - USB Keyboard: src/driver/hid/usb/driver.hid.usb.keyboard.md
+        - USB Mouse: src/driver/hid/usb/driver.hid.usb.mouse.md
+      - Network:
+        - Overview: src/driver/net/driver.net.md
+        - Types: src/driver/net/driver.net.types.md
+        - Utilities: src/driver/net/driver.net.util.md
+        - Intel E1000: src/driver/net/dev/driver.net.dev.e1000.md
+        - ARP: src/driver/net/proto/driver.net.proto.arp.md
+        - DHCP: src/driver/net/proto/driver.net.proto.dhcp.md
+        - Ethernet II: src/driver/net/proto/driver.net.proto.eth2.md
+        - ICMP: src/driver/net/proto/driver.net.proto.icmp.md
+        - IPv4: src/driver/net/proto/driver.net.proto.ipv4.md
+        - TCP: src/driver/net/proto/driver.net.proto.tcp.md
+        - UDP: src/driver/net/proto/driver.net.proto.udp.md
+      - Storage:
+        - Types: src/driver/storage/driver.storage.types.md
+        - Manager: src/driver/storage/driver.storage.mgr.md
+        - VFS: src/driver/storage/driver.storage.vfs.md
+        - File Descriptor Table: src/driver/storage/driver.storage.fdtable.md
+        - File Dispatch: src/driver/storage/driver.storage.filedispatch.md
+        - I/O Buffer: src/driver/storage/driver.storage.iobuffer.md
+        - I/O Request: src/driver/storage/driver.storage.iorequest.md
+        - Test: src/driver/storage/driver.storage.test.md
+        - File Systems:
+          - Manager: src/driver/storage/fs/driver.storage.fs.mgr.md
+          - FlatFS: src/driver/storage/fs/driver.storage.fs.flatfs.md
+          - FAT32: src/driver/storage/fs/driver.storage.fs.fat32.md
+          - ISO 9660: src/driver/storage/fs/driver.storage.fs.iso9660.md
+          - AsFS: src/driver/storage/fs/driver.storage.fs.asfs.md
+        - Volumes:
+          - Manager: src/driver/storage/vol/driver.storage.vol.mgr.md
+          - GPT: src/driver/storage/vol/driver.storage.vol.gpt.md
+          - MBR: src/driver/storage/vol/driver.storage.vol.mbr.md
+          - Table: src/driver/storage/vol/driver.storage.vol.table.md
+        - Controllers:
+          - RAM Disk: src/driver/storage/ctl/driver.storage.ctl.ram.md
+          - USB Storage: src/driver/storage/ctl/driver.storage.ctl.usb.md
+          - IDE: src/driver/storage/ctl/ide/driver.storage.ctl.ide.md
+          - ATA: src/driver/storage/ctl/ide/driver.storage.ctl.ide.ata.md
+          - ATAPI: src/driver/storage/ctl/ide/driver.storage.ctl.ide.atapi.md
+          - IDE Types: src/driver/storage/ctl/ide/driver.storage.ctl.ide.types.md
+          - AHCI: src/driver/storage/ctl/ahci/driver.storage.ctl.ahci.md
+          - AHCI Types: src/driver/storage/ctl/ahci/driver.storage.ctl.ahci.types.md
+      - Video:
+        - Overview: src/driver/video/driver.video.md
+        - Types: src/driver/video/driver.video.types.md
+        - VESA: src/driver/video/driver.video.vesa.md
+        - VESA 8-bit: src/driver/video/driver.video.vesa8.md
+        - VESA 16-bit: src/driver/video/driver.video.vesa16.md
+        - VESA 24-bit: src/driver/video/driver.video.vesa24.md
+        - VESA 32-bit: src/driver/video/driver.video.vesa32.md
+        - Double Buffer: src/driver/video/driver.video.doublebuffer.md
+        - Desktop: src/driver/video/driver.video.desktop.md
+        - GPU: src/driver/video/driver.video.gpu.md
+        - LVGL: src/driver/video/driver.video.lvgl.md
+        - BGA: src/driver/video/driver.video.bga.md
+        - Windows: src/driver/video/driver.video.windows.md
+      - I/O:
+        - Serial: src/driver/io/driver.io.serial.md
+      - Timer:
+        - RTC: src/driver/timer/driver.timer.rtc.md
+      - Experimental:
+        - Test Driver: src/driver/exp/driver.exp.testdriver.md
+    - Services:
+      - Graphics Daemon: src/svc/svc.gfxd.md
+      - USB Daemon: src/svc/svc.usbd.md
+    - Applications:
+      - Manager: src/app/app.mgr.md
+      - Base64: src/app/app.base64.md
+      - DHCP Client: src/app/app.dhclient.md
+      - Disk Commands: src/app/app.diskcmd.md
+      - Disk Utility: src/app/app.diskutil.md
+      - Text Editor: src/app/app.edit.md
+      - File Picker: src/app/app.filepicker.md
+      - Init I/O: src/app/app.inio.md
+      - MD5 Sum: src/app/app.md5sum.md
+      - Memory Info: src/app/app.meminfo.md
+      - Notepad: src/app/app.notepad.md
+      - Partition Commands: src/app/app.partcmd.md
+      - Ping: src/app/app.ping.md
+      - Set Resolution: src/app/app.setres.md
+      - Test Commands: src/app/app.testcmd.md
+      - UI Debug: src/app/app.uidebug.md
+      - VBE Info: src/app/app.vbeinfo.md
+      - Volume Commands: src/app/app.volcmd.md
+      - Virtual Terminal: src/app/app.vterminal.md
+      - WebAssembly:
+        - Runner: src/app/wasm/app.wasm.runner.md
+        - I/O: src/app/wasm/app.wasm.io.md
+        - Shim: src/app/wasm/app.wasm.shim.md
+        - Cleanup: src/app/wasm/app.wasm.cleanup.md
+
+  - Compatibility:
+    - Memory Manager: compat/lmemorymanager.md
+    - Types: compat/types.md
+    - LVGL Headers:
+      - Configuration: lvglh/lv_conf.md
+      - Hack 14: lvglh/hack_14.md
+      - Font FA Solid 16: lvglh/lv_font_fa_solid_16.md
+
+  - Toolchain:
+    - Build Pipeline: toolchain/compile.md
+    - Stub Compilation: toolchain/compile_stub.md
+    - Version Generation: toolchain/compile_vergen.md
+    - LVGL Compilation: toolchain/compile_lvgl.md
+    - Wasuro Pull: toolchain/compile_wasuro.md
+    - Source List: toolchain/compile_sourcelist.md
+    - Source Compilation: toolchain/compile_sources.md
+    - Checksum: toolchain/compile_checksum.md
+    - Linking: toolchain/compile_link.md
+    - ISO Generation: toolchain/compile_isogen.md
+    - Summary Generation: toolchain/compile_sumgen.md
+    - Documentation: toolchain/compile_docs.md
+    - Finish: toolchain/compile_finish.md
+    - Line Count: toolchain/loc.md
+
+  - Planning:
+    - Architecture: planning/architecture.md
+    - USB: planning/USB.md
+    - XHCI: planning/XHCI.md
+    - FlatFS: planning/flatfs.md
+    - Memory Allocator: planning/memoryallocator.md
+    - Namespace: planning/namespace.md
+    - Process Management: planning/processmanagement.md
+    - TCP: planning/tcp.md
+    - Tracer: planning/tracer.md
+    - WASM: planning/wasm.md
