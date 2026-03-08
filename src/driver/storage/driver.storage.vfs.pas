@@ -14,9 +14,9 @@
 
 {
     Driver->Storage->VFS - Virtual File System
-
-    @author(Kieron Morris kjm@kieronmorris.me)
+    
     @author(Aaron Hance ah@aaronhance.me)
+    @author(Kieron Morris kjm@kieronmorris.me)
 }
 unit driver.storage.vfs;
 
@@ -56,6 +56,28 @@ type
     end;
 
     PPHashMap = ^PHashMap;
+
+    { Character/block device support — register virtual devices at VFS paths }
+    TVFSDevReadFunc  = function(devData : pointer; offset : uint32; buffer : puint8; length : uint32) : uint32;
+    TVFSDevWriteFunc = function(devData : pointer; offset : uint32; buffer : puint8; length : uint32) : uint32;
+    TVFSDevSizeFunc  = function(devData : pointer) : uint32;
+
+    PVFSDeviceOps = ^TVFSDeviceOps;
+    TVFSDeviceOps = record
+        Read  : TVFSDevReadFunc;
+        Write : TVFSDevWriteFunc;
+        Size  : TVFSDevSizeFunc;
+    end;
+
+    PVFSDevice = ^TVFSDevice;
+    TVFSDevice = record
+        Ops     : PVFSDeviceOps;
+        DevData : pointer;
+    end;
+
+    { Watch/Notify — observe directory mutations }
+    TVFSWatchEvent  = (weCreated, weDeleted, weRenamed, weModified);
+    TVFSWatchCallback = procedure(event : TVFSWatchEvent; path : pchar; userdata : pointer);
 
 procedure init();
 Function OpenFile(Filename : pchar; OpenMode : TOpenMode; Error : PError) : TFileHandle;
@@ -102,33 +124,9 @@ function FileSizeFromHandle(Handle : TFileHandle) : uint32;
 { Symlinks }
 function CreateSymlink(LinkPath : pchar; TargetPath : pchar) : TError;
 
-{ Character/block device support — register virtual devices at VFS paths }
-type
-    TVFSDevReadFunc  = function(devData : pointer; offset : uint32; buffer : puint8; length : uint32) : uint32;
-    TVFSDevWriteFunc = function(devData : pointer; offset : uint32; buffer : puint8; length : uint32) : uint32;
-    TVFSDevSizeFunc  = function(devData : pointer) : uint32;
-
-    PVFSDeviceOps = ^TVFSDeviceOps;
-    TVFSDeviceOps = record
-        Read  : TVFSDevReadFunc;
-        Write : TVFSDevWriteFunc;
-        Size  : TVFSDevSizeFunc;
-    end;
-
-    PVFSDevice = ^TVFSDevice;
-    TVFSDevice = record
-        Ops     : PVFSDeviceOps;
-        DevData : pointer;
-    end;
-
 { Register a device node at Path with the given ops table.
   Ops record is deep-copied. DevData pointer is stored as-is. }
 function RegisterDevice(Path : pchar; Ops : PVFSDeviceOps; DevData : pointer) : TError;
-
-{ Watch/Notify — observe directory mutations }
-type
-    TVFSWatchEvent  = (weCreated, weDeleted, weRenamed, weModified);
-    TVFSWatchCallback = procedure(event : TVFSWatchEvent; path : pchar; userdata : pointer);
 
 function WatchDirectory(Path : pchar; Callback : TVFSWatchCallback; UserData : pointer) : uint32;
 procedure UnwatchDirectory(WatchID : uint32);
@@ -151,14 +149,18 @@ uses
     core.util, arch.x86.util,
     driver.storage.vol.mgr;
 
-var
-    Root              : PVFSObject;
-    PushPopDirectory  : PLinkedListBase;
-
-{ ===================== Async helpers ========================================
-  Used by OpenFileAsync to stitch results back into the file descriptor.
+{ ===================== Implementation constants ============================
+  Gathered from watch, symlink, and cache subsystems.
   =========================================================================== }
+const
+    MAX_VFS_WATCHES   = 1024;
+    MAX_SYMLINK_DEPTH = 8;    { maximum symlink hops during path resolution }
+    DIR_CACHE_SLOTS   = 64;
 
+{ ===================== Implementation types =================================
+  Async-helper contexts, watch entries, directory-cache entries, and private
+  pointer-to-pointer aliases.
+  =========================================================================== }
 type
     { Used by OpenFileAsync to update the FD when the async read finishes }
     TVFSOpenAsyncCtx = record
@@ -171,6 +173,49 @@ type
         UserData    : pointer;
     end;
     PVFSOpenAsyncCtx = ^TVFSOpenAsyncCtx;
+
+    { GetDirectoryListingAsync context }
+    TVFSDirAsyncCtx = record
+        Path         : pchar;     { absolute path to list (freed by completion) }
+        ResultMap    : PPHashMap;  { caller's pointer — written before callback }
+        UserCallback : TIOCallback;
+        UserData     : pointer;
+    end;
+    PVFSDirAsyncCtx = ^TVFSDirAsyncCtx;
+
+    { Watch/Notify infrastructure }
+    TVFSWatch = record
+        Active     : boolean;
+        Path       : pchar;      { absolute watched path }
+        Callback   : TVFSWatchCallback;
+        UserData   : pointer;
+    end;
+    PVFSWatch = ^TVFSWatch;
+
+    { Directory Cache (LRU) }
+    TVFSDirCacheEntry = record
+        Active   : boolean;
+        Volume   : PStorage_Volume;
+        Path     : pchar;          { heap-allocated relative path key }
+        Map      : PHashMap;       { deep-owned snapshot — freed on evict }
+        Tick     : uint32;         { last-access tick for LRU eviction }
+    end;
+
+    PPStorage_Volume = ^PStorage_Volume;
+    PPChar = ^pchar;
+
+var
+    Root              : PVFSObject;
+    PushPopDirectory  : PLinkedListBase;
+    WatchTable        : array[0..MAX_VFS_WATCHES-1] of TVFSWatch;
+    WatchInited       : boolean;
+    DirCache          : array[0..DIR_CACHE_SLOTS-1] of TVFSDirCacheEntry;
+    DirCacheTick      : uint32;
+    DirCacheReady     : boolean;
+
+{ ===================== Async helpers ========================================
+  Used by OpenFileAsync to stitch results back into the file descriptor.
+  =========================================================================== }
 
 { Completion callback for OpenFileAsync: stitches data into the FD,
   frees temporary holders, then fires the caller's callback. }
@@ -208,33 +253,7 @@ begin
     kfree(void(ctx));
 end;
 
-{ ===================== GetDirectoryListingAsync context ==================== }
-type
-    TVFSDirAsyncCtx = record
-        Path         : pchar;     { absolute path to list (freed by completion) }
-        ResultMap    : PPHashMap;  { caller's pointer — written before callback }
-        UserCallback : TIOCallback;
-        UserData     : pointer;
-    end;
-    PVFSDirAsyncCtx = ^TVFSDirAsyncCtx;
-
 { ===================== Watch/Notify infrastructure ========================= }
-const
-    MAX_VFS_WATCHES = 32;
-    MAX_SYMLINK_DEPTH = 8;  { maximum symlink hops during path resolution }
-
-type
-    TVFSWatch = record
-        Active     : boolean;
-        Path       : pchar;      { absolute watched path }
-        Callback   : TVFSWatchCallback;
-        UserData   : pointer;
-    end;
-    PVFSWatch = ^TVFSWatch;
-
-var
-    WatchTable : array[0..MAX_VFS_WATCHES-1] of TVFSWatch;
-    WatchInited : boolean;
 
 procedure InitWatchTable;
 var
@@ -267,22 +286,6 @@ end;
 { Internal Functions }
 
 { ===================== Directory Cache (16-slot LRU) ======================= }
-const
-    DIR_CACHE_SLOTS = 16;
-
-type
-    TVFSDirCacheEntry = record
-        Active   : boolean;
-        Volume   : PStorage_Volume;
-        Path     : pchar;          { heap-allocated relative path key }
-        Map      : PHashMap;       { deep-owned snapshot — freed on evict }
-        Tick     : uint32;         { last-access tick for LRU eviction }
-    end;
-
-var
-    DirCache      : array[0..DIR_CACHE_SLOTS-1] of TVFSDirCacheEntry;
-    DirCacheTick  : uint32;
-    DirCacheReady : boolean;
 
 procedure DirCache_Init;
 var
@@ -945,10 +948,6 @@ begin
 end;
 
 { Filesystem Functions }
-
-type
-    PPStorage_Volume = ^PStorage_Volume;
-    PPChar = ^pchar;
 
 { Return the current process's FD table, or nil if no process is running. }
 function currentFDTable : PFDTable;
