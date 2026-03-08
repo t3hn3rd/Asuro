@@ -389,7 +389,7 @@ begin
     obj := PVFSObject(data);
     if (ctx = nil) or (obj = nil) then exit;
     case obj^.ObjectType of
-        otVDIRECTORY, otDRIVE, otDIRECTORY, otMOUNT:
+        otVDIRECTORY, otDRIVE, otDIRECTORY, otMOUNT, otSYMLINK:
             if ctx^.dir_count < ENTRY_MAX then begin
                 ctx^.dir_names^[ctx^.dir_count] := key;
                 ctx^.dir_count := ctx^.dir_count + 1;

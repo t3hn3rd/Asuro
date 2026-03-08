@@ -14,7 +14,7 @@
 
 {
     Driver->Storage->VFS - Virtual File System
-    
+
     @author(Aaron Hance ah@aaronhance.me)
     @author(Kieron Morris kjm@kieronmorris.me)
 }
@@ -133,6 +133,7 @@ procedure UnwatchDirectory(WatchID : uint32);
 
 { VFS Functions }
 function newVirtualDirectory(Path : pchar) : TError;
+procedure RemoveVirtualTree(Path : pchar);
 
 { Volume Mount Functions }
 function mountVolume(mountPath : pchar; volume : PStorage_Volume) : TRegError;
@@ -631,9 +632,9 @@ begin
     debug.tracer.push_trace('driver.storage.vfs.MakeAbsolutePath.exit');
 end;
 
-function GetObjectFromPath(path : pchar) : PVFSObject;
+function GetObjectFromPathEx(path : pchar; var volRelPath : pchar) : PVFSObject;
 
-    function GetObjectFromPathDepth(path : pchar; depth : uint32) : PVFSObject;
+    function Depth(path : pchar; dpth : uint32; var vRel : pchar) : PVFSObject;
     var
         Obj         : PVFSObject;
         NewObj      : PVFSObject;
@@ -647,13 +648,18 @@ function GetObjectFromPath(path : pchar) : PVFSObject;
         tmpConcat   : pchar;
         tmpConcat2  : pchar;
         j           : uint32;
+        hitDrive    : boolean;
+        driveIdx    : uint32;
 
     begin
         debug.tracer.push_trace('driver.storage.vfs.GetObjectFromPath.enter');
-        if depth > MAX_SYMLINK_DEPTH then begin
-            GetObjectFromPathDepth := nil;
+        vRel := nil;
+        if dpth > MAX_SYMLINK_DEPTH then begin
+            Depth := nil;
             exit;
         end;
+        hitDrive := false;
+        driveIdx := 0;
         SplitPath:= STRLL_FromString(path, '/');                                                        
         Obj:= Root;                                                                                     
         if STRLL_Size(SplitPath) > 0 then begin                                                         
@@ -664,7 +670,7 @@ function GetObjectFromPath(path : pchar) : PVFSObject;
                 end;
                 ht:= PHashMap(Obj^.Reference);
                 if ht = nil then begin
-                    GetObjectFromPathDepth:= nil;
+                    Depth:= nil;
                     STRLL_Free(SplitPath);
                     debug.tracer.push_trace('driver.storage.vfs.GetObjectFromPath.shortexit_nil_ref');
                     exit;
@@ -680,7 +686,7 @@ function GetObjectFromPath(path : pchar) : PVFSObject;
                 end;
                 NewObj:= PVFSObject(core.ds.hashmap.get(ht, item));                                            
                 if NewObj = nil then begin                                                              
-                    GetObjectFromPathDepth:= nil;
+                    Depth:= nil;
                     STRLL_Free(SplitPath);
                     debug.tracer.push_trace('driver.storage.vfs.GetObjectFromPath.shortexit_1');
                     exit;
@@ -689,7 +695,7 @@ function GetObjectFromPath(path : pchar) : PVFSObject;
                 if NewObj^.ObjectType = otSYMLINK then begin
                     linkTarget := pchar(NewObj^.Reference);
                     if linkTarget = nil then begin
-                        GetObjectFromPathDepth := nil;
+                        Depth := nil;
                         STRLL_Free(SplitPath);
                         exit;
                     end;
@@ -704,10 +710,10 @@ function GetObjectFromPath(path : pchar) : PVFSObject;
                             remainPath := tmpConcat2;
                         end;
                     end;
-                    resolved := GetObjectFromPathDepth(remainPath, depth + 1);
+                    resolved := Depth(remainPath, dpth + 1, vRel);
                     kfree(void(remainPath));
                     STRLL_Free(SplitPath);
-                    GetObjectFromPathDepth := resolved;
+                    Depth := resolved;
                     exit;
                 end;
                 Case NewObj^.ObjectType of
@@ -716,19 +722,49 @@ function GetObjectFromPath(path : pchar) : PVFSObject;
                     end;
                     else begin                                                                         
                         Obj:= NewObj;
+                        if NewObj^.ObjectType = otDRIVE then begin
+                            hitDrive := true;
+                            driveIdx := i;
+                        end;
                         debug.tracer.push_trace('driver.storage.vfs.GetObjectFromPath.shortexit_2');
                         Break;
                     end;
                 end;
             end;
-        end;                                                                                           
+        end;
+        { Build volume-relative path from unconsumed segments after DRIVE }
+        if hitDrive and (vRel = nil) then begin
+            if driveIdx + 1 < STRLL_Size(SplitPath) then begin
+                vRel := stringNew(0);
+                for j := driveIdx + 1 to STRLL_Size(SplitPath) - 1 do begin
+                    tmpConcat := stringConcat(vRel, '/');
+                    kfree(void(vRel));
+                    tmpConcat2 := stringConcat(tmpConcat, STRLL_Get(SplitPath, j));
+                    kfree(void(tmpConcat));
+                    vRel := tmpConcat2;
+                end;
+            end else begin
+                vRel := stringNew(1);
+                vRel[0] := '/';
+            end;
+        end;
         STRLL_Free(SplitPath);
-        GetObjectFromPathDepth:= Obj;
+        Depth:= Obj;
         debug.tracer.push_trace('driver.storage.vfs.GetObjectFromPath.exit');
     end;
 
 begin
-    GetObjectFromPath := GetObjectFromPathDepth(path, 0);
+    volRelPath := nil;
+    GetObjectFromPathEx := Depth(path, 0, volRelPath);
+end;
+
+function GetObjectFromPath(path : pchar) : PVFSObject;
+var
+    dummy : pchar;
+begin
+    dummy := nil;
+    GetObjectFromPath := GetObjectFromPathEx(path, dummy);
+    if dummy <> nil then kfree(void(dummy));
 end;
 
 Procedure ChangeCurrentDirectoryValue(new : pchar);
@@ -814,8 +850,7 @@ end;
 Function GetDirectoryListing(Path : pchar) : PHashMap;
 var
     Obj      : PVFSObject;
-    ObjPath  : pchar;
-    RelPath  : pchar;
+    volRel   : pchar;
     liveMap  : PHashMap;
     snap     : PHashMap;
     si       : uint32;
@@ -825,7 +860,8 @@ var
 
 begin
     debug.tracer.push_trace('driver.storage.vfs.GetDirectoryListing.enter');
-    Obj:= GetObjectFromPath(Path);
+    volRel := nil;
+    Obj:= GetObjectFromPathEx(Path, volRel);
     if Obj <> nil then begin
         Case Obj^.ObjectType of
             otVDIRECTORY:begin
@@ -854,15 +890,11 @@ begin
                 GetDirectoryListing := snap;
             end;
             otDRIVE:begin
-                ObjPath:= getAbsolutePath(Obj);
-                RelPath:= makeRelative(Path, ObjPath);
-                if RelPath = nil then begin
-                    RelPath:= stringNew(1);
-                    RelPath[0]:= '/';
+                if volRel = nil then begin
+                    volRel := stringNew(1);
+                    volRel[0] := '/';
                 end;
-                GetDirectoryListing:= volumeGetDirectories(PStorage_Volume(Obj^.Reference), RelPath, Obj);
-                kfree(void(ObjPath));
-                kfree(void(RelPath));
+                GetDirectoryListing:= volumeGetDirectories(PStorage_Volume(Obj^.Reference), volRel, Obj);
             end; 
             otDEVICE:begin
                 GetDirectoryListing:= nil;
@@ -877,6 +909,7 @@ begin
     end else begin
         GetDirectoryListing:= nil;
     end;
+    if volRel <> nil then kfree(void(volRel));
     debug.tracer.push_trace('driver.storage.vfs.GetDirectoryListing.exit');
 end;
 
@@ -965,10 +998,10 @@ function ResolveFilePath(FullPath : pchar; volOut : PPStorage_Volume;
 var
     AbsPath    : pchar;
     EvalPath   : pchar;
-    SplitFull  : PLinkedListBase;
     Obj        : PVFSObject;
+    volRel     : pchar;
+    SplitRel   : PLinkedListBase;
     relCount   : uint32;
-    i          : uint32;
     j          : uint32;
     dirBuf     : pchar;
     tmpBuf     : pchar;
@@ -984,75 +1017,60 @@ begin
     EvalPath := evaluatePath(AbsPath);
     kfree(void(AbsPath));
 
-    { Walk path segments to find the DRIVE (mounted volume) object }
-    SplitFull := STRLL_FromString(EvalPath, '/');
-    Obj := Root;
+    { Resolve path through VFS (follows symlinks), get remaining in-volume path }
+    Obj := GetObjectFromPathEx(EvalPath, volRel);
+    kfree(void(EvalPath));
 
-    if STRLL_Size(SplitFull) = 0 then begin
-        kfree(void(EvalPath));
-        STRLL_Free(SplitFull);
+    if (Obj = nil) or (Obj^.ObjectType <> otDRIVE) then begin
+        if volRel <> nil then kfree(void(volRel));
+        debug.tracer.push_trace('driver.storage.vfs.ResolveFilePath.exit');
         exit;
     end;
 
-    { Walk down until we hit a DRIVE node }
-    for i := 0 to STRLL_Size(SplitFull) - 1 do begin
-        if Obj^.ObjectType <> otVDIRECTORY then begin
-            break;
-        end;
+    volOut^ := PStorage_Volume(Obj^.Reference);
 
-        if Obj^.Reference = nil then begin
-            break;
-        end;
-
-        Obj := PVFSObject(core.ds.hashmap.get(PHashMap(Obj^.Reference), STRLL_Get(SplitFull, i)));
-        if Obj = nil then begin
-            kfree(void(EvalPath));
-            STRLL_Free(SplitFull);
-            exit;
-        end;
-
-        if Obj^.ObjectType = otDRIVE then begin
-            volOut^ := PStorage_Volume(Obj^.Reference);
-
-            { Everything after this segment is relative path within the volume }
-            relCount := STRLL_Size(SplitFull) - i - 1;
-            if relCount = 0 then begin
-                kfree(void(EvalPath));
-                STRLL_Free(SplitFull);
-                exit;
-            end;
-
-            { Last segment is the filename — pass it as-is to the filesystem }
-            nameOut^ := stringCopy(STRLL_Get(SplitFull, STRLL_Size(SplitFull) - 1));
-
-            { Build directory path from segments between drive and filename }
-            if relCount <= 1 then begin
-                dirOut^ := stringNew(0);
-            end else begin
-                dirBuf := stringNew(0);
-                for j := i + 1 to STRLL_Size(SplitFull) - 2 do begin
-                    if stringSize(dirBuf) > 0 then begin
-                        tmpBuf := stringConcat(dirBuf, '/');
-                        kfree(void(dirBuf));
-                        dirBuf := tmpBuf;
-                    end;
-                    tmpBuf := stringConcat(dirBuf, STRLL_Get(SplitFull, j));
-                    kfree(void(dirBuf));
-                    dirBuf := tmpBuf;
-                end;
-                dirOut^ := dirBuf;
-            end;
-
-            ResolveFilePath := true;
-            kfree(void(EvalPath));
-            STRLL_Free(SplitFull);
-            debug.tracer.push_trace('driver.storage.vfs.ResolveFilePath.exit');
-            exit;
-        end;
+    { volRel is the path within the volume, e.g. '/mydir/myfile.txt' }
+    if (volRel = nil) or StringEquals(volRel, '/') then begin
+        { Path points to volume root - no file specified }
+        if volRel <> nil then kfree(void(volRel));
+        debug.tracer.push_trace('driver.storage.vfs.ResolveFilePath.exit');
+        exit;
     end;
 
-    kfree(void(EvalPath));
-    STRLL_Free(SplitFull);
+    { Split volRel to extract dir + filename }
+    SplitRel := STRLL_FromString(volRel, '/');
+    kfree(void(volRel));
+    relCount := STRLL_Size(SplitRel);
+
+    if relCount = 0 then begin
+        STRLL_Free(SplitRel);
+        debug.tracer.push_trace('driver.storage.vfs.ResolveFilePath.exit');
+        exit;
+    end;
+
+    { Last segment is the filename }
+    nameOut^ := stringCopy(STRLL_Get(SplitRel, relCount - 1));
+
+    { Build directory path from preceding segments }
+    if relCount <= 1 then begin
+        dirOut^ := stringNew(0);
+    end else begin
+        dirBuf := stringNew(0);
+        for j := 0 to relCount - 2 do begin
+            if stringSize(dirBuf) > 0 then begin
+                tmpBuf := stringConcat(dirBuf, '/');
+                kfree(void(dirBuf));
+                dirBuf := tmpBuf;
+            end;
+            tmpBuf := stringConcat(dirBuf, STRLL_Get(SplitRel, j));
+            kfree(void(dirBuf));
+            dirBuf := tmpBuf;
+        end;
+        dirOut^ := dirBuf;
+    end;
+
+    ResolveFilePath := true;
+    STRLL_Free(SplitRel);
     debug.tracer.push_trace('driver.storage.vfs.ResolveFilePath.exit');
 end;
 
@@ -1609,6 +1627,7 @@ var
     AbsPath : pchar;
     CopyPath : pchar;
     MntPath  : pchar;
+    volRel   : pchar;
     pvVol    : PStorage_Volume;
     pvStatus : puint32;
     pvDirList: PLinkedListBase;
@@ -1623,15 +1642,16 @@ var
 begin
     debug.tracer.push_trace('driver.storage.vfs.PathValid.enter');
     PathValid:= pvInvalid;
-    Obj:= GetObjectFromPath(Path);
+    volRel := nil;
+    Obj:= GetObjectFromPathEx(Path, volRel);
     if Obj <> nil then begin
         Case Obj^.ObjectType of
             otVDIRECTORY:begin
                 PathValid:= pvDirectory;
             end;
             otDRIVE:begin
-                ObjPath:= getAbsolutePath(Obj);
-                RelPath:= makeRelative(Path, ObjPath);
+                RelPath := volRel;
+                volRel := nil; { ownership transferred to RelPath }
                 if RelPath = nil then begin
                     RelPath := stringNew(1);
                     RelPath[0] := '/';
@@ -1703,7 +1723,6 @@ begin
                     end;
                 end else
                     PathValid := pvInvalid;
-                kfree(void(ObjPath));
                 kfree(void(RelPath));
             end; 
             otDEVICE:begin
@@ -1750,6 +1769,7 @@ begin
             end;
         end;
     end;
+    if volRel <> nil then kfree(void(volRel));
     debug.tracer.push_trace('driver.storage.vfs.PathValid.exit');
 end;
 
@@ -1835,6 +1855,96 @@ begin
 
     STRLL_Free(SplitPath);
     debug.tracer.push_trace('driver.storage.vfs.newVirtualDirectory.exit');
+end;
+
+{ Recursively free a VFS object tree (vdirs + symlinks).
+  Does NOT remove the object from its parent hashmap — caller must do that. }
+procedure FreeVFSObjTree(obj : PVFSObject);
+var
+    ht    : PHashMap;
+    i     : uint32;
+    item  : PHashItem;
+    next  : PHashItem;
+    child : PVFSObject;
+begin
+    if obj = nil then exit;
+    if (obj^.ObjectType = otVDIRECTORY) and (obj^.Reference <> nil) then begin
+        ht := PHashMap(obj^.Reference);
+        if (ht <> nil) and (ht^.Table <> nil) and (ht^.Size > 0) then begin
+            for i := 0 to ht^.Size - 1 do begin
+                item := ht^.Table[i];
+                while item <> nil do begin
+                    next := item^.Next;
+                    child := PVFSObject(item^.Data);
+                    if child <> nil then
+                        FreeVFSObjTree(child);
+                    if item^.Key <> nil then kfree(void(item^.Key));
+                    kfree(void(item));
+                    item := next;
+                end;
+            end;
+        end;
+        if ht <> nil then begin
+            if ht^.Table <> nil then kfree(void(ht^.Table));
+            kfree(void(ht));
+        end;
+    end else if obj^.ObjectType = otSYMLINK then begin
+        if obj^.Reference <> nil then kfree(void(obj^.Reference));
+    end;
+    if obj^.ObjectName <> nil then kfree(void(obj^.ObjectName));
+    kfree(void(obj));
+end;
+
+procedure RemoveVirtualTree(Path : pchar);
+var
+    splitPath  : PLinkedListBase;
+    parentPath : pchar;
+    leafName   : pchar;
+    leafCopy   : pchar;
+    parentObj  : PVFSObject;
+    childObj   : PVFSObject;
+    ht         : PHashMap;
+begin
+    if Path = nil then exit;
+    splitPath := STRLL_FromString(Path, '/');
+    if STRLL_Size(splitPath) = 0 then begin
+        STRLL_Free(splitPath);
+        exit;
+    end;
+    leafName := STRLL_Get(splitPath, STRLL_Size(splitPath) - 1);
+    leafCopy := stringCopy(leafName);
+    parentPath := CombineToAbsolutePath(splitPath, STRLL_Size(splitPath) - 1);
+    STRLL_Free(splitPath);
+
+    parentObj := GetObjectFromPath(parentPath);
+    kfree(void(parentPath));
+
+    if parentObj = nil then begin
+        kfree(void(leafCopy));
+        exit;
+    end;
+    if parentObj^.ObjectType <> otVDIRECTORY then begin
+        kfree(void(leafCopy));
+        exit;
+    end;
+    ht := PHashMap(parentObj^.Reference);
+    if ht = nil then begin
+        kfree(void(leafCopy));
+        exit;
+    end;
+
+    childObj := PVFSObject(core.ds.hashmap.get(ht, leafCopy));
+    if childObj = nil then begin
+        kfree(void(leafCopy));
+        exit;
+    end;
+
+    { Remove from parent hashmap (frees the hashmap's key copy) }
+    core.ds.hashmap.delete(ht, leafCopy, false);
+    kfree(void(leafCopy));
+
+    { Recursively free the object tree }
+    FreeVFSObjTree(childObj);
 end;
 
 function GetWorkingDirectory : pchar;
@@ -3300,6 +3410,12 @@ begin
         io.syslog.writestring(' volume at ');
         io.syslog.writestringln(mountPath);
 
+        { Auto-mount the boot drive at /boot }
+        if vol^.isBootDrive then begin
+            mountVolume('/boot', vol);
+            io.syslog.writestringln('VFS: Mounted boot volume at /boot');
+        end;
+
         kfree(void(volName));
         kfree(void(prefix));
         kfree(void(mountPath));
@@ -3451,8 +3567,6 @@ begin
     newVirtualDirectory('/dev');
     newVirtualDirectory('/disk');
     newVirtualDirectory('/mnt');
-    newVirtualDirectory('/cfg');
-    newVirtualDirectory('/boot');
 
     { Register built-in device nodes }
     nullOps.Read  := @DevNull_Read;
@@ -3554,7 +3668,6 @@ begin
     Assert(PathValid('/dev')   = pvDirectory, 'PathValid(/dev) = dir');
     Assert(PathValid('/disk')  = pvDirectory, 'PathValid(/disk) = dir');
     Assert(PathValid('/mnt')   = pvDirectory, 'PathValid(/mnt) = dir');
-    Assert(PathValid('/cfg')   = pvDirectory, 'PathValid(/cfg) = dir');
 
     { PathValid: non-existent paths }
     Assert(PathValid('/doesnotexist999') = pvInvalid, 'PathValid(nonexistent) = invalid');
@@ -3641,6 +3754,106 @@ begin
     if obj <> nil then
         Assert(obj^.ObjectType = otSYMLINK, 'devlink entry is otSYMLINK');
     FreeDirectoryListing(map);
+
+    { ======================================================================= }
+    { Phase 4b — Symlink path traversal (subdirectory after symlink)          }
+    { ======================================================================= }
+    { Setup: create /utest_vfs/deep/child so we can symlink to /utest_vfs/deep
+      and verify traversal into child works through the symlink. }
+    errCode := newVirtualDirectory('/utest_vfs/deep');
+    Assert(errCode = eNone, 'newVDir /utest_vfs/deep = eNone');
+    errCode := newVirtualDirectory('/utest_vfs/deep/child');
+    Assert(errCode = eNone, 'newVDir /utest_vfs/deep/child = eNone');
+    errCode := newVirtualDirectory('/utest_vfs/deep/child/leaf');
+    Assert(errCode = eNone, 'newVDir /utest_vfs/deep/child/leaf = eNone');
+
+    { Symlink /utest_vfs/sdeep -> /utest_vfs/deep }
+    errCode := CreateSymlink('/utest_vfs/sdeep', '/utest_vfs/deep');
+    Assert(errCode = eNone, 'CreateSymlink sdeep -> deep = eNone');
+
+    { PathValid: symlink target is a directory }
+    Assert(PathValid('/utest_vfs/sdeep') = pvDirectory, 'PathValid symlink sdeep = dir');
+
+    { PathValid: traverse INTO symlink target's children }
+    Assert(PathValid('/utest_vfs/sdeep/child') = pvDirectory, 'PathValid sdeep/child = dir');
+    Assert(PathValid('/utest_vfs/sdeep/child/leaf') = pvDirectory, 'PathValid sdeep/child/leaf = dir');
+
+    { PathValid: non-existent child after symlink }
+    Assert(PathValid('/utest_vfs/sdeep/nope') = pvInvalid, 'PathValid sdeep/nope = invalid');
+
+    { GetDirectoryListing through symlink shows children }
+    map := GetDirectoryListing('/utest_vfs/sdeep');
+    Assert(map <> nil, 'GetDirListing through symlink not nil');
+    if map <> nil then begin
+        obj := PVFSObject(core.ds.hashmap.get(map, 'child'));
+        Assert(obj <> nil, 'symlink listing has child entry');
+        if obj <> nil then
+            Assert(obj^.ObjectType = otVDIRECTORY, 'child entry through symlink is vdir');
+        FreeDirectoryListing(map);
+    end;
+
+    { GetDirectoryListing deeper through symlink }
+    map := GetDirectoryListing('/utest_vfs/sdeep/child');
+    Assert(map <> nil, 'GetDirListing sdeep/child not nil');
+    if map <> nil then begin
+        obj := PVFSObject(core.ds.hashmap.get(map, 'leaf'));
+        Assert(obj <> nil, 'sdeep/child listing has leaf entry');
+        FreeDirectoryListing(map);
+    end;
+
+    { ======================================================================= }
+    { Phase 4c — Chained symlinks (symlink -> symlink -> vdir)                }
+    { ======================================================================= }
+    { /utest_vfs/chain1 -> /utest_vfs/sdeep (which -> /utest_vfs/deep) }
+    errCode := CreateSymlink('/utest_vfs/chain1', '/utest_vfs/sdeep');
+    Assert(errCode = eNone, 'CreateSymlink chain1 -> sdeep = eNone');
+
+    { Double-hop: chain1 -> sdeep -> deep, should resolve to /utest_vfs/deep }
+    Assert(PathValid('/utest_vfs/chain1') = pvDirectory, 'PathValid chain1 = dir');
+    Assert(PathValid('/utest_vfs/chain1/child') = pvDirectory, 'PathValid chain1/child = dir');
+
+    { GetDirectoryListing through chained symlink }
+    map := GetDirectoryListing('/utest_vfs/chain1');
+    Assert(map <> nil, 'GetDirListing chain1 not nil');
+    if map <> nil then begin
+        obj := PVFSObject(core.ds.hashmap.get(map, 'child'));
+        Assert(obj <> nil, 'chain1 listing has child');
+        FreeDirectoryListing(map);
+    end;
+
+    { ======================================================================= }
+    { Phase 4d — Symlink cycle detection (max depth guard)                    }
+    { ======================================================================= }
+    { Create a cycle: /utest_vfs/cyc_a -> /utest_vfs/cyc_b
+                      /utest_vfs/cyc_b -> /utest_vfs/cyc_a }
+    errCode := CreateSymlink('/utest_vfs/cyc_a', '/utest_vfs/cyc_b');
+    Assert(errCode = eNone, 'CreateSymlink cyc_a -> cyc_b = eNone');
+    errCode := CreateSymlink('/utest_vfs/cyc_b', '/utest_vfs/cyc_a');
+    Assert(errCode = eNone, 'CreateSymlink cyc_b -> cyc_a = eNone');
+
+    { PathValid on a cycle should return pvInvalid (not hang or crash) }
+    Assert(PathValid('/utest_vfs/cyc_a') = pvInvalid, 'PathValid symlink cycle = invalid');
+
+    { GetDirectoryListing on a cycle returns nil }
+    map := GetDirectoryListing('/utest_vfs/cyc_a');
+    Assert(map = nil, 'GetDirListing symlink cycle = nil');
+
+    { ======================================================================= }
+    { Phase 4e — Symlink to root (/) }
+    { ======================================================================= }
+    errCode := CreateSymlink('/utest_vfs/rootlink', '/');
+    Assert(errCode = eNone, 'CreateSymlink rootlink -> / = eNone');
+    Assert(PathValid('/utest_vfs/rootlink') = pvDirectory, 'PathValid rootlink = dir');
+    Assert(PathValid('/utest_vfs/rootlink/dev') = pvDirectory, 'PathValid rootlink/dev = dir');
+    Assert(PathValid('/utest_vfs/rootlink/dev/null') = pvFile, 'PathValid rootlink/dev/null = file');
+
+    map := GetDirectoryListing('/utest_vfs/rootlink');
+    Assert(map <> nil, 'GetDirListing rootlink not nil');
+    if map <> nil then begin
+        obj := PVFSObject(core.ds.hashmap.get(map, 'dev'));
+        Assert(obj <> nil, 'rootlink listing has dev');
+        FreeDirectoryListing(map);
+    end;
 
     { ======================================================================= }
     { Phase 4 — WatchDirectory / UnwatchDirectory                             }
@@ -3841,6 +4054,9 @@ begin
     CloseFile(devHandle);
 
     kfree(puint32(devBuf));
+
+    { --- Cleanup: remove all test objects from VFS tree --- }
+    RemoveVirtualTree('/utest_vfs');
 
     PrintSummary;
 end;

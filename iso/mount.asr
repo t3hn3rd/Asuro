@@ -1,2 +1,1 @@
-mnt {device}/boot /boot
 mnt {device}/sys /sys
