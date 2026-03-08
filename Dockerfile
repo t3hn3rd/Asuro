@@ -14,10 +14,9 @@ RUN curl -sL https://sourceforge.net/projects/freepascal/files/Linux/$FPC_VERSIO
 	pushd fpc-$FPC_VERSION.i386-linux && ./install.sh && popd && \
 	rm -rf fpc-$FPC_VERSION.i386-linux
 
-COPY compile.sh /compile.sh
 ADD https://raw.githubusercontent.com/fsaintjacques/semver-tool/master/src/semver /usr/bin/semver
 RUN chmod +x /usr/bin/semver
 WORKDIR /code
 RUN find . -type f -print0 | xargs -0 dos2unix
 ENTRYPOINT ["/bin/bash", "-c"]
-CMD ["/compile.sh"]
+CMD ["find toolchain -name '*.sh' -exec dos2unix {} + 2>/dev/null; find toolchain -name '*.sh' -exec chmod +x {} +; bash toolchain/compile.sh"]

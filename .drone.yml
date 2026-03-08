@@ -22,8 +22,8 @@ steps:
     commands:
       - git fetch --tags
       - find . -type f -print0 | xargs -0 dos2unix
-      - chmod +x /drone/src/*.sh
-      - /drone/src/compile.sh
+      - chmod +x /drone/src/toolchain/*.sh
+      - /drone/src/toolchain/compile.sh
       
   - name: upload-iso-artifact
     image: alpine/git
