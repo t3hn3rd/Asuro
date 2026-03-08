@@ -104,6 +104,9 @@ uses
     driver.storage.vfs,
     driver.video,
     arch.x86.memory.virtual,
+    core.enc.fnv1a,
+    core.enc.djb2,
+    core.ds.bloom,
     app.volcmd,
     driver.storage.vol.mgr,
     app.vterminal,
@@ -344,6 +347,9 @@ begin
      core.ds.prio.UnitTest;
      driver.storage.vfs.UnitTest;
      driver.storage.test.UnitTest;
+     core.enc.fnv1a.UnitTest;
+     core.enc.djb2.UnitTest;
+     core.ds.bloom.UnitTest;
 
      { Initialize driver.video.desktop environment }
      boot.splash.update(100, 'Booting desktop...');

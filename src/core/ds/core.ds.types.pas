@@ -195,6 +195,32 @@ type
     IsMinHeap   : boolean;
   end;
 
+  { ------ Bloom Filter ------ }
+
+  {**
+    @abstract Pointer to a bloom filter.
+  **}
+  PBloomFilter = ^TBloomFilter;
+
+  {**
+    @abstract Probabilistic set-membership filter using double hashing.
+    @discussion The bit array is a flat kalloc'd byte buffer of
+                ceil(BitCount / 8) bytes. Membership tests use k independent
+                hash positions derived from two base hashes (FNV-1a + DJB2)
+                via double hashing: h_i(x) = (h1(x) + i * h2(x)) mod BitCount.
+                False positives are possible; false negatives are not.
+    @field Bits      Pointer to the flat bit-array buffer.
+    @field BitCount  Total number of bits in the filter (m).
+    @field HashCount Number of hash functions applied per element (k).
+    @field Count     Number of elements inserted.
+  **}
+  TBloomFilter = record
+    Bits      : void;
+    BitCount  : uint32;
+    HashCount : uint32;
+    Count     : uint32;
+  end;
+
 implementation
 
 end.
