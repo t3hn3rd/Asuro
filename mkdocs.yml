@@ -296,4 +296,5 @@ nav:
     - Process Management: planning/processmanagement.md
     - TCP: planning/tcp.md
     - Tracer: planning/tracer.md
+    - VFS: planning/vfs.md
     - WASM: planning/wasm.md
