@@ -395,7 +395,19 @@ Mounts a storage volume at the given VFS path. The path must be an existing virt
 procedure auto_mount_volumes();
 ```
 
-Automatically mounts all detected volumes under `/disk/` with auto-generated names.
+Automatically mounts all detected volumes under `/disk/` with auto-generated names (`/disk/vol0`, `/disk/vol1`, ...).
+
+After mounting all volumes, reads `MOUNT.ASR` from the root of the boot volume (ISO). Each line in the file is a command:
+
+```
+mnt {device}/boot /boot
+mnt {device}/sys  /sys
+```
+
+- `mnt <source> <target>` — creates a symlink from `<target>` to `<source>`.
+- `{device}` is replaced with the boot volume's mount path (e.g. `/disk/vol2`).
+
+This replaces the old `asr.mnt` persistent-mount mechanism.
 
 ---
 

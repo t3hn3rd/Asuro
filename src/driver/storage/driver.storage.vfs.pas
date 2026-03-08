@@ -3128,18 +3128,13 @@ var
     vol       : PStorage_Volume;
     path      : pchar;
     res       : TRegError;
-    persist   : boolean;
-    dirEntry  : TDirectory_Entry;
-    status    : puint32;
-    padBuf    : puint32;
 
 begin
     debug.tracer.push_trace('driver.storage.vfs.VFS_COMMAND_MOUNT.enter');
     if ParamCount(params) < 2 then begin
-        io.stdio.bufWriteStrLn(stdout_buf, 'Usage: MOUNT <vol_index> <path> [p]');
+        io.stdio.bufWriteStrLn(stdout_buf, 'Usage: MOUNT <vol_index> <path>');
         io.stdio.bufWriteStrLn(stdout_buf, '  vol_index  Volume number (see VOL LIST)');
         io.stdio.bufWriteStrLn(stdout_buf, '  path       VFS mount point, e.g. /mnt/data');
-        io.stdio.bufWriteStrLn(stdout_buf, '  p          Persistent: remount on boot');
         debug.tracer.push_trace('driver.storage.vfs.VFS_COMMAND_MOUNT.exit');
         exit;
     end;
@@ -3169,13 +3164,6 @@ begin
         exit;
     end;
 
-    { Check for persistent flag }
-    persist := false;
-    if ParamCount(params) >= 3 then begin
-        if stringEquals(GetParam(2, params), 'p') then
-            persist := true;
-    end;
-
     path := StringCopy(GetParam(1, params));
 
     res := mountVolume(path, vol);
@@ -3189,40 +3177,6 @@ begin
             io.stdio.bufWriteStr(stdout_buf, vol^.filesystem^.sName);
             io.stdio.bufWriteStr(stdout_buf, ') at ');
             io.stdio.bufWriteStrLn(stdout_buf, path);
-
-            { Write asr.mnt to volume root if persistent }
-            if persist then begin
-                if vol^.filesystem^.writeCallback <> nil then begin
-                    dirEntry.fileName := stringCopy('ASR.MNT');
-                    dirEntry.entryType := fileEntry;
-                    dirEntry.fileSize := stringSize(path);
-                    dirEntry.modifiedDate := 0;
-                    dirEntry.modifiedTime := 0;
-                    dirEntry.attributes := 0;
-
-                    status := puint32(kalloc(4));
-                    status^ := 0;
-
-                    { Pad buffer to 4096 to prevent filesystem reading past allocation }
-                    padBuf := puint32(kalloc(4096));
-                    memset(uint32(padBuf), 0, 4096);
-                    core.util.memcpy(uint32(path), uint32(padBuf), stringSize(path));
-
-                    vol^.filesystem^.writeCallback(vol, '', @dirEntry, stringSize(path), padBuf, status);
-
-                    kfree(padBuf);
-
-                    if status^ = 0 then
-                        io.stdio.bufWriteStrLn(stdout_buf, 'Persistent mount saved (asr.mnt).')
-                    else
-                        io.stdio.bufWriteStrLn(stdout_buf, 'Warning: could not write asr.mnt.');
-
-                    kfree(puint32(status));
-                    kfree(void(dirEntry.fileName));
-                end else begin
-                    io.stdio.bufWriteStrLn(stdout_buf, 'Warning: filesystem is read-only, cannot persist.');
-                end;
-            end;
         end;
     else
         io.stdio.bufWriteStrLn(stdout_buf, 'Failed to mount volume.');
@@ -3300,6 +3254,16 @@ var
     mntPath   : pchar;
     mntLen    : uint32;
     volCount  : uint32;
+    { mount.asr parsing vars }
+    lineStart : uint32;
+    lineEnd   : uint32;
+    lineLen   : uint32;
+    lineBuf   : pchar;
+    expanded  : pchar;
+    argStart  : uint32;
+    spacePos  : uint32;
+    srcPath   : pchar;
+    tgtPath   : pchar;
 begin
     debug.tracer.push_trace('driver.storage.vfs.auto_mount_volumes.enter');
 
@@ -3337,56 +3301,119 @@ begin
         io.syslog.writestring(' volume at ');
         io.syslog.writestringln(mountPath);
 
-        { If this is the boot volume, also mount it at /boot }
-        if vol^.isBootDrive then begin
-            mountVolume('/boot', vol);
-            io.syslog.writestringln('VFS: Boot volume mounted at /boot');
-        end;
-
         kfree(void(volName));
         kfree(void(prefix));
         kfree(void(mountPath));
+    end;
 
-        { Check for persistent mount file asr.mnt — only on writable filesystems
-          since read-only media (ISO9660) can never contain an ASR.MNT written by us,
-          and attempting to read from a broken/unsupported device can hang. }
-        if (vol^.filesystem^.writeCallback <> nil) and
-           (vol^.filesystem^.readCallback <> nil) then begin
-            dataBuf  := puint32(kalloc(4));
-            dataBuf^ := 0;
-            dataSize := puint32(kalloc(4));
-            dataSize^ := 0;
+    { Process mount.asr from the boot volume.
+      Each line has the form:  mnt {device}<source> <target>
+      {device} is replaced with the boot volume's /disk/volN path.
+      A symlink is created: target -> expanded_source. }
+    for i := 0 to volCount - 1 do begin
+        vol := driver.storage.vol.mgr.get_volume(i);
+        if vol = nil then continue;
+        if vol^.filesystem = nil then continue;
+        if not vol^.isBootDrive then continue;
+        if vol^.filesystem^.readCallback = nil then continue;
 
-            readErr := vol^.filesystem^.readCallback(vol, '', 'ASR.MNT', dataBuf, dataSize);
+        { Build the boot device path: /disk/vol<i> }
+        volNumStr := intToString(i);
+        volName := stringConcat('/disk/vol', volNumStr);
+        kfree(void(volNumStr));
 
-            if (readErr = 0) and (dataSize^ > 0) and (dataBuf^ <> 0) then begin
-                { dataBuf^ points to the file data containing the mount path }
-                mntLen := dataSize^;
-                mntPath := pchar(kalloc(mntLen + 1));
-                core.util.memcpy(dataBuf^, uint32(mntPath), mntLen);
-                mntPath[mntLen] := char(0);
+        dataBuf  := puint32(kalloc(4));
+        dataBuf^ := 0;
+        dataSize := puint32(kalloc(4));
+        dataSize^ := 0;
 
-                { Strip trailing whitespace / CR / LF / null bytes }
-                while (mntLen > 0) and ((mntPath[mntLen - 1] = char(0)) or
-                      (mntPath[mntLen - 1] = char(10)) or
-                      (mntPath[mntLen - 1] = char(13)) or
-                      (mntPath[mntLen - 1] = ' ')) do begin
-                    mntLen := mntLen - 1;
-                    mntPath[mntLen] := char(0);
+        readErr := vol^.filesystem^.readCallback(vol, '', 'MOUNT.ASR', dataBuf, dataSize);
+
+        if (readErr = 0) and (dataSize^ > 0) and (dataBuf^ <> 0) then begin
+            { Parse the file line by line }
+            mntLen := dataSize^;
+            mntPath := pchar(kalloc(mntLen + 1));
+            core.util.memcpy(dataBuf^, uint32(mntPath), mntLen);
+            mntPath[mntLen] := char(0);
+
+            lineStart := 0;
+            while lineStart < mntLen do begin
+                { Find end of line }
+                lineEnd := lineStart;
+                while (lineEnd < mntLen) and (mntPath[lineEnd] <> char(10)) and (mntPath[lineEnd] <> char(13)) do
+                    lineEnd := lineEnd + 1;
+
+                lineLen := lineEnd - lineStart;
+                if lineLen > 0 then begin
+                    lineBuf := pchar(kalloc(lineLen + 1));
+                    core.util.memcpy(uint32(mntPath) + lineStart, uint32(lineBuf), lineLen);
+                    lineBuf[lineLen] := char(0);
+
+                    { Check for 'mnt ' prefix }
+                    if (lineLen > 4) and
+                       (lineBuf[0] = 'm') and (lineBuf[1] = 'n') and
+                       (lineBuf[2] = 't') and (lineBuf[3] = ' ') then begin
+                        { Replace {device} with actual boot volume path }
+                        expanded := stringReplace(lineBuf, '{device}', volName);
+
+                        { Find the two space-separated arguments after 'mnt ' }
+                        argStart := 4;
+                        { Skip leading spaces }
+                        while (argStart < stringSize(expanded)) and (expanded[argStart] = ' ') do
+                            argStart := argStart + 1;
+                        { Find the space between source and target }
+                        spacePos := argStart;
+                        while (spacePos < stringSize(expanded)) and (expanded[spacePos] <> ' ') do
+                            spacePos := spacePos + 1;
+
+                        if spacePos < stringSize(expanded) then begin
+                            srcPath := stringSub(expanded, argStart, spacePos - argStart);
+                            { Skip spaces before target }
+                            argStart := spacePos + 1;
+                            while (argStart < stringSize(expanded)) and (expanded[argStart] = ' ') do
+                                argStart := argStart + 1;
+                            { Target runs to end of line (strip trailing spaces) }
+                            spacePos := stringSize(expanded);
+                            while (spacePos > argStart) and (expanded[spacePos - 1] = ' ') do
+                                spacePos := spacePos - 1;
+
+                            if spacePos > argStart then begin
+                                tgtPath := stringSub(expanded, argStart, spacePos - argStart);
+
+                                CreateSymlink(tgtPath, srcPath);
+
+                                io.syslog.writestring('VFS: mount.asr symlink ');
+                                io.syslog.writestring(tgtPath);
+                                io.syslog.writestring(' -> ');
+                                io.syslog.writestringln(srcPath);
+
+                                kfree(void(tgtPath));
+                            end;
+                            kfree(void(srcPath));
+                        end;
+                        kfree(void(expanded));
+                    end;
+                    kfree(void(lineBuf));
                 end;
 
-                if mntLen > 0 then begin
-                    mountVolume(mntPath, vol);
-                end;
-
-                kfree(void(mntPath));
-                kfree(puint32(dataBuf^));
+                { Advance past line ending (handle CR, LF, CRLF) }
+                if (lineEnd < mntLen) and (mntPath[lineEnd] = char(13)) then
+                    lineEnd := lineEnd + 1;
+                if (lineEnd < mntLen) and (mntPath[lineEnd] = char(10)) then
+                    lineEnd := lineEnd + 1;
+                lineStart := lineEnd;
             end;
 
-            kfree(puint32(dataBuf));
-            kfree(puint32(dataSize));
+            kfree(void(mntPath));
+            kfree(puint32(dataBuf^));
         end;
+
+        kfree(puint32(dataBuf));
+        kfree(puint32(dataSize));
+        kfree(void(volName));
+        break; { only one boot volume }
     end;
+
     debug.tracer.push_trace('driver.storage.vfs.auto_mount_volumes.exit');
 end;
 
