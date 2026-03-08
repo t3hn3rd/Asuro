@@ -44,7 +44,7 @@ uses
     arch.x86.memory.physical,
     io.syslog,
     debug.tracer,
-    core.util, arch.x86.util,
+    core.util, arch.x86.util, core.panic,
     arch.x86.memory.virtual;
 
 const
@@ -429,7 +429,7 @@ begin
         kalloc := klalloc(size);
         if kalloc = nil then begin
             restore_if(saved_flags);
-            BSOD('OOM', 'kalloc: large allocation failed');
+            core.panic.panic('OOM', 'kalloc: large allocation failed', nil);
             exit;
         end;
         zero_mem(Pointer(kalloc), size);
@@ -484,7 +484,7 @@ begin
             hp := new_heap_page(hp);
             if hp = nil then begin
                 restore_if(saved_flags);
-                BSOD('OOM', 'kalloc: out of memory');
+                core.panic.panic('OOM', 'kalloc: out of memory', nil);
                 exit;
             end;
         end else begin

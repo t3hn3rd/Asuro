@@ -20,7 +20,7 @@ unit arch.x86.v86;
 interface
 
 uses
-    core.util, arch.x86.util, io.syslog, debug.tracer, arch.x86.memory.virtual, arch.x86.gdt, arch.x86.idt, arch.x86.isr.types;
+    core.util, arch.x86.util, core.panic, io.syslog, debug.tracer, arch.x86.memory.virtual, arch.x86.gdt, arch.x86.idt, arch.x86.isr.types;
 
 const
     { V86 EFLAGS: VM=1 ($20000), IOPL=3 ($3000), IF=0 }
@@ -540,8 +540,7 @@ end;
 
 procedure v86_chain_gpf; cdecl;
 begin
-    BSOD('arch.x86.fault.gpf', 'General Protection Fault.');
-    halt_and_catch_fire;
+    core.panic.panic('arch.x86.fault.gpf', 'General Protection Fault.', nil);
 end;
 
 procedure v86_gpf_isr; assembler; nostackframe;

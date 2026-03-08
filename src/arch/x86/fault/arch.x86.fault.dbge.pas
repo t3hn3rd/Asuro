@@ -22,8 +22,8 @@ unit arch.x86.fault.dbge;
 interface
 
 uses
-    core.util, arch.x86.util,
-    io.syslog,
+    arch.x86.util,
+    arch.x86.panic,
     arch.x86.isr.types,
     arch.x86.isr.mgr,
     arch.x86.idt;
@@ -33,15 +33,10 @@ procedure register();
 implementation
 
 procedure Main();
-var
-    i : integer;
-    
 begin
     CLI;
     correctInterruptRegisters(false);
-    BSOD('DE', 'Debug Exception');
-    io.syslog.writestringln('Debug Exception.');
-    arch.x86.util.halt_and_catch_fire;
+    x86_panic('arch.x86.fault.dbge', 'Debug Exception.');
 end;
 
 procedure register();

@@ -601,6 +601,8 @@ procedure lv_display_set_antialiasing(disp: Plv_display; en: boolean); cdecl; ex
 function  lv_display_get_antialiasing(disp: Plv_display): boolean; cdecl; external;
 procedure lv_display_flush_ready(disp: Plv_display); cdecl; external;
 function  lv_display_flush_is_last(disp: Plv_display): boolean; cdecl; external;
+procedure lv_refr_now(disp: Plv_display); cdecl; external;
+procedure lv_display_refr_timer(tmr: pointer); cdecl; external;
 function  lv_display_is_double_buffered(disp: Plv_display): boolean; cdecl; external;
 function  lv_display_get_screen_active(disp: Plv_display): Plv_obj; cdecl; external;
 function  lv_display_get_screen_prev(disp: Plv_display): Plv_obj; cdecl; external;
