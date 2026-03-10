@@ -1,5 +1,5 @@
 {
-    Core->Search - Reusable file-oriented search, sort, and format utilities.
+    Core->StringHelpers - Reusable file-oriented search, sort, and format utilities.
 
     Provides:
       - getFileExtension: zero-copy extension extraction
@@ -9,7 +9,7 @@
 
     @author(Aaron Hance <ah@aaronhance.me>)
 }
-unit core.search;
+unit core.stringhelpers;
 
 interface
 

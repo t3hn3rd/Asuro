@@ -62,7 +62,7 @@ implementation
 
 uses
     driver.storage.vfs, driver.storage.types, memory.heap, core.strings,
-    core.search, debug.tracer, io.syslog, core.util, arch.x86.util;
+    core.stringhelpers, debug.tracer, io.syslog, core.util, arch.x86.util;
 
 type
     THandlerEntry = record

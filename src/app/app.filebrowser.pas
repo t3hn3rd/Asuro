@@ -28,7 +28,7 @@ uses
     proc.mgr,
     proc.types,
     core.strings,
-    core.search,
+    core.stringhelpers,
     core.gfx.fileicons,
     io.syslog,
     debug.tracer,

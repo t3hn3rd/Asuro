@@ -84,7 +84,7 @@ uses
     driver.storage.mgr,
     driver.storage.test,
     core.strings,
-    core.search,
+    core.stringhelpers,
     io.syslog,
     driver.exp.testdriver,
     proc.testprocs,
@@ -329,7 +329,7 @@ begin
      { Run unit tests }
      boot.splash.update(65, 'Running test suite...');
      core.strings.UnitTest;
-     core.search.UnitTest;
+     core.stringhelpers.UnitTest;
      driver.bus.usb.types.UnitTest;
      driver.bus.usb.core.UnitTest;
      boot.splash.update(70, 'Running test suite...');
