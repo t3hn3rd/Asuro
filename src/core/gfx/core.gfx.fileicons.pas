@@ -14,7 +14,7 @@ interface
 
 uses
     core.strings,
-    core.stringhelpers;
+    core.strings.helpers;
 
 const
     { File-type icon PUA constants (U+E000..E078) — rendered by asuro_icons_* }

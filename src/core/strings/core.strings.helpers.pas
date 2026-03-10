@@ -9,7 +9,7 @@
 
     @author(Aaron Hance <ah@aaronhance.me>)
 }
-unit core.stringhelpers;
+unit core.strings.helpers;
 
 interface
 

@@ -39,7 +39,7 @@ uses
     driver.storage.types,
     driver.storage.filedispatch,
     core.strings,
-    core.stringhelpers,
+    core.strings.helpers,
     io.syslog,
     io.stdio,
     debug.tracer,

@@ -61,7 +61,7 @@ uses
     driver.video.lvgl,
     driver.storage.types,
     core.strings,
-    core.stringhelpers,
+    core.strings.helpers,
     io.syslog,
     debug.tracer,
     core.util, arch.x86.util,
