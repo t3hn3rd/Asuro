@@ -27,9 +27,14 @@ uses
     memory.heap,
     core.ds.lists;
 
+function charToLower(c : char) : char;
+function charToUpper(c : char) : char;
 function stringToUpper(str : pchar) : pchar;
 function stringToLower(str : pchar) : pchar;
 function stringEquals(str1, str2 : pchar) : boolean;
+function stringEqualsCI(str1, str2 : pchar) : boolean;
+function stringCompare(a, b : pchar) : sint32;
+function stringCompareCI(a, b : pchar) : sint32;
 function stringCopy(str : pchar) : pchar;
 function stringNew(size : uint32) : pchar;
 function stringSize(str : pchar) : uint32;
@@ -38,7 +43,13 @@ function stringTrim(str : pchar; length : uint32) : pchar;
 function stringSub(str : pchar; start, size : uint32) : pchar;
 function stringReplace(str, find, replace : pchar) : pchar;
 function stringIndexOf(str, find : pchar) : sint32;
+function stringIndexOfCI(str, find : pchar) : sint32;
 function stringContains(str : pchar; sub : pchar) : boolean;
+function stringContainsCI(haystack, needle : pchar) : boolean;
+function stringStartsWith(str, prefix : pchar) : boolean;
+function stringStartsWithCI(str, prefix : pchar) : boolean;
+function stringEndsWith(str, suffix : pchar) : boolean;
+function stringEndsWithCI(str, suffix : pchar) : boolean;
 function stringToInt(str : pchar) : uint32;
 function hexStringToInt(str : pchar) : uint32;
 function intToString(i : uint32) : pchar;
@@ -73,6 +84,25 @@ begin
         Shift:= Shift - 4;
     end;
     hexStringToInt:= result;
+end;
+
+{ ============================================================
+  charToLower / charToUpper — zero-allocation single-char
+  ============================================================ }
+function charToLower(c : char) : char;
+begin
+    if (c >= 'A') and (c <= 'Z') then
+        charToLower := char(ord(c) + 32)
+    else
+        charToLower := c;
+end;
+
+function charToUpper(c : char) : char;
+begin
+    if (c >= 'a') and (c <= 'z') then
+        charToUpper := char(ord(c) - 32)
+    else
+        charToUpper := c;
 end;
 
 function stringToUpper(str : pchar) : pchar;
@@ -294,6 +324,177 @@ end;
 function stringContains(str : pchar; sub : pchar) : boolean;
 begin
     stringContains:= (stringIndexOf(str, sub) >= 0);
+end;
+
+{ ============================================================
+  stringCompare — lexicographic compare, returns -1 / 0 / +1
+  ============================================================ }
+function stringCompare(a, b : pchar) : sint32;
+var
+    i : uint32;
+begin
+    if (a = nil) and (b = nil) then begin stringCompare := 0; exit; end;
+    if a = nil then begin stringCompare := -1; exit; end;
+    if b = nil then begin stringCompare := 1; exit; end;
+    i := 0;
+    while (a[i] <> #0) and (b[i] <> #0) do begin
+        if ord(a[i]) < ord(b[i]) then begin stringCompare := -1; exit; end;
+        if ord(a[i]) > ord(b[i]) then begin stringCompare := 1; exit; end;
+        i := i + 1;
+    end;
+    if a[i] = b[i] then
+        stringCompare := 0
+    else if a[i] = #0 then
+        stringCompare := -1
+    else
+        stringCompare := 1;
+end;
+
+{ ============================================================
+  stringCompareCI — case-insensitive lexicographic compare
+  ============================================================ }
+function stringCompareCI(a, b : pchar) : sint32;
+var
+    i  : uint32;
+    ca, cb : char;
+begin
+    if (a = nil) and (b = nil) then begin stringCompareCI := 0; exit; end;
+    if a = nil then begin stringCompareCI := -1; exit; end;
+    if b = nil then begin stringCompareCI := 1; exit; end;
+    i := 0;
+    while (a[i] <> #0) and (b[i] <> #0) do begin
+        ca := charToLower(a[i]);
+        cb := charToLower(b[i]);
+        if ord(ca) < ord(cb) then begin stringCompareCI := -1; exit; end;
+        if ord(ca) > ord(cb) then begin stringCompareCI := 1; exit; end;
+        i := i + 1;
+    end;
+    if a[i] = b[i] then
+        stringCompareCI := 0
+    else if a[i] = #0 then
+        stringCompareCI := -1
+    else
+        stringCompareCI := 1;
+end;
+
+{ ============================================================
+  stringEqualsCI — case-insensitive equality
+  ============================================================ }
+function stringEqualsCI(str1, str2 : pchar) : boolean;
+begin
+    stringEqualsCI := (stringCompareCI(str1, str2) = 0);
+end;
+
+{ ============================================================
+  stringIndexOfCI — case-insensitive index of substring
+  ============================================================ }
+function stringIndexOfCI(str, find : pchar) : sint32;
+var
+    i, j, strLen, findLen : uint32;
+    found : boolean;
+begin
+    strLen := stringSize(str);
+    findLen := stringSize(find);
+    if findLen = 0 then begin stringIndexOfCI := 0; exit; end;
+    if findLen > strLen then begin stringIndexOfCI := -1; exit; end;
+    for i := 0 to strLen - findLen do begin
+        found := true;
+        if findLen > 0 then
+            for j := 0 to findLen - 1 do begin
+                if charToLower(str[i + j]) <> charToLower(find[j]) then begin
+                    found := false;
+                    break;
+                end;
+            end;
+        if found then begin stringIndexOfCI := i; exit; end;
+    end;
+    stringIndexOfCI := -1;
+end;
+
+{ ============================================================
+  stringContainsCI — case-insensitive substring check (zero-alloc)
+  ============================================================ }
+function stringContainsCI(haystack, needle : pchar) : boolean;
+begin
+    stringContainsCI := (stringIndexOfCI(haystack, needle) >= 0);
+end;
+
+{ ============================================================
+  stringStartsWith — check if str begins with prefix
+  ============================================================ }
+function stringStartsWith(str, prefix : pchar) : boolean;
+var
+    i, prefLen : uint32;
+begin
+    stringStartsWith := false;
+    if prefix = nil then begin stringStartsWith := true; exit; end;
+    if str = nil then exit;
+    prefLen := stringSize(prefix);
+    if prefLen = 0 then begin stringStartsWith := true; exit; end;
+    if stringSize(str) < prefLen then exit;
+    if prefLen > 0 then
+        for i := 0 to prefLen - 1 do
+            if str[i] <> prefix[i] then exit;
+    stringStartsWith := true;
+end;
+
+{ ============================================================
+  stringStartsWithCI — case-insensitive prefix check
+  ============================================================ }
+function stringStartsWithCI(str, prefix : pchar) : boolean;
+var
+    i, prefLen : uint32;
+begin
+    stringStartsWithCI := false;
+    if prefix = nil then begin stringStartsWithCI := true; exit; end;
+    if str = nil then exit;
+    prefLen := stringSize(prefix);
+    if prefLen = 0 then begin stringStartsWithCI := true; exit; end;
+    if stringSize(str) < prefLen then exit;
+    if prefLen > 0 then
+        for i := 0 to prefLen - 1 do
+            if charToLower(str[i]) <> charToLower(prefix[i]) then exit;
+    stringStartsWithCI := true;
+end;
+
+{ ============================================================
+  stringEndsWith — check if str ends with suffix
+  ============================================================ }
+function stringEndsWith(str, suffix : pchar) : boolean;
+var
+    i, strLen, sufLen : uint32;
+begin
+    stringEndsWith := false;
+    if suffix = nil then begin stringEndsWith := true; exit; end;
+    if str = nil then exit;
+    strLen := stringSize(str);
+    sufLen := stringSize(suffix);
+    if sufLen = 0 then begin stringEndsWith := true; exit; end;
+    if strLen < sufLen then exit;
+    if sufLen > 0 then
+        for i := 0 to sufLen - 1 do
+            if str[strLen - sufLen + i] <> suffix[i] then exit;
+    stringEndsWith := true;
+end;
+
+{ ============================================================
+  stringEndsWithCI — case-insensitive suffix check
+  ============================================================ }
+function stringEndsWithCI(str, suffix : pchar) : boolean;
+var
+    i, strLen, sufLen : uint32;
+begin
+    stringEndsWithCI := false;
+    if suffix = nil then begin stringEndsWithCI := true; exit; end;
+    if str = nil then exit;
+    strLen := stringSize(str);
+    sufLen := stringSize(suffix);
+    if sufLen = 0 then begin stringEndsWithCI := true; exit; end;
+    if strLen < sufLen then exit;
+    if sufLen > 0 then
+        for i := 0 to sufLen - 1 do
+            if charToLower(str[strLen - sufLen + i]) <> charToLower(suffix[i]) then exit;
+    stringEndsWithCI := true;
 end;
 
 function stringToInt(str : pchar) : uint32;
@@ -837,6 +1038,80 @@ begin
     s:= doubleToStr(1e20);
     Assert(stringContains(s, 'e+'), 'doubleToStr sci large');
     kfree(void(s));
+
+    { === charToLower / charToUpper === }
+    Assert(charToLower('A') = 'a', 'charToLower A');
+    Assert(charToLower('Z') = 'z', 'charToLower Z');
+    Assert(charToLower('a') = 'a', 'charToLower already lower');
+    Assert(charToLower('5') = '5', 'charToLower digit');
+    Assert(charToUpper('a') = 'A', 'charToUpper a');
+    Assert(charToUpper('z') = 'Z', 'charToUpper z');
+    Assert(charToUpper('A') = 'A', 'charToUpper already upper');
+    Assert(charToUpper('5') = '5', 'charToUpper digit');
+
+    { === stringCompare === }
+    Assert(stringCompare('abc', 'abc') = 0, 'stringCompare equal');
+    Assert(stringCompare('abc', 'abd') = -1, 'stringCompare less');
+    Assert(stringCompare('abd', 'abc') = 1, 'stringCompare greater');
+    Assert(stringCompare('ab', 'abc') = -1, 'stringCompare shorter');
+    Assert(stringCompare('abc', 'ab') = 1, 'stringCompare longer');
+    Assert(stringCompare('', '') = 0, 'stringCompare both empty');
+    Assert(stringCompare('', 'a') = -1, 'stringCompare empty vs str');
+    Assert(stringCompare('a', '') = 1, 'stringCompare str vs empty');
+    Assert(stringCompare(nil, nil) = 0, 'stringCompare nil nil');
+    Assert(stringCompare(nil, 'a') = -1, 'stringCompare nil vs str');
+    Assert(stringCompare('a', nil) = 1, 'stringCompare str vs nil');
+
+    { === stringCompareCI === }
+    Assert(stringCompareCI('ABC', 'abc') = 0, 'stringCompareCI equal');
+    Assert(stringCompareCI('abc', 'ABD') = -1, 'stringCompareCI less');
+    Assert(stringCompareCI('ABD', 'abc') = 1, 'stringCompareCI greater');
+    Assert(stringCompareCI('Hello', 'hello') = 0, 'stringCompareCI mixed');
+
+    { === stringEqualsCI === }
+    Assert(stringEqualsCI('Hello', 'hello') = true, 'stringEqualsCI match');
+    Assert(stringEqualsCI('Hello', 'world') = false, 'stringEqualsCI no match');
+    Assert(stringEqualsCI('', '') = true, 'stringEqualsCI both empty');
+
+    { === stringIndexOfCI === }
+    Assert(stringIndexOfCI('Hello World', 'world') = 6, 'stringIndexOfCI found');
+    Assert(stringIndexOfCI('Hello World', 'HELLO') = 0, 'stringIndexOfCI at start');
+    Assert(stringIndexOfCI('Hello World', 'xyz') = -1, 'stringIndexOfCI not found');
+    Assert(stringIndexOfCI('Hello', '') = 0, 'stringIndexOfCI empty find');
+    Assert(stringIndexOfCI('', 'a') = -1, 'stringIndexOfCI empty str');
+
+    { === stringContainsCI === }
+    Assert(stringContainsCI('Hello World', 'world') = true, 'stringContainsCI found');
+    Assert(stringContainsCI('Hello World', 'xyz') = false, 'stringContainsCI not found');
+    Assert(stringContainsCI('ABCDEF', 'cde') = true, 'stringContainsCI mid');
+
+    { === stringStartsWith === }
+    Assert(stringStartsWith('Hello', 'Hel') = true, 'stringStartsWith match');
+    Assert(stringStartsWith('Hello', 'hel') = false, 'stringStartsWith case sensitive');
+    Assert(stringStartsWith('Hello', 'Hello') = true, 'stringStartsWith exact');
+    Assert(stringStartsWith('Hello', 'HelloX') = false, 'stringStartsWith longer');
+    Assert(stringStartsWith('Hello', '') = true, 'stringStartsWith empty prefix');
+    Assert(stringStartsWith('', 'A') = false, 'stringStartsWith empty str');
+
+    { === stringStartsWithCI === }
+    Assert(stringStartsWithCI('Hello', 'hel') = true, 'stringStartsWithCI match');
+    Assert(stringStartsWithCI('Hello', 'HEL') = true, 'stringStartsWithCI upper');
+    Assert(stringStartsWithCI('Hello', 'xyz') = false, 'stringStartsWithCI no match');
+
+    { === stringEndsWith === }
+    Assert(stringEndsWith('Hello', 'llo') = true, 'stringEndsWith match');
+    Assert(stringEndsWith('Hello', 'LLO') = false, 'stringEndsWith case sensitive');
+    Assert(stringEndsWith('Hello', 'Hello') = true, 'stringEndsWith exact');
+    Assert(stringEndsWith('Hello', 'XHello') = false, 'stringEndsWith longer');
+    Assert(stringEndsWith('Hello', '') = true, 'stringEndsWith empty suffix');
+    Assert(stringEndsWith('', 'A') = false, 'stringEndsWith empty str');
+    Assert(stringEndsWith('file.txt', '.txt') = true, 'stringEndsWith extension');
+    Assert(stringEndsWith('file.TXT', '.txt') = false, 'stringEndsWith ext case');
+
+    { === stringEndsWithCI === }
+    Assert(stringEndsWithCI('Hello', 'LLO') = true, 'stringEndsWithCI match');
+    Assert(stringEndsWithCI('file.TXT', '.txt') = true, 'stringEndsWithCI ext');
+    Assert(stringEndsWithCI('Hello', 'xyz') = false, 'stringEndsWithCI no match');
 
     { Print summary }
     PrintSummary;

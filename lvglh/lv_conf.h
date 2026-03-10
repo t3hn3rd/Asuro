@@ -30,8 +30,8 @@
 #define LV_LIMITS_INCLUDE       <limits.h>
 #define LV_STDARG_INCLUDE       <stdarg.h>
 
-/* Built-in memory pool: 256 KB should be plenty for our UI */
-#define LV_MEM_SIZE (256 * 1024U)
+/* Built-in memory pool: 1 MB for complex UI (file browser etc.) */
+#define LV_MEM_SIZE (1024 * 1024U)
 #define LV_MEM_POOL_EXPAND_SIZE 0
 #define LV_MEM_ADR 0
 

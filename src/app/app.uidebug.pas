@@ -64,6 +64,7 @@ var
     hist_count    : uint32;    { samples collected so far }
 
     visible       : boolean;
+    toggle_pending : uint32;  { set by ISR, checked by update in gfxd context }
 
     { FPS tracking }
     frame_count   : uint32;
@@ -432,24 +433,31 @@ end;
   ============================================================ }
 procedure update;
 begin
+    { Handle deferred toggle from ISR (Ctrl+D keyboard hook).
+      Must run here in gfxd context, NOT in ISR — LVGL is not reentrant. }
+    if puint32(@toggle_pending)^ <> 0 then begin
+        puint32(@toggle_pending)^ := 0;
+        if visible then begin
+            destroyOverlay;
+            visible := false;
+        end else begin
+            frame_count := 0;
+            last_tick := lvgl_get_ticks;
+            current_fps := 0;
+            hist_index := 0;
+            hist_count := 0;
+            createOverlay;
+            visible := true;
+        end;
+    end;
     if visible then
         refreshLabels;
 end;
 
 procedure toggle;
 begin
-    if visible then begin
-        destroyOverlay;
-        visible := false;
-    end else begin
-        frame_count := 0;
-        last_tick := lvgl_get_ticks;
-        current_fps := 0;
-        hist_index := 0;
-        hist_count := 0;
-        createOverlay;
-        visible := true;
-    end;
+    { Called from keyboard ISR — just set flag, actual work happens in update() }
+    puint32(@toggle_pending)^ := 1;
 end;
 
 function isVisible: boolean;

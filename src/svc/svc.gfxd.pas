@@ -54,10 +54,12 @@ begin
         should_update := should_update or (CURRENT_TICK < LAST_UPDATE);  { handle tick counter wraparound }
         if (should_update) then begin
             LAST_UPDATE := CURRENT_TICK;
+            lvgl_lock;
             driver.video.windows.reapOrphanedWindows;
             driver.video.desktop.update;
             app.uidebug.update;
             lvgl_handler;
+            lvgl_unlock;
             driver.video.Flush;
         end;
         if SHOULD_CRASH then begin

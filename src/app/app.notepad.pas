@@ -37,8 +37,11 @@ uses
     proc.mgr,
     proc.types,
     driver.storage.types,
+    driver.storage.filedispatch,
     core.strings,
+    core.search,
     io.syslog,
+    io.stdio,
     debug.tracer,
     core.util, arch.x86.util,
     driver.storage.vfs,
@@ -46,10 +49,11 @@ uses
     driver.video.windows;
 
 const
-    WIN_W          = 700;
-    WIN_H          = 500;
-    TOOLBAR_H      = 40;
-    STATUSBAR_H    = 24;
+    WIN_W               = 700;
+    WIN_H               = 500;
+    TOOLBAR_H           = 40;
+    STATUSBAR_H         = 24;
+    MAX_NOTEPAD_INST    = 8;
 
     { LV_DRAW_LABEL_NO_TXT_SEL — sentinel returned when no selection is set }
     LV_NO_SEL      = $FFFF;
@@ -86,16 +90,21 @@ type
     end;
 
 { ============================================================
-  Module-level state (single-instance)
+  Module-level state (multi-instance)
   ============================================================ }
 var
-    win_id  : uint32;
-    g_state : PNotepadState;
+    g_instances        : array[0..MAX_NOTEPAD_INST-1] of PNotepadState;
+    g_inst_count       : uint32;
+    { File-dispatch deferred open }
+    g_dispatch_path    : pchar;
+    g_dispatch_pending : uint32;
+    g_dispatch_timer   : Plv_timer;
 
 { ============================================================
   Forward declarations
   ============================================================ }
 procedure notepad_entry(ctx: PProcessContext); forward;
+function  launchInstance: PNotepadState; forward;
 procedure launch; forward;
 procedure onClose(wid: uint32); forward;
 procedure updateStatusBar(state: PNotepadState); forward;
@@ -103,12 +112,15 @@ procedure saveFile(state: PNotepadState); forward;
 procedure loadFile(state: PNotepadState; path: pchar); forward;
 procedure performNew(state: PNotepadState); forward;
 procedure freeState(state: PNotepadState); forward;
-procedure doCloseWindow; forward;
-procedure showDiscardMsgbox(discard_cb: lv_event_cb_t); forward;
+procedure doCloseWindow(state: PNotepadState); forward;
+procedure showDiscardMsgbox(discard_cb: lv_event_cb_t; state: PNotepadState); forward;
 procedure showErrorMsgbox(title: pchar; msg: pchar); forward;
 procedure mbox_cancel_cb(e: Plv_event); cdecl; forward;
 procedure np_open_done_cb(path: pchar; userdata: pointer); cdecl; forward;
 procedure np_saveas_done_cb(path: pchar; userdata: pointer); cdecl; forward;
+function  findStateByWid(wid: uint32): PNotepadState; forward;
+procedure addInstance(state: PNotepadState); forward;
+procedure removeInstance(state: PNotepadState); forward;
 
 { ============================================================
   stopEvent — set LVGL's stop_processing flag in the event
@@ -282,8 +294,46 @@ begin
 end;
 
 { ============================================================
-  doCloseWindow — unconditionally destroy window + free state.
-  Called by discard-confirm dialogs and by onClose when clean.
+  Instance management helpers
+  ============================================================ }
+function findStateByWid(wid: uint32): PNotepadState;
+var i: uint32;
+begin
+    findStateByWid := nil;
+    if g_inst_count > 0 then
+        for i := 0 to g_inst_count - 1 do
+            if (g_instances[i] <> nil) and (g_instances[i]^.win_id = wid) then begin
+                findStateByWid := g_instances[i];
+                exit;
+            end;
+end;
+
+procedure addInstance(state: PNotepadState);
+begin
+    if g_inst_count < MAX_NOTEPAD_INST then begin
+        g_instances[g_inst_count] := state;
+        inc(g_inst_count);
+    end;
+end;
+
+procedure removeInstance(state: PNotepadState);
+var i, j: uint32;
+begin
+    if g_inst_count > 0 then
+        for i := 0 to g_inst_count - 1 do
+            if g_instances[i] = state then begin
+                { Shift remaining entries down }
+                if i + 1 < g_inst_count then
+                    for j := i to g_inst_count - 2 do
+                        g_instances[j] := g_instances[j + 1];
+                dec(g_inst_count);
+                g_instances[g_inst_count] := nil;
+                exit;
+            end;
+end;
+
+{ ============================================================
+  notepad_entry — lightweight process entry
   ============================================================ }
 procedure notepad_entry(ctx : PProcessContext);
 begin
@@ -291,18 +341,22 @@ begin
         proc.mgr.proc_yield;
 end;
 
-procedure doCloseWindow;
+{ ============================================================
+  doCloseWindow — unconditionally destroy a specific instance.
+  Called by discard-confirm dialogs and by onClose when clean.
+  ============================================================ }
+procedure doCloseWindow(state: PNotepadState);
+var wid : uint32;
 begin
-    if g_state <> nil then begin
-        if g_state^.pid <> 0 then begin
-            proc.mgr.kill(g_state^.pid);
-            g_state^.pid := 0;
-        end;
-        freeState(g_state);
-        g_state := nil;
+    if state = nil then exit;
+    wid := state^.win_id;
+    removeInstance(state);
+    if state^.pid <> 0 then begin
+        proc.mgr.kill(state^.pid);
+        state^.pid := 0;
     end;
-    driver.video.windows.destroyWindow(win_id);
-    win_id := 0;
+    freeState(state);
+    driver.video.windows.destroyWindow(wid);
 end;
 
 { ============================================================
@@ -472,14 +526,16 @@ end;
 { Discard + close window }
 procedure mbox_close_discard_cb(e: Plv_event); cdecl;
 var
-    code : lv_event_code_t;
-    mbox : Plv_obj;
+    code  : lv_event_code_t;
+    mbox  : Plv_obj;
+    state : PNotepadState;
 begin
     code := lv_event_get_code(e);
     if code <> LV_EVENT_CLICKED then exit;
-    mbox := Plv_obj(lv_event_get_user_data(e));
+    mbox  := Plv_obj(lv_event_get_user_data(e));
+    state := PNotepadState(lv_obj_get_user_data(mbox));
     lv_obj_delete(mbox);
-    doCloseWindow;
+    doCloseWindow(state);
 end;
 
 { Discard + new document }
@@ -492,7 +548,7 @@ begin
     code := lv_event_get_code(e);
     if code <> LV_EVENT_CLICKED then exit;
     mbox  := Plv_obj(lv_event_get_user_data(e));
-    state := g_state;
+    state := PNotepadState(lv_obj_get_user_data(mbox));
     lv_obj_delete(mbox);
     if state <> nil then performNew(state);
 end;
@@ -501,7 +557,7 @@ end;
   showDiscardMsgbox — generic "Unsaved changes / Discard?" dialog.
   discard_cb receives the mbox pointer as user_data.
   ============================================================ }
-procedure showDiscardMsgbox(discard_cb: lv_event_cb_t);
+procedure showDiscardMsgbox(discard_cb: lv_event_cb_t; state: PNotepadState);
 var
     mbox      : Plv_obj;
     scr       : Plv_obj;
@@ -512,6 +568,8 @@ begin
     mbox      := lv_msgbox_create(scr);
     lv_msgbox_add_title(mbox, 'Unsaved Changes');
     lv_msgbox_add_close_button(mbox);
+    { Store owner state in mbox user_data so callbacks can retrieve it }
+    lv_obj_set_user_data(mbox, state);
     cancel_b  := lv_msgbox_add_footer_button(mbox, 'Cancel');
     discard_b := lv_msgbox_add_footer_button(mbox, 'Discard');
     lv_obj_add_event_cb(discard_b, discard_cb,      LV_EVENT_CLICKED, mbox);
@@ -579,7 +637,7 @@ begin
     state := PNotepadState(lv_event_get_user_data(e));
     if state = nil then exit;
     if state^.isDirty then
-        showDiscardMsgbox(@mbox_new_discard_cb)
+        showDiscardMsgbox(@mbox_new_discard_cb, state)
     else
         performNew(state);
 end;
@@ -822,22 +880,28 @@ end;
   onClose — called by the driver.video.windows unit when the X button is pressed
   ============================================================ }
 procedure onClose(wid: uint32);
+var state : PNotepadState;
 begin
     debug.tracer.push_trace('notepad.onClose');
-    if (g_state <> nil) and g_state^.isDirty then begin
-        { Show discard confirmation; leave window open for now }
-        showDiscardMsgbox(@mbox_close_discard_cb);
+    state := findStateByWid(wid);
+    if state = nil then begin debug.tracer.pop_trace; exit; end;
+    if state^.isDirty then begin
+        showDiscardMsgbox(@mbox_close_discard_cb, state);
         debug.tracer.pop_trace;
         exit;
     end;
-    doCloseWindow;
+    doCloseWindow(state);
     debug.tracer.pop_trace;
 end;
 
 { ============================================================
   launch — create the window and populate the UI
   ============================================================ }
-procedure launch;
+{ ============================================================
+  launchInstance — create a new notepad window; returns the
+  state pointer or nil on failure.
+  ============================================================ }
+function launchInstance: PNotepadState;
 var
     scr_w, scr_h : sint32;
     wx, wy       : sint32;
@@ -849,37 +913,38 @@ var
     dl    : Plv_obj;
     state : PNotepadState;
     ctx   : PProcessContext;
+    wid   : uint32;
 begin
-    debug.tracer.push_trace('notepad.launch');
+    debug.tracer.push_trace('notepad.launchInstance');
+    launchInstance := nil;
 
-    if driver.video.windows.isWindowOpen(win_id) then begin
+    if g_inst_count >= MAX_NOTEPAD_INST then begin
         debug.tracer.pop_trace; exit;
     end;
 
     scr_w := sint32(driver.video.frontBufferWidth);
     scr_h := sint32(driver.video.frontBufferHeight);
-    wx    := (scr_w - WIN_W) div 2;
-    wy    := (scr_h - WIN_H) div 2 - 30;
+    wx    := (scr_w - WIN_W) div 2 + sint32(g_inst_count) * 30;
+    wy    := (scr_h - WIN_H) div 2 - 30 + sint32(g_inst_count) * 30;
 
-    win_id := driver.video.windows.createWindow('Notepad', wx, wy, WIN_W, WIN_H,
+    wid := driver.video.windows.createWindow('Notepad', wx, wy, WIN_W, WIN_H,
                                    @onClose, nil);
-    if win_id = 0 then begin
+    if wid = 0 then begin
         debug.tracer.pop_trace; exit;
     end;
 
-    content := driver.video.windows.getWindowContent(win_id);
+    content := driver.video.windows.getWindowContent(wid);
     if content = nil then begin
-        driver.video.windows.destroyWindow(win_id);
-        win_id := 0;
+        driver.video.windows.destroyWindow(wid);
         debug.tracer.pop_trace; exit;
     end;
 
     { Allocate and zero-initialise state }
     state := PNotepadState(kalloc(sizeof(TNotepadState)));
     memset(uint32(state), 0, sizeof(TNotepadState));
-    state^.win_id     := win_id;
+    state^.win_id     := wid;
     state^.sel_anchor := -1;
-    g_state := state;
+    addInstance(state);
 
     { ---- Content area: flex column ---- }
     lv_obj_set_style_layout(content, LV_LAYOUT_FLEX, 0);
@@ -975,21 +1040,91 @@ begin
     ctx := proc.mgr.create('Notepad', @notepad_entry, void(state), 1);
     if ctx <> nil then begin
         state^.pid := ctx^.ProcessID;
-        driver.video.windows.setWindowOwner(win_id, ctx^.ProcessID);
+        driver.video.windows.setWindowOwner(wid, ctx^.ProcessID);
     end;
 
+    launchInstance := state;
+    debug.tracer.pop_trace;
+end;
+
+{ launch — desktop-launcher callback; creates a new empty notepad window }
+procedure launch;
+begin
+    launchInstance;
+end;
+
+{ ============================================================
+  File dispatch support
+  ============================================================ }
+
+{ Poll timer — runs in LVGL context, checks for deferred file opens }
+procedure notepad_dispatch_poll(tmr: Plv_timer); cdecl;
+var
+    path  : pchar;
+    state : PNotepadState;
+begin
+    if puint32(@g_dispatch_pending)^ <> 1 then exit;
+    puint32(@g_dispatch_pending)^ := 0;
+
+    path := g_dispatch_path;
+    g_dispatch_path := nil;
+    if path = nil then exit;
+
+    { Always open a new window for dispatched files }
+    state := launchInstance;
+    if state <> nil then
+        loadFile(state, path);
+
+    kfree(void(path));
+end;
+
+{ Handler callback — called by driver.storage.filedispatch from
+  any process context (typically the file-browser worker).
+  We cannot call LVGL directly (Lesson #15), so we store the path
+  and let the poll timer pick it up in LVGL context. }
+function notepad_file_handler(path : pchar;
+                              params : PParamList;
+                              stdin_buf, stdout_buf, stderr_buf : POutBuf) : uint32;
+begin
+    debug.tracer.push_trace('notepad.file_handler');
+    notepad_file_handler := 0;
+
+    { If a dispatch is already pending, reject to avoid leaking the path }
+    if puint32(@g_dispatch_pending)^ = 1 then begin
+        debug.tracer.pop_trace;
+        exit;
+    end;
+
+    g_dispatch_path := stringCopy(path);
+    puint32(@g_dispatch_pending)^ := 1;
+
+    { Return 1 to signal "handled — UI will open asynchronously" }
+    notepad_file_handler := 1;
     debug.tracer.pop_trace;
 end;
 
 { ============================================================
   init — register with the driver.video.desktop program launcher
+         and with the file dispatch system for text extensions
   ============================================================ }
 procedure init();
 begin
     debug.tracer.push_trace('notepad.init');
-    win_id  := 0;
-    g_state := nil;
+    g_inst_count := 0;
+    g_dispatch_path    := nil;
+    g_dispatch_pending := 0;
+
     driver.video.desktop.registerProgram('Notepad', @launch);
+
+    { Register as the handler for common text-file extensions }
+    driver.storage.filedispatch.registerExtHandler(
+        '.txt,.md,.log,.cfg,.ini,.json,.xml,.yml,.yaml,.csv,.pas,.inc,.c,.h,.cpp,.py,.js,.ts,.sh,.bat,.conf,.toml',
+        'Text',
+        @notepad_file_handler);
+
+    { Create a 100ms poll timer for deferred file-dispatch opens }
+    g_dispatch_timer := lv_timer_create(@notepad_dispatch_poll, 100, nil);
+
     debug.tracer.pop_trace;
 end;
 

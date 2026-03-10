@@ -558,6 +558,9 @@ var
     lv_font_montserrat_14: uint8; cvar; external;
     lv_font_fa_solid_16: uint8; cvar; external;
     hack_14: uint8; cvar; external;
+    asuro_icons_32: uint8; cvar; external;
+    asuro_icons_64: uint8; cvar; external;
+    asuro_icons_128: uint8; cvar; external;
 
 { ============================================================
   Core Init / Tick / Timer
@@ -1674,6 +1677,12 @@ function  lvgl_get_ticks: uint32;
 function  lvgl_get_kb_group: Plv_group;
 procedure lvgl_update_resolution(screen_w, screen_h: uint32);
 
+{ LVGL mutex — protects all lv_* calls from concurrent access.
+  Uses LOCK XCHG for future SMP safety + psAwaiting park for
+  single-core efficiency.  Recursive: same process can lock multiple times. }
+procedure lvgl_lock;
+procedure lvgl_unlock;
+
 { Color helper (Pascal wrapper for inline C function) }
 function lv_color_make(r, g, b: uint8): lv_color_t;
 
@@ -1683,7 +1692,7 @@ function lv_color_make(r, g, b: uint8): lv_color_t;
 implementation
 
 uses
-    app.uidebug;
+    app.uidebug, proc.types, proc.mgr;
 
 { ============================================================
   Wrappers for LVGL inline/macro functions
@@ -1747,6 +1756,94 @@ begin
     lv_color_make.green := g;
     lv_color_make.red   := r;
     lv_color_make.alpha := 255;
+end;
+
+{ ============================================================
+  LVGL Mutex — blocking, recursive, SMP-safe
+  ============================================================ }
+const
+    LVGL_MTX_MAX_WAITERS = 16;
+
+var
+    lvgl_mtx_locked  : uint32 = 0;
+    lvgl_mtx_owner   : pointer = nil;
+    lvgl_mtx_depth   : uint32 = 0;
+    lvgl_mtx_waiters : array[0..LVGL_MTX_MAX_WAITERS-1] of pointer;
+    lvgl_mtx_nwait   : uint32 = 0;
+
+procedure lvgl_lock;
+var
+    old : uint32;
+    cur : pointer;
+begin
+    cur := pointer(proc.mgr.CurrentProcess);
+
+    { Recursive lock — same owner, just bump depth }
+    if (lvgl_mtx_locked <> 0) and (lvgl_mtx_owner = cur) then begin
+        lvgl_mtx_depth := lvgl_mtx_depth + 1;
+        exit;
+    end;
+
+    while true do begin
+        { CLI to prevent scheduler preemption during lock check + park }
+        asm pushfd; cli end;
+
+        { Atomic test-and-set (SMP-safe via LOCK prefix) }
+        old := 1;
+        asm
+            mov eax, 1
+            lock xchg dword ptr [lvgl_mtx_locked], eax
+            mov old, eax
+        end;
+
+        if old = 0 then begin
+            { Acquired }
+            lvgl_mtx_owner := cur;
+            lvgl_mtx_depth := 1;
+            asm popfd end;
+            exit;
+        end;
+
+        { Failed — park ourselves so the scheduler skips us.
+          The lock holder will wake us on unlock. }
+        if lvgl_mtx_nwait < LVGL_MTX_MAX_WAITERS then begin
+            lvgl_mtx_waiters[lvgl_mtx_nwait] := cur;
+            lvgl_mtx_nwait := lvgl_mtx_nwait + 1;
+        end;
+        PProcessContext(cur)^.State := psAwaiting;
+        asm popfd end;
+
+        { Yield — scheduler will skip us (psAwaiting).
+          Resume here when the lock holder wakes us (sets psReady). }
+        asm hlt end;
+    end;
+end;
+
+procedure lvgl_unlock;
+var
+    i : uint32;
+begin
+    { Recursive unlock — just decrement depth }
+    if lvgl_mtx_depth > 1 then begin
+        lvgl_mtx_depth := lvgl_mtx_depth - 1;
+        exit;
+    end;
+
+    asm pushfd; cli end;
+
+    lvgl_mtx_locked := 0;
+    lvgl_mtx_owner := nil;
+    lvgl_mtx_depth := 0;
+
+    { Wake all waiters — they will compete for the lock }
+    if lvgl_mtx_nwait > 0 then begin
+        for i := 0 to lvgl_mtx_nwait - 1 do
+            if lvgl_mtx_waiters[i] <> nil then
+                PProcessContext(lvgl_mtx_waiters[i])^.State := psReady;
+        lvgl_mtx_nwait := 0;
+    end;
+
+    asm popfd end;
 end;
 
 { ============================================================

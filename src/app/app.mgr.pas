@@ -45,7 +45,8 @@ uses
     core.version,
     //command provider units
     arch.x86.cpu,
-    app.diskcmd, driver.bus.usb.core, app.diskutil, app.notepad, app.partcmd, app.volcmd;
+    app.diskcmd, driver.bus.usb.core, app.diskutil, app.notepad, app.partcmd, app.volcmd,
+    app.filebrowser;
 
 procedure init();
 begin
@@ -64,6 +65,10 @@ begin
     io.stdio.registerCommand('TCPHTTP', @driver.net.proto.tcp.terminal_command_tcphttp, 'Send HTTP GET to a host IP (port 80 default).');
     io.stdio.registerCommand('USB', @driver.bus.usb.core.terminal_command_usb, 'driver.bus.usb subsystem information.');
 
+    { File dispatch — must init before apps that register handlers }
+    driver.storage.ctl.ram.init();
+    driver.storage.filedispatch.init();
+
     { Initialize baked-in programs }
     app.diskcmd.init();
     app.partcmd.init();
@@ -77,12 +82,11 @@ begin
     app.testcmd.init();
     app.ping.init();
     app.meminfo.init();
-    { File dispatch & WASM integration }
-    driver.storage.ctl.ram.init();
-    driver.storage.filedispatch.init();
+    { WASM & remaining apps }
     app.wasm.runner.init();
     app.setres.init();
     app.divzero.init();
+    app.filebrowser.init();
 end;
 
 end.
