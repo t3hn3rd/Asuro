@@ -42,7 +42,9 @@ function stringContains(str : pchar; sub : pchar) : boolean;
 function stringToInt(str : pchar) : uint32;
 function hexStringToInt(str : pchar) : uint32;
 function intToString(i : uint32) : pchar;
+function int64ToString(i : int64) : pchar;
 function boolToString(b : boolean; ext : boolean) : pchar;
+function doubleToStr(d : Double) : pchar;
 function stringMatchAt(str : pchar; pos : uint32; find : pchar) : boolean;
 procedure UnitTest;
 
@@ -349,6 +351,44 @@ begin
     intToString:= result;
 end;
 
+function int64ToString(i : int64) : pchar;
+var
+    result : pchar;
+    tmp    : int64;
+    len    : uint32;
+    pos    : uint32;
+    neg    : boolean;
+
+begin
+    if i = 0 then begin
+        result:= stringNew(1);
+        result[0]:= '0';
+        int64ToString:= result;
+        exit;
+    end;
+    neg:= (i < 0);
+    if neg then i:= -i;
+    { Count digits }
+    len:= 0;
+    tmp:= i;
+    while tmp > 0 do begin
+        inc(len);
+        tmp:= tmp div 10;
+    end;
+    if neg then inc(len);
+    { Build string from right to left }
+    result:= stringNew(len);
+    pos:= len;
+    tmp:= i;
+    while tmp > 0 do begin
+        dec(pos);
+        result[pos]:= char((tmp mod 10) + 48);
+        tmp:= tmp div 10;
+    end;
+    if neg then result[0]:= '-';
+    int64ToString:= result;
+end;
+
 function boolToString(b : boolean; ext : boolean) : pchar;
 var
     t : pchar;
@@ -369,6 +409,135 @@ begin
         kfree(void(t));
         boolToString:= f;
     end;
+end;
+
+function doubleToStr(d : Double) : pchar;
+var
+    intPart    : int64;
+    fracPart   : Double;
+    neg        : boolean;
+    intStr     : pchar;
+    result     : pchar;
+    tmp        : pchar;
+    fracBuf    : pchar;
+    fracLen    : uint32;
+    digit      : uint32;
+    i          : uint32;
+    exp        : sint32;
+    mantissa   : Double;
+    mantStr    : pchar;
+    expStr     : pchar;
+
+begin
+    { Handle zero }
+    if d = 0.0 then begin
+        doubleToStr:= stringCopy('0');
+        exit;
+    end;
+
+    { Handle negative }
+    neg:= d < 0.0;
+    if neg then d:= -d;
+
+    { Scientific notation for very large or very small numbers }
+    if (d >= 1e18) or (d < 1e-4) then begin
+        { Normalize to mantissa * 10^exp where 1.0 <= mantissa < 10.0 }
+        exp:= 0;
+        mantissa:= d;
+        if mantissa >= 10.0 then begin
+            while mantissa >= 10.0 do begin
+                mantissa:= mantissa / 10.0;
+                inc(exp);
+            end;
+        end else begin
+            while mantissa < 1.0 do begin
+                mantissa:= mantissa * 10.0;
+                dec(exp);
+            end;
+        end;
+
+        { Recursive call for mantissa — it will take the fixed-point path }
+        mantStr:= doubleToStr(mantissa);
+
+        if neg then begin
+            tmp:= stringConcat('-', mantStr);
+            kfree(void(mantStr));
+            mantStr:= tmp;
+        end;
+
+        { Build exponent suffix }
+        if exp >= 0 then
+            tmp:= stringConcat(mantStr, 'e+')
+        else
+            tmp:= stringConcat(mantStr, 'e');
+        kfree(void(mantStr));
+
+        expStr:= int64ToString(exp);
+        result:= stringConcat(tmp, expStr);
+        kfree(void(tmp));
+        kfree(void(expStr));
+
+        doubleToStr:= result;
+        exit;
+    end;
+
+    { Split into integer and fractional parts }
+    intPart:= Trunc(d);
+    fracPart:= d - intPart;
+
+    { Clamp floating point imprecision }
+    if fracPart < 0.0 then fracPart:= 0.0;
+    if fracPart < 1e-15 then fracPart:= 0.0;
+    if (1.0 - fracPart) < 1e-15 then begin
+        intPart:= intPart + 1;
+        fracPart:= 0.0;
+    end;
+
+    intStr:= int64ToString(intPart);
+
+    { Integer with no fractional part }
+    if fracPart = 0.0 then begin
+        if neg then begin
+            result:= stringConcat('-', intStr);
+            kfree(void(intStr));
+            doubleToStr:= result;
+        end else
+            doubleToStr:= intStr;
+        exit;
+    end;
+
+    { Fixed-point: build fractional digits }
+    fracBuf:= stringNew(16);
+    fracLen:= 0;
+    for i:= 0 to 14 do begin
+        fracPart:= fracPart * 10.0;
+        digit:= Trunc(fracPart);
+        if digit > 9 then digit:= 9;
+        fracPart:= fracPart - digit;
+        fracBuf[fracLen]:= char(digit + 48);
+        inc(fracLen);
+        if fracPart < 1e-15 then break;
+    end;
+
+    { Trim trailing zeros }
+    while (fracLen > 1) and (fracBuf[fracLen - 1] = '0') do
+        dec(fracLen);
+    fracBuf[fracLen]:= char(0);
+
+    { Assemble: [sign] intPart '.' fracDigits }
+    if neg then begin
+        tmp:= stringConcat('-', intStr);
+        kfree(void(intStr));
+        intStr:= tmp;
+    end;
+
+    tmp:= stringConcat(intStr, '.');
+    kfree(void(intStr));
+    result:= stringConcat(tmp, fracBuf);
+    kfree(void(tmp));
+    kfree(void(fracBuf));
+
+    doubleToStr:= result;
 end;
 
 procedure UnitTest;
@@ -634,6 +803,40 @@ begin
     Assert(stringMatchAt('HELLO', 5, '') = true, 'stringMatchAt empty at end');
     Assert(stringMatchAt('', 0, 'A') = false, 'stringMatchAt empty str');
     Assert(stringMatchAt('', 0, '') = true, 'stringMatchAt both empty');
+
+    { === int64ToString === }
+    s:= int64ToString(0);
+    Assert(stringEquals(s, '0'), 'int64ToString zero');
+    kfree(void(s));
+    s:= int64ToString(123);
+    Assert(stringEquals(s, '123'), 'int64ToString positive');
+    kfree(void(s));
+    s:= int64ToString(-42);
+    Assert(stringEquals(s, '-42'), 'int64ToString negative');
+    kfree(void(s));
+    s:= int64ToString(1000000);
+    Assert(stringEquals(s, '1000000'), 'int64ToString large');
+    kfree(void(s));
+
+    { === doubleToStr === }
+    s:= doubleToStr(0.0);
+    Assert(stringEquals(s, '0'), 'doubleToStr zero');
+    kfree(void(s));
+    s:= doubleToStr(42.0);
+    Assert(stringEquals(s, '42'), 'doubleToStr integer');
+    kfree(void(s));
+    s:= doubleToStr(-7.0);
+    Assert(stringEquals(s, '-7'), 'doubleToStr neg integer');
+    kfree(void(s));
+    s:= doubleToStr(3.14);
+    Assert(stringContains(s, '3.14'), 'doubleToStr decimal');
+    kfree(void(s));
+    s:= doubleToStr(-0.5);
+    Assert(stringContains(s, '-0.5'), 'doubleToStr neg decimal');
+    kfree(void(s));
+    s:= doubleToStr(1e20);
+    Assert(stringContains(s, 'e+'), 'doubleToStr sci large');
+    kfree(void(s));
 
     { Print summary }
     PrintSummary;
