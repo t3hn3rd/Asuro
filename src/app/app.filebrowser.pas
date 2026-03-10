@@ -23,7 +23,6 @@ uses
     driver.storage.vfs,
     driver.storage.types,
     driver.storage.filedispatch,
-    driver.hid.mouse,
     core.ds.hashmap,
     memory.heap,
     proc.mgr,
@@ -232,7 +231,7 @@ procedure fb_newfile_ok_cb(e: Plv_event); cdecl; forward;
 procedure fb_newfile_done(error: TError; userdata: pointer); forward;
 procedure fb_newfile_done_timer(tmr: Plv_timer); cdecl; forward;
 { Phase 7 — context menu }
-procedure fb_mouse_hook(event: TMouseEventType; x, y: sint32); forward;
+procedure fb_row_long_press_cb(e: Plv_event); cdecl; forward;
 procedure show_context_menu(state: PFileBrowserState; mx, my: sint32); forward;
 procedure destroy_context_menu(state: PFileBrowserState); forward;
 procedure fb_ctx_item_cb(e: Plv_event); cdecl; forward;
@@ -450,23 +449,44 @@ end;
 procedure onClose(wid: uint32);
 begin
     debug.tracer.push_trace('filebrowser.onClose');
-    { Remove mouse hook first }
-    driver.hid.mouse.removeMouseHook(@fb_mouse_hook);
     if g_state <> nil then begin
+        { 1. Kill worker process so it stops touching state }
         if g_state^.pid <> 0 then begin
             proc.mgr.kill(g_state^.pid);
             g_state^.pid := 0;
         end;
+        { 2. Delete LVGL timers early to prevent callbacks during teardown }
+        if g_state^.ta_timer <> nil then begin
+            lv_timer_delete(g_state^.ta_timer);
+            g_state^.ta_timer := nil;
+        end;
+        if g_state^.watch_timer <> nil then begin
+            lv_timer_delete(g_state^.watch_timer);
+            g_state^.watch_timer := nil;
+        end;
+        if g_state^.refresh_poll <> nil then begin
+            lv_timer_delete(g_state^.refresh_poll);
+            g_state^.refresh_poll := nil;
+        end;
+        { 3. Clear selection — nil sel_row before deletion (Lesson #16) }
+        clear_selection(g_state);
+        { 4. Destroy context menu (lives on lv_layer_top, not in frame) }
         destroy_context_menu(g_state);
+        { 5. Free user_data strings from LVGL children }
         free_children_userdata(g_state^.breadcrumb);
         free_children_userdata(g_state^.content_area);
         if g_state^.sidebar <> nil then
             free_children_userdata(g_state^.sidebar);
+        { 6. Destroy window — deletes all LVGL widget objects }
+        driver.video.windows.destroyWindow(g_win_id);
+        g_win_id := 0;
+        { 7. Now free remaining heap data and the state record }
         freeState(g_state);
         g_state := nil;
+    end else begin
+        driver.video.windows.destroyWindow(g_win_id);
+        g_win_id := 0;
     end;
-    driver.video.windows.destroyWindow(g_win_id);
-    g_win_id := 0;
     debug.tracer.pop_trace;
 end;
 
@@ -1037,6 +1057,7 @@ begin
         lv_obj_set_user_data(row, s1);
         lv_obj_add_flag(row, LV_OBJ_FLAG_USER_1);  { mark as directory row }
         lv_obj_add_event_cb(row, @fb_dir_cb, LV_EVENT_CLICKED, g_state);
+        lv_obj_add_event_cb(row, @fb_row_long_press_cb, LV_EVENT_LONG_PRESSED, g_state);
         shown := shown + 1;
     end;
 
@@ -1119,6 +1140,7 @@ begin
         end;
         lv_obj_set_user_data(row, s1);
         lv_obj_add_event_cb(row, @fb_file_cb, LV_EVENT_CLICKED, g_state);
+        lv_obj_add_event_cb(row, @fb_row_long_press_cb, LV_EVENT_LONG_PRESSED, g_state);
         shown := shown + 1;
     end;
 
@@ -2842,46 +2864,30 @@ begin
     end;
 end;
 
-{ Mouse hook: intercept right-click }
-procedure fb_mouse_hook(event: TMouseEventType; x, y: sint32);
+{ LVGL long-press callback: select row and show context menu }
+procedure fb_row_long_press_cb(e: Plv_event); cdecl;
 var
-    pt     : lv_point_t;
-    n, idx : uint32;
-    child  : Plv_obj;
+    state  : PFileBrowserState;
+    row    : Plv_obj;
     path   : pchar;
     isDir  : boolean;
+    coords : lv_area_t;
 begin
-    if g_state = nil then exit;
-    if event <> MOUSE_CLICK_RIGHT then exit;
-    if not driver.video.windows.isWindowOpen(g_win_id) then exit;
+    if lv_event_get_code(e) <> LV_EVENT_LONG_PRESSED then exit;
+    state := PFileBrowserState(lv_event_get_user_data(e));
+    if state = nil then exit;
+    row := lv_event_get_target_obj(e);
+    if row = nil then exit;
 
-    { Always destroy old menu first (re-target behavior) }
-    if g_state^.ctx_menu <> nil then
-        destroy_context_menu(g_state);
-
-    { Hit-test content_area children to select the item under cursor }
-    if g_state^.content_area <> nil then begin
-        pt.x := x;
-        pt.y := y;
-        n := lv_obj_get_child_count(g_state^.content_area);
-        if n > 0 then
-        for idx := 0 to n - 1 do begin
-            child := lv_obj_get_child(g_state^.content_area, sint32(idx));
-            if child = nil then continue;
-            if not lv_obj_hit_test(child, @pt) then continue;
-            { Found the row under cursor — check user_data for path }
-            path := pchar(lv_obj_get_user_data(child));
-            if path <> nil then begin
-                { Determine if dir or file by checking the event cb }
-                isDir := lv_obj_has_flag(child, LV_OBJ_FLAG_USER_1);
-                select_item(g_state, child, path, isDir);
-            end;
-            break;
-        end;
+    path := pchar(lv_obj_get_user_data(row));
+    if path <> nil then begin
+        isDir := lv_obj_has_flag(row, LV_OBJ_FLAG_USER_1);
+        select_item(state, row, path, isDir);
     end;
 
-    { Show context menu at cursor }
-    show_context_menu(g_state, x, y);
+    { Position context menu at the row's screen coordinates }
+    lv_obj_get_coords(row, @coords);
+    show_context_menu(state, coords.x2, coords.y1);
 end;
 
 { Timer to dismiss context menu when clicking elsewhere }
@@ -3206,8 +3212,7 @@ begin
     add_bookmark_entry(state, '/sys');
     add_bookmark_entry(state, '/boot');
 
-    { Register mouse hook for right-click context menu }
-    driver.hid.mouse.registerMouseHook(@fb_mouse_hook);
+
 
     debug.tracer.pop_trace;
 end;
