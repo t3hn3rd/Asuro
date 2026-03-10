@@ -13,6 +13,7 @@ This unit is the central video interface for the Asuro kernel. It holds a single
 - `driver.video.gpu`
 - `driver.video.vesa32` (and other BPP variants)
 - `core.hashmap`
+- `core.gfx.fonts` — 8×16 bitmap font data for text drawing
 - `syslog`
 
 ## Functions and Procedures
@@ -68,6 +69,34 @@ Accessor functions returning the corresponding field from `VideoInterface.FrontB
 function backBuffer: PVideoBuffer;
 ```
 Returns a pointer to `VideoInterface.BackBuffer`.
+
+## Text Drawing
+
+These functions render text directly to the framebuffer using the 8×16 bitmap font from `core.gfx.fonts`. They are useful for panic screens or other contexts where LVGL is unavailable. Each function returns the X coordinate immediately after the last drawn pixel, allowing calls to be chained for inline formatting.
+
+### DrawChar
+```pascal
+function DrawChar(X, Y : uint32; C : char; Color : TRGB32) : uint32;
+```
+Draws a single 8×16 bitmap glyph at `(X, Y)` in the given colour. Returns `X + 8`.
+
+### DrawString
+```pascal
+function DrawString(X, Y : uint32; Str : pchar; Color : TRGB32) : uint32;
+```
+Draws a null-terminated string starting at `(X, Y)`. Each character advances X by 8 pixels. Returns the X coordinate after the last character.
+
+### DrawHex
+```pascal
+function DrawHex(X, Y : uint32; Value : uint32; Color : TRGB32) : uint32;
+```
+Draws a `uint32` as a `0xHHHHHHHH` hex string at `(X, Y)`. Returns the X coordinate after the string.
+
+### DrawInt
+```pascal
+function DrawInt(X, Y : uint32; Value : uint32; Color : TRGB32) : uint32;
+```
+Draws an unsigned integer in decimal at `(X, Y)`. Returns the X coordinate after the last digit.
 
 ## Notes
 

@@ -33,7 +33,8 @@ uses
     //dispatch
     driver.storage.filedispatch,
     //wasm
-    app.wasm.runner;
+    app.wasm.runner,
+    app.divzero;
 
 { Initialize all baked-in programs }
 procedure init();
@@ -81,6 +82,7 @@ begin
     driver.storage.filedispatch.init();
     app.wasm.runner.init();
     app.setres.init();
+    app.divzero.init();
 end;
 
 end.

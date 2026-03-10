@@ -12,7 +12,14 @@
         Left column  : Fault Details, CPU Registers, System Info
         Right column : Call Stack (full height)
 
-    Output is also sent to syslog (serial) for headless debugging.
+    All diagnostic sections (Fault Info, CPU Registers, Process Info,
+    System Info, Call Stack) are mirrored to syslog (serial) for
+    headless debugging.
+
+    If the panic occurs inside the gfxd graphics-rendering process,
+    LVGL state may be corrupt; the unit falls back to rendering the
+    panic screen directly to the VESA framebuffer using the bitmap
+    font from core.gfx.fonts.
 
     If called before LVGL has been initialized (early boot panics),
     we gracefully fall back to syslog-only output.
@@ -78,7 +85,9 @@ uses
     proc.mgr,
     proc.types,
     core.fmt.targa,
-    core.gfx.texture;
+    core.gfx.texture,
+    core.strings,
+    core.gfx.color;
 
 { ====================================================================
   Hex formatting helpers — we cannot rely on runtime string formatting
@@ -226,8 +235,14 @@ var
 
 procedure syslogDump(fault : pchar; info : pchar; regs : PRegisterSnapshot);
 var
-    trace : pchar;
-    i     : uint32;
+    trace    : pchar;
+    i        : uint32;
+    ctx      : PProcessContext;
+    stateStr : pchar;
+    heapFree : uint32;
+    heapPages: uint32;
+    procs    : uint32;
+    ticks    : uint32;
 begin
     io.syslog.writestringln('=== KERNEL PANIC ===');
     io.syslog.writestringln('ASURO DID A WHOOPSIE!  :(');
@@ -262,6 +277,64 @@ begin
             io.syslog.writestringln('');
         io.syslog.writestringln(' ');
     end;
+
+    { Process info }
+    ctx := proc.mgr.CurrentProcess;
+    io.syslog.writestringln('Process Info: ');
+    if ctx <> nil then begin
+        io.syslog.writestring('   Name     : ');
+        io.syslog.writestringln(@ctx^.Name[0]);
+        io.syslog.writestring('   PID      : ');
+        io.syslog.writeintln(ctx^.ProcessID);
+        io.syslog.writestring('   Parent   : ');
+        io.syslog.writeintln(ctx^.ParentID);
+        case ctx^.State of
+            psCreated:   stateStr := 'Created';
+            psRunning:   stateStr := 'Running';
+            psReady:     stateStr := 'Ready';
+            psSuspended: stateStr := 'Suspended';
+            psAwaiting:  stateStr := 'Awaiting';
+            psFinished:  stateStr := 'Finished';
+            psError:     stateStr := 'Error';
+        else
+            stateStr := 'Unknown';
+        end;
+        io.syslog.writestring('   State    : ');
+        io.syslog.writestringln(stateStr);
+        io.syslog.writestring('   Priority : ');
+        io.syslog.writeintln(ctx^.Priority);
+    end else begin
+        io.syslog.writestringln('   None');
+    end;
+    io.syslog.writestringln(' ');
+
+    { System info }
+    io.syslog.writestringln('System Info: ');
+    io.syslog.writestring('   Kernel    : Asuro ');
+    io.syslog.writestringln(VERSION);
+    io.syslog.writestring('   Built     : ');
+    io.syslog.writestring(COMPILE_DATE);
+    io.syslog.writestring(' ');
+    io.syslog.writestringln(COMPILE_TIME);
+    io.syslog.writestring('   Compiler  : FPC ');
+    io.syslog.writestringln(FPC_VERSION);
+    io.syslog.writestring('   Revision  : ');
+    io.syslog.writestringln(REVISION);
+    heapFree := lmm_total_free;
+    heapPages := lmm_page_count;
+    io.syslog.writestring('   Heap      : ');
+    io.syslog.writeint(heapFree div 1024);
+    io.syslog.writestring(' KiB free (');
+    io.syslog.writeint(heapPages);
+    io.syslog.writestringln(' pages)');
+    procs := proc.mgr.processCount;
+    io.syslog.writestring('   Processes : ');
+    io.syslog.writeintln(procs);
+    ticks := lvgl_get_ticks;
+    io.syslog.writestring('   Uptime    : ');
+    io.syslog.writeint(ticks div 1000);
+    io.syslog.writestringln('s');
+    io.syslog.writestringln(' ');
 
     { Call stack }
     debug.tracer.freeze;
@@ -507,6 +580,156 @@ begin
     terminateBuffer(systemTextBuf, offset);
 end;
 
+{ ====================================================================
+  VESA fallback — direct framebuffer rendering using driver.video
+  text drawing.  Used when gfxd crashes and LVGL state may be corrupt.
+  ==================================================================== }
+
+{ Render the full panic screen directly to the VESA framebuffer,
+  bypassing LVGL entirely.  Used when gfxd has crashed. }
+procedure showVESAFallbackScreen(fault : pchar; info : pchar;
+                                 regs : PRegisterSnapshot);
+var
+    bgColor, textColor, headerColor, dimColor : TRGB32;
+    cy, cx       : uint32;
+    screenW, screenH : uint32;
+    i, count     : uint32;
+    trace        : pchar;
+    ctx          : PProcessContext;
+    stateStr     : pchar;
+begin
+    screenW := driver.video.frontBufferWidth;
+    screenH := driver.video.frontBufferHeight;
+    if (screenW = 0) or (screenH = 0) then exit;
+
+    { Colours matching the LVGL BSOD theme }
+    bgColor.R     := $7A; bgColor.G     := $28; bgColor.B     := $28; bgColor.A     := $FF;
+    textColor.R   := $FF; textColor.G   := $FF; textColor.B   := $FF; textColor.A   := $FF;
+    headerColor.R := $FF; headerColor.G := $AA; headerColor.B := $AA; headerColor.A := $FF;
+    dimColor.R    := $DD; dimColor.G    := $AA; dimColor.B    := $AA; dimColor.A    := $FF;
+
+    { Fill the entire screen with the background colour }
+    driver.video.FillRect(0, 0, screenW - 1, screenH - 1, 0, bgColor, bgColor);
+
+    cy := 16;
+
+    { Title banner }
+    driver.video.DrawString(16, cy,
+        'Asuro encountered an error and your computer is now a teapot.', textColor);
+    cy := cy + 20;
+    driver.video.DrawString(16, cy,
+        'Don''t worry, your data is almost certainly safe.', dimColor);
+    cy := cy + 32;
+
+    { ---- Fault Details ---- }
+    driver.video.DrawString(16, cy, '--- Fault Details ---', headerColor);
+    cy := cy + 20;
+    cx := driver.video.DrawString(16, cy, fault, textColor);
+    cx := driver.video.DrawString(cx, cy, ' : ', textColor);
+    driver.video.DrawString(cx, cy, info, textColor);
+    cy := cy + 28;
+
+    { ---- CPU Registers ---- }
+    if (regs <> nil) and (regs^.Count > 0) then begin
+        driver.video.DrawString(16, cy, '--- CPU Registers ---', headerColor);
+        cy := cy + 20;
+        cx := 16;
+        for i := 0 to regs^.Count - 1 do begin
+            if (i > 0) and ((i mod 3) = 0) then begin
+                cy := cy + 18;
+                cx := 16;
+            end;
+            cx := driver.video.DrawString(cx, cy, regs^.Entries[i].Name, textColor);
+            cx := driver.video.DrawString(cx, cy, ': ', textColor);
+            cx := driver.video.DrawHex(cx, cy, regs^.Entries[i].Value, textColor);
+            cx := cx + 24;  { gap between register groups }
+        end;
+        cy := cy + 28;
+    end;
+
+    { ---- Process Info ---- }
+    driver.video.DrawString(16, cy, '--- Process Info ---', headerColor);
+    cy := cy + 20;
+    ctx := proc.mgr.CurrentProcess;
+    if ctx <> nil then begin
+        cx := driver.video.DrawString(16, cy, 'Name     : ', textColor);
+        driver.video.DrawString(cx, cy, @ctx^.Name[0], textColor);
+        cy := cy + 18;
+        cx := driver.video.DrawString(16, cy, 'PID      : ', textColor);
+        driver.video.DrawInt(cx, cy, ctx^.ProcessID, textColor);
+        cy := cy + 18;
+        cx := driver.video.DrawString(16, cy, 'Parent   : ', textColor);
+        driver.video.DrawInt(cx, cy, ctx^.ParentID, textColor);
+        cy := cy + 18;
+        case ctx^.State of
+            psCreated:   stateStr := 'Created';
+            psRunning:   stateStr := 'Running';
+            psReady:     stateStr := 'Ready';
+            psSuspended: stateStr := 'Suspended';
+            psAwaiting:  stateStr := 'Awaiting';
+            psFinished:  stateStr := 'Finished';
+            psError:     stateStr := 'Error';
+        else
+            stateStr := 'Unknown';
+        end;
+        cx := driver.video.DrawString(16, cy, 'State    : ', textColor);
+        driver.video.DrawString(cx, cy, stateStr, textColor);
+        cy := cy + 18;
+        cx := driver.video.DrawString(16, cy, 'Priority : ', textColor);
+        driver.video.DrawInt(cx, cy, ctx^.Priority, textColor);
+    end else begin
+        driver.video.DrawString(16, cy, 'None', textColor);
+    end;
+    cy := cy + 28;
+
+    { ---- System Info ---- }
+    driver.video.DrawString(16, cy, '--- System Info ---', headerColor);
+    cy := cy + 20;
+    cx := driver.video.DrawString(16, cy, 'Kernel    : Asuro ', textColor);
+    driver.video.DrawString(cx, cy, VERSION, textColor);
+    cy := cy + 18;
+    cx := driver.video.DrawString(16, cy, 'Built     : ', textColor);
+    cx := driver.video.DrawString(cx, cy, COMPILE_DATE, textColor);
+    cx := driver.video.DrawString(cx, cy, ' ', textColor);
+    driver.video.DrawString(cx, cy, COMPILE_TIME, textColor);
+    cy := cy + 18;
+    cx := driver.video.DrawString(16, cy, 'Compiler  : FPC ', textColor);
+    driver.video.DrawString(cx, cy, FPC_VERSION, textColor);
+    cy := cy + 18;
+    cx := driver.video.DrawString(16, cy, 'Revision  : ', textColor);
+    driver.video.DrawString(cx, cy, REVISION, textColor);
+    cy := cy + 28;
+
+    { ---- Call Stack ---- }
+    driver.video.DrawString(16, cy, '--- Call Stack ---', headerColor);
+    cy := cy + 20;
+    count := debug.tracer.get_trace_count;
+    trace := debug.tracer.get_last_trace;
+    if trace <> nil then begin
+        cx := driver.video.DrawString(16, cy, '[-0] ', textColor);
+        driver.video.DrawString(cx, cy, trace, textColor);
+        cy := cy + 18;
+        for i := 1 to count - 1 do begin
+            cx := driver.video.DrawString(16, cy, '[-', textColor);
+            cx := driver.video.DrawInt(cx, cy, i, textColor);
+            cx := driver.video.DrawString(cx, cy, '] ', textColor);
+            trace := debug.tracer.get_trace_N(i);
+            if trace <> nil then
+                driver.video.DrawString(cx, cy, trace, textColor)
+            else
+                driver.video.DrawString(cx, cy, '?????????', textColor);
+            cy := cy + 18;
+            { Stop if we run off the bottom of the screen }
+            if cy + 18 > screenH then break;
+        end;
+    end else begin
+        driver.video.DrawString(16, cy, 'No trace data available.', textColor);
+    end;
+
+    { Flush the back buffer to the hardware framebuffer }
+    driver.video.Flush;
+end;
+
 { Build an lv_image_dsc_t that points to decoded ARGB8888 pixel data. }
 function buildImageDsc(tex : PTexture) : PLVImageDsc;
 var
@@ -587,6 +810,9 @@ begin
 end;
 
 procedure panic(fault : pchar; info : pchar; regs : PRegisterSnapshot);
+var
+    isGfxdCrash : boolean;
+    ctx         : PProcessContext;
 begin
     { Re-entrancy guard: if we fault during panic, halt immediately }
     if PanicInProgress then begin
@@ -603,8 +829,16 @@ begin
     { Always dump to syslog (serial) }
     syslogDump(fault, info, regs);
 
-    { If the LVGL screen is ready, show the graphical BSOD }
-    if ScreenReady then
+    { Check if the crash occurred in the gfxd process — if so, LVGL
+      state may be corrupt, so fall back to direct VESA rendering }
+    isGfxdCrash := false;
+    ctx := proc.mgr.CurrentProcess;
+    if ctx <> nil then
+        isGfxdCrash := core.strings.stringEquals(@ctx^.Name[0], 'gfxd');
+
+    if isGfxdCrash then
+        showVESAFallbackScreen(fault, info, regs)
+    else if ScreenReady then
         showBSODScreen(fault, info, regs);
 
     { Halt the system }
