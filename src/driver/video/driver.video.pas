@@ -22,7 +22,7 @@ unit driver.video;
 interface
 
 uses
-    memory.heap, debug.tracer, core.gfx.color, driver.video.types, core.ds.hashmap, core.util, arch.x86.util, core.gfx.texture, driver.video.gpu;
+    memory.heap, debug.tracer, core.gfx.color, driver.video.types, core.ds.hashmap, core.util, arch.x86.util, core.gfx.texture, driver.video.gpu, core.gfx.fonts;
 
 procedure init();
 procedure DrawPixel(X : uint32; Y : uint32; Pixel : TRGB32);
@@ -45,6 +45,14 @@ function backBufferLocation : uint32;
 function frontBufferLocation : uint32;
 
 Procedure basicFDrawTexture(Buffer : PVideoBuffer; X : uint32; Y : uint32; Texture : PTexture);
+
+{ Text drawing — renders 8x16 bitmap font glyphs directly to the
+  framebuffer via DrawPixel.  Useful for panic screens and other
+  contexts where LVGL is unavailable. }
+function DrawChar(X, Y : uint32; C : char; Color : TRGB32) : uint32;
+function DrawString(X, Y : uint32; Str : pchar; Color : TRGB32) : uint32;
+function DrawHex(X, Y : uint32; Value : uint32; Color : TRGB32) : uint32;
+function DrawInt(X, Y : uint32; Value : uint32; Color : TRGB32) : uint32;
 
 implementation
 
@@ -340,6 +348,81 @@ end;
 function frontBufferLocation : uint32;
 begin
     frontBufferLocation:= VideoInterface.FrontBuffer.Location;
+end;
+
+{ ============================================================
+  Text drawing — 8x16 bitmap font via Std_Font
+  ============================================================ }
+
+const
+    HexChars : array[0..15] of char = '0123456789ABCDEF';
+
+function DrawChar(X, Y : uint32; C : char; Color : TRGB32) : uint32;
+var
+    row, col : uint32;
+    glyphRow : uint8;
+begin
+    for row := 0 to 15 do begin
+        glyphRow := Std_Font[ord(C) * 16 + row];
+        for col := 0 to 7 do begin
+            if (glyphRow AND ($80 SHR col)) <> 0 then
+                DrawPixel(X + col, Y + row, Color);
+        end;
+    end;
+    DrawChar := X + 8;
+end;
+
+function DrawString(X, Y : uint32; Str : pchar; Color : TRGB32) : uint32;
+var
+    i : uint32;
+begin
+    i := 0;
+    while Str[i] <> #0 do begin
+        DrawChar(X, Y, Str[i], Color);
+        X := X + 8;
+        Inc(i);
+    end;
+    DrawString := X;
+end;
+
+function DrawHex(X, Y : uint32; Value : uint32; Color : TRGB32) : uint32;
+var
+    buf : array[0..10] of char;
+    i   : uint32;
+begin
+    buf[0] := '0';
+    buf[1] := 'x';
+    for i := 0 to 7 do
+        buf[2 + i] := HexChars[(Value SHR (28 - i * 4)) AND $F];
+    buf[10] := #0;
+    DrawHex := DrawString(X, Y, @buf[0], Color);
+end;
+
+function DrawInt(X, Y : uint32; Value : uint32; Color : TRGB32) : uint32;
+var
+    buf    : array[0..11] of char;
+    digits : array[0..9] of char;
+    count  : uint32;
+    i      : uint32;
+    tmp    : uint32;
+begin
+    if Value = 0 then begin
+        buf[0] := '0';
+        buf[1] := #0;
+        DrawInt := DrawString(X, Y, @buf[0], Color);
+        exit;
+    end;
+    count := 0;
+    tmp := Value;
+    while tmp > 0 do begin
+        digits[count] := char((tmp mod 10) + ord('0'));
+        tmp := tmp div 10;
+        Inc(count);
+    end;
+    for i := 0 to count - 1 do
+        buf[i] := digits[count - 1 - i];
+    buf[count] := #0;
+    DrawInt := DrawString(X, Y, @buf[0], Color);
 end;
 
 procedure reinit(fb_addr, width, height, pitch : uint32; bpp : uint8);

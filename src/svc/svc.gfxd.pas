@@ -13,6 +13,10 @@ unit svc.gfxd;
 
 interface
 
+var
+    SHOULD_CRASH : boolean;  { set to true to intentionally trigger a crash for testing purposes }
+    
+
 procedure init;
 
 implementation
@@ -55,6 +59,12 @@ begin
             app.uidebug.update;
             lvgl_handler;
             driver.video.Flush;
+        end;
+        if SHOULD_CRASH then begin
+            asm
+                XOR EAX, EAX
+                DIV EAX  { this will trigger a divide by zero exception (interrupt 0) }
+            end;
         end;
     end;
 end;
