@@ -117,7 +117,8 @@ uses
     wasm.test, 
     wasm.test.framework,
     driver.video.windows,
-    driver.bus.usb.xhci;
+    driver.bus.usb.xhci,
+    core.fmt.json;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  
@@ -352,9 +353,11 @@ begin
      core.ds.prio.UnitTest;
      driver.storage.vfs.UnitTest;
      driver.storage.test.UnitTest;
+     boot.splash.update(95, 'Running test suite...');
      core.enc.fnv1a.UnitTest;
      core.enc.djb2.UnitTest;
      core.ds.bloom.UnitTest;
+     core.fmt.json.UnitTest;
 
      { Initialize driver.video.desktop environment }
      boot.splash.update(100, 'Booting desktop...');

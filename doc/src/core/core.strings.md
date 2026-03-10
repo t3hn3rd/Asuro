@@ -106,6 +106,12 @@ function intToString(i : uint32) : pchar;
 ```
 Returns a heap-allocated decimal string representation of `i`.
 
+### int64ToString
+```pascal
+function int64ToString(i : int64) : pchar;
+```
+Returns a heap-allocated decimal string representation of the signed 64-bit integer `i`. Negative values are prefixed with `'-'`.
+
 ### hexStringToInt
 ```pascal
 function hexStringToInt(str : pchar) : uint32;
@@ -117,6 +123,12 @@ Parses a hexadecimal string (no `0x` prefix) and returns its `uint32` value.
 function boolToString(b : boolean; ext : boolean) : pchar;
 ```
 Returns a heap-allocated string for the boolean `b`. When `ext` is `true`, returns `'true'` or `'false'`; when `false`, returns `'1'` or `'0'`.
+
+### doubleToStr
+```pascal
+function doubleToStr(d : Double) : pchar;
+```
+Returns a heap-allocated decimal string representation of the 64-bit floating-point value `d`. Integer values are emitted without a decimal point (e.g. `42`). Fractional values include up to 15 significant digits with trailing zeros removed. Very large or very small values use scientific notation (e.g. `1.5e+20`).
 
 ### UnitTest
 ```pascal
