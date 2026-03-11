@@ -637,6 +637,8 @@ begin
     ctx := PFBCollectCtx(ud);
     obj := PVFSObject(data);
     if (ctx = nil) or (obj = nil) then exit;
+    { Always hide '.' and '..' entries }
+    if stringEquals(key, '.') or stringEquals(key, '..') then exit;
     case obj^.ObjectType of
         otVDIRECTORY, otDRIVE, otDIRECTORY, otMOUNT, otSYMLINK:
             if ctx^.dir_count < ENTRY_MAX then begin
@@ -3075,6 +3077,7 @@ begin
     makeToolBtn(toolbar, SYM_DIRECTORY, 32, state, @fb_newfolder_cb);
     makeToolBtn(toolbar, SYM_FILE,      32, state, @fb_newfile_cb);
     makeToolBtn(toolbar, SYM_EDIT,      32, state, @fb_rename_cb);
+    makeToolBtn(toolbar, SYM_TRASH,     32, state, @fb_delete_cb);
 
     { Filter input }
     state^.filter_ta := lv_textarea_create(toolbar);
