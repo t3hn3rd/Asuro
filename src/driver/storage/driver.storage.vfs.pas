@@ -448,13 +448,41 @@ end;
   calling FireWatchEvent directly. }
 procedure VFS_OnMutation(event : TVFSWatchEvent; dirPath : pchar; itemPath : pchar; vol : PStorage_Volume; relPath : pchar);
 begin
-    { Invalidate cache for the volume + relative path }
-    DirCache_Invalidate(vol, relPath);
+    { Invalidate ALL cache entries for the volume.  relPath is a file-level
+      path (e.g. 'test.txt') whose format differs from the directory-level
+      keys stored in the cache (e.g. '/'), so targeted matching fails.
+      Passing nil evicts every entry for the volume — safe and correct. }
+    DirCache_Invalidate(vol, nil);
     { Fire watch callbacks }
     FireWatchEvent(event, dirPath, itemPath);
 end;
 
 { =========================================================================== }
+
+{ Return a heap-allocated copy of the parent directory portion of an
+  absolute VFS path.  '/sys/hello.txt' -> '/sys', '/hello.txt' -> '/'. }
+function vfsParentDir(path : pchar) : pchar;
+var
+    abs  : pchar;
+    len  : uint32;
+    last : uint32;
+    i    : uint32;
+begin
+    abs := MakeAbsolutePath(path);
+    len := stringSize(abs);
+    last := 0;
+    if len > 0 then
+        for i := 0 to len - 1 do
+            if abs[i] = '/' then last := i;
+    if last = 0 then begin
+        vfsParentDir := stringNew(1);
+        vfsParentDir[0] := '/';
+    end else begin
+        vfsParentDir := stringNew(last);
+        core.util.memcpy(uint32(abs), uint32(vfsParentDir), last);
+    end;
+    kfree(void(abs));
+end;
 
 function makeRelative(Path : pchar; From : pchar) : pchar;
 var
@@ -822,6 +850,7 @@ begin
             newObj^.Parent := Parent;
             newObj^.Reference := nil;
             newObj^.FileSize := entry^.fileSize;
+
             case entry^.entryType of
                 directoryEntry: newObj^.ObjectType := otDIRECTORY;
                 fileEntry:      newObj^.ObjectType := otFILE;
@@ -1124,6 +1153,7 @@ begin
         fd^.Volume := nil;
         fd^.Directory := nil;
         fd^.FileName := stringCopy(vfsObj^.ObjectName);
+        fd^.VFSDir := nil; { devices have no parent directory }
         fd^.OpenMode := uint8(ord(OpenMode));
         fd^.DataBuffer := nil;
         fd^.DataSize := 0;
@@ -1159,6 +1189,7 @@ begin
     fd^.Volume := vol;
     fd^.Directory := dir;
     fd^.FileName := fname;
+    fd^.VFSDir := vfsParentDir(Filename);
     fd^.OpenMode := uint8(ord(OpenMode));
     fd^.DataBuffer := nil;
     fd^.DataSize := 0;
@@ -1287,9 +1318,12 @@ begin
         status := puint32(kalloc(4));
         status^ := 0;
         vol^.filesystem^.writeCallback(vol, fd^.Directory, @dirEntry, Length, padBuf, status);
-        if status^ = 0 then
-            WriteFile := Length
-        else
+        if status^ = 0 then begin
+            WriteFile := Length;
+            { Invalidate cache + fire watch notification so open file
+              browsers see the updated size / new entry. }
+            VFS_OnMutation(weModified, fd^.VFSDir, fd^.VFSDir, vol, fd^.Directory);
+        end else
             WriteFile := 0;
         kfree(puint32(status));
         kfree(padBuf);
@@ -1458,6 +1492,12 @@ begin
         exit;
     end;
 
+    { Invalidate directory cache before dispatching the write.  The file
+      browser (and any other caller) only re-reads directory listings after
+      the completion callback fires, by which time the disk write has
+      finished and the fresh read will return the updated listing. }
+    VFS_OnMutation(weModified, fd^.VFSDir, fd^.VFSDir, vol, fd^.Directory);
+
     { Prefer async hook; fall back to sync if not available }
     if vol^.filesystem^.writeAsyncCallback <> nil then begin
         dirEntry.fileName  := fd^.FileName;
@@ -1556,6 +1596,7 @@ begin
     fd^.Volume    := vol;
     fd^.Directory := dir;
     fd^.FileName  := fname;
+    fd^.VFSDir    := vfsParentDir(Filename);
     fd^.OpenMode  := uint8(ord(OpenMode));
     fd^.DataBuffer:= nil;
     fd^.DataSize  := 0;

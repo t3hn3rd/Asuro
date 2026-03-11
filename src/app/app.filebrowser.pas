@@ -30,7 +30,6 @@ uses
     core.strings,
     core.strings.helpers,
     core.gfx.fileicons,
-    io.syslog,
     debug.tracer,
     core.util,
     arch.x86.util;
@@ -228,7 +227,8 @@ procedure fb_rename_cb(e: Plv_event); cdecl; forward;
 procedure fb_rename_ok_cb(e: Plv_event); cdecl; forward;
 procedure fb_newfile_cb(e: Plv_event); cdecl; forward;
 procedure fb_newfile_ok_cb(e: Plv_event); cdecl; forward;
-procedure fb_newfile_done(error: TError; userdata: pointer); forward;
+procedure fb_newfile_opened(error: TError; userdata: pointer); forward;
+procedure fb_newfile_written(error: TError; userdata: pointer); forward;
 procedure fb_newfile_done_timer(tmr: Plv_timer); cdecl; forward;
 { Phase 7 — context menu }
 procedure fb_row_long_press_cb(e: Plv_event); cdecl; forward;
@@ -557,10 +557,10 @@ end;
 procedure navigate_to(state: PFileBrowserState; newDir: pchar);
 begin
     { Unwatch old directory }
-    {if state^.watch_id <> 0 then begin
+    if state^.watch_id <> 0 then begin
         driver.storage.vfs.UnwatchDirectory(state^.watch_id);
         state^.watch_id := 0;
-    end;}
+    end;
     push_history(state, newDir);
     if state^.cur_path <> nil then kfree(void(state^.cur_path));
     state^.cur_path := stringCopy(newDir);
@@ -568,8 +568,8 @@ begin
     build_breadcrumbs(state);
     if state^.tab_bar <> nil then rebuild_tab_bar(state);
     { Watch new directory }
-    {state^.watch_dirty := false;
-    state^.watch_id := driver.storage.vfs.WatchDirectory(newDir, @fb_watch_cb, state);}
+    state^.watch_dirty := false;
+    state^.watch_id := driver.storage.vfs.WatchDirectory(newDir, @fb_watch_cb, state);
     schedule_refresh(state);
 end;
 
@@ -1843,20 +1843,38 @@ begin
     nfctx^.err    := eNone;
     nfctx^.handle := 0;
     driver.storage.vfs.OpenFileAsync(fp, omCreate, nfctx^.handle,
-                                     @nfctx^.err, @fb_newfile_done, nfctx);
+                                     @nfctx^.err, @fb_newfile_opened, nfctx);
     kfree(void(fp));
 end;
 
-{ Async completion for file creation }
-procedure fb_newfile_done(error: TError; userdata: pointer);
+{ Async step 1: file descriptor opened — now write 0 bytes to create dir entry }
+procedure fb_newfile_opened(error: TError; userdata: pointer);
 var
     nfctx : PNewFileCtx;
 begin
     nfctx := PNewFileCtx(userdata);
     if nfctx = nil then exit;
     nfctx^.err := error;
-    { Close the handle if it was opened successfully }
-    if (error = eNone) and (nfctx^.handle <> 0) then
+    if (error = eNone) and (nfctx^.handle <> 0) then begin
+        { WriteFileAsync needs a non-nil buffer; Length=0 so it is never read }
+        driver.storage.vfs.WriteFileAsync(nfctx^.handle, 0,
+            puint8(@nfctx^.err), 0, @fb_newfile_written, nfctx);
+    end else begin
+        if nfctx^.handle <> 0 then
+            driver.storage.vfs.CloseFile(nfctx^.handle);
+        lv_timer_create(@fb_newfile_done_timer, 1, nfctx);
+    end;
+end;
+
+{ Async step 2: write complete — close handle and schedule UI refresh }
+procedure fb_newfile_written(error: TError; userdata: pointer);
+var
+    nfctx : PNewFileCtx;
+begin
+    nfctx := PNewFileCtx(userdata);
+    if nfctx = nil then exit;
+    if error <> eNone then nfctx^.err := error;
+    if nfctx^.handle <> 0 then
         driver.storage.vfs.CloseFile(nfctx^.handle);
     lv_timer_create(@fb_newfile_done_timer, 1, nfctx);
 end;
@@ -3205,7 +3223,7 @@ begin
     rebuild_tab_bar(state);
 
     { Create 500ms poll timer for directory watch notifications }
-    {state^.watch_timer := lv_timer_create(@fb_watch_poll_timer, 500, state);}
+    state^.watch_timer := lv_timer_create(@fb_watch_poll_timer, 500, state);
 
     { Default bookmarks }
     add_bookmark_entry(state, '/');

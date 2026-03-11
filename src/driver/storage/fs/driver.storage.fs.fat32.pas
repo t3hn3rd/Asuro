@@ -1362,7 +1362,6 @@ var
     directories : PLinkedListBase;
     clusters : PLinkedListBase;
     startCluster: uint32;
-    device : PStorage_Device;
     dir : PDirectory;
     exists : boolean = false;
     sectorCount : uint32;
@@ -1371,12 +1370,19 @@ var
     dataStart : uint32;
     iterations : uint32;
     bufferPointer : puint32;
-    dataPosition : uint32;
 
     i : uint32;
     status : puint32;
     namePart : pchar;
     extPart  : pchar;
+
+    { Variables for updating directory entry byteSize }
+    entryIndex     : uint32;
+    parentCluster  : uint32;
+    dirSectorBuf   : puint32;
+    dirSectorLoc   : uint32;
+    entriesPerSec  : uint32;
+    entryOffset    : uint32;
 begin
     push_trace('driver.storage.fs.fat32.writeFile.enter');
     io.syslog.logln('FAT32', 'writeFile: enter');
@@ -1392,7 +1398,6 @@ begin
     end;
 
     bootRecord:= readBootRecord(volume);
-    device:= volume^.device;
     push_trace('driver.storage.fs.fat32.writeFile.readDir');
     directories:= readDirectory(volume, directory, status);
 
@@ -1416,7 +1421,8 @@ begin
     for i:=0 to LL_size(directories) - 1 do begin
         dir:= PDirectory(LL_get(directories, i));
         if compareByteArray8(dir^.fileName, cleanString(namePart, status)) and matchExtension(dir^.fileExtension, extPart) then begin
-            exists:= true; 
+            exists:= true;
+            entryIndex:= i;
             break;
         end;
     end;
@@ -1467,6 +1473,7 @@ begin
         push_trace('driver.storage.fs.fat32.writeFile.newFile');
         io.syslog.logln('FAT32', 'writeFile: creating new file');
 
+        entryIndex:= LL_size(directories); { New entry appended at end }
         startCluster:= writeDirectory(volume, directory, entry^.fileName, 0, status);
 
         { If writeDirectory failed (disk full, dir full, invalid name, etc.), propagate error }
@@ -1479,7 +1486,7 @@ begin
             exit;
         end;
 
-        clusterDifference:= (byteCount div bootRecord^.sectorsize) div 4;
+        clusterDifference:= (byteCount div bootRecord^.sectorsize) div bootRecord^.spc;
             push_trace('driver.storage.fs.fat32.writeFile.newFile.setupFat');
 
         for i:= startcluster to startCluster + clusterDifference - 1 do begin
@@ -1493,18 +1500,33 @@ begin
     push_trace('driver.storage.fs.fat32.writeFile.writeSectors');
     io.syslog.logln('FAT32', 'writeFile: writing sectors');
 
-    iterations:= (bytecount div bootRecord^.sectorSize) div bootRecord^.spc; //no of clusters
-
-    for i:=0 to iterations do begin
-        dataPosition:= i * uint32(bootRecord^.sectorsize * 4); //needs to be bytes / 4
-        bufferPointer:= @buffer[dataPosition div 4]; //todo change to puint8
-        driver.storage.mgr.storage_write(volume^.device, dataStart + (startCluster * bootRecord^.spc) + (i * 4), 1, bufferPointer); //i * 4 needs to be changed, TODO fix fucking driver.storage.ctl.ide driver, it suks
-        driver.storage.mgr.storage_write(volume^.device, dataStart + (startCluster * bootRecord^.spc) + (i * 4) + 1, 1, @bufferPointer[512 div 4]); 
-        driver.storage.mgr.storage_write(volume^.device, dataStart + (startCluster * bootRecord^.spc) + (i * 4) + 2, 1, @bufferPointer[1024 div 4]); 
-        driver.storage.mgr.storage_write(volume^.device, dataStart + (startCluster * bootRecord^.spc) + (i * 4) + 3, 1, @bufferPointer[1536 div 4]); 
+    { Calculate total sectors needed and write each sector individually.
+      Assumes contiguous clusters starting at startCluster. }
+    iterations:= (bytecount + bootRecord^.sectorSize - 1) div bootRecord^.sectorSize;
+    if iterations > 0 then begin
+        for i:=0 to iterations - 1 do begin
+            bufferPointer:= puint32(uint32(buffer) + uint32(i * bootRecord^.sectorSize));
+            driver.storage.mgr.storage_write(volume^.device, dataStart + (startCluster * bootRecord^.spc) + i, 1, bufferPointer);
+        end;
     end;
 
-    { Write succeeded }
+    { Write succeeded — now update the directory entry's byteSize on disk }
+    push_trace('driver.storage.fs.fat32.writeFile.updateByteSize');
+    if LL_size(directories) > 0 then begin
+        parentCluster:= uint32(PDirectory(LL_get(directories, 0))^.clusterLow)
+                     or uint32(PDirectory(LL_get(directories, 0))^.clusterHigh shl 16);
+        entriesPerSec:= bootRecord^.sectorSize div uint32(sizeof(TDirectory));
+        dirSectorLoc:= (entryIndex * uint32(sizeof(TDirectory))) div bootRecord^.sectorSize;
+        dirSectorLoc:= dirSectorLoc + (parentCluster * bootRecord^.spc);
+        entryOffset:= entryIndex mod entriesPerSec;
+
+        dirSectorBuf:= puint32(kalloc(bootRecord^.sectorSize));
+        driver.storage.mgr.storage_read(volume^.device, dataStart + dirSectorLoc, 1, dirSectorBuf);
+        PDirectory(dirSectorBuf)[entryOffset].byteSize:= byteCount;
+        driver.storage.mgr.storage_write(volume^.device, dataStart + dirSectorLoc, 1, dirSectorBuf);
+        kfree(dirSectorBuf);
+    end;
+
     io.syslog.logln('FAT32', 'writeFile: done');
     if statusOut <> nil then statusOut^:= ord(eNone);
 
@@ -1579,28 +1601,33 @@ begin
         clusters := getFatChain(volume, cluster, bootRecord);
         noClusters := LL_size(clusters);
 
-        data := puint32(kalloc(noClusters * bootRecord^.spc * bootRecord^.sectorSize + bootRecord^.sectorSize));
+        data := puint32(kalloc(noClusters * bootRecord^.spc * bootRecord^.sectorSize));
         if data = puint32(0) then begin
             push_trace('UNABLE TO ALLOCATE MEMORY');
             io.syslog.logln('FAT32', 'readFile: OOM allocating data buffer');
         end;
-        memset(uint32(data), 0, noClusters * bootRecord^.spc * bootRecord^.sectorSize + bootRecord^.sectorSize);
+        memset(uint32(data), 0, noClusters * bootRecord^.spc * bootRecord^.sectorSize);
 
-        readbuffer := puint32(kalloc(bootRecord^.sectorSize * 2));
+        readbuffer := puint32(kalloc(bootRecord^.sectorSize));
         if readbuffer = puint32(0) then begin
             push_trace('UNABLE TO ALLOCATE MEMORY');
             io.syslog.logln('FAT32', 'readFile: OOM allocating read buffer');
         end;
-        memset(uint32(readbuffer), 0, bootRecord^.sectorSize * 2);
 
-        for i:=0 to noClusters * bootRecord^.spc do begin
-            driver.storage.mgr.storage_read(volume^.device, dataStart + ((cluster * bootRecord^.spc)+ i), 1, readbuffer);
-            memcpy(uint32(readbuffer), uint32(@data[i*bootRecord^.sectorSize div 4]), bootRecord^.sectorSize);
+        if noClusters * bootRecord^.spc > 0 then begin
+            for i:=0 to (noClusters * bootRecord^.spc) - 1 do begin
+                driver.storage.mgr.storage_read(volume^.device, dataStart + ((cluster * bootRecord^.spc) + i), 1, readbuffer);
+                memcpy(uint32(readbuffer), uint32(@data[i * bootRecord^.sectorSize div 4]), bootRecord^.sectorSize);
+            end;
         end;
 
         kfree(readbuffer);
         buffer^ := uint32(data);
-        bytecount^ := noClusters * bootRecord^.spc * bootRecord^.sectorSize + bootRecord^.sectorSize;//maybe need to spc
+        { Report actual file size from directory entry, not cluster-based estimate }
+        if dir^.byteSize > 0 then
+            bytecount^ := dir^.byteSize
+        else
+            bytecount^ := noClusters * bootRecord^.spc * bootRecord^.sectorSize;
         readFile:= statusOut^;
         io.syslog.logln('FAT32', 'readFile: done');
         LL_Free(dirs);
