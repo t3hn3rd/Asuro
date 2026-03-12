@@ -20,7 +20,8 @@ uses
 
 const
     MAX_MAGIC_LEN  = 8;
-    MAX_HANDLERS   = 16;
+    MAX_HANDLERS   = 32;
+    MAX_EXT_LIST   = 128;  { max chars for the comma-separated ext list }
 
 type
     { Handler callback — receives the resolved absolute path,
@@ -30,7 +31,9 @@ type
                             params : PParamList;
                             stdin_buf, stdout_buf, stderr_buf : POutBuf) : uint32;
 
-{ Register a file-type handler.
+    THandlerKind = (hkMagic, hkExtension);
+
+{ Register a magic-byte handler.
   magic    — pointer to the magic byte sequence to match.
   magicLen — length of the magic (1..MAX_MAGIC_LEN).
   name     — human-readable label (e.g. 'WASM').
@@ -38,8 +41,16 @@ type
 procedure registerHandler(magic : puint8; magicLen : uint8;
                           name : pchar; handler : TFileHandler);
 
+{ Register an extension-based handler.
+  extList  — comma-separated extensions WITH dots, e.g. '.txt,.md,.log'
+  name     — human-readable label (e.g. 'Text').
+  handler  — callback invoked when a file's extension matches. }
+procedure registerExtHandler(extList : pchar; name : pchar;
+                             handler : TFileHandler);
+
 { Try to dispatch a path to a registered handler.
   absPath must be a fully-resolved absolute VFS path.
+  Tries magic-byte handlers first, then extension-based handlers.
   Returns the PID of the launched process, or 0 if no handler matched. }
 function dispatch(absPath : pchar;
                   params : PParamList;
@@ -50,19 +61,26 @@ procedure init;
 implementation
 
 uses
-    driver.storage.vfs, driver.storage.types, memory.heap, core.strings, debug.tracer, io.syslog, core.util, arch.x86.util;
+    driver.storage.vfs, driver.storage.types, memory.heap, core.strings,
+    core.strings.helpers, debug.tracer, io.syslog, core.util, arch.x86.util;
 
 type
-    TFileHandlerEntry = record
-        Magic    : array[0..MAX_MAGIC_LEN-1] of uint8;
-        MagicLen : uint8;
-        Name     : array[0..15] of char;
-        Handler  : TFileHandler;
-        Used     : boolean;
+    THandlerEntry = record
+        Name    : array[0..15] of char;
+        Handler : TFileHandler;
+        Used    : boolean;
+        case Kind : THandlerKind of
+            hkMagic: (
+                Magic    : array[0..MAX_MAGIC_LEN-1] of uint8;
+                MagicLen : uint8;
+            );
+            hkExtension: (
+                ExtList  : array[0..MAX_EXT_LIST-1] of char;
+            );
     end;
 
 var
-    Handlers     : array[0..MAX_HANDLERS-1] of TFileHandlerEntry;
+    Handlers     : array[0..MAX_HANDLERS-1] of THandlerEntry;
     HandlerCount : uint32;
 
 { ---- Internal ---- }
@@ -78,7 +96,7 @@ begin
     dest[i] := #0;
 end;
 
-function matchMagic(fileBytes : puint8; entry : TFileHandlerEntry) : boolean;
+function matchMagic(fileBytes : puint8; entry : THandlerEntry) : boolean;
 var i : uint8;
 begin
     matchMagic := true;
@@ -104,6 +122,7 @@ begin
     for i := 0 to MAX_HANDLERS - 1 do begin
         if not Handlers[i].Used then begin
             Handlers[i].Used := true;
+            Handlers[i].Kind := hkMagic;
             Handlers[i].MagicLen := magicLen;
             memcpy(uint32(magic), uint32(@Handlers[i].Magic[0]), magicLen);
             copyName(@Handlers[i].Name[0], name, 16);
@@ -111,6 +130,72 @@ begin
             inc(HandlerCount);
             exit;
         end;
+    end;
+end;
+
+procedure registerExtHandler(extList : pchar; name : pchar;
+                             handler : TFileHandler);
+var
+    i   : uint32;
+    len : uint32;
+begin
+    debug.tracer.push_trace('driver.storage.filedispatch.registerExtHandler');
+    if (extList = nil) or (handler = nil) then exit;
+    if HandlerCount >= MAX_HANDLERS then exit;
+    len := stringSize(extList);
+    if (len = 0) or (len >= MAX_EXT_LIST) then exit;
+
+    for i := 0 to MAX_HANDLERS - 1 do begin
+        if not Handlers[i].Used then begin
+            Handlers[i].Used := true;
+            Handlers[i].Kind := hkExtension;
+            memcpy(uint32(extList), uint32(@Handlers[i].ExtList[0]), len);
+            Handlers[i].ExtList[len] := #0;
+            copyName(@Handlers[i].Name[0], name, 16);
+            Handlers[i].Handler := handler;
+            inc(HandlerCount);
+            exit;
+        end;
+    end;
+end;
+
+{ matchExt — check if fileExt appears in the comma-separated extList.
+  fileExt is e.g. '.txt', extList is e.g. '.txt,.md,.log'.
+  Comparison is case-insensitive. }
+function matchExt(fileExt : pchar; extList : pchar) : boolean;
+var
+    i, start, eLen, fLen : uint32;
+    listLen : uint32;
+    match   : boolean;
+    j       : uint32;
+begin
+    matchExt := false;
+    if (fileExt = nil) or (extList = nil) then exit;
+    fLen    := stringSize(fileExt);
+    listLen := stringSize(extList);
+    if (fLen = 0) or (listLen = 0) then exit;
+
+    start := 0;
+    i := 0;
+    while i <= listLen do begin
+        if (i = listLen) or (extList[i] = ',') then begin
+            eLen := i - start;
+            if eLen = fLen then begin
+                match := true;
+                for j := 0 to eLen - 1 do begin
+                    if charToLower(fileExt[j]) <> charToLower(extList[start + j]) then begin
+                        match := false;
+                        break;
+                    end;
+                end;
+                if match then begin
+                    matchExt := true;
+                    exit;
+                end;
+            end;
+            start := i + 1;
+        end;
+        inc(i);
     end;
 end;
 
@@ -125,6 +210,7 @@ var
     bytesRead : uint32;
     i         : uint32;
     pid       : uint32;
+    ext       : pchar;
 begin
     debug.tracer.push_trace('driver.storage.filedispatch.dispatch');
     dispatch := 0;
@@ -143,16 +229,32 @@ begin
     bytesRead := driver.storage.vfs.ReadFile(fh, 0, @headerBuf[0], MAX_MAGIC_LEN);
     driver.storage.vfs.CloseFile(fh);
 
-    if bytesRead = 0 then exit;
+    { 3. Match against registered magic-byte handlers }
+    if bytesRead > 0 then begin
+        for i := 0 to MAX_HANDLERS - 1 do begin
+            if Handlers[i].Used and (Handlers[i].Kind = hkMagic) then begin
+                if Handlers[i].MagicLen <= bytesRead then begin
+                    if matchMagic(@headerBuf[0], Handlers[i]) then begin
+                        pid := Handlers[i].Handler(absPath, params,
+                                                   stdin_buf, stdout_buf, stderr_buf);
+                        if pid > 0 then begin
+                            dispatch := pid;
+                            exit;
+                        end;
+                    end;
+                end;
+            end;
+        end;
+    end;
 
-    { 3. Match against registered handlers (longest magic first
-         is not needed — we just iterate and take first match) }
-    for i := 0 to MAX_HANDLERS - 1 do begin
-        if Handlers[i].Used then begin
-            if Handlers[i].MagicLen <= bytesRead then begin
-                if matchMagic(@headerBuf[0], Handlers[i]) then begin
+    { 4. Extension-based fallback — extract the file extension and match }
+    ext := getFileExtension(absPath);
+    if ext <> nil then begin
+        for i := 0 to MAX_HANDLERS - 1 do begin
+            if Handlers[i].Used and (Handlers[i].Kind = hkExtension) then begin
+                if matchExt(ext, @Handlers[i].ExtList[0]) then begin
                     pid := Handlers[i].Handler(absPath, params,
-                                               stdin_buf, stdout_buf, stderr_buf);
+                                                  stdin_buf, stdout_buf, stderr_buf);
                     if pid > 0 then begin
                         dispatch := pid;
                         exit;
@@ -161,8 +263,6 @@ begin
             end;
         end;
     end;
-
-    { 4. No handler matched — future: try extension-based fallback }
 end;
 
 procedure init;

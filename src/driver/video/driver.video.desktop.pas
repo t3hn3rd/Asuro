@@ -112,36 +112,6 @@ begin
 end;
 
 { ============================================================
-  Case-insensitive substring match (no allocation)
-  ============================================================ }
-function toLowerC(c: char): char;
-begin
-    if (c >= 'A') and (c <= 'Z') then
-        toLowerC := char(ord(c) + 32)
-    else
-        toLowerC := c;
-end;
-
-function ciContains(haystack, needle: pchar): boolean;
-var
-    h, hs, ns : pchar;
-begin
-    ciContains := false;
-    if needle^ = #0 then begin ciContains := true; exit; end;
-    h := haystack;
-    while h^ <> #0 do begin
-        hs := h;
-        ns := needle;
-        while (hs^ <> #0) and (ns^ <> #0) and (toLowerC(hs^) = toLowerC(ns^)) do begin
-            inc(hs);
-            inc(ns);
-        end;
-        if ns^ = #0 then begin ciContains := true; exit; end;
-        inc(h);
-    end;
-end;
-
-{ ============================================================
   Build HH:MM string from driver.timer.rtc
   ============================================================ }
 procedure updateClockText;
@@ -569,7 +539,7 @@ begin
             fentry := PProgEntry(LL_Get(programs, i));
             if (fentry = nil) or (not fentry^.active) then continue;
 
-            if (query = nil) or (query^ = #0) or ciContains(fentry^.name, query) then begin
+            if (query = nil) or (query^ = #0) or stringContainsCI(fentry^.name, query) then begin
                 lv_label_set_text(result_lbls[vis], fentry^.name);
                 result_prog[vis] := i;
                 lv_obj_remove_flag(result_btns[vis], LV_OBJ_FLAG_HIDDEN);

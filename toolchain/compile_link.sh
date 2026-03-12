@@ -19,4 +19,4 @@ echo " "
 LIBGCC=$(gcc -m32 -print-libgcc-file-name)
 echo "libgcc: ${LIBGCC}"
 
-ld -m elf_i386 -s --gc-sections -Ttoolchain/linker.script -o bin/kernel.bin $objstring --start-group lib/liblvgl.a ${LIBGCC} --end-group
+ld -m elf_i386 -s --gc-sections --no-warn-execstack -Ttoolchain/linker.script -o bin/kernel.bin $objstring --start-group lib/liblvgl.a ${LIBGCC} --end-group

@@ -61,6 +61,7 @@ uses
     driver.video.lvgl,
     driver.storage.types,
     core.strings,
+    core.strings.helpers,
     io.syslog,
     debug.tracer,
     core.util, arch.x86.util,
@@ -263,119 +264,6 @@ begin
 end;
 
 { ============================================================
-  fmtFileSize — returns a kalloc'd human-readable size string.
-  Caller must kfree the result.
-  ============================================================ }
-function fmtFileSize(sz: uint32): pchar;
-var
-    whole, frac     : uint32;
-    s1, s2, s3, res : pchar;
-begin
-    if sz < 1024 then begin
-        s1  := intToString(sz);
-        res := stringConcat(s1, ' B');
-        kfree(void(s1));
-    end else if sz < uint32(1024 * 1024) then begin
-        whole := sz div 1024;
-        frac  := (sz mod 1024) * 10 div 1024;
-        s1  := intToString(whole);
-        s2  := stringConcat(s1, '.');         kfree(void(s1));
-        s3  := intToString(frac);
-        s1  := stringConcat(s2, s3);          kfree(void(s2)); kfree(void(s3));
-        res := stringConcat(s1, ' KB');       kfree(void(s1));
-    end else begin
-        whole := sz div (1024 * 1024);
-        frac  := (sz mod (1024 * 1024)) * 10 div (1024 * 1024);
-        s1  := intToString(whole);
-        s2  := stringConcat(s1, '.');         kfree(void(s1));
-        s3  := intToString(frac);
-        s1  := stringConcat(s2, s3);          kfree(void(s2)); kfree(void(s3));
-        res := stringConcat(s1, ' MB');       kfree(void(s1));
-    end;
-    fmtFileSize := res;
-end;
-
-{ ============================================================
-  matchesFilter
-  Returns true when name ends with the filter extension, or
-  when filter is nil (show everything).
-  ============================================================ }
-function matchesFilter(name: pchar; fltr: pchar): boolean;
-var
-    nlen, flen, i: uint32;
-begin
-    matchesFilter := true;
-    if fltr = nil then exit;
-    nlen := stringSize(name);
-    flen := stringSize(fltr);
-    if flen = 0 then exit;
-    if nlen < flen then begin matchesFilter := false; exit; end;
-    for i := 0 to flen - 1 do
-        if name[nlen - flen + i] <> fltr[i] then begin
-            matchesFilter := false;
-            exit;
-        end;
-end;
-
-{ ============================================================
-  strLess — case-sensitive alphabetical comparison for sort
-  ============================================================ }
-function strLess(a, b: pchar): boolean;
-var
-    i: uint32;
-begin
-    strLess := false;
-    if (a = nil) or (b = nil) then exit;
-    i := 0;
-    while (a[i] <> #0) and (b[i] <> #0) do begin
-        if ord(a[i]) < ord(b[i]) then begin strLess := true; exit; end;
-        if ord(a[i]) > ord(b[i]) then exit;
-        i := i + 1;
-    end;
-    strLess := (a[i] = #0) and (b[i] <> #0);
-end;
-
-{ Simple insertion sort on a pchar array of length n }
-procedure sortNames(var arr: array of pchar; n: uint32);
-var
-    i, j : uint32;
-    tmp  : pchar;
-begin
-    if n < 2 then exit;
-    for i := 1 to n - 1 do begin
-        tmp := arr[i];
-        j   := i;
-        while (j > 0) and strLess(tmp, arr[j - 1]) do begin
-            arr[j] := arr[j - 1];
-            j := j - 1;
-        end;
-        arr[j] := tmp;
-    end;
-end;
-
-{ Insertion sort on name array, swapping a parallel size array in lockstep }
-procedure sortNamesWithSizes(var names: array of pchar; var sizes: array of uint32; n: uint32);
-var
-    i, j  : uint32;
-    tmpN  : pchar;
-    tmpS  : uint32;
-begin
-    if n < 2 then exit;
-    for i := 1 to n - 1 do begin
-        tmpN := names[i];
-        tmpS := sizes[i];
-        j    := i;
-        while (j > 0) and strLess(tmpN, names[j - 1]) do begin
-            names[j] := names[j - 1];
-            sizes[j] := sizes[j - 1];
-            j := j - 1;
-        end;
-        names[j] := tmpN;
-        sizes[j] := tmpS;
-    end;
-end;
-
-{ ============================================================
   fp_collect_cb
   core.ds.hashmap.forEach callback: classifies each VFS entry as dir or file
   and appends to the appropriate name array in the context.
@@ -395,7 +283,7 @@ begin
                 ctx^.dir_count := ctx^.dir_count + 1;
             end;
         otFILE, otVFILE:
-            if matchesFilter(key, ctx^.filter) then
+            if stringEndsWith(key, ctx^.filter) then
                 if ctx^.file_count < ENTRY_MAX then begin
                     ctx^.file_names^[ctx^.file_count] := key;
                     ctx^.file_sizes^[ctx^.file_count] := obj^.FileSize;
@@ -487,8 +375,8 @@ begin
     io.syslog.logln('FPCIK', 'do_refresh: collection done, sorting');
 
     { --- Sort both collections alphabetically --- }
-    if dir_count  > 0 then sortNames(dir_names^,  dir_count);
-    if file_count > 0 then sortNamesWithSizes(file_names^, file_sizes^, file_count);
+    if dir_count  > 0 then sortStringArray(@dir_names^[0],  dir_count);
+    if file_count > 0 then sortStringArrayWithData(@file_names^[0], @file_sizes^[0], file_count);
 
     { --- Build directory rows --- }
     if dir_count > 0 then

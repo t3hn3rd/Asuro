@@ -119,10 +119,10 @@ begin
     if map^.count > max_load then begin
         NewSize:= map^.Size * 2;
         NewTable:= DPHashItem(kalloc(sizeof(PHashItem) * NewSize));
-        for i:=0 to NewSize-1 do begin
-            NewTable[i]:= nil;
-        end;
         If NewTable <> nil then begin
+            for i:=0 to NewSize-1 do begin
+                NewTable[i]:= nil;
+            end;
             for i:=0 to map^.size-1 do begin
                 item:= map^.table[i];
                 while item <> nil do begin

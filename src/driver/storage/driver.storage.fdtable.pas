@@ -40,6 +40,7 @@ type
         Volume      : PStorage_Volume;
         Directory   : pchar;       { directory path within the volume }
         FileName    : pchar;       { filename within that directory }
+        VFSDir      : pchar;       { full VFS parent directory path, e.g. '/sys' }
         OpenMode    : uint8;       { TOpenMode ordinal — avoids VFS type dependency }
         DataBuffer  : puint32;     { pre-loaded data for small files, nil otherwise }
         DataSize    : uint32;      { size of pre-loaded data in bytes }
@@ -108,6 +109,10 @@ begin
     if entry^.FileName <> nil then begin
         kfree(void(entry^.FileName));
         entry^.FileName := nil;
+    end;
+    if entry^.VFSDir <> nil then begin
+        kfree(void(entry^.VFSDir));
+        entry^.VFSDir := nil;
     end;
 
     entry^.InUse := false;
