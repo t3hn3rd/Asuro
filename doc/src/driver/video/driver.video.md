@@ -16,6 +16,11 @@ This unit is the central video interface for the Asuro kernel. It holds a single
 - `core.gfx.fonts` — 8×16 bitmap font data for text drawing
 - `syslog`
 
+## Boot Registration
+
+- `driver.video` depending on `driver.video.gpu` — core video driver initialisation.
+- `driver.video_late` depending on glob `driver.video.*` (waits for all matching entries) — late video initialisation after all video sub-drivers have registered.
+
 ## Functions and Procedures
 
 ### init

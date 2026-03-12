@@ -23,6 +23,7 @@ unit driver.bus.pci;
 interface
 
 uses
+    boot.mgr,
     debug.tracer,
     core.util, arch.x86.util,
     io.syslog,
@@ -472,5 +473,8 @@ begin
 
     pop_trace;
 end;
+
+Initialization
+    boot.mgr.registerBoot('driver.bus.pci', @Init, 'PCI Bus Driver', BOOT_MGR_BARRIER_BUS_LATE);
 
 end.

@@ -22,6 +22,7 @@ unit arch.x86.fault;
 interface
 
 uses
+    boot.mgr,
     arch.x86.fault.ace, arch.x86.fault.bpe, arch.x86.fault.btsse, arch.x86.fault.cfe, arch.x86.fault.csoe, arch.x86.fault.dbge, arch.x86.fault.dbz, arch.x86.fault.dfe, arch.x86.fault.gpf, arch.x86.fault.idoe, arch.x86.fault.iope, arch.x86.fault.mce,
     arch.x86.fault.nce, arch.x86.fault.nmie, arch.x86.fault.oobe, arch.x86.fault.pf, arch.x86.fault.sfe, arch.x86.fault.snpe, arch.x86.fault.uie;
 
@@ -51,5 +52,8 @@ begin
     arch.x86.fault.snpe.register();
     arch.x86.fault.uie.register();
 end;
+
+initialization
+    boot.mgr.registerBoot('arch.x86.fault', @init, 'Faults', 'arch.x86.isr.mgr');
 
 end.

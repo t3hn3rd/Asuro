@@ -11,6 +11,9 @@ unit io.syslog;
 
 interface
 
+uses
+    boot.mgr;
+
 type
     TLogHook = procedure(msg: pchar);
 
@@ -52,10 +55,11 @@ const
     LINE_BUF_SIZE = 256;
 
 var
-    Hooks     : array[0..MAX_HOOKS-1] of TLogHook;
-    HookCount : uint32 = 0;
-    LineBuf   : array[0..LINE_BUF_SIZE-1] of char;
-    LinePos   : uint32 = 0;
+    Hooks       : array[0..MAX_HOOKS-1] of TLogHook;
+    HookCount   : uint32 = 0;
+    LineBuf     : array[0..LINE_BUF_SIZE-1] of char;
+    LinePos     : uint32 = 0;
+    Initialized : boolean = false;
 
 { ---- Hook management ---- }
 
@@ -110,6 +114,7 @@ end;
 procedure logChar(c: char);
 begin
     { Also send each char to driver.io.serial directly for immediate byte-level output }
+    if not Initialized then exit;  { Avoid calling driver.io.serial before it's ready }
     driver.io.serial.send(COM1, uint8(c), 10000);
     if c = #10 then begin
         dispatchLine;
@@ -285,10 +290,14 @@ begin
         Hooks[i] := nil;
     HookCount := 0;
     LinePos := 0;
+    Initialized:= true;
     { Note: We don't register serialHook here because logChar already sends
       each character to driver.io.serial directly. The hook system is for line-level
       consumers (file logging, debug panels, etc.) that want complete lines.
       If we registered serialHook, driver.io.serial would get double output. }
 end;
+
+initialization
+    boot.mgr.registerBoot('io.syslog', @init, 'Syslog Interface', 'driver.io.serial');
 
 end.

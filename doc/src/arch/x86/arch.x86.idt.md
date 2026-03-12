@@ -12,6 +12,10 @@ This unit defines the 256-entry IDT used by the x86 interrupt system. It provide
 - `arch.x86.util`
 - `io.syslog`
 
+## Boot Registration
+
+Registered with `boot.mgr` as `arch.x86.idt`, depending on `arch.x86.gdt`.
+
 ## Constants
 
 ### ISR_RING_0

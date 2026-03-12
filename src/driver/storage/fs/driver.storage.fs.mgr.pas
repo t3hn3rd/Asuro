@@ -12,6 +12,7 @@ unit driver.storage.fs.mgr;
 interface
 
 uses
+    boot.mgr,
     core.ds.lists,
     memory.heap,
     driver.storage.types,
@@ -116,5 +117,8 @@ begin
     end;
     push_trace('driver.storage.fs.mgr.probe_volume.exit');
 end;
+
+Initialization
+    boot.mgr.registerBoot('driver.storage.fs.mgr', @init, 'Filesystem Manager', 'driver.storage.vol.mgr');
 
 end.

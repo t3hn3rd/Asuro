@@ -30,6 +30,7 @@ unit arch.x86.memory.physical;
 interface
 
 uses
+    boot.mgr,
     arch.x86.multiboot,
     io.syslog,
     debug.tracer,
@@ -345,5 +346,8 @@ function pmm_total_blocks: uint32;
 begin
     pmm_total_blocks := nPresent;
 end;
+
+initialization
+    boot.mgr.registerBoot('arch.x86.memory.physical', @init, 'Physical Memory Manager', 'arch.x86.idt');
 
 end.

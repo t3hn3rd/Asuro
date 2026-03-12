@@ -6,6 +6,10 @@ USB HID boot-protocol mouse driver.
 
 This unit implements a USB HID mouse class driver. It targets the HID boot protocol (subclass `$01`, protocol `$02`), which uses fixed 3-byte or 4-byte input reports. After locating the interrupt IN endpoint during load, it submits an initial transfer and relies on `poll_mice` being called each frame to process completed reports and dispatch events through `driver.hid.mouse`.
 
+## Boot Registration
+
+Registered with `boot.mgr` as `driver.hid.usb.mouse` at the `device` barrier. The barrier order places `device` after `bus`, ensuring `driver.bus.usb.core.init` has run (creating the HC list and zeroing completion hooks) before the mouse driver registers its class driver and completion hook.
+
 ## Dependencies
 
 - `driver.bus.usb.core`

@@ -12,6 +12,7 @@ unit driver.hid.ps2.keyboard;
 interface
 
 uses
+    boot.mgr,
     driver.hid.keyboard,
     io.syslog,
     core.util, arch.x86.util,
@@ -21,7 +22,8 @@ var
     key_matrix       : array [1..256] of TKeyInfo;
     key_matrix_shift : array [1..256] of TKeyInfo;
 
-procedure init(keyboard_layout : array of TKeyInfo);
+procedure init();
+procedure init_layout(keyboard_layout : array of TKeyInfo);
 procedure disable;
 procedure lang_USA();
 
@@ -83,7 +85,7 @@ begin
     io.syslog.logln('PS/2 KEYBOARD', 'Disabled (driver.bus.usb driver.hid.keyboard active).');
 end;
 
-procedure init(keyboard_layout : array of TKeyInfo);
+procedure init_layout(keyboard_layout : array of TKeyInfo);
 var
     devid : TDeviceIdentifier;
 begin
@@ -98,6 +100,15 @@ begin
     devid.ex  := nil;
     driver.mgr.register_driver_ex('PS/2 Keyboard', @devid, @load, true);
     io.syslog.logln('PS/2 KEYBOARD', 'INIT END.');
+end;
+
+procedure init();
+var
+   keyboard_layout : array [0..1] of TKeyInfo;
+
+begin
+    keyboard_layout[1].key_code := 0; { signal to init_layout that we want the default layout }
+    init_layout(keyboard_layout);
 end;
 
 procedure lang_USA();
@@ -342,5 +353,8 @@ begin
     key_matrix_shift[52].key_code := $3E;
     key_matrix_shift[53].key_code := $3F;
 end;
+
+initialization
+    boot.mgr.registerBoot('driver.hid.ps2.keyboard', @init, 'PS/2 Keyboard Driver', BOOT_MGR_BARRIER_DEVICE);
 
 end.

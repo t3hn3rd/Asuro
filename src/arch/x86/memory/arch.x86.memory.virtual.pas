@@ -23,6 +23,7 @@ unit arch.x86.memory.virtual;
 interface
 
 uses
+    boot.mgr,
     core.util, arch.x86.util,
     arch.x86.memory.physical,
     io.syslog,
@@ -291,5 +292,8 @@ begin
     end;
     pop_trace;
 end;
+
+initialization
+    boot.mgr.registerBoot('arch.x86.memory.virtual', @init, 'Virtual Memory Manager', 'arch.x86.memory.physical');
 
 end.

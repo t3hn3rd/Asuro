@@ -16,6 +16,10 @@ The scanner self-registers with `driver.mgr` using `register_driver_ex` with `fo
 - `debug.tracer`
 - `core.paging` (for MMIO mapping)
 
+## Boot Registration
+
+Registered with `boot.mgr` as `driver.bus.pci` at the `bus.late` barrier.
+
 ## Functions and Procedures
 
 ### init

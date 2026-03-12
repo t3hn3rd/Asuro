@@ -22,6 +22,7 @@ unit driver.io.serial;
 interface
 
 uses
+    boot.mgr,
     core.util, arch.x86.util, arch.x86.isr.mgr, core.strings;
 
 const
@@ -200,5 +201,8 @@ begin
      send(COM1, uint8(10), 10000);
      sendHex:= true;
 end;
+
+initialization
+    boot.mgr.registerBoot('driver.io.serial', @init, 'Serial Interface', 'immediate');
 
 end.

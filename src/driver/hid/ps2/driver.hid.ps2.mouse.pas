@@ -11,6 +11,7 @@ unit driver.hid.ps2.mouse;
 interface
 
 uses
+    boot.mgr,
     debug.tracer,
     driver.hid.mouse,
     io.syslog,
@@ -318,5 +319,8 @@ begin
     io.syslog.logln('PS/2 MOUSE', 'INIT END.');
     pop_trace;
 end;
+
+initialization
+    boot.mgr.registerBoot('driver.hid.ps2.mouse', @init, 'PS/2 Mouse Driver', BOOT_MGR_BARRIER_DEVICE);
 
 end.

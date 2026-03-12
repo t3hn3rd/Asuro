@@ -22,6 +22,7 @@ unit driver.net.dev.e1000;
 interface
 
 uses
+    boot.mgr,
     debug.tracer,
     io.syslog,
     io.stdio,
@@ -644,5 +645,8 @@ begin
     sendPacket:= 1;
     if timeout > 0 then sendPacket:= 0;
 end;
+
+Initialization
+    //boot.mgr.registerBoot('driver.net.dev.e1000', @Init, 'E1000 Network Card Driver', BOOT_MGR_BARRIER_DEVICE)
 
 end.

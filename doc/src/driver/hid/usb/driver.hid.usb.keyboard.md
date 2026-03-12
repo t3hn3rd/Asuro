@@ -6,6 +6,10 @@ USB HID boot-protocol keyboard driver.
 
 This unit implements a USB HID keyboard class driver. It targets the HID boot protocol (subclass `$01`, protocol `$01`), which uses fixed 8-byte input reports without requiring HID report descriptor parsing. During load, it configures the device for boot protocol and idle mode, locates the interrupt IN endpoint, and submits an initial interrupt transfer. The kernel polling loop calls `poll_keyboards` each frame to process completed reports.
 
+## Boot Registration
+
+Registered with `boot.mgr` as `driver.hid.usb.keyboard` at the `device` barrier. The barrier order places `device` after `bus`, ensuring `driver.bus.usb.core.init` has run (creating the HC list and zeroing completion hooks) before the keyboard driver registers its class driver and completion hook.
+
 ## Dependencies
 
 - `driver.bus.usb.core`

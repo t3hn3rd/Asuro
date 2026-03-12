@@ -93,7 +93,43 @@ A bitpacked array of 8 Booleans.
 | FileRec       | Internal file descriptor record |
 | TextRec       | Internal text file record with buffer |
 
+### INITFINAL Table Types
+
+#### TInitFinalRec
+
+```pascal
+TInitFinalRec = packed record
+    InitProc : CodePointer;
+    FinalProc: CodePointer;
+end;
+```
+
+A single entry in the compiler-generated INITFINAL table. `InitProc` points to the unit's `initialization` section code (or nil if the unit has no initialization section). `FinalProc` points to the `finalization` section code (or nil).
+
+#### TInitFinalTable / PInitFinalTable
+
+```pascal
+TInitFinalTable = packed record
+    TableCount : longint;
+    Procs      : array[1..1] of TInitFinalRec;
+end;
+```
+
+The top-level INITFINAL table structure. `TableCount` is the number of entries. `Procs` is declared as a single-element array but the compiler generates `TableCount` entries (accessed via 1-based indexing up to `TableCount`).
+
+#### TProcedure
+
+`TProcedure = procedure` — Procedure type used to cast `CodePointer` values from the INITFINAL table before calling them.
+
 ## Variables
+
+### InitFinalTable
+
+```pascal
+var InitFinalTable : TInitFinalTable; external name 'INITFINAL';
+```
+
+The compiler-generated INITFINAL table. Contains one `TInitFinalRec` for every unit in the program that has an `initialization` or `finalization` section. Referenced by `fpc_initializeunits` to walk and call each unit's initialization code before `kmain` runs.
 
 ### AK_START / AK_END
 
@@ -152,7 +188,7 @@ All `compilerproc` stubs are mapped to their standard `FPC_*` aliases:
 
 | Procedure | Alias | Description |
 |-----------|-------|-------------|
-| fpc_initializeunits | FPC_INITIALIZEUNITS | No-op; boot sequence handles unit init |
+| fpc_initializeunits | FPC_INITIALIZEUNITS | Walks the INITFINAL table and calls each unit's initialization procedure |
 | fpc_do_exit | FPC_DO_EXIT | CLI + HLT |
 | fpc_handleerror | FPC_HANDLEERROR | Sets ErrorCode, CLI + HLT |
 | fpc_rangeerror | FPC_RANGEERROR | HandleErrorInternal(201) |

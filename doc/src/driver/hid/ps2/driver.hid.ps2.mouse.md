@@ -14,6 +14,10 @@ This unit implements a PS/2 mouse driver. It initialises the PS/2 controller, at
 - `debug.tracer`
 - `syslog`
 
+## Boot Registration
+
+Registered with `boot.mgr` as `driver.hid.ps2.mouse` at the `device` barrier.
+
 ## Types
 
 ### TMousePacket

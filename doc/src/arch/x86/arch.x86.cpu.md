@@ -13,6 +13,10 @@ This unit probes the processor using the CPUID instruction to discover the vendo
 - `driver.timer.rtc`
 - `io.stdio`
 
+## Boot Registration
+
+Registered with `boot.mgr` as `arch.x86.cpu` at the `early` barrier.
+
 ## Types
 
 ### TCapabilities_Old / PCapabilities_Old

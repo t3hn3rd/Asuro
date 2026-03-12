@@ -26,6 +26,7 @@ unit driver.storage.ctl.usb;
 interface
 
 uses
+    boot.mgr,
     driver.mgr,
     memory.heap,
     driver.storage.types,
@@ -84,5 +85,8 @@ begin
     io.syslog.logln('driver.bus.usb-Storage', 'INIT END.');
     pop_trace;
 end;
+
+initialization
+    boot.mgr.registerBoot('driver.storage.ctl.usb', @init, 'USB Mass Storage Driver', BOOT_MGR_BARRIER_DEVICE);
 
 end.

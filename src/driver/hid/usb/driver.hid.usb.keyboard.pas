@@ -12,6 +12,7 @@ unit driver.hid.usb.keyboard;
 interface
 
 uses
+    boot.mgr,
     driver.bus.usb.types,
     driver.bus.usb.core,
     driver.hid.keyboard,
@@ -752,5 +753,8 @@ begin
 
     PrintSummary;
 end;
+
+initialization
+    boot.mgr.registerBoot('driver.hid.usb.keyboard', @init, 'USB Keyboard Driver', BOOT_MGR_BARRIER_DEVICE);
 
 end.

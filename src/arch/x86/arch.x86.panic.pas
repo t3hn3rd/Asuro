@@ -12,7 +12,9 @@ unit arch.x86.panic;
 interface
 
 uses
-    core.panic;
+    boot.mgr,
+    core.panic,
+    io.syslog;
 
 { Register the x86 halt procedure with core.panic. Call after LVGL init. }
 procedure init;
@@ -74,11 +76,15 @@ end;
 
 procedure init;
 begin
+    io.syslog.logln('PANIC', 'Initializing x86 Panic Handler.');
+
     { Register x86 halt as the panic halt procedure }
     core.panic.registerHaltProc(@arch.x86.util.halt_and_catch_fire);
 
-    { Initialize the BSOD LVGL screen }
-    core.panic.init;
+    io.syslog.logln('PANIC', 'Initialization complete.');
 end;
+
+initialization
+    boot.mgr.registerBoot('arch.x86.panic', @init, 'Panic Screen', 'driver.video*');
 
 end.

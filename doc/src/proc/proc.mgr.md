@@ -28,6 +28,10 @@ Three shell commands are exposed: `PS` (process list), `KILL` (immediate state t
 - `core.strings`, `core.util`, `arch.x86.util`
 - `debug.tracer`
 
+## Boot Registration
+
+Registered with `boot.mgr` as `proc.mgr`, depending on glob `driver.storage.fs*` (waits for all matching entries).
+
 ## Variables
 
 | Variable | Type | Description |

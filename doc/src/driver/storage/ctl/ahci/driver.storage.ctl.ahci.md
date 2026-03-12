@@ -27,6 +27,10 @@ Both SATA hard disks and ATAPI optical drives are supported through this driver.
 - `core.util`, `arch.x86.util`
 - `arch.x86.memory.virtual`
 
+## Boot Registration
+
+Registered with `boot.mgr` as `driver.storage.ctl.ahci`, depending on glob `driver.storage.fs.*` (waits for all matching entries).
+
 ## Variables
 
 | Name | Type | Description |

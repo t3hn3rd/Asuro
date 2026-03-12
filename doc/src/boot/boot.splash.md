@@ -20,6 +20,11 @@ The logo is decoded at runtime from a TGA file that is embedded in the kernel bi
 - `core.gfx.texture`
 - `memory.heap`
 
+## Boot Registration
+
+- `boot.splash` depending on `core.panic` — initialises the splash screen.
+- `boot.splash.teardown` at the `final` barrier — tears down the splash screen after boot completes.
+
 ## Constants
 
 ### LV_IMAGE_HEADER_MAGIC

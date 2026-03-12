@@ -10,6 +10,10 @@ This unit provides access to the PC CMOS Real-Time Clock via I/O ports `$70` (in
 
 - (none — uses direct I/O port access)
 
+## Boot Registration
+
+Registered with `boot.mgr` as `driver.timer.rtc`, depending on `arch.x86.fault`.
+
 ## Types
 
 ### TDateTime

@@ -17,6 +17,10 @@ During `init`, the current page directory loaded by the bootloader is adopted as
 - `debug.tracer`
 - `memory.heap` (implementation)
 
+## Boot Registration
+
+Registered with `boot.mgr` as `arch.x86.memory.virtual`, depending on `arch.x86.memory.physical`.
+
 ## Types
 
 ### TPageDirEntry / PPageDirEntry

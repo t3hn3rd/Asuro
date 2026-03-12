@@ -1931,10 +1931,14 @@ begin
                 io.syslog.log('driver.bus.usb.xhci', 'Port Status Change: port ');
                 io.syslog.writeintln(hpPortId);
                 if hpPortId > 0 then begin
-                    { Acknowledge port status change by writing W1C bits }
+                    { Acknowledge port status change by writing W1C bits.
+                      Do NOT clear PRC or WRC here — those must remain set
+                      so that xhci_port_reset can detect reset completion. }
                     hpPortSC := xhci_readl(priv^.OpBase, XHCI_OP_PORTSC_BASE + ((hpPortId - 1) * $10));
                     xhci_writel(priv^.OpBase, XHCI_OP_PORTSC_BASE + ((hpPortId - 1) * $10),
-                        (hpPortSC AND $0E00C3E0) OR $00FE0000);
+                        (hpPortSC AND $0E00C3E0) OR
+                        (XHCI_PORTSC_CSC OR XHCI_PORTSC_PEC OR XHCI_PORTSC_OCC OR
+                         XHCI_PORTSC_PLC OR XHCI_PORTSC_CEC));
                     { Flag for deferred hotplug processing }
                     if hc^.HotplugArmed then
                         hc^.PortChangePending := true;

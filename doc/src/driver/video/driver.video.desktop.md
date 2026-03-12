@@ -14,6 +14,10 @@ This unit implements the Asuro graphical desktop environment using the LVGL 9.x 
 - `driver.timer.rtc`
 - `syslog`
 
+## Boot Registration
+
+Registered with `boot.mgr` as `proc.desktop`, depending on `boot.splash.teardown`.
+
 ## Functions and Procedures
 
 ### init

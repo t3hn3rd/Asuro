@@ -17,6 +17,11 @@ A `TRACER` shell command allows runtime inspection and toggling of the trace buf
 - `io.stdio`
 - `io.syslog`
 
+## Boot Registration
+
+- `debug.tracer.freeze` depending on `io.syslog` — freezes the tracer ring buffer.
+- `debug.tracer` depending on `io.stdio` — full tracer initialisation.
+
 ## Constants
 
 ### MAX_TRACE

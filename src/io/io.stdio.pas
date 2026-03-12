@@ -15,6 +15,7 @@ unit io.stdio;
 interface
 
 uses
+    boot.mgr,
     memory.heap, core.strings, core.util, arch.x86.util, debug.tracer;
 
 type
@@ -669,5 +670,8 @@ begin
 
     io.syslog.logln('STDIO', 'Initialized.');
 end;
+
+initialization
+    boot.mgr.registerBoot('io.stdio', @init, 'Standard I/O Abstraction', BOOT_MGR_BARRIER_EARLY);
 
 end.

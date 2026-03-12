@@ -22,7 +22,7 @@ unit arch.x86.gdt;
 interface
 
 uses
-    io.syslog;
+    io.syslog, core.panic;
 
 type
     TGDT_Entry = packed record
@@ -50,6 +50,9 @@ procedure flush;
 procedure reload;
 
 implementation
+
+uses
+    boot.mgr;
 
 procedure flush_gdt(gdt_pointer : uint32); assembler; nostackframe;
 asm
@@ -105,9 +108,8 @@ begin
     io.syslog.writestringln(' SET.');
 end;
 
-procedure init();
+procedure initializeBaseGTD();
 begin
-    io.syslog.logln('GDT','INIT START.');
     gdt_pointer.limit:= 0;
     gdt_pointer.base  := uint32(@gdt_entries);  
     set_gate($00, $00, $00,       $00, $00); //OFFSET: 0
@@ -116,7 +118,28 @@ begin
     set_gate($03, $00, $FFFFFFFF, $FA, $CF); //OFFSET: 24
     set_gate($04, $00, $FFFFFFFF, $F2, $CF); //OFFSET: 32
     flush;
+end;
+
+procedure init();
+var
+    dds : uint16;
+begin
+    io.syslog.logln('GDT','INIT START.');
+    initializeBaseGTD();
+    asm
+        MOV dds, CS
+    end;
+    if dds = $08 then begin
+        io.syslog.logln('KERNEL', 'GDT: LOAD SUCCESS.');
+    end else begin
+        io.syslog.logln('KERNEL', 'GDT: LOAD FAIL.');
+        io.syslog.logln('KERNEL', 'HALTING.');
+        core.panic.panic('GDT', 'Failed to load the GDT correctly.', nil);
+    end;
     io.syslog.logln('GDT','INIT END.');
 end;
+
+initialization
+    boot.mgr.registerBoot('arch.x86.gdt', @init, 'Global Descriptor Table', BOOT_MGR_BARRIER_EARLY);
 
 end.

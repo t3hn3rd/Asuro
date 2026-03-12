@@ -31,6 +31,10 @@ Output from `UnitTest` (boot-time) goes to `io.syslog` under the tag `STORTEST`.
 - `driver.storage.vfs`
 - `driver.storage.vol.mgr`
 
+## Boot Registration
+
+Registered with `boot.mgr` as `driver.storage.test` at the `late` barrier.
+
 ## Functions and Procedures
 
 ### UnitTest

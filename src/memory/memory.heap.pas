@@ -41,6 +41,7 @@ unit memory.heap;
 interface
 
 uses
+    boot.mgr,
     arch.x86.memory.physical,
     io.syslog,
     debug.tracer,
@@ -600,5 +601,8 @@ begin
         hp := hp^.NextPage;
     end;
 end;
+
+initialization
+    boot.mgr.registerBoot('memory.heap', @init, 'Heap Memory Manager', 'arch.*.memory.*');
 
 end.

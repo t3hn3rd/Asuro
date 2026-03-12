@@ -15,6 +15,7 @@ unit driver.video.desktop;
 interface
 
 uses
+    boot.mgr,
     driver.video.lvgl, driver.video, driver.video.gpu, driver.timer.rtc, core.strings, core.util, arch.x86.util, debug.tracer, arch.x86.multiboot, arch.x86.cpu, driver.io.serial, driver.video.windows, core.version;
 
 type
@@ -861,5 +862,8 @@ begin
     updateClockText;
     animateResultsPanel;
 end;
+
+Initialization
+    boot.mgr.registerBoot('proc.desktop', @init, 'Initialize Desktop', 'boot.splash.teardown');
 
 end.

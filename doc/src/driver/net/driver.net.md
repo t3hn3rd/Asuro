@@ -19,6 +19,10 @@ This unit is the base of the Asuro network stack. It holds the registered transm
 - `driver.timer.rtc`
 - `syslog`
 
+## Boot Registration
+
+Registered with `boot.mgr` as `driver.net` at the `late` barrier.
+
 ## Functions and Procedures
 
 ### init

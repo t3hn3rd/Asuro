@@ -22,6 +22,7 @@ unit arch.x86.cpu;
 interface
 
 uses
+    boot.mgr,
     core.util, arch.x86.util, driver.timer.rtc, io.stdio;
 
 type
@@ -116,6 +117,9 @@ procedure init();
 procedure Terminal_Command_CPU(Params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
 
 implementation
+
+uses
+    io.syslog;
 
 procedure getCPUIdentifier;
 var
@@ -323,6 +327,7 @@ end;
 
 procedure init();
 begin
+    io.syslog.logln('CPU', 'Init begin');
     CPUID.Capabilities0:= PCapabilities_Old(@CAP_OLD);
     CPUID.Capabilities1:= PCapabilities_New(@CAP_NEW); 
     getCPUIdentifier;
@@ -330,6 +335,10 @@ begin
     getCPUClockSpeed;
     enableSSE;
     enableAVX;
+    io.syslog.logln('CPU', 'Init end');
 end;
+
+initialization
+    boot.mgr.registerBoot('arch.x86.cpu', @init, 'x86 CPU Initialization', BOOT_MGR_BARRIER_EARLY);
 
 end.

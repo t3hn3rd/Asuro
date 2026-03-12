@@ -293,6 +293,7 @@ procedure fire_completion_hooks;
 var
     i : uint32;
 begin
+    if CompletionHookCount = 0 then exit;
     for i := 0 to CompletionHookCount - 1 do begin
         if CompletionHooks[i] <> nil then
             CompletionHooks[i]();

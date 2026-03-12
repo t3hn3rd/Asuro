@@ -17,6 +17,10 @@ The filesystem manager maintains a linked list of registered `TFilesystem` descr
 - `debug.tracer`
 - `core.util`, `arch.x86.util`
 
+## Boot Registration
+
+Registered with `boot.mgr` as `driver.storage.fs.mgr`, depending on `driver.storage.vol.mgr`.
+
 ## Variables
 
 | Name | Type | Description |

@@ -51,3 +51,4 @@ Verifies register offset calculations and ring structure sizes.
 
 - xHCI uses a ring-based TRB (Transfer Request Block) architecture for all command, event, and transfer communication, replacing the linked-list queue heads used by UHCI/OHCI/EHCI.
 - Each USB slot and endpoint has its own transfer ring; a command ring communicates with the host controller firmware; an event ring carries completion notifications back to software.
+- The ISR's port status change handler intentionally excludes the PRC (Port Reset Complete) and WRC (Warm Reset Complete) change bits when clearing PORTSC change flags. This prevents the ISR from clearing PRC before the `xhci_port_reset` busy-wait loop can observe that the reset has completed.

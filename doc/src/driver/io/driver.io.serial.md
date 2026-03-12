@@ -10,6 +10,10 @@ This unit provides initialisation and byte-level I/O for the four standard PC se
 
 - (none — uses inline assembly for I/O port access)
 
+## Boot Registration
+
+Registered with `boot.mgr` as `driver.io.serial`, depending on the `immediate` barrier.
+
 ## Constants
 
 ### COM Port Base Addresses

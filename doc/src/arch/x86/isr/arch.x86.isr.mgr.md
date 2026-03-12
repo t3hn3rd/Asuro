@@ -18,6 +18,10 @@ Each ISR stub is declared with the Free Pascal `interrupt` directive, which caus
 - `io.syslog` (implementation)
 - `arch.x86.isr.ioapic` (implementation)
 
+## Boot Registration
+
+Registered with `boot.mgr` as `arch.x86.isr.mgr`, depending on `arch.x86.irq`.
+
 ## Constants
 
 `MAX_HOOKS` is imported from `arch.x86.isr.types` and defines the maximum number of callbacks per vector.

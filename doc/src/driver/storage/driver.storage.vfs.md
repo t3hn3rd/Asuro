@@ -26,6 +26,11 @@ The VFS supports both synchronous and asynchronous operations. Sync functions ca
 - `core.util`, `arch.x86.util` (implementation)
 - `driver.storage.vol.mgr` (implementation)
 
+## Boot Registration
+
+- `driver.storage.vfs` at the `storage` barrier — initialises the VFS.
+- `driver.storage.vol.mount` at the `late` barrier — auto-mounts discovered volumes after all storage controllers and filesystems have registered.
+
 ## Types
 
 ### TOpenMode
@@ -252,7 +257,7 @@ Mounts `volume` at `mountPath` in the VFS tree. The parent directory must exist.
 procedure auto_mount_volumes();
 ```
 
-Iterates all registered volumes and mounts each one under `/disk/vol<N>`. Called during boot after all devices are registered.
+Iterates all registered volumes and mounts each one under `/disk/vol<N>`. Registered with `boot.mgr` at the `late` barrier so it runs after PCI scan (at `bus.late`) has discovered storage controllers and registered their devices.
 
 ### UnitTest
 

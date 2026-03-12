@@ -22,6 +22,7 @@ procedure init;
 implementation
 
 uses
+    boot.mgr,
     driver.video.desktop,
     app.uidebug,
     driver.video.lvgl,
@@ -84,5 +85,8 @@ begin
     proc.mgr.create('gfxd', @render_loop, nil, 5);
     io.syslog.logln('gfxd', 'Render process spawned.');
 end;
+
+Initialization
+    boot.mgr.registerBoot('svc.gfxd', @init, 'GFX Daemon', BOOT_MGR_BARRIER_LATE);
 
 end.

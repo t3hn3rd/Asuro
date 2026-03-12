@@ -26,6 +26,7 @@ unit driver.storage.vol.mgr;
 interface
 
 uses
+    boot.mgr,
     io.syslog,
     driver.storage.fs.mgr,
     core.ds.lists,
@@ -645,5 +646,8 @@ begin
     device := volume^.device;
     remove_volume_by_start(device, volume^.sectorStart);
 end;
+
+initialization
+    boot.mgr.registerBoot('driver.storage.vol.mgr', @init, 'Volume Manager', 'driver.storage.mgr*');
 
 end.

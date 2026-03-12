@@ -15,6 +15,10 @@ The daemon runs at priority 2, giving it a quantum of 10 ticks, which is suffici
 - `proc.types`
 - `io.syslog`
 
+## Boot Registration
+
+Registered with `boot.mgr` as `svc.usbd` at the `late` barrier.
+
 ## Functions and Procedures
 
 ### init
