@@ -37,8 +37,7 @@ uses
     app.wasm.runner,
     app.divzero,
     app.bsod,
-    app.vterminal,
-    app.filebrowser;
+    app.vterminal;
 
 { Initialize all baked-in programs }
 procedure init();
