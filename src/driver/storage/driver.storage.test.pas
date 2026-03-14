@@ -36,6 +36,7 @@ procedure init;
 implementation
 
 uses
+    boot.mgr,
     core.ds.hashmap,
     memory.heap,
     driver.storage.vol.mbr,
@@ -486,5 +487,8 @@ begin
         'DESTRUCTIVE: wipe disk 0, format FAT32 4MB, write+read file.');
     debug.tracer.pop_trace;
 end;
+
+initialization
+    boot.mgr.registerBoot('driver.storage.test', @init, 'Storage System Test Commands', BOOT_MGR_BARRIER_LATE);
 
 end.

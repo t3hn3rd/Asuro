@@ -22,6 +22,7 @@ unit driver.net;
 interface
 
 uses
+    boot.mgr,
     debug.tracer,
     driver.net.types, driver.net.util,
     io.syslog,
@@ -142,5 +143,8 @@ begin
     driver.net.proto.dhcp.register;
     pop_trace;
 end;
+
+initialization
+    boot.mgr.registerBoot('driver.net', @Init, 'Net Driver', BOOT_MGR_BARRIER_LATE)
 
 end.

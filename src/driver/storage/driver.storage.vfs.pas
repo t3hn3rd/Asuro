@@ -23,6 +23,7 @@ unit driver.storage.vfs;
 interface
 
 uses
+    boot.mgr,
     driver.storage.fdtable,
     core.ds.hashmap,
     core.ds.lists,
@@ -4101,5 +4102,9 @@ begin
 
     PrintSummary;
 end;
+
+initialization
+    boot.mgr.registerBoot('driver.storage.vfs', @init, 'Virtual File System', BOOT_MGR_BARRIER_STORAGE);
+    boot.mgr.registerBoot('driver.storage.vol.mount', @auto_mount_volumes, 'Mount Storage Volumes', BOOT_MGR_BARRIER_LATE);
 
 end.

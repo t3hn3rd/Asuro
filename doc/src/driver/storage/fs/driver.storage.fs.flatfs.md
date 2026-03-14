@@ -27,6 +27,10 @@ FlatFS registers itself with `driver.storage.fs.mgr` during `init`. Volume detec
 - `core.util`, `arch.x86.util`
 - `driver.storage.vol.mgr`
 
+## Boot Registration
+
+Registered with `boot.mgr` as `driver.storage.fs.flatfs`, depending on `driver.storage.fs.mgr`.
+
 ## Types
 
 ### TDisk_Info / PDisk_Info

@@ -22,6 +22,7 @@ unit driver.bus.usb;
 interface
 
 uses
+    boot.mgr,
     debug.tracer,
     io.syslog,
     driver.bus.pci,
@@ -87,12 +88,12 @@ begin
     { Initialize hub driver (registers class driver for $09) }
     driver.bus.usb.hub.init;
 
-    { Initialize HID class drivers }
-    driver.hid.usb.keyboard.init;
-    driver.hid.usb.mouse.init;
+    // { Initialize HID class drivers }
+    // driver.hid.usb.keyboard.init;
+    // driver.hid.usb.mouse.init;
 
-    { Initialize storage class driver }
-    driver.storage.ctl.usb.init;
+    // { Initialize storage class driver }
+    // driver.storage.ctl.usb.init;
     
     UHCI_ID.Bus:= biPCI;
     UHCI_ID.id0:= idANY;
@@ -134,5 +135,8 @@ begin
     io.syslog.logln('driver.bus.usb Driver', 'INIT END.');
     pop_trace;
 end;
+
+Initialization
+    boot.mgr.registerBoot('driver.bus.usb', @init, 'USB Bus Driver', BOOT_MGR_BARRIER_BUS);
 
 end.

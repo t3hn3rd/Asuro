@@ -15,6 +15,7 @@ procedure init;
 implementation
 
 uses
+    boot.mgr,
     driver.bus.usb.core,
     proc.mgr,
     proc.types,
@@ -34,5 +35,8 @@ begin
     proc.mgr.create('usbd', @usbd_loop, nil, 2);
     io.syslog.logln('usbd', 'driver.bus.usb hotplug daemon spawned.');
 end;
+
+Initialization
+    boot.mgr.registerBoot('svc.usbd', @init, 'USB Daemon', BOOT_MGR_BARRIER_LATE);
 
 end.

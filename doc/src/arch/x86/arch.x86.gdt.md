@@ -10,6 +10,10 @@ This unit defines the GDT data structures and provides procedures to set individ
 
 - `io.syslog`
 
+## Boot Registration
+
+Registered with `boot.mgr` as `arch.x86.gdt` at the `early` barrier.
+
 ## Types
 
 ### TGDT_Entry / PGDT_Entry

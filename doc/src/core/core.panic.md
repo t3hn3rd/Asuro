@@ -29,6 +29,10 @@ If `init` has not been called before a panic (early boot panic), the unit gracef
 - `core.strings` — string comparison for gfxd process detection
 - `core.gfx.color` — TRGB32 colour type for direct pixel drawing
 
+## Boot Registration
+
+Registered with `boot.mgr` as `core.panic`, depending on glob `arch.*.panic` (waits for all matching entries).
+
 ## Constants
 
 ### MAX_REGISTER_ENTRIES

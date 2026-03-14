@@ -13,6 +13,7 @@ unit proc.mgr;
 interface
 
 uses
+    boot.mgr,
     arch.x86.bda,
     driver.storage.fdtable,
     core.ds.lists,
@@ -776,5 +777,8 @@ begin
     io.syslog.logln('PROCMGR', 'INIT END.');
     pop_trace;
 end;
+
+initialization
+    boot.mgr.registerBoot('proc.mgr', @Init, 'Process Manager', 'driver.storage.fs*');
 
 end.

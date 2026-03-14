@@ -15,6 +15,7 @@ unit driver.video.gpu;
 interface
 
 uses
+    boot.mgr,
     core.util, arch.x86.util, io.syslog, debug.tracer, core.strings;
 
 const
@@ -222,5 +223,8 @@ begin
     else
         activeDriverName := 'none';
 end;
+
+initialization
+    boot.mgr.registerBoot('driver.video.gpu', @init, 'GPU Driver Framework Initialization', 'driver.mgr');
 
 end.

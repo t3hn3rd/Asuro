@@ -11,6 +11,10 @@ This unit provides the GPU abstraction layer. Multiple GPU drivers (e.g. BGA, VE
 - `driver.video.types`
 - `syslog`
 
+## Boot Registration
+
+Registered with `boot.mgr` as `driver.video.gpu`, depending on `driver.mgr`.
+
 ## Constants
 
 - `GPU_MAX_DRIVERS`: `8` — maximum number of simultaneously registered GPU drivers

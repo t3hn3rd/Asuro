@@ -21,13 +21,23 @@ unit arch.x86.isr;
 
 interface
 
+uses
+		boot.mgr;
+
 procedure init();
 
 implementation
 
+uses
+		arch.x86.util, arch.x86.isr.tmr0, arch.x86.bda;
+
 procedure init();
 begin
-
+    STI;
+    arch.x86.isr.tmr0.hook(uint32(@arch.x86.bda.tick_update));
 end;
+
+Initialization
+		boot.mgr.registerBoot('asuro.x86.isr', @init, 'Enable Interrupts and Timer', 'driver.storage.*.mgr');
 
 end.

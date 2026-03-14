@@ -23,6 +23,10 @@ A halt/resume mechanism (`halt`/`done`) allows async commands such as PING to si
 - `debug.tracer`
 - `core.version`, `driver.timer.rtc`, `driver.io.serial`, `driver.storage.vfs`, `io.syslog`
 
+## Boot Registration
+
+Registered with `boot.mgr` as `io.stdio` at the `early` barrier.
+
 ## Constants
 
 ### INITIAL_CMD_CAP

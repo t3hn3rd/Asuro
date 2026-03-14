@@ -29,6 +29,7 @@ declare -a run_steps=(
 	"compile_icons.sh" "Failed to generate icons!"
 	"compile_wasuro.sh" "Failed to pull Wasuro!"
 	"compile_sources.sh" "Failed to compile FPC Sources!"
+	"compile_initcalls.sh" "Failed to generate INITFINAL table!"
 	"compile_link.sh" "Failed linking!"
 	"compile_isogen.sh" "Failed to create ISO!"
 	"compile_docs.sh" "Failed to generate documentation!"

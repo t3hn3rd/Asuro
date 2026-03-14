@@ -8,7 +8,13 @@ This unit registers a USB class driver with the driver manager (`driver.mgr`) to
 
 Full Bulk-Only Transport (BOT) support — including Max LUN query, endpoint setup, CBW/CSW command exchange, and `driver.storage.mgr` device registration — is planned but not yet implemented.
 
+## Boot Registration
+
+Registered with `boot.mgr` as `driver.storage.ctl.usb` at the `device` barrier. The barrier order places `device` after `bus`, ensuring `driver.bus.usb.core.init` has run before the storage class driver registers with the driver manager.
+
 ## Dependencies
+
+- `boot.mgr`
 
 - `driver.mgr`
 - `memory.heap`

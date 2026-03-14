@@ -22,6 +22,7 @@ unit driver.timer.rtc;
 interface
 
 uses
+    boot.mgr,
     arch.x86.isr.mgr, core.util, arch.x86.util, arch.x86.isr.tmr0;
 
 type
@@ -147,5 +148,8 @@ begin
     //arch.x86.isr.mgr.registerISR(32 + 8, @update);
     //arch.x86.isr.tmr0.hook(uint32(@update));
 end;
+
+initialization
+    boot.mgr.registerBoot('driver.timer.rtc', @init, 'Real Time Clock Driver', 'arch.x86.fault');
 
 end.

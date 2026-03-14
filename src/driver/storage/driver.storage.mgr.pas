@@ -35,6 +35,7 @@ unit driver.storage.mgr;
 interface
 
 uses
+    boot.mgr,
     core.ds.cfifo,
     core.ds.types,
     driver.storage.iorequest,
@@ -607,5 +608,8 @@ procedure storage_write_legacy(device : PStorage_Device; addr : uint32; sectors 
 begin
     storage_write(device, addr, sectors, buffer);
 end;
+
+initialization
+    boot.mgr.registerBoot('driver.storage.mgr', @init, 'Storage Manager', 'driver.storage.vfs');
 
 end.

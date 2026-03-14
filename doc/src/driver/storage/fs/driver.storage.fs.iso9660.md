@@ -26,6 +26,10 @@ Both file reads and directory reads are implemented as fully asynchronous operat
 - `driver.storage.vol.mgr`
 - `proc.mgr`, `proc.types` (implementation)
 
+## Boot Registration
+
+Registered with `boot.mgr` as `driver.storage.fs.iso9660`, depending on `driver.storage.fs.mgr`.
+
 ## Types
 
 ### TPVD / PPVD

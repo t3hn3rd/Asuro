@@ -23,6 +23,7 @@ unit driver.storage.fs.flatfs;
 interface
 
 uses
+    boot.mgr,
     driver.storage.fs.mgr,
     core.ds.lists,
     memory.heap,
@@ -858,5 +859,7 @@ begin
     driver.storage.fs.mgr.register_filesystem(@filesystem);
 end;
 
+Initialization
+    boot.mgr.registerBoot('driver.storage.fs.flatfs', @init, 'FlatFS Filesystem', 'driver.storage.fs.mgr');
     
 end.

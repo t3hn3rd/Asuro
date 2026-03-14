@@ -22,6 +22,10 @@ A timer hook (`tick`) increments `CURRENT_TICK` on every timer interrupt. The re
 - `io.syslog`
 - `arch.x86.isr.tmr0`
 
+## Boot Registration
+
+Registered with `boot.mgr` as `svc.gfxd` at the `late` barrier.
+
 ## Constants
 
 ### TICKS_PER_FRAME

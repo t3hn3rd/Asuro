@@ -16,6 +16,10 @@ During initialisation, the Multiboot memory map is walked to populate `PhysPrese
 - `core.util`
 - `arch.x86.util`
 
+## Boot Registration
+
+Registered with `boot.mgr` as `arch.x86.memory.physical`, depending on `arch.x86.idt`.
+
 ## Constants
 
 | Constant     | Value | Description |

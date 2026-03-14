@@ -20,6 +20,7 @@ unit arch.x86.v86;
 interface
 
 uses
+    boot.mgr,
     core.util, arch.x86.util, core.panic, io.syslog, debug.tracer, arch.x86.memory.virtual, arch.x86.gdt, arch.x86.idt, arch.x86.isr.types;
 
 const
@@ -770,5 +771,8 @@ begin
     io.syslog.logln('V86', 'INIT END.');
     pop_trace;
 end;
+
+initialization
+    boot.mgr.registerBoot('arch.x86.v86', @init, 'V86 Mode Initialization', BOOT_MGR_BARRIER_EARLY);
 
 end.

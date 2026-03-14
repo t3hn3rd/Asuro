@@ -12,6 +12,10 @@ This unit acts as the glue layer between the x86 interrupt subsystem and the arc
 - `arch.x86.util` (implementation)
 - `arch.x86.isr.types` (implementation)
 
+## Boot Registration
+
+Registered with `boot.mgr` as `arch.x86.panic`, depending on glob `driver.video*` (waits for all matching entries).
+
 ## Functions and Procedures
 
 ### init

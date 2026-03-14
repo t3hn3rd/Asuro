@@ -12,6 +12,10 @@ This unit reinitialises and remaps the two 8259A Programmable Interrupt Controll
 - `arch.x86.util`
 - `io.syslog`
 
+## Boot Registration
+
+Registered with `boot.mgr` as `arch.x86.irq`, depending on `arch.x86.idt`.
+
 ## Functions and Procedures
 
 ### init

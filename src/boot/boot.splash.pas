@@ -13,6 +13,7 @@ unit boot.splash;
 interface
 
 uses
+    boot.mgr,
     driver.video.lvgl, driver.video, core.fmt.targa, core.gfx.texture, memory.heap;
 
 { Create the boot.splash screen and render the initial frame (0 %). }
@@ -81,6 +82,9 @@ var
     { Decoded texture and LVGL image descriptor (heap-allocated). }
     logoTexture: PTexture;
     logoDsc:     PLVImageDsc;
+
+var
+    Initialized : boolean = false;
 
 { ---- private helpers -------------------------------------------------- }
 
@@ -217,10 +221,13 @@ begin
 
     { Push the first frame to the display. }
     redraw;
+
+    Initialized := true;
 end;
 
 procedure update(percent: uint32; status: pchar);
 begin
+    if not Initialized then exit;
     if splashScreen = nil then exit;
 
     { Clamp to 0..100 }
@@ -232,11 +239,12 @@ begin
     redraw;
 
     { DEBUG: pause so each step is visible on screen }
-    busywait_500ms;
+    //busywait_500ms;
 end;
 
 procedure teardown;
 begin
+    if not Initialized then exit;
     if splashScreen = nil then exit;
 
     { Switch back to the screen that was active before the splash. }
@@ -260,6 +268,11 @@ begin
         kfree(void(logoTexture));
         logoTexture := nil;
     end;
+    Initialized := false;
 end;
+
+Initialization
+    boot.mgr.registerBoot('boot.splash', @init, 'Boot Splash Screen', 'core.panic');
+    boot.mgr.registerBoot('boot.splash.teardown', @teardown, 'Stop Splash Screen', BOOT_MGR_BARRIER_FINAL);
 
 end.

@@ -22,6 +22,7 @@ unit driver.exp.testdriver;
 interface
 
 uses
+    boot.mgr,
     debug.tracer, io.syslog, driver.mgr;
 
 procedure init;
@@ -51,5 +52,8 @@ begin
     driver.mgr.register_driver('DUMMY DRIVER', @devID, @load);
     pop_trace;
 end;
+
+initialization
+    boot.mgr.registerBoot('driver.exp.testdriver', @init, 'Test Driver', BOOT_MGR_BARRIER_DEVICE);
 
 end.

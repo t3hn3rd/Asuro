@@ -17,6 +17,10 @@ Central initialization manager for all baked-in terminal programs and kernel-lev
 - `core.version`, `arch.x86.cpu`
 - `app.diskcmd`, `driver.bus.usb.core`, `app.diskutil`, `app.notepad`, `app.partcmd`, `app.volcmd`
 
+## Boot Registration
+
+Registered with `boot.mgr` as `app.mgr` at the `late` barrier.
+
 ## Functions and Procedures
 
 ### init

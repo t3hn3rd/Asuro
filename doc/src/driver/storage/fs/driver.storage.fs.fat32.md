@@ -24,6 +24,10 @@ Both synchronous and asynchronous volume formatting are supported. The async for
 - `core.util`, `arch.x86.util`
 - `driver.storage.vol.mgr`
 
+## Boot Registration
+
+Registered with `boot.mgr` as `driver.storage.fs.fat32`, depending on `driver.storage.fs.mgr`.
+
 ## Types
 
 ### TBootRecord / PBootRecord

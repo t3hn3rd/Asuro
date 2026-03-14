@@ -12,6 +12,10 @@ This unit implements the central driver manager. It maintains a list of register
 - `terminal`
 - `syslog`
 
+## Boot Registration
+
+Registered with `boot.mgr` as `driver.mgr` at the `middle` barrier.
+
 ## Constants
 
 ### idANY

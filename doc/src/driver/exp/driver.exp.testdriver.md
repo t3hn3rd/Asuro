@@ -12,6 +12,10 @@ This is a minimal dummy driver used to verify the `driver.mgr` registration and 
 - `driver.types`
 - `syslog`
 
+## Boot Registration
+
+Registered with `boot.mgr` as `driver.exp.testdriver` at the `device` barrier.
+
 ## Functions and Procedures
 
 ### init

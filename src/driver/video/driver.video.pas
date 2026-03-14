@@ -22,6 +22,7 @@ unit driver.video;
 interface
 
 uses
+    boot.mgr, io.syslog,
     memory.heap, debug.tracer, core.gfx.color, driver.video.types, core.ds.hashmap, core.util, arch.x86.util, core.gfx.texture, driver.video.gpu, core.gfx.fonts;
 
 procedure init();
@@ -57,7 +58,8 @@ function DrawInt(X, Y : uint32; Value : uint32; Color : TRGB32) : uint32;
 implementation
 
 uses
-    driver.video.vesa8, driver.video.vesa16, driver.video.vesa24, driver.video.vesa32;
+    driver.video.vesa8, driver.video.vesa16, driver.video.vesa24, driver.video.vesa32, 
+    driver.video.lvgl, driver.video.doublebuffer, driver.video.vesa;
 
 Procedure dummyFDrawPixel(Buffer : PVideoBuffer; X : uint32; Y : uint32; Pixel : TRGB32);
 begin
@@ -218,6 +220,7 @@ var
 
 begin
     debug.tracer.push_trace('driver.video.init.enter');
+    io.syslog.logln('VIDEO', 'Initializing Base Video Driver.');
     //Ensure the frontbuffer is empty & nil, ready for initialization by a driver.
     VideoInterface.FrontBuffer.Initialized:= false;
     VideoInterface.FrontBuffer.Width:= 0;
@@ -248,8 +251,25 @@ begin
 
     { Register for GPU mode-change notifications so reinit fires automatically }
     driver.video.gpu.registerModeChangeCallback(@videoModeChanged);
-
+    io.syslog.logln('VIDEO', 'Initialization complete.');
     debug.tracer.push_trace('driver.video.init.exit');
+end;
+
+procedure lateInit();
+begin
+    driver.video.vesa.init(@driver.video.register);
+    driver.video.doublebuffer.init(@driver.video.register);
+
+    io.syslog.logln('VIDEO', 'VESA Enable.');
+    driver.video.enable('VESA');
+
+    io.syslog.logln('VIDEO', 'Double Buffer Enable.');
+    driver.video.enable('BASIC_DOUBLE_BUFFER');
+
+    { Initialize LVGL early so the boot.splash screen can use it }
+    io.syslog.logln('VIDEO', 'LVGL: INIT BEGIN.');
+    lvgl_init(driver.video.frontBufferWidth, driver.video.frontBufferHeight);
+    io.syslog.logln('VIDEO', 'LVGL: INIT END.');
 end;
 
 function register(DriverIdentifier : pchar; EnableCallback : FEnableDriver) : boolean;
@@ -467,5 +487,9 @@ begin
 
     debug.tracer.push_trace('driver.video.reinit.exit');
 end;
+
+initialization
+    boot.mgr.registerBoot('driver.video', @init, 'Video Driver Initialization', 'driver.video.gpu');
+    boot.mgr.registerBoot('driver.video_late', @lateInit, 'Video Driver Late Initialization', 'driver.video.*');
 
 end.

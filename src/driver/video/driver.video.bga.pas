@@ -17,6 +17,7 @@ unit driver.video.bga;
 interface
 
 uses
+    boot.mgr,
     core.util, arch.x86.util, io.syslog, debug.tracer, driver.video.gpu, driver.bus.pci, driver.types, driver.mgr,
     arch.x86.memory.virtual, memory.heap;
 
@@ -245,5 +246,8 @@ begin
     io.syslog.logln('BGA', 'INIT END.');
     pop_trace;
 end;
+
+initialization
+    boot.mgr.registerBoot('driver.video.bga', @init, 'BGA Display Driver Initialization', 'driver.video');
 
 end.

@@ -22,6 +22,7 @@ unit arch.x86.isr.mgr;
 interface
 
 uses
+		boot.mgr,
     arch.x86.isr, arch.x86.idt, arch.x86.isr.types, core.util, arch.x86.util;
 
 type
@@ -2401,5 +2402,9 @@ begin
     arch.x86.idt.set_gate(254, uint32(@ISR_254), $08, ISR_RING_0);
     arch.x86.idt.set_gate(255, uint32(@ISR_255), $08, ISR_RING_0);
 end;
+
+initialization
+		boot.mgr.registerBoot('arch.x86.isr.mgr', @init, 'Interrupt Request Manager', 'arch.x86.irq');
+
 
 end.

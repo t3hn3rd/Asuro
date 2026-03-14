@@ -13,6 +13,7 @@ unit driver.hid.usb.mouse;
 interface
 
 uses
+    boot.mgr,
     driver.bus.usb.types,
     driver.bus.usb.core,
     driver.hid.mouse,
@@ -553,5 +554,8 @@ begin
 
     PrintSummary;
 end;
+
+initialization
+    boot.mgr.registerBoot('driver.hid.usb.mouse', @Init, 'USB Mouse Driver', BOOT_MGR_BARRIER_DEVICE);
 
 end.

@@ -28,6 +28,10 @@ This unit is the single entry point for registering all x86 CPU exception handle
 - `arch.x86.fault.snpe`
 - `arch.x86.fault.uie`
 
+## Boot Registration
+
+Registered with `boot.mgr` as `arch.x86.fault`, depending on `arch.x86.isr.mgr`.
+
 ## Functions and Procedures
 
 ### init

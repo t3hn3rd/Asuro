@@ -21,7 +21,9 @@ unit arch.x86.irq;
 
 interface
 
-uses core.util, arch.x86.util, io.syslog;
+uses
+    boot.mgr,
+    core.util, arch.x86.util, io.syslog;
 
 procedure init();
 
@@ -52,5 +54,8 @@ begin
     io_wait;
     io.syslog.logln('IRQ','INIT END.');
 end;
+
+initialization
+    boot.mgr.registerBoot('arch.x86.irq', @init, 'Interrupt Request Line', 'arch.x86.idt');
 
 end.

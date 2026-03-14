@@ -23,6 +23,7 @@ unit app.mgr;
 interface
 
 uses
+    boot.mgr,
     debug.tracer, io.stdio, proc.mgr,
     //progs
     app.base64, app.md5sum, app.dhclient, app.vbeinfo, app.testcmd, app.ping, app.meminfo, app.setres,
@@ -34,7 +35,9 @@ uses
     driver.storage.filedispatch,
     //wasm
     app.wasm.runner,
-    app.divzero;
+    app.divzero,
+    app.bsod,
+    app.vterminal;
 
 { Initialize all baked-in programs }
 procedure init();
@@ -86,7 +89,12 @@ begin
     app.wasm.runner.init();
     app.setres.init();
     app.divzero.init();
+    app.bsod.init();
+    app.vterminal.init;
     app.filebrowser.init();
 end;
+
+Initialization
+    boot.mgr.registerBoot('app.mgr', @init, 'Program Manager', BOOT_MGR_BARRIER_LATE);
 
 end.

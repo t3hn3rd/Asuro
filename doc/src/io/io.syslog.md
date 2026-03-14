@@ -15,6 +15,10 @@ The hook system targets line-level consumers such as file loggers or on-screen d
 - `driver.io.serial`
 - `core.strings`
 
+## Boot Registration
+
+Registered with `boot.mgr` as `io.syslog`, depending on `driver.io.serial`.
+
 ## Constants
 
 ### MAX_HOOKS

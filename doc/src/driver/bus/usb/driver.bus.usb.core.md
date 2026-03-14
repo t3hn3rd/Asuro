@@ -75,7 +75,7 @@ Tears down a device: cancels pending transfers, notifies class drivers via compl
 procedure register_completion_hook(hook: TUSBCompletionHook);
 procedure fire_completion_hooks(transfer: PUSBTransfer);
 ```
-Registers a callback to be invoked whenever a transfer completes. `fire_completion_hooks` iterates all registered hooks and calls each with the completed transfer.
+Registers a callback to be invoked whenever a transfer completes. `fire_completion_hooks` iterates all registered hooks and calls each with the completed transfer. If no hooks are registered (`CompletionHookCount = 0`), `fire_completion_hooks` exits immediately to avoid a uint32 underflow in the loop counter.
 
 ### usb_control_msg
 ```pascal

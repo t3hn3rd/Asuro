@@ -23,6 +23,7 @@ unit driver.storage.ctl.ahci;
 interface
 
 uses
+    boot.mgr,
     driver.storage.ctl.ahci.types,
     driver.mgr,
     driver.types,
@@ -1070,6 +1071,9 @@ begin
             @ahci_io_completion, puint32(request)) then
         driver.storage.mgr.complete_io(request, false, eIOError);
 end;
+
+Initialization
+    boot.mgr.registerBoot('driver.storage.ctl.ahci', @init, 'AHCI Controller', 'driver.storage.fs.*');
 
 end.
 

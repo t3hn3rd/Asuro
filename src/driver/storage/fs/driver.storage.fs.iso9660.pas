@@ -26,6 +26,7 @@ unit driver.storage.fs.iso9660;
 interface
 
 uses
+    boot.mgr,
     driver.storage.fs.mgr,
     core.ds.lists,
     memory.heap,
@@ -741,5 +742,8 @@ begin
 
     driver.storage.fs.mgr.register_filesystem(@filesystem);
 end;
+
+initialization
+    boot.mgr.registerBoot('driver.storage.fs.iso9660', @Init, 'IS9660 File System', 'driver.storage.fs.mgr');
 
 end.

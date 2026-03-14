@@ -6,6 +6,10 @@ ISR driver initialisation stub.
 
 This is a minimal stub unit that satisfies compile-time dependencies on an ISR initialisation entry point. The `init` procedure body is empty; actual ISR handler registration and IDT gate setup are performed by `arch.x86.isr.mgr` and the individual handler units in the `isr/` and `fault/` subdirectories.
 
+## Boot Registration
+
+Registered with `boot.mgr` as `asuro.x86.isr`, depending on glob `driver.storage.*.mgr` (waits for all matching entries).
+
 ## Functions and Procedures
 
 ### init

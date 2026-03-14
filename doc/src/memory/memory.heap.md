@@ -30,6 +30,10 @@ Allocations larger than a single heap page's capacity are handled by `klalloc`, 
 - `core.util`, `arch.x86.util`
 - `core.panic`
 
+## Boot Registration
+
+Registered with `boot.mgr` as `memory.heap`, depending on glob `arch.*.memory.*` (waits for all matching entries).
+
 ## Constants
 
 | Constant | Value | Description |

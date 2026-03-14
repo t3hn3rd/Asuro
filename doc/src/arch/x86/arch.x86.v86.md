@@ -22,6 +22,10 @@ A minimal TSS is installed in GDT gate 5 so the CPU can locate the ring-0 stack 
 - `arch.x86.idt`
 - `arch.x86.isr.types`
 
+## Boot Registration
+
+Registered with `boot.mgr` as `arch.x86.v86` at the `early` barrier.
+
 ## Constants
 
 | Constant          | Value    | Description |

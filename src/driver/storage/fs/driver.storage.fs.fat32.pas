@@ -23,6 +23,7 @@ unit driver.storage.fs.fat32;
 interface
 
 uses
+    boot.mgr,
     driver.storage.fs.mgr,
     core.ds.lists,
     memory.heap,
@@ -2428,5 +2429,8 @@ begin
     driver.storage.fs.mgr.register_filesystem(@filesystem);
     io.syslog.logln('FAT32', 'init: done');
 end;
+
+initialization
+    boot.mgr.registerBoot('driver.storage.fs.fat32', @Init, 'FAT32 Filesystem', 'driver.storage.fs.mgr');
 
 end.

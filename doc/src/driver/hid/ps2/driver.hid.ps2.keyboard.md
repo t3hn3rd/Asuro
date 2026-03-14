@@ -14,6 +14,10 @@ This unit implements a PS/2 keyboard driver. It populates scan code translation 
 - `debug.tracer`
 - `syslog`
 
+## Boot Registration
+
+Registered with `boot.mgr` as `driver.hid.ps2.keyboard` at the `device` barrier.
+
 ## Functions and Procedures
 
 ### lang_USA

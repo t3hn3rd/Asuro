@@ -32,6 +32,10 @@ Legacy `storage_read_legacy` / `storage_write_legacy` procedure wrappers are ret
 - `core.util`, `arch.x86.util`
 - `driver.storage.vol.mgr` (implementation uses)
 
+## Boot Registration
+
+Registered with `boot.mgr` as `driver.storage.mgr`, depending on `driver.storage.vfs`.
+
 ## Variables
 
 | Name | Type | Description |

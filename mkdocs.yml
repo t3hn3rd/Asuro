@@ -106,8 +106,10 @@ nav:
         - Loader: src/arch/x86/proc/arch.x86.proc.loader.md
         - Scheduler: src/arch/x86/proc/arch.x86.proc.sched.md
     - Boot:
+      - Boot Manager: src/boot/boot.mgr.md
       - Splash Screen: src/boot/boot.splash.md
     - Core:
+      - Core Init: src/core/core.md
       - Types: src/core/core.types.md
       - Version: src/core/core.version.md
       - Utilities: src/core/core.util.md
@@ -188,6 +190,7 @@ nav:
       - Storage:
         - Types: src/driver/storage/driver.storage.types.md
         - Manager: src/driver/storage/driver.storage.mgr.md
+        - Boot Drive: src/driver/storage/driver.storage.boot.md
         - VFS: src/driver/storage/driver.storage.vfs.md
         - File Descriptor Table: src/driver/storage/driver.storage.fdtable.md
         - File Dispatch: src/driver/storage/driver.storage.filedispatch.md
@@ -234,6 +237,8 @@ nav:
         - RTC: src/driver/timer/driver.timer.rtc.md
       - Experimental:
         - Test Driver: src/driver/exp/driver.exp.testdriver.md
+    - Test:
+      - Test Runner: src/test/test.md
     - Services:
       - Graphics Daemon: src/svc/svc.gfxd.md
       - USB Daemon: src/svc/svc.usbd.md
@@ -258,6 +263,7 @@ nav:
       - Volume Commands: src/app/app.volcmd.md
       - Virtual Terminal: src/app/app.vterminal.md
       - WebAssembly:
+        - Init: src/app/wasm/app.wasm.md
         - Runner: src/app/wasm/app.wasm.runner.md
         - I/O: src/app/wasm/app.wasm.io.md
         - Shim: src/app/wasm/app.wasm.shim.md
@@ -299,3 +305,5 @@ nav:
     - Tracer: planning/tracer.md
     - VFS: planning/vfs.md
     - WASM: planning/wasm.md
+    - JSON: planning/json.md
+    - WebGPU: planning/webgpu.md

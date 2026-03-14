@@ -28,6 +28,10 @@ After volumes are created, `probe_volume` assigns a filesystem driver to each on
 - `debug.tracer`
 - `core.util`, `arch.x86.util`
 
+## Boot Registration
+
+Registered with `boot.mgr` as `driver.storage.vol.mgr`, depending on glob `driver.storage.mgr*` (waits for all matching entries).
+
 ## Variables
 
 | Name | Type | Description |

@@ -76,6 +76,7 @@ procedure registerHaltProc(proc : THaltProc);
 implementation
 
 uses    
+    boot.mgr,
     io.syslog,
     debug.tracer,
     driver.video,
@@ -866,6 +867,8 @@ var
     traceCard     : Plv_obj;
     traceHeader   : Plv_obj;
 begin
+    io.syslog.logln('PANIC', 'Initializing Core Panic Handler.');
+
     { Allocate text buffers — kernel-heap, persist for system lifetime }
     faultTextBuf := pchar(kalloc(512));
     regTextBuf := pchar(kalloc(PANIC_TEXT_BUF_SIZE));
@@ -1100,24 +1103,11 @@ begin
 
     { Mark BSOD screen as ready for panic rendering }
     ScreenReady := true;
+
+    io.syslog.logln('PANIC', 'Core Panic Handler Initialized.');
 end;
 
-{ ====================================================================
-  Unit initialization — set safe defaults before init() is called.
-  ==================================================================== }
-begin
-    ScreenReady := false;
-    PanicInProgress := false;
-    HaltProc := @fallbackHalt;
-    faultTextBuf := nil;
-    regTextBuf := nil;
-    traceTextBuf := nil;
-    systemTextBuf := nil;
-    bsodScreen := nil;
-    faultLabel := nil;
-    regLabel := nil;
-    traceLabel := nil;
-    systemLabel := nil;
-    panicTexture := nil;
-    panicDsc := nil;
+initialization
+    boot.mgr.registerBoot('core.panic', @init, 'Core Panic Handler', 'arch.*.panic');
+
 end.

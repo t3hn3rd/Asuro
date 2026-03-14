@@ -15,6 +15,10 @@ This unit implements a driver for the Bochs Graphics Adapter, a virtual GPU pres
 - `driver.types`
 - `syslog`
 
+## Boot Registration
+
+Registered with `boot.mgr` as `driver.video.bga`, depending on `driver.video`.
+
 ## Constants
 
 ### I/O Ports

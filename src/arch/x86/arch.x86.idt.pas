@@ -22,6 +22,7 @@ unit arch.x86.idt;
 interface
 
 uses
+    boot.mgr,
     core.util, arch.x86.util, io.syslog;
 
 const
@@ -85,5 +86,8 @@ begin
     load(uint32(@IDT_Pointer));
     io.syslog.logln('IDT','INIT END.');
 end;
+
+initialization
+    boot.mgr.registerBoot('arch.x86.idt', @init, 'Interrupt Descriptor Table', 'arch.x86.gdt');
 
 end.
