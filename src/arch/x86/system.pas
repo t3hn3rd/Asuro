@@ -276,7 +276,7 @@ function fpc_mod_int64(d, n: int64): int64; compilerproc;
 function fpc_mod_qword(d, n: qword): qword; compilerproc;
 function fpc_div_qword(d, n: qword): qword; compilerproc;
 
-{ Memory allocation compilerprocs – delegate to core.version heap (memory.heap) }
+{ Memory allocation compilerprocs - delegate to core.version heap (memory.heap) }
 function fpc_getmem(size: PtrUInt): Pointer; compilerproc;
 procedure fpc_freemem(p: Pointer); compilerproc;
 
