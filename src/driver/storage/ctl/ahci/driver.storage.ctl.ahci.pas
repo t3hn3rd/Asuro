@@ -450,11 +450,13 @@ begin
             storageDev^.writable   := false;
             storageDev^.dispatchRead       := TDriverDispatch(@ahci_dispatch_atapi_read);
             storageDev^.dispatchWrite      := TDriverDispatch(nil);
+            storageDev^.maxActive          := 1;
         end else begin
             storageDev^.controller := TControllerType.ControllerAHCI;
             storageDev^.writable   := true;
             storageDev^.dispatchRead       := TDriverDispatch(@ahci_dispatch_read);
             storageDev^.dispatchWrite      := TDriverDispatch(@ahci_dispatch_write);
+            storageDev^.maxActive          := 32;  { AHCI supports up to 32 command slots }
         end;
 
         driver.storage.mgr.register_device(storageDev);

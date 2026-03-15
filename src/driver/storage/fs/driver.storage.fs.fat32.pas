@@ -107,6 +107,24 @@ type
     end;
     PFatVolumeInfo = ^TFatVolumeInfo;
 
+    { FAT sector cache — direct-mapped, 64 lines, 32 KB data }
+    TFATCacheLine = record
+        SectorIdx : uint32;   { which FAT sector is stored here }
+        Dirty     : boolean;  { true if written but not flushed to disk }
+        Valid     : boolean;  { true if line contains valid data }
+    end;
+
+    PFATCache = ^TFATCache;
+    TFATCache = record
+        Lines      : array[0..63] of TFATCacheLine;  { 64 cache line tags }
+        Data       : puint32;   { kalloc'd 64*512 = 32768 bytes of FAT sector data }
+        EvictBuf   : puint32;   { kalloc'd 512-byte scratch for eviction writes }
+        Busy       : boolean;   { spinlock: serializes miss-path eviction+load }
+        FatStart   : uint32;    { LBA of first FAT sector on disk }
+        Device     : PStorage_Device; { device pointer for I/O }
+        BootRecord : PBootRecord;     { cached boot record (read once) }
+    end;
+
     { Async format state machine steps }
     TFmtStep = (
         fmtBootSector,
@@ -148,6 +166,23 @@ procedure detect_volumes(disk : PStorage_Device);
 
 
 implementation
+
+{ ---- Module-level I/O caches ---- }
+var
+
+    { Sequential I/O chain-position cache: stores the last visited
+      (cluster-index, cluster-number) pair so the next call can resume
+      instead of walking the entire chain from cluster 0. }
+    sioc_vol        : PStorage_Volume = nil;
+    sioc_fileClust  : uint32 = 0;
+    sioc_chainIdx   : uint32 = 0;
+    sioc_chainClust : uint32 = 0;
+    sioc_valid      : boolean = false;
+
+    { Free-cluster allocation hint: next findFreeClusters scan starts here
+      instead of cluster 2, making sequential allocations O(1). }
+    sioc_allocHint  : uint32 = 2;
+    sioc_allocVol   : PStorage_Volume = nil;
 
 { Validate a FAT32 8.3 filename.
   fullName should be in "NAME.EXT" form.
@@ -307,64 +342,249 @@ begin
 
 end;
 
-function readBootRecord(volume : PStorage_volume) : PBootRecord; // need write functions for boot record!
+function readBootRecord(volume : PStorage_volume) : PBootRecord;
 var
     buffer : puint32;
 begin
-    push_trace('driver.storage.fs.fat32.readBootRecord.enter');
-    io.syslog.logln('FAT32', 'readBootRecord: enter');
     buffer:= puint32(kalloc(512));
     memset(uint32(buffer), 0, 512);
     driver.storage.mgr.storage_read(volume^.device, volume^.sectorStart + 1, 1, buffer);
-    io.syslog.logln('FAT32', 'readBootRecord: done');
     readBootRecord:= PBootRecord(buffer);
 end;
 
-//TODO fat starts after reserved secotrs
+{ ---- FAT sector cache ---- }
 
-function readFat(volume : PStorage_volume; cluster : uint32; bootRecord : PBootRecord) : uint32;
+{ Get or lazily create the per-volume FAT cache.
+  Stores the cache pointer in volume^.fsPrivate. }
+function fatCacheGet(volume : PStorage_Volume) : PFATCache;
 var
-    buffer              : puint32;
-    fatEntriesPerSector : uint32;
-    sectorLocation      : uint32;
-    dataStart : uint32;
+    cache : PFATCache;
+    br    : PBootRecord;
+    i     : uint32;
 begin
-    push_trace('driver.storage.fs.fat32.readFat.enter');
-    io.syslog.logln('FAT32', 'readFat: enter');
-    buffer:= puint32(kalloc(bootRecord^.sectorsize));
-    memset(uint32(buffer), 0, bootRecord^.sectorsize);
-    fatEntriesPerSector:= bootRecord^.sectorsize div 4;
-    sectorLocation:= cluster div fatEntriesPerSector;
-    dataStart:= (volume^.sectorStart + 1 + bootRecord^.rsvSectors);
-
-    driver.storage.mgr.storage_read(volume^.device, datastart + sectorLocation, 1, buffer); 
-    readFat:= buffer[cluster - (sectorLocation * fatEntriesPerSector)];
-
-    kfree(buffer);
-    io.syslog.logln('FAT32', 'readFat: done');
+    if volume^.fsPrivate <> nil then begin
+        fatCacheGet := PFATCache(volume^.fsPrivate);
+        exit;
+    end;
+    cache := PFATCache(kalloc(sizeof(TFATCache)));
+    memset(uint32(cache), 0, sizeof(TFATCache));
+    cache^.Data := puint32(kalloc(64 * 512));
+    memset(uint32(cache^.Data), 0, 64 * 512);
+    cache^.EvictBuf := puint32(kalloc(512));
+    memset(uint32(cache^.EvictBuf), 0, 512);
+    cache^.Busy := false;
+    for i := 0 to 63 do begin
+        cache^.Lines[i].Valid := false;
+        cache^.Lines[i].Dirty := false;
+    end;
+    br := readBootRecord(volume);
+    cache^.BootRecord := br;
+    cache^.FatStart := volume^.sectorStart + 1 + br^.rsvSectors;
+    cache^.Device := volume^.device;
+    volume^.fsPrivate := pointer(cache);
+    fatCacheGet := cache;
 end;
 
+{ Flush all dirty cache lines to disk.
+  CLI/STI protects cache metadata; disk I/O runs with interrupts enabled. }
+procedure fatCacheFlush(cache : PFATCache; volume : PStorage_Volume);
+var
+    i         : uint32;
+    lba       : uint32;
+    needFlush : boolean;
+begin
+    { Acquire Busy lock — protects EvictBuf and prevents concurrent evictions }
+    while true do begin
+        asm pushf; cli end;
+        if not cache^.Busy then begin
+            cache^.Busy := true;
+            asm popf end;
+            break;
+        end;
+        asm popf end;
+        asm hlt end;
+    end;
+
+    for i := 0 to 63 do begin
+        asm pushf; cli end;
+        needFlush := cache^.Lines[i].Valid and cache^.Lines[i].Dirty;
+        if needFlush then begin
+            lba := cache^.FatStart + cache^.Lines[i].SectorIdx;
+            cache^.Lines[i].Dirty := false;
+            core.util.memcpy(uint32(cache^.Data) + (i * 512),
+                             uint32(cache^.EvictBuf), 512);
+        end;
+        asm popf end;
+
+        if needFlush then
+            driver.storage.mgr.storage_write(
+                cache^.Device, lba, 1, cache^.EvictBuf);
+    end;
+
+    { Release lock }
+    asm pushf; cli end;
+    cache^.Busy := false;
+    asm popf end;
+end;
+
+{ Invalidate all cache lines (e.g. on unmount). }
+procedure fatCacheInvalidate(cache : PFATCache);
+var
+    i : uint32;
+begin
+    for i := 0 to 63 do begin
+        cache^.Lines[i].Valid := false;
+        cache^.Lines[i].Dirty := false;
+    end;
+end;
+
+{ Read a single FAT entry using the sector cache.
+  128 FAT entries per 512-byte sector. Direct-mapped: slot = fatSector mod 64.
+  CLI/STI protects cache metadata; disk I/O runs with interrupts enabled. }
+function readFat(volume : PStorage_volume; cluster : uint32; bootRecord : PBootRecord) : uint32;
+var
+    cache       : PFATCache;
+    fatSecIdx   : uint32;  { which FAT sector this cluster lives in }
+    slot        : uint32;  { cache line index }
+    entryOff    : uint32;  { offset within that sector (0..127) }
+    dataPtr     : puint32; { pointer into cache data for this slot }
+    lba         : uint32;
+    doEvict     : boolean;
+    evictLBA    : uint32;
+begin
+    cache := fatCacheGet(volume);
+    fatSecIdx := cluster div 128;
+    slot := fatSecIdx and 63;  { mod 64 }
+    entryOff := cluster mod 128;
+    dataPtr := puint32(uint32(cache^.Data) + (slot * 512));
+
+    { Fast path: cache hit under CLI — no lock needed }
+    asm pushf; cli end;
+    if cache^.Lines[slot].Valid and (cache^.Lines[slot].SectorIdx = fatSecIdx) then begin
+        readFat := dataPtr[entryOff] and $0FFFFFFF;
+        asm popf end;
+        exit;
+    end;
+    asm popf end;
+
+    { Miss path: acquire Busy spinlock to serialize eviction+load }
+    while true do begin
+        asm pushf; cli end;
+        if not cache^.Busy then begin
+            { Re-check for hit — another process may have loaded this slot }
+            if cache^.Lines[slot].Valid and (cache^.Lines[slot].SectorIdx = fatSecIdx) then begin
+                readFat := dataPtr[entryOff] and $0FFFFFFF;
+                asm popf end;
+                exit;
+            end;
+            cache^.Busy := true;
+            doEvict := cache^.Lines[slot].Valid and cache^.Lines[slot].Dirty;
+            if doEvict then begin
+                evictLBA := cache^.FatStart + cache^.Lines[slot].SectorIdx;
+                core.util.memcpy(uint32(dataPtr), uint32(cache^.EvictBuf), 512);
+            end;
+            cache^.Lines[slot].Valid := false;
+            asm popf end;
+            break;
+        end;
+        asm popf end;
+        asm hlt end;
+    end;
+
+    { Disk I/O with interrupts enabled — exclusive via Busy flag }
+    if doEvict then
+        driver.storage.mgr.storage_write(cache^.Device, evictLBA, 1, cache^.EvictBuf);
+    lba := cache^.FatStart + fatSecIdx;
+    driver.storage.mgr.storage_read(cache^.Device, lba, 1, dataPtr);
+
+    { Update cache metadata and release lock under CLI }
+    asm pushf; cli end;
+    cache^.Lines[slot].SectorIdx := fatSecIdx;
+    cache^.Lines[slot].Valid := true;
+    cache^.Lines[slot].Dirty := false;
+    readFat := dataPtr[entryOff] and $0FFFFFFF;
+    cache^.Busy := false;
+    asm popf end;
+end;
+
+{ Write a single FAT entry into cache. No immediate disk I/O — call fatCacheFlush later.
+  CLI/STI protects cache metadata; disk I/O runs with interrupts enabled. }
 procedure writeFat(volume : PStorage_volume; cluster : uint32; value : uint32; bootRecord : PBootRecord);
 var
-    buffer              : puint32;
-    fatEntriesPerSector : uint32;
-    sectorLocation      : uint32;
-    dataStart           : uint32;
+    cache       : PFATCache;
+    fatSecIdx   : uint32;
+    slot        : uint32;
+    entryOff    : uint32;
+    dataPtr     : puint32;
+    lba         : uint32;
+    doEvict     : boolean;
+    evictLBA    : uint32;
 begin
-    push_trace('driver.storage.fs.fat32.writeFat.enter');
-    io.syslog.logln('FAT32', 'writeFat: enter');
-    buffer:= puint32(kalloc(bootRecord^.sectorsize));
-    memset(uint32(buffer), 0, bootRecord^.sectorsize);
-    fatEntriesPerSector:= bootRecord^.sectorsize div 4;
-    sectorLocation:= cluster div fatEntriesPerSector;
-    dataStart:= (volume^.sectorStart + 1 + bootRecord^.rsvSectors);
+    cache := fatCacheGet(volume);
+    fatSecIdx := cluster div 128;
+    slot := fatSecIdx and 63;
+    entryOff := cluster mod 128;
+    dataPtr := puint32(uint32(cache^.Data) + (slot * 512));
 
-    driver.storage.mgr.storage_read(volume^.device, dataStart + sectorLocation, 1, buffer);
-    buffer[cluster - (sectorLocation * fatEntriesPerSector)]:= value;
-    driver.storage.mgr.storage_write(volume^.device, dataStart + sectorLocation, 1, buffer);
+    { Fast path: cache hit — no lock needed }
+    asm pushf; cli end;
+    if cache^.Lines[slot].Valid and (cache^.Lines[slot].SectorIdx = fatSecIdx) then begin
+        if value = 0 then
+            dataPtr[entryOff] := 0
+        else
+            dataPtr[entryOff] := (dataPtr[entryOff] and $F0000000) or (value and $0FFFFFFF);
+        cache^.Lines[slot].Dirty := true;
+        asm popf end;
+        exit;
+    end;
+    asm popf end;
 
-    kfree(buffer);
-    io.syslog.logln('FAT32', 'writeFat: done');
+    { Miss path: acquire Busy spinlock }
+    while true do begin
+        asm pushf; cli end;
+        if not cache^.Busy then begin
+            { Re-check for hit after acquiring lock }
+            if cache^.Lines[slot].Valid and (cache^.Lines[slot].SectorIdx = fatSecIdx) then begin
+                if value = 0 then
+                    dataPtr[entryOff] := 0
+                else
+                    dataPtr[entryOff] := (dataPtr[entryOff] and $F0000000) or (value and $0FFFFFFF);
+                cache^.Lines[slot].Dirty := true;
+                asm popf end;
+                exit;
+            end;
+            cache^.Busy := true;
+            doEvict := cache^.Lines[slot].Valid and cache^.Lines[slot].Dirty;
+            if doEvict then begin
+                evictLBA := cache^.FatStart + cache^.Lines[slot].SectorIdx;
+                core.util.memcpy(uint32(dataPtr), uint32(cache^.EvictBuf), 512);
+            end;
+            cache^.Lines[slot].Valid := false;
+            asm popf end;
+            break;
+        end;
+        asm popf end;
+        asm hlt end;
+    end;
+
+    { Disk I/O with interrupts enabled — exclusive via Busy flag }
+    if doEvict then
+        driver.storage.mgr.storage_write(cache^.Device, evictLBA, 1, cache^.EvictBuf);
+    lba := cache^.FatStart + fatSecIdx;
+    driver.storage.mgr.storage_read(cache^.Device, lba, 1, dataPtr);
+
+    { Update cache, write value, release lock under CLI }
+    asm pushf; cli end;
+    cache^.Lines[slot].SectorIdx := fatSecIdx;
+    cache^.Lines[slot].Valid := true;
+    cache^.Lines[slot].Dirty := false;
+    if value = 0 then
+        dataPtr[entryOff] := 0
+    else
+        dataPtr[entryOff] := (dataPtr[entryOff] and $F0000000) or (value and $0FFFFFFF);
+    cache^.Lines[slot].Dirty := true;
+    cache^.Busy := false;
+    asm popf end;
 end;
 
 function getFatChain(volume : PStorage_volume; cluster : uint32; bootRecord : PBootRecord) : PLinkedListBase;
@@ -374,8 +594,6 @@ var
     clusters            : PLinkedListBase;
     dirElm              : puint32;
 begin
-    push_trace('driver.storage.fs.fat32.getFatChain.enter');
-    io.syslog.logln('FAT32', 'getFatChain: enter');
     clusters:= LL_New(sizeof(uint32));
     currentCluster:= cluster;
     currentClusterValue:= cluster;
@@ -384,16 +602,12 @@ begin
         currentClusterValue:= readFat(volume, currentClusterValue, bootRecord);
 
         if (currentClusterValue and $0FFFFFFF) = $0FFFFFF7 then begin
-            push_trace('driver.storage.fs.fat32.getFatChain.badCluster');
-            io.syslog.logln('FAT32', 'getFatChain: bad cluster, stopping');
             break;
         end else if (currentClusterValue and $0FFFFFFF) >= $0FFFFFF8 then begin
             dirElm:= LL_add(clusters);
             dirElm^:= currentCluster;
             break;
         end else if currentClusterValue = 0 then begin
-            push_trace('driver.storage.fs.fat32.getFatChain.freeCluster');
-            io.syslog.logln('FAT32', 'getFatChain: free cluster hit, stopping');
             break;
         end else begin
             dirElm:= LL_add(clusters);
@@ -404,21 +618,18 @@ begin
     end;
 
     getFatChain:= clusters;
-    io.syslog.logln('FAT32', 'getFatChain: done');
 end;
 
 //TODO improve with FSINFO
 function findFreeClusters(volume : PStorage_volume; amount : uint32; bootRecord : PBootRecord) : PLinkedListBase;
 var
-    i                   : uint32 = 2;
+    i                   : uint32;
     currentClusterValue : uint32;
     currentAmount       : uint32 = 0;
     maxCluster          : uint32;
     clusters            : PLinkedListBase;
     dirElm              : puint32;
 begin
-    push_trace('driver.storage.fs.fat32.findFreeClusters.enter');
-    io.syslog.logln('FAT32', 'findFreeClusters: enter');
     clusters := LL_New(8);
 
     { Calculate total number of data clusters on this volume }
@@ -427,30 +638,50 @@ begin
     else
         maxCluster := 0;
 
+    { Start from allocation hint if valid for this volume }
+    if (sioc_allocVol = volume) and (sioc_allocHint >= 2) and (sioc_allocHint < maxCluster) then
+        i := sioc_allocHint
+    else
+        i := 2;
+
     while (i < maxCluster) do begin
-
         if currentAmount = amount then break;
-
         currentClusterValue:= readFat(volume, i, bootRecord);
-
         if currentClusterValue = 0 then begin
             dirElm:= LL_add(clusters);
             dirElm^:= i;
             currentAmount+=1;
         end;
-
         i+=1;
+    end;
+
+    { Fallback: if hint caused us to miss free clusters, scan from 2 }
+    if (currentAmount < amount) and (sioc_allocVol = volume) and (sioc_allocHint > 2) then begin
+        i := 2;
+        while (i < sioc_allocHint) and (currentAmount < amount) do begin
+            currentClusterValue := readFat(volume, i, bootRecord);
+            if currentClusterValue = 0 then begin
+                dirElm := LL_add(clusters);
+                dirElm^ := i;
+                currentAmount += 1;
+            end;
+            i += 1;
+        end;
+    end;
+
+    { Update allocation hint for next call }
+    if currentAmount > 0 then begin
+        sioc_allocHint := puint32(LL_Get(clusters, currentAmount - 1))^ + 1;
+        sioc_allocVol  := volume;
     end;
 
     { If we couldn't find enough free clusters, the disk is full }
     if currentAmount < amount then begin
-        io.syslog.logln('FAT32', 'findFreeClusters: not enough free clusters - disk full');
         LL_Free(clusters);
         findFreeClusters := nil;
         exit;
     end;
 
-    io.syslog.logln('FAT32', 'findFreeClusters: done');
     findFreeClusters:= clusters;
 end;
 
@@ -468,11 +699,9 @@ var
     dirElm : puint32;
 begin
     push_trace('driver.storage.fs.fat32.getDirEntries.enter');
-    io.syslog.logln('FAT32', 'getDirEntries: enter');
     directories:= LL_New(sizeof(TDirectory));
 
     clusters:= PLinkedListBase(getFatChain(volume, cluster, bootRecord));
-    io.syslog.logln('FAT32', 'getDirEntries: got FAT chain');
     push_trace('driver.storage.fs.fat32.getDirEntries.allocBuffer');
     buffer:= puint32(kalloc( (bootRecord^.sectorSize * bootRecord^.spc) * LL_size(clusters) ));
     memset(uint32(buffer), 0, (bootRecord^.sectorSize * bootRecord^.spc) * LL_size(clusters) );
@@ -481,9 +710,9 @@ begin
 
     push_trace('driver.storage.fs.fat32.getDirEntries.readSectors');
     for i:=0 to LL_size(clusters) - 1 do begin
-        sectorLocation:= bootRecord^.spc * (i + cluster);
+        sectorLocation:= bootRecord^.spc * puint32(LL_Get(clusters, i))^;
         bufferI:= puint32(uint32(buffer) + uint32(i * bootRecord^.spc * bootRecord^.sectorSize));
-        driver.storage.mgr.storage_read(volume^.device, datastart + sectorLocation, bootRecord^.spc, bufferI); //datastart + spc(i + cluster)
+        driver.storage.mgr.storage_read(volume^.device, datastart + sectorLocation, bootRecord^.spc, bufferI);
     end;
 
     i:=0;
@@ -506,7 +735,6 @@ begin
     LL_Free(clusters);
     kfree(buffer);
     push_trace('driver.storage.fs.fat32.getDirEntries.exit');
-    io.syslog.logln('FAT32', 'getDirEntries: exit');
 end;
 
 function compareByteArray8(str1 : byteArray8; str2 : byteArray8) : boolean;
@@ -606,7 +834,6 @@ var
 begin
     status:= puint32(kalloc(sizeof(uint32)));
     push_trace('driver.storage.fs.fat32.readDirectory.enter');
-    io.syslog.logln('FAT32', 'readDirectory: enter');
     status^:= ord(eNone);
     bootRecord:= readBootRecord(volume);
     directoryStrings:= LL_fromString(directory, '/');
@@ -619,7 +846,6 @@ begin
             while true do begin
                 if ii > LL_Size(directories) - 1 then begin
                     status^:= ord(eDirectoryDoesNotExist);
-                    io.syslog.logln('FAT32', 'readDirectory: component not found');
                     break; 
                 end;
                 dirEntry:= PDirectory(LL_Get(directories, ii));
@@ -654,7 +880,6 @@ begin
     LL_Free(directoryStrings);
     kfree(puint32(bootRecord));
     push_trace('driver.storage.fs.fat32.readDirectory.exit');
-    io.syslog.logln('FAT32', 'readDirectory: exit');
 end;
 
 function readDirectoryGen(volume : PStorage_volume; directory : pchar; status : puint32) : PLinkedListBase; //returns: 0 = success, 1 = dir not exsist, 2 = not directory, 3 = invalid name, 4= already exists
@@ -887,17 +1112,35 @@ begin
     end;
 end;
 
-{ Free a FAT chain starting from the given cluster — marks all clusters as free (0). }
+{ Free a FAT chain starting from the given cluster — marks all clusters as free (0).
+  Includes loop protection: aborts if iteration count exceeds maxCluster or cluster
+  is out of range (< 2 or >= maxCluster). }
 procedure freeFatChain(volume : PStorage_volume; startCluster : uint32; bootRecord : PBootRecord);
 var
     currentCluster : uint32;
     nextCluster    : uint32;
+    maxCluster     : uint32;
+    iter           : uint32;
 begin
     push_trace('driver.storage.fs.fat32.freeFatChain.enter');
+    if (bootRecord^.FATSize > 0) and (bootRecord^.sectorsize > 0) then
+        maxCluster := (bootRecord^.FATSize * bootRecord^.sectorsize) div 4
+    else
+        maxCluster := 0;
     currentCluster := startCluster;
+    iter := 0;
     while true do begin
+        if (currentCluster < 2) or (currentCluster >= maxCluster) then begin
+            io.syslog.logln('FAT32', 'freeFatChain: cluster out of range, aborting');
+            break;
+        end;
+        if iter >= maxCluster then begin
+            io.syslog.logln('FAT32', 'freeFatChain: iteration limit hit, possible cycle');
+            break;
+        end;
         nextCluster := readFat(volume, currentCluster, bootRecord);
         writeFat(volume, currentCluster, 0, bootRecord);
+        iter := iter + 1;
 
         if (nextCluster and $0FFFFFFF) >= $0FFFFFF8 then break; { end of chain }
         if (nextCluster and $0FFFFFFF) = $0FFFFFF7 then break;  { bad cluster }
@@ -911,26 +1154,31 @@ end;
 { Delete a file from the volume. filePath is relative to volume root, e.g. 'SYSTEM/FILE.TXT' or 'FILE.TXT' }
 procedure deleteFile(volume : PStorage_Volume; filePath : pchar; statusOut : puint32);
 var
-    parentDir      : pchar;
-    fileName       : pchar;
-    namePart       : pchar;
-    extPart        : pchar;
-    bootRecord     : PBootRecord;
-    directories    : PLinkedListBase;
-    parentEntry    : PDirectory;
-    parentCluster  : uint32;
-    status         : puint32;
-    dataStart      : uint32;
-    spc            : uint32;
-    sectorLocation : uint32;
-    buffer         : puint32;
+    parentDir        : pchar;
+    fileName         : pchar;
+    namePart         : pchar;
+    extPart          : pchar;
+    bootRecord       : PBootRecord;
+    directories      : PLinkedListBase;
+    parentEntry      : PDirectory;
+    parentCluster    : uint32;
+    status           : puint32;
+    dataStart        : uint32;
+    spc              : uint32;
+    buffer           : puint32;
     EntriesPerSector : uint32;
-    totalEntries   : uint32;
-    dir            : PDirectory;
-    found          : boolean;
-    rawIdx         : uint32;
-    cluster        : uint32;
-    sectorOffset   : uint32;
+    dir              : PDirectory;
+    found            : boolean;
+    done             : boolean;
+    entryIdx         : uint32;
+    cluster          : uint32;
+    sectorOffset     : uint32;
+    cleanFileName    : byteArray8;
+    dirChain         : PLinkedListBase;
+    dc               : uint32;
+    ds               : uint32;
+    curCluster       : uint32;
+    clusterLBA       : uint32;
 begin
     push_trace('driver.storage.fs.fat32.deleteFile.enter');
     io.syslog.logln('FAT32', 'deleteFile: enter');
@@ -977,80 +1225,86 @@ begin
             kfree(void(fileName));
             exit;
         end;
-        { Entry 0 is '.' which holds the directory's own cluster }
         parentEntry := PDirectory(LL_Get(directories, 0));
         parentCluster := uint32(parentEntry^.clusterLow) or uint32(parentEntry^.clusterHigh shl 16);
         LL_Free(directories);
     end;
 
-    { Split filename for 8.3 matching }
+    { Split filename for 8.3 matching — compute cleanFileName once before loop }
     splitFileNameParts(fileName, namePart, extPart);
+    cleanFileName := cleanString(namePart, status);
 
-    { Read raw sectors from parent cluster (handles $E5 gaps correctly) }
+    { Walk the full parent directory FAT chain to find the target entry }
     dataStart := volume^.sectorStart + 1 + bootRecord^.rsvSectors + bootRecord^.FATSize;
     EntriesPerSector := uint32(bootRecord^.sectorSize) div uint32(sizeof(TDirectory));
-    sectorLocation := parentCluster * spc;
-    buffer := puint32(kalloc(bootRecord^.sectorSize * spc));
-    driver.storage.mgr.storage_read(volume^.device, dataStart + sectorLocation, spc, buffer);
-    totalEntries := EntriesPerSector * spc;
-
-    { Search raw entries for the matching file }
+    buffer := puint32(kalloc(bootRecord^.sectorSize));
+    dirChain := getFatChain(volume, parentCluster, bootRecord);
     found := false;
-    if totalEntries > 0 then
-    for rawIdx := 0 to totalEntries - 1 do begin
-        dir := @PDirectory(buffer)[rawIdx];
-        if dir^.fileName[0] = char(0) then break;
-        if dir^.fileName[0] = char($E5) then continue;
-        if compareByteArray8(dir^.fileName, cleanString(namePart, status))
-           and matchExtension(dir^.fileExtension, extPart) then begin
-            { Don't allow deleting directories via deleteFile }
-            if (dir^.attributes and $10) = $10 then begin
-                io.syslog.logln('FAT32', 'deleteFile: target is a directory, not a file');
-                if statusOut <> nil then statusOut^ := ord(eNotADirectory);
-                kfree(buffer);
-                kfree(status);
-                kfree(puint32(bootRecord));
-                kfree(void(parentDir));
-                kfree(void(fileName));
-                kfree(void(namePart));
-                kfree(void(extPart));
-                exit;
+    done := false;
+
+    dc := 0;
+    while (dc < LL_size(dirChain)) and (not done) do begin
+        curCluster := puint32(LL_Get(dirChain, dc))^;
+        clusterLBA := dataStart + (curCluster * spc);
+        ds := 0;
+        while (ds < spc) and (not done) do begin
+            driver.storage.mgr.storage_read(volume^.device, clusterLBA + ds, 1, buffer);
+            if EntriesPerSector > 0 then
+            for entryIdx := 0 to EntriesPerSector - 1 do begin
+                dir := @PDirectory(buffer)[entryIdx];
+                if dir^.fileName[0] = char(0) then begin
+                    done := true;
+                    break;
+                end;
+                if dir^.fileName[0] = char($E5) then continue;
+                if compareByteArray8(dir^.fileName, cleanFileName)
+                   and matchExtension(dir^.fileExtension, extPart) then begin
+                    { Don't allow deleting directories via deleteFile }
+                    if (dir^.attributes and $10) = $10 then begin
+                        io.syslog.logln('FAT32', 'deleteFile: target is a directory, not a file');
+                        if statusOut <> nil then statusOut^ := ord(eNotADirectory);
+                        kfree(buffer);
+                        kfree(status);
+                        kfree(puint32(bootRecord));
+                        kfree(void(parentDir));
+                        kfree(void(fileName));
+                        kfree(void(namePart));
+                        kfree(void(extPart));
+                        LL_Free(dirChain);
+                        exit;
+                    end;
+                    found := true;
+                    done := true;
+                    cluster := uint32(dir^.clusterLow) or uint32(dir^.clusterHigh shl 16);
+
+                    { Free the FAT chain for this file }
+                    io.syslog.logln('FAT32', 'deleteFile: freeing FAT chain');
+                    if cluster >= 2 then
+                        freeFatChain(volume, cluster, bootRecord);
+
+                    { Mark entry deleted and write back this one sector }
+                    dir^.fileName[0] := char($E5);
+                    driver.storage.mgr.storage_write(volume^.device, clusterLBA + ds, 1, buffer);
+                    break;
+                end;
             end;
-            found := true;
-            cluster := uint32(dir^.clusterLow) or uint32(dir^.clusterHigh shl 16);
-            break;
+            ds := ds + 1;
         end;
+        dc := dc + 1;
     end;
 
+    LL_Free(dirChain);
+    kfree(buffer);
     kfree(void(namePart));
     kfree(void(extPart));
 
     if not found then begin
         io.syslog.logln('FAT32', 'deleteFile: file not found');
         if statusOut <> nil then statusOut^ := ord(eFileDoesNotExist);
-        kfree(buffer);
-        kfree(status);
-        kfree(puint32(bootRecord));
-        kfree(void(parentDir));
-        kfree(void(fileName));
-        exit;
+    end else begin
+        if statusOut <> nil then statusOut^ := ord(eNone);
     end;
 
-    io.syslog.logln('FAT32', 'deleteFile: freeing FAT chain');
-    { Free the FAT chain for this file }
-    if cluster >= 2 then
-        freeFatChain(volume, cluster, bootRecord);
-
-    { Mark the raw entry as deleted ($E5) and write back the affected sector }
-    PDirectory(buffer)[rawIdx].fileName[0] := char($E5);
-    sectorOffset := rawIdx div EntriesPerSector;
-    driver.storage.mgr.storage_write(volume^.device,
-        dataStart + sectorLocation + sectorOffset, 1,
-        puint32(uint32(buffer) + sectorOffset * bootRecord^.sectorSize));
-
-    if statusOut <> nil then statusOut^ := ord(eNone);
-
-    kfree(buffer);
     kfree(status);
     kfree(puint32(bootRecord));
     kfree(void(parentDir));
@@ -1062,28 +1316,32 @@ end;
 { Delete a directory from the volume. path is relative to volume root. Directory must be empty. }
 procedure deleteDir(volume : PStorage_Volume; path : pchar; statusOut : puint32);
 var
-    parentDir      : pchar;
-    dirName        : pchar;
-    namePart       : pchar;
-    extPart        : pchar;
-    bootRecord     : PBootRecord;
-    directories    : PLinkedListBase;
-    childDirs      : PLinkedListBase;
-    parentEntry    : PDirectory;
-    parentCluster  : uint32;
-    status         : puint32;
-    dataStart      : uint32;
-    spc            : uint32;
-    sectorLocation : uint32;
-    buffer         : puint32;
+    parentDir        : pchar;
+    dirName          : pchar;
+    namePart         : pchar;
+    extPart          : pchar;
+    bootRecord       : PBootRecord;
+    directories      : PLinkedListBase;
+    childDirs        : PLinkedListBase;
+    parentEntry      : PDirectory;
+    parentCluster    : uint32;
+    status           : puint32;
+    dataStart        : uint32;
+    spc              : uint32;
+    buffer           : puint32;
     EntriesPerSector : uint32;
-    totalEntries   : uint32;
-    dir            : PDirectory;
-    found          : boolean;
-    rawIdx         : uint32;
-    cluster        : uint32;
-    childCount     : uint32;
-    sectorOffset   : uint32;
+    dir              : PDirectory;
+    found            : boolean;
+    done             : boolean;
+    entryIdx         : uint32;
+    cluster          : uint32;
+    childCount       : uint32;
+    cleanFileName    : byteArray8;
+    dirChain         : PLinkedListBase;
+    dc               : uint32;
+    ds               : uint32;
+    curCluster       : uint32;
+    clusterLBA       : uint32;
 begin
     push_trace('driver.storage.fs.fat32.deleteDir.enter');
     io.syslog.logln('FAT32', 'deleteDir: enter');
@@ -1133,88 +1391,99 @@ begin
         LL_Free(directories);
     end;
 
-    { Split dirName for 8.3 matching }
+    { Split dirName for 8.3 matching — compute cleanFileName once before loop }
     splitFileNameParts(dirName, namePart, extPart);
+    cleanFileName := cleanString(namePart, status);
 
-    { Read raw sectors from parent cluster }
+    { Walk the full parent directory FAT chain to find the target entry }
     dataStart := volume^.sectorStart + 1 + bootRecord^.rsvSectors + bootRecord^.FATSize;
     EntriesPerSector := uint32(bootRecord^.sectorSize) div uint32(sizeof(TDirectory));
-    sectorLocation := parentCluster * spc;
-    buffer := puint32(kalloc(bootRecord^.sectorSize * spc));
-    driver.storage.mgr.storage_read(volume^.device, dataStart + sectorLocation, spc, buffer);
-    totalEntries := EntriesPerSector * spc;
-
-    { Search raw entries for the matching directory }
+    buffer := puint32(kalloc(bootRecord^.sectorSize));
+    dirChain := getFatChain(volume, parentCluster, bootRecord);
     found := false;
-    if totalEntries > 0 then
-    for rawIdx := 0 to totalEntries - 1 do begin
-        dir := @PDirectory(buffer)[rawIdx];
-        if dir^.fileName[0] = char(0) then break;
-        if dir^.fileName[0] = char($E5) then continue;
-        if compareByteArray8(dir^.fileName, cleanString(namePart, status))
-           and matchExtension(dir^.fileExtension, extPart) then begin
-            { Must be a directory }
-            if (dir^.attributes and $10) <> $10 then begin
-                if statusOut <> nil then statusOut^ := ord(eNotADirectory);
-                kfree(buffer);
-                kfree(status);
-                kfree(puint32(bootRecord));
-                kfree(void(parentDir));
-                kfree(void(dirName));
-                kfree(void(namePart));
-                kfree(void(extPart));
-                exit;
+    done := false;
+    cluster := 0;
+
+    dc := 0;
+    while (dc < LL_size(dirChain)) and (not done) do begin
+        curCluster := puint32(LL_Get(dirChain, dc))^;
+        clusterLBA := dataStart + (curCluster * spc);
+        ds := 0;
+        while (ds < spc) and (not done) do begin
+            driver.storage.mgr.storage_read(volume^.device, clusterLBA + ds, 1, buffer);
+            if EntriesPerSector > 0 then
+            for entryIdx := 0 to EntriesPerSector - 1 do begin
+                dir := @PDirectory(buffer)[entryIdx];
+                if dir^.fileName[0] = char(0) then begin
+                    done := true;
+                    break;
+                end;
+                if dir^.fileName[0] = char($E5) then continue;
+                if compareByteArray8(dir^.fileName, cleanFileName)
+                   and matchExtension(dir^.fileExtension, extPart) then begin
+                    { Must be a directory }
+                    if (dir^.attributes and $10) <> $10 then begin
+                        if statusOut <> nil then statusOut^ := ord(eNotADirectory);
+                        kfree(buffer);
+                        kfree(status);
+                        kfree(puint32(bootRecord));
+                        kfree(void(parentDir));
+                        kfree(void(dirName));
+                        kfree(void(namePart));
+                        kfree(void(extPart));
+                        LL_Free(dirChain);
+                        exit;
+                    end;
+                    found := true;
+                    done := true;
+                    cluster := uint32(dir^.clusterLow) or uint32(dir^.clusterHigh shl 16);
+
+                    { Check if directory is empty — should contain only '.' and '..' }
+                    childDirs := getDirEntries(volume, cluster, bootRecord);
+                    childCount := LL_size(childDirs);
+                    LL_Free(childDirs);
+
+                    if childCount > 2 then begin
+                        io.syslog.logln('FAT32', 'deleteDir: directory not empty, refusing to delete');
+                        if statusOut <> nil then statusOut^ := ord(eDirectoryNotEmpty);
+                        kfree(buffer);
+                        kfree(status);
+                        kfree(puint32(bootRecord));
+                        kfree(void(parentDir));
+                        kfree(void(dirName));
+                        kfree(void(namePart));
+                        kfree(void(extPart));
+                        LL_Free(dirChain);
+                        exit;
+                    end;
+
+                    { Free the FAT chain for this directory's data }
+                    if cluster >= 2 then
+                        freeFatChain(volume, cluster, bootRecord);
+
+                    { Mark entry deleted and write back this one sector }
+                    dir^.fileName[0] := char($E5);
+                    driver.storage.mgr.storage_write(volume^.device, clusterLBA + ds, 1, buffer);
+                    break;
+                end;
             end;
-            found := true;
-            cluster := uint32(dir^.clusterLow) or uint32(dir^.clusterHigh shl 16);
-            break;
+            ds := ds + 1;
         end;
+        dc := dc + 1;
     end;
 
+    LL_Free(dirChain);
+    kfree(buffer);
     kfree(void(namePart));
     kfree(void(extPart));
 
     if not found then begin
         io.syslog.logln('FAT32', 'deleteDir: directory not found');
         if statusOut <> nil then statusOut^ := ord(eDirectoryDoesNotExist);
-        kfree(buffer);
-        kfree(status);
-        kfree(puint32(bootRecord));
-        kfree(void(parentDir));
-        kfree(void(dirName));
-        exit;
+    end else begin
+        if statusOut <> nil then statusOut^ := ord(eNone);
     end;
 
-    { Check if directory is empty — should contain only '.' and '..' }
-    childDirs := getDirEntries(volume, cluster, bootRecord);
-    childCount := LL_size(childDirs);
-    LL_Free(childDirs);
-
-    if childCount > 2 then begin
-        io.syslog.logln('FAT32', 'deleteDir: directory not empty, refusing to delete');
-        if statusOut <> nil then statusOut^ := ord(eDirectoryNotEmpty);
-        kfree(buffer);
-        kfree(status);
-        kfree(puint32(bootRecord));
-        kfree(void(parentDir));
-        kfree(void(dirName));
-        exit;
-    end;
-
-    { Free the FAT chain for this directory's data }
-    if cluster >= 2 then
-        freeFatChain(volume, cluster, bootRecord);
-
-    { Mark the raw entry as deleted ($E5) and write back the affected sector }
-    PDirectory(buffer)[rawIdx].fileName[0] := char($E5);
-    sectorOffset := rawIdx div EntriesPerSector;
-    driver.storage.mgr.storage_write(volume^.device,
-        dataStart + sectorLocation + sectorOffset, 1,
-        puint32(uint32(buffer) + sectorOffset * bootRecord^.sectorSize));
-
-    if statusOut <> nil then statusOut^ := ord(eNone);
-
-    kfree(buffer);
     kfree(status);
     kfree(puint32(bootRecord));
     kfree(void(parentDir));
@@ -1239,18 +1508,22 @@ var
     parentEntry     : PDirectory;
     parentCluster   : uint32;
     found           : boolean;
-    rawIdx          : uint32;
     j               : uint32;
     status          : puint32;
     dataStart       : uint32;
     spc             : uint32;
-    sectorLocation  : uint32;
     buffer          : puint32;
     EntriesPerSector: uint32;
-    totalEntries    : uint32;
     dir             : PDirectory;
     cleanName       : byteArray8;
-    sectorOffset    : uint32;
+    newCleanName    : byteArray8;
+    done            : boolean;
+    dirChain        : PLinkedListBase;
+    dc              : uint32;
+    ds              : uint32;
+    entryIdx        : uint32;
+    curCluster      : uint32;
+    clusterLBA      : uint32;
 begin
     push_trace('driver.storage.fs.fat32.renameFile.enter');
     io.syslog.logln('FAT32', 'renameFile: enter');
@@ -1311,74 +1584,76 @@ begin
         LL_Free(directories);
     end;
 
-    { Split current filename for 8.3 matching }
+    { Split current filename for 8.3 matching — compute once before loop }
     splitFileNameParts(fileName, namePart, extPart);
+    cleanName := cleanString(namePart, status);
 
-    { Read raw sectors from parent cluster }
+    { Walk the full parent directory FAT chain to find the target entry }
     dataStart := volume^.sectorStart + 1 + bootRecord^.rsvSectors + bootRecord^.FATSize;
     EntriesPerSector := uint32(bootRecord^.sectorSize) div uint32(sizeof(TDirectory));
-    sectorLocation := parentCluster * spc;
-    buffer := puint32(kalloc(bootRecord^.sectorSize * spc));
-    driver.storage.mgr.storage_read(volume^.device, dataStart + sectorLocation, spc, buffer);
-    totalEntries := EntriesPerSector * spc;
-
-    { Search raw entries for the matching file }
+    buffer := puint32(kalloc(bootRecord^.sectorSize));
+    dirChain := getFatChain(volume, parentCluster, bootRecord);
     found := false;
-    if totalEntries > 0 then
-    for rawIdx := 0 to totalEntries - 1 do begin
-        dir := @PDirectory(buffer)[rawIdx];
-        if dir^.fileName[0] = char(0) then break;
-        if dir^.fileName[0] = char($E5) then continue;
-        if compareByteArray8(dir^.fileName, cleanString(namePart, status))
-           and matchExtension(dir^.fileExtension, extPart) then begin
-            found := true;
-            break;
+    done := false;
+
+    dc := 0;
+    while (dc < LL_size(dirChain)) and (not done) do begin
+        curCluster := puint32(LL_Get(dirChain, dc))^;
+        clusterLBA := dataStart + (curCluster * spc);
+        ds := 0;
+        while (ds < spc) and (not done) do begin
+            driver.storage.mgr.storage_read(volume^.device, clusterLBA + ds, 1, buffer);
+            if EntriesPerSector > 0 then
+            for entryIdx := 0 to EntriesPerSector - 1 do begin
+                dir := @PDirectory(buffer)[entryIdx];
+                if dir^.fileName[0] = char(0) then begin
+                    done := true;
+                    break;
+                end;
+                if dir^.fileName[0] = char($E5) then continue;
+                if compareByteArray8(dir^.fileName, cleanName)
+                   and matchExtension(dir^.fileExtension, extPart) then begin
+                    found := true;
+                    done := true;
+
+                    { Apply new 8.3 name in-place }
+                    splitFileNameParts(newName, newNamePart, newExtPart);
+                    newCleanName := cleanString(newNamePart, status);
+                    for j := 0 to 7 do
+                        dir^.fileName[j] := newCleanName[j];
+                    for j := 0 to 2 do begin
+                        if (newExtPart <> nil) and (j < stringSize(newExtPart)) then begin
+                            if (newExtPart[j] >= 'a') and (newExtPart[j] <= 'z') then
+                                dir^.fileExtension[j] := char(uint8(newExtPart[j]) - 32)
+                            else
+                                dir^.fileExtension[j] := newExtPart[j];
+                        end else
+                            dir^.fileExtension[j] := ' ';
+                    end;
+                    kfree(void(newNamePart));
+                    kfree(void(newExtPart));
+
+                    { Write back this one sector }
+                    driver.storage.mgr.storage_write(volume^.device, clusterLBA + ds, 1, buffer);
+                    break;
+                end;
+            end;
+            ds := ds + 1;
         end;
+        dc := dc + 1;
     end;
 
+    LL_Free(dirChain);
+    kfree(buffer);
     kfree(void(namePart));
     kfree(void(extPart));
 
     if not found then begin
         io.syslog.logln('FAT32', 'renameFile: file not found');
         if statusOut <> nil then statusOut^ := ord(eFileDoesNotExist);
-        kfree(buffer);
-        kfree(status);
-        kfree(puint32(bootRecord));
-        kfree(void(parentDir));
-        kfree(void(fileName));
-        exit;
+    end else begin
+        if statusOut <> nil then statusOut^ := ord(eNone);
     end;
-
-    { Write new 8.3 name into the raw entry }
-    splitFileNameParts(newName, newNamePart, newExtPart);
-    cleanName := cleanString(newNamePart, status);
-
-    for j := 0 to 7 do
-        PDirectory(buffer)[rawIdx].fileName[j] := cleanName[j];
-
-    { Write extension — pad with spaces }
-    for j := 0 to 2 do begin
-        if (newExtPart <> nil) and (j < stringSize(newExtPart)) then begin
-            if (newExtPart[j] >= 'a') and (newExtPart[j] <= 'z') then
-                PDirectory(buffer)[rawIdx].fileExtension[j] := char(uint8(newExtPart[j]) - 32)
-            else
-                PDirectory(buffer)[rawIdx].fileExtension[j] := newExtPart[j];
-        end else
-            PDirectory(buffer)[rawIdx].fileExtension[j] := ' ';
-    end;
-
-    { Write back the affected sector }
-    sectorOffset := rawIdx div EntriesPerSector;
-    driver.storage.mgr.storage_write(volume^.device,
-        dataStart + sectorLocation + sectorOffset, 1,
-        puint32(uint32(buffer) + sectorOffset * bootRecord^.sectorSize));
-
-    kfree(buffer);
-    kfree(void(newNamePart));
-    kfree(void(newExtPart));
-
-    if statusOut <> nil then statusOut^ := ord(eNone);
 
     kfree(status);
     kfree(puint32(bootRecord));
@@ -1386,289 +1661,6 @@ begin
     kfree(void(fileName));
     push_trace('driver.storage.fs.fat32.renameFile.exit');
     io.syslog.logln('FAT32', 'renameFile: done');
-end;
-
-procedure writeFile(volume : PStorage_volume; directory : pchar; entry : PDirectory_Entry; byteCount : uint32; buffer : puint32; statusOut : puint32);
-var
-    bootRecord : PBootRecord;
-    directories : PLinkedListBase;
-    clusters : PLinkedListBase;
-    startCluster: uint32;
-    dir : PDirectory;
-    exists : boolean = false;
-    sectorCount : uint32;
-    clusterCount : uint32;
-    clusterDifference : uint32;
-    dataStart : uint32;
-    iterations : uint32;
-    bufferPointer : puint32;
-
-    i : uint32;
-    status : puint32;
-    namePart : pchar;
-    extPart  : pchar;
-
-    { Variables for updating directory entry byteSize }
-    entryIndex     : uint32;
-    parentCluster  : uint32;
-    dirSectorBuf   : puint32;
-    dirSectorLoc   : uint32;
-    entriesPerSec  : uint32;
-    entryOffset    : uint32;
-begin
-    push_trace('driver.storage.fs.fat32.writeFile.enter');
-    io.syslog.logln('FAT32', 'writeFile: enter');
-    status:= kalloc(4);
-    status^:= ord(eNone);
-
-    { Validate the filename before doing any I/O }
-    if not isValidFAT32Name(entry^.fileName) then begin
-        io.syslog.logln('FAT32', 'writeFile: invalid FAT32 filename');
-        if statusOut <> nil then statusOut^:= ord(eInvalidFileName);
-        kfree(status);
-        exit;
-    end;
-
-    bootRecord:= readBootRecord(volume);
-    push_trace('driver.storage.fs.fat32.writeFile.readDir');
-    directories:= readDirectory(volume, directory, status);
-
-    { If the parent directory does not exist, bail out }
-    if status^ <> ord(eNone) then begin
-        io.syslog.logln('FAT32', 'writeFile: parent directory error');
-        if statusOut <> nil then statusOut^:= status^;
-        LL_Free(directories);
-        kfree(status);
-        kfree(puint32(bootRecord));
-        exit;
-    end;
-
-    sectorCount:= (byteCount div bootRecord^.sectorSize) + 1;
-    datastart:= volume^.sectorStart + 1 + bootRecord^.FATSize + bootRecord^.rsvSectors;
-    push_trace('driver.storage.fs.fat32.writeFile.checkExists');
-
-    { Split entry filename into name + extension for FAT32 8.3 matching }
-    splitFileNameParts(entry^.fileName, namePart, extPart);
-
-    for i:=0 to LL_size(directories) - 1 do begin
-        dir:= PDirectory(LL_get(directories, i));
-        if compareByteArray8(dir^.fileName, cleanString(namePart, status)) and matchExtension(dir^.fileExtension, extPart) then begin
-            exists:= true;
-            entryIndex:= i;
-            break;
-        end;
-    end;
-
-    kfree(void(namePart));
-    kfree(void(extPart));
-
-
-    if exists then begin //saving to existing file
-        push_trace('driver.storage.fs.fat32.writeFile.existingFile');
-        io.syslog.logln('FAT32', 'writeFile: updating existing file');
-        startCluster:= uint32(dir^.clusterlow) or uint32(dir^.clusterhigh shl 16);
-        clusters:= getFatChain(volume, startCluster, bootRecord); //check no clusters and check if needs to be more or less, add/remove clusters
-        clusterCount := LL_size(clusters);
-        push_trace('driver.storage.fs.fat32.writeFile.gotFatChain');
-
-        if (clusterCount * bootRecord^.spc) > sectorCount then begin //shrink
-            clusterDifference:= clusterCount - (sectorCount div bootRecord^.spc);
-            for i:= (clusterCount - clusterDifference) + 1 to clusterCount do begin //free unused clusters
-                writeFat(volume, startCluster + i, 0, bootRecord);
-            end;
-            writeFat(volume, startCluster + (clusterCount - clusterDifference), $FFFFFFF8, bootRecord); // add new cluster terminator
-            LL_Free(clusters);
-        end else if (clusterCount * bootRecord^.spc) < sectorCount then begin //expand
-            clusterDifference:= (sectorCount div bootRecord^.spc) - clusterCount;
-            LL_Free(clusters);
-            clusters:= findFreeClusters(volume, clusterDifference, bootRecord);
-            if clusters = nil then begin
-                { Disk full — cannot expand file }
-                io.syslog.logln('FAT32', 'writeFile: disk full, cannot expand file');
-                if statusOut <> nil then statusOut^:= ord(eDiskFull);
-                LL_Free(directories);
-                kfree(status);
-                kfree(puint32(bootRecord));
-                exit;
-            end;
-            for i:= clusterCount to clusterCount + clusterDifference - 1 do begin
-                writeFat(volume, startCluster + i, startCluster + i + 1, bootRecord);
-            end;
-                writeFat(volume, startcluster + clusterCount + clusterDifference, $FFFFFFF8, bootRecord);
-            LL_Free(clusters);
-        end else begin //nothing
-            clusterDifference:= 0;
-            LL_Free(clusters);
-        end;
-
-    end else begin
-        push_trace('driver.storage.fs.fat32.writeFile.newFile');
-        io.syslog.logln('FAT32', 'writeFile: creating new file');
-
-        entryIndex:= LL_size(directories); { New entry appended at end }
-        startCluster:= writeDirectory(volume, directory, entry^.fileName, 0, status);
-
-        { If writeDirectory failed (disk full, dir full, invalid name, etc.), propagate error }
-        if status^ <> ord(eNone) then begin
-            io.syslog.logln('FAT32', 'writeFile: writeDirectory failed');
-            if statusOut <> nil then statusOut^:= status^;
-            LL_Free(directories);
-            kfree(status);
-            kfree(puint32(bootRecord));
-            exit;
-        end;
-
-        clusterDifference:= (byteCount div bootRecord^.sectorsize) div bootRecord^.spc;
-            push_trace('driver.storage.fs.fat32.writeFile.newFile.setupFat');
-
-        for i:= startcluster to startCluster + clusterDifference - 1 do begin
-            writeFat(volume, i, i + 1, bootRecord);
-        end;
-                push_trace('driver.storage.fs.fat32.writeFile.newFile.writeFatEnd');
-
-        writeFat(volume, startcluster + clusterDifference, $FFFFFFF8, bootRecord);
-    end;
-
-    push_trace('driver.storage.fs.fat32.writeFile.writeSectors');
-    io.syslog.logln('FAT32', 'writeFile: writing sectors');
-
-    { Calculate total sectors needed and write each sector individually.
-      Assumes contiguous clusters starting at startCluster. }
-    iterations:= (bytecount + bootRecord^.sectorSize - 1) div bootRecord^.sectorSize;
-    if iterations > 0 then begin
-        for i:=0 to iterations - 1 do begin
-            bufferPointer:= puint32(uint32(buffer) + uint32(i * bootRecord^.sectorSize));
-            driver.storage.mgr.storage_write(volume^.device, dataStart + (startCluster * bootRecord^.spc) + i, 1, bufferPointer);
-        end;
-    end;
-
-    { Write succeeded — now update the directory entry's byteSize on disk }
-    push_trace('driver.storage.fs.fat32.writeFile.updateByteSize');
-    if LL_size(directories) > 0 then begin
-        parentCluster:= uint32(PDirectory(LL_get(directories, 0))^.clusterLow)
-                     or uint32(PDirectory(LL_get(directories, 0))^.clusterHigh shl 16);
-        entriesPerSec:= bootRecord^.sectorSize div uint32(sizeof(TDirectory));
-        dirSectorLoc:= (entryIndex * uint32(sizeof(TDirectory))) div bootRecord^.sectorSize;
-        dirSectorLoc:= dirSectorLoc + (parentCluster * bootRecord^.spc);
-        entryOffset:= entryIndex mod entriesPerSec;
-
-        dirSectorBuf:= puint32(kalloc(bootRecord^.sectorSize));
-        driver.storage.mgr.storage_read(volume^.device, dataStart + dirSectorLoc, 1, dirSectorBuf);
-        PDirectory(dirSectorBuf)[entryOffset].byteSize:= byteCount;
-        driver.storage.mgr.storage_write(volume^.device, dataStart + dirSectorLoc, 1, dirSectorBuf);
-        kfree(dirSectorBuf);
-    end;
-
-    io.syslog.logln('FAT32', 'writeFile: done');
-    if statusOut <> nil then statusOut^:= ord(eNone);
-
-    LL_Free(directories);
-    kfree(status);
-    kfree(puint32(bootRecord));
-end;
-
-function readFile(volume : PStorage_Volume; directory : pchar; fileName : pchar; buffer : puint32; bytecount : puint32) : uint32;
-var
-    bootRecord  : PBootRecord;
-    dirs        : PLinkedListBase;
-    dir         : PDirectory;
-    readbuffer  : puint32;
-    data        : puint32;
-    statusOut   : puint32;
-    i           : uint32;
-    exists      : boolean = false;
-    cluster     : uint32;
-    clusters    : PLinkedListBase;
-    noClusters  : uint32;
-    dataStart   : uint32;
-    cleanFileName : byteArray8;
-    otherCleanFileName : byteArray8;
-    tempdir : PDirectory;
-    namePart : pchar;
-    extPart  : pchar;
-begin
-    push_trace('driver.storage.fs.fat32.readFile.enter');
-    io.syslog.logln('FAT32', 'readFile: enter');
-    statusOut := puint32(kalloc(sizeof(uint32)));
-    statusOut^ := 0;
-    bootRecord := readBootRecord(volume);
-    push_trace('driver.storage.fs.fat32.readFile.readDir');
-    dirs := readDirectory(volume, directory, statusOut);
-    datastart:= volume^.sectorStart + 1 + bootRecord^.FATSize + bootRecord^.rsvSectors;
-    push_trace('driver.storage.fs.fat32.readFile.searchFile');
-
-    { Split fileName into name + extension for FAT32 8.3 matching }
-    splitFileNameParts(fileName, namePart, extPart);
-
-    if LL_size(dirs) > 0 then begin
-        cleanFileName := cleanString(namePart, statusOut);
-
-        for i:=0 to LL_Size(dirs) -1 do begin
-            tempdir := PDirectory(LL_get(dirs, i));
-            otherCleanFileName := cleanString(tempdir^.filename, statusout);
-
-            if compareByteArray8(cleanFileName, otherCleanFileName) and matchExtension(tempdir^.fileExtension, extPart) then begin
-                dir:=tempdir;
-                exists := true;
-                statusOut^ := 0;
-            end;
-        end;
-    end;
-
-    kfree(void(namePart));
-    kfree(void(extPart));
-
-
-    if exists = false then begin
-        push_trace('driver.storage.fs.fat32.readFile.notFound');
-        io.syslog.logln('FAT32', 'readFile: file not found');
-        LL_Free(dirs);
-        kfree(puint32(bootRecord));
-        kfree(puint32(statusOut));
-        exit(1);
-    end else begin
-        push_trace('driver.storage.fs.fat32.readFile.found');
-        io.syslog.logln('FAT32', 'readFile: file found, reading clusters');
-        cluster := uint32(dir^.clusterlow) or uint32(dir^.clusterhigh shl 16);
-        clusters := getFatChain(volume, cluster, bootRecord);
-        noClusters := LL_size(clusters);
-
-        data := puint32(kalloc(noClusters * bootRecord^.spc * bootRecord^.sectorSize));
-        if data = puint32(0) then begin
-            push_trace('UNABLE TO ALLOCATE MEMORY');
-            io.syslog.logln('FAT32', 'readFile: OOM allocating data buffer');
-        end;
-        memset(uint32(data), 0, noClusters * bootRecord^.spc * bootRecord^.sectorSize);
-
-        readbuffer := puint32(kalloc(bootRecord^.sectorSize));
-        if readbuffer = puint32(0) then begin
-            push_trace('UNABLE TO ALLOCATE MEMORY');
-            io.syslog.logln('FAT32', 'readFile: OOM allocating read buffer');
-        end;
-
-        if noClusters * bootRecord^.spc > 0 then begin
-            for i:=0 to (noClusters * bootRecord^.spc) - 1 do begin
-                driver.storage.mgr.storage_read(volume^.device, dataStart + ((cluster * bootRecord^.spc) + i), 1, readbuffer);
-                memcpy(uint32(readbuffer), uint32(@data[i * bootRecord^.sectorSize div 4]), bootRecord^.sectorSize);
-            end;
-        end;
-
-        kfree(readbuffer);
-        buffer^ := uint32(data);
-        { Report actual file size from directory entry, not cluster-based estimate }
-        if dir^.byteSize > 0 then
-            bytecount^ := dir^.byteSize
-        else
-            bytecount^ := noClusters * bootRecord^.spc * bootRecord^.sectorSize;
-        readFile:= statusOut^;
-        io.syslog.logln('FAT32', 'readFile: done');
-        LL_Free(dirs);
-        LL_Free(clusters);
-        kfree(puint32(bootRecord));
-        kfree(puint32(statusOut));
-        push_trace('driver.storage.fs.fat32.readFile.exit');
-    end;
-
 end;
 
 // function checkExists(volume : PStorage_Volume; directory : pchar; fileName : pchar; fileExtension : pchar; entry : PDirectory_Entry) : uint32;
@@ -2234,16 +2226,14 @@ begin
     kfree(buffer);
 end;
 
-{ Read byteCount bytes from a file beginning at byte offset 'offset'.
-  Returns the number of bytes actually read (may be less than byteCount if EOF reached).
-
-  NOTE: This implementation reads sectors sequentially from the first cluster of the
-  file, consistent with the existing readFile behaviour.  It does NOT follow the FAT
-  chain between clusters \u2014 it assumes contiguous allocation.  This is acceptable for
-  the initial streaming implementation.  A future improvement should cache the last
-  visited (offset, cluster) pair in the open-file entry to make sequential chunked
-  reads O(1) per call instead of O(n) in the FAT chain length. }
-function readFileAtOffset(volume : PStorage_Volume; directory : pchar; fileName : pchar; offset : uint32; buffer : puint32; byteCount : uint32) : uint32;
+{ Write byteCount bytes to a file beginning at byte offset.
+  If offset + byteCount exceeds the current file size, the file is extended
+  by allocating new clusters.  Returns the number of bytes actually written. }
+function writeFileAtOffset(volume : PStorage_Volume; directory : pchar;
+                           fileName : pchar; offset : uint32;
+                           buffer : puint32; byteCount : uint32) : uint32;
+const
+    MAX_RUN_SECTORS = 2048;  { cap per multi-sector write = 1MB }
 var
     bootRecord       : PBootRecord;
     dirs             : PLinkedListBase;
@@ -2252,15 +2242,13 @@ var
     i                : uint32;
     exists           : boolean;
     cluster          : uint32;
-    clusters         : PLinkedListBase;
-    noClusters       : uint32;
     dataStart        : uint32;
     cleanFileName    : byteArray8;
     otherCFN         : byteArray8;
     tempdir          : PDirectory;
     namePart         : pchar;
     extPart          : pchar;
-    readbuffer       : puint32;
+    ioBuf            : puint32;
     bytesPerCluster  : uint32;
     startClusterIdx  : uint32;
     inClusterOffset  : uint32;
@@ -2270,13 +2258,547 @@ var
     curCluster       : uint32;
     clusterLBA       : uint32;
     sectorIdx        : uint32;
-    destPos          : uint32;
+    srcPos           : uint32;
     remaining        : uint32;
     bytesToCopy      : uint32;
     fileSize         : uint32;
+    newEnd           : uint32;
+    oldClusters      : uint32;
+    needClusters     : uint32;
+    extraClusters    : uint32;
+    newClusts        : PLinkedListBase;
+    lastCluster      : uint32;
+    nextCluster      : uint32;
+    nextFat          : uint32;
+    { dir entry update — raw sector scan (Lesson 18) }
+    dirCluster       : uint32;
+    dirChain         : PLinkedListBase;
+    dirBuf           : puint32;
+    entriesPerSec    : uint32;
+    entryIdx         : uint32;
+    rawDir           : PDirectory;
+    foundRaw         : boolean;
+    dc               : uint32;
+    ds               : uint32;
+    newDirEntry      : TDirectory;
+    { Multi-sector write variables }
+    spc              : uint32;
+    secSize          : uint32;
+    runStartClust    : uint32;
+    runLen           : uint32;
+    runSectors       : uint32;
+    runBytes         : uint32;
+    runLBA           : uint32;
+    skipBytes        : uint32;
+    copyBytes        : uint32;
+    firstSectorOff   : uint32;
+    partialBytes     : uint32;
+    fullSectors      : uint32;
+    batchBytes       : uint32;
+    sectorLBA        : uint32;
+    fatCache         : PFATCache;
+begin
+    push_trace('driver.storage.fs.fat32.writeFileAtOffset.enter');
+    writeFileAtOffset := 0;
+    exists := false;
+
+    statusOut := puint32(kalloc(sizeof(uint32)));
+    statusOut^ := 0;
+    bootRecord := readBootRecord(volume);
+    dirs := readDirectory(volume, directory, statusOut);
+    dataStart := volume^.sectorStart + 1 + bootRecord^.FATSize + bootRecord^.rsvSectors;
+
+    splitFileNameParts(fileName, namePart, extPart);
+
+    if LL_size(dirs) > 0 then begin
+        cleanFileName := cleanString(namePart, statusOut);
+        for i := 0 to LL_Size(dirs) - 1 do begin
+            tempdir := PDirectory(LL_get(dirs, i));
+            otherCFN := cleanString(tempdir^.filename, statusOut);
+            if compareByteArray8(cleanFileName, otherCFN) and matchExtension(tempdir^.fileExtension, extPart) then begin
+                dir := tempdir;
+                exists := true;
+            end;
+        end;
+    end;
+
+    kfree(void(namePart));
+    kfree(void(extPart));
+
+    if not exists then begin
+        { --- Create a new zero-length file entry on disk --- }
+
+        { Determine parent cluster (Lesson 18: root has no '.' entry) }
+        if (directory = nil) or (stringSize(directory) = 0) then
+            dirCluster := bootRecord^.rootCluster
+        else begin
+            if LL_size(dirs) > 0 then begin
+                tempdir := PDirectory(LL_get(dirs, 0));
+                if tempdir^.fileName[0] = '.' then
+                    dirCluster := uint32(tempdir^.clusterLow)
+                              or uint32(tempdir^.clusterHigh shl 16)
+                else
+                    dirCluster := bootRecord^.rootCluster;
+            end else
+                dirCluster := bootRecord^.rootCluster;
+        end;
+
+        entriesPerSec := bootRecord^.sectorSize div uint32(sizeof(TDirectory));
+        dirChain := getFatChain(volume, dirCluster, bootRecord);
+        dirBuf := puint32(kalloc(bootRecord^.sectorSize));
+        foundRaw := false;
+
+        splitFileNameParts(fileName, namePart, extPart);
+        cleanFileName := cleanString(namePart, statusOut);
+
+        if LL_size(dirChain) > 0 then begin
+            for dc := 0 to LL_size(dirChain) - 1 do begin
+                curCluster := puint32(LL_Get(dirChain, dc))^;
+                clusterLBA := dataStart + (curCluster * uint32(bootRecord^.spc));
+                for ds := 0 to uint32(bootRecord^.spc) - 1 do begin
+                    driver.storage.mgr.storage_read(volume^.device, clusterLBA + ds, 1, dirBuf);
+                    if entriesPerSec > 0 then begin
+                        for entryIdx := 0 to entriesPerSec - 1 do begin
+                            rawDir := @PDirectory(dirBuf)[entryIdx];
+                            if (rawDir^.fileName[0] = char(0)) or (rawDir^.fileName[0] = char($E5)) then begin
+                                { Found a free slot — write the new file entry }
+                                memset(uint32(rawDir), 0, sizeof(TDirectory));
+                                rawDir^.fileName := cleanFileName;
+                                rawDir^.attributes := 0; { regular file }
+                                rawDir^.fileExtension[0] := ' ';
+                                rawDir^.fileExtension[1] := ' ';
+                                rawDir^.fileExtension[2] := ' ';
+                                if (extPart <> nil) and (extPart[0] <> char(0)) then begin
+                                    for i := 0 to 2 do begin
+                                        if extPart[i] = char(0) then break;
+                                        if (extPart[i] >= 'a') and (extPart[i] <= 'z') then
+                                            rawDir^.fileExtension[i] := char(uint8(extPart[i]) - 32)
+                                        else
+                                            rawDir^.fileExtension[i] := extPart[i];
+                                    end;
+                                end;
+                                rawDir^.clusterLow := 0;
+                                rawDir^.clusterHigh := 0;
+                                rawDir^.byteSize := 0;
+                                driver.storage.mgr.storage_write(volume^.device, clusterLBA + ds, 1, dirBuf);
+                                foundRaw := true;
+                                break;
+                            end;
+                        end;
+                    end;
+                    if foundRaw then break;
+                end;
+                if foundRaw then break;
+            end;
+        end;
+
+        kfree(void(namePart));
+        kfree(void(extPart));
+        kfree(dirBuf);
+        LL_Free(dirChain);
+
+        if not foundRaw then begin
+            io.syslog.logln('FAT32', 'writeFileAtOffset: exit-A no free dir slot');
+            LL_Free(dirs);
+            kfree(puint32(bootRecord));
+            kfree(puint32(statusOut));
+            exit;
+        end;
+
+        { Invalidate chain cache — new file }
+        sioc_valid := false;
+
+        { Set up a local dir record so the rest of the function can use it }
+        memset(uint32(@newDirEntry), 0, sizeof(TDirectory));
+        newDirEntry.byteSize := 0;
+        newDirEntry.clusterLow := 0;
+        newDirEntry.clusterHigh := 0;
+        dir := @newDirEntry;
+    end;
+
+    fileSize := dir^.byteSize;
+    cluster  := uint32(dir^.clusterlow) or uint32(dir^.clusterhigh shl 16);
+    newEnd   := offset + byteCount;
+    bytesPerCluster := uint32(bootRecord^.spc) * uint32(bootRecord^.sectorSize);
+
+    { ---- Extend file if writing past EOF ---- }
+    if newEnd > fileSize then begin
+        if fileSize = 0 then
+            oldClusters := 0
+        else
+            oldClusters := (fileSize + bytesPerCluster - 1) div bytesPerCluster;
+        needClusters := (newEnd + bytesPerCluster - 1) div bytesPerCluster;
+
+        if needClusters > oldClusters then begin
+            extraClusters := needClusters - oldClusters;
+            newClusts := findFreeClusters(volume, extraClusters, bootRecord);
+            if newClusts = nil then begin
+                io.syslog.logln('FAT32', 'writeFileAtOffset: exit-B disk full');
+                LL_Free(dirs);
+                kfree(puint32(bootRecord));
+                kfree(puint32(statusOut));
+                exit;
+            end;
+
+            if oldClusters > 0 then begin
+                { Walk to last cluster using cache if available }
+                if sioc_valid and (sioc_vol = volume) and (sioc_fileClust = cluster) then
+                    lastCluster := sioc_chainClust
+                else
+                    lastCluster := cluster;
+                nextFat := readFat(volume, lastCluster, bootRecord);
+                while ((nextFat and $0FFFFFFF) < $0FFFFFF8) and (nextFat <> 0) do begin
+                    lastCluster := nextFat;
+                    nextFat := readFat(volume, lastCluster, bootRecord);
+                end;
+            end else begin
+                { Zero-length file: first new cluster becomes start cluster }
+                lastCluster := 0;
+            end;
+
+            { Link new clusters }
+            if extraClusters > 0 then begin
+                for i := 0 to extraClusters - 1 do begin
+                    nextCluster := puint32(LL_Get(newClusts, i))^;
+                    if lastCluster <> 0 then
+                        writeFat(volume, lastCluster, nextCluster, bootRecord);
+                    lastCluster := nextCluster;
+                end;
+                writeFat(volume, lastCluster, $FFFFFFF8, bootRecord);
+            end;
+
+            { If file was zero-length, update dir entry's cluster pointer }
+            if oldClusters = 0 then begin
+                cluster := puint32(LL_Get(newClusts, 0))^;
+                dir^.clusterlow  := uint16(cluster and $FFFF);
+                dir^.clusterhigh := uint16((cluster shr 16) and $FFFF);
+            end;
+
+            { Update chain cache: last new cluster is the new tail }
+            sioc_vol        := volume;
+            sioc_fileClust  := cluster;
+            sioc_chainIdx   := needClusters - 1;
+            sioc_chainClust := lastCluster;
+            sioc_valid      := true;
+
+            LL_Free(newClusts);
+
+        end;
+
+        fileSize := newEnd;
+    end;
+
+    { ---- Walk to starting cluster using cache, then write sector by sector ---- }
+    startClusterIdx := offset div bytesPerCluster;
+    inClusterOffset := offset mod bytesPerCluster;
+
+    { Determine curCluster at startClusterIdx using cache }
+    if sioc_valid and (sioc_vol = volume) and (sioc_fileClust = cluster)
+       and (sioc_chainIdx <= startClusterIdx) then begin
+        curCluster := sioc_chainClust;
+        chainPos   := sioc_chainIdx;
+    end else begin
+        curCluster := cluster;
+        chainPos   := 0;
+    end;
+
+    { Walk forward from cached/start position to startClusterIdx }
+    while chainPos < startClusterIdx do begin
+        nextFat := readFat(volume, curCluster, bootRecord);
+        if ((nextFat and $0FFFFFFF) >= $0FFFFFF8) or (nextFat = 0) then begin
+            io.syslog.log('FAT32', 'writeFileAtOffset: exit-C chain broke at chainPos=');
+            io.syslog.writeint(chainPos);
+            io.syslog.writestring(' target=');
+            io.syslog.writeint(startClusterIdx);
+            io.syslog.writestring(' cluster=');
+            io.syslog.writeint(curCluster);
+            io.syslog.writestring(' fat=');
+            io.syslog.writehexln(nextFat);
+            LL_Free(dirs);
+            kfree(puint32(bootRecord));
+            kfree(puint32(statusOut));
+            exit;
+        end;
+        curCluster := nextFat;
+        chainPos   := chainPos + 1;
+    end;
+
+    spc       := uint32(bootRecord^.spc);
+    secSize   := uint32(bootRecord^.sectorSize);
+    ioBuf     := puint32(kalloc(secSize));
+    remaining := byteCount;
+    srcPos    := 0;
+
+    while (remaining > 0) do begin
+        { Build contiguous cluster run starting at curCluster }
+        runStartClust := curCluster;
+        runLen := 1;
+
+        while (runLen * spc) < MAX_RUN_SECTORS do begin
+            nextFat := readFat(volume, curCluster, bootRecord);
+            if ((nextFat and $0FFFFFFF) >= $0FFFFFF8) or (nextFat = 0) then
+                break;
+            if nextFat <> curCluster + 1 then
+                break;
+            curCluster := nextFat;
+            runLen := runLen + 1;
+        end;
+
+        runSectors := runLen * spc;
+        runBytes   := runSectors * secSize;
+        runLBA     := dataStart + (runStartClust * spc);
+
+        if srcPos = 0 then
+            skipBytes := inClusterOffset
+        else
+            skipBytes := 0;
+
+        copyBytes := runBytes - skipBytes;
+        if copyBytes > remaining then
+            copyBytes := remaining;
+
+        firstSectorOff := skipBytes mod secSize;
+
+        { Phase 1: Partial first sector — read-modify-write }
+        if firstSectorOff > 0 then begin
+            sectorLBA := runLBA + (skipBytes div secSize);
+            partialBytes := secSize - firstSectorOff;
+            if partialBytes > copyBytes then
+                partialBytes := copyBytes;
+            driver.storage.mgr.storage_read(volume^.device, sectorLBA, 1, ioBuf);
+            core.util.memcpy(uint32(buffer) + srcPos, uint32(ioBuf) + firstSectorOff, partialBytes);
+            driver.storage.mgr.storage_write(volume^.device, sectorLBA, 1, ioBuf);
+            srcPos    := srcPos + partialBytes;
+            remaining := remaining - partialBytes;
+            copyBytes := copyBytes - partialBytes;
+            skipBytes := skipBytes + partialBytes;
+        end;
+
+        { Phase 2: Full sectors — batch write directly from caller buffer }
+        fullSectors := copyBytes div secSize;
+        if fullSectors > 0 then begin
+            sectorLBA := runLBA + (skipBytes div secSize);
+            batchBytes := fullSectors * secSize;
+            driver.storage.mgr.storage_write(volume^.device, sectorLBA, fullSectors,
+                puint32(uint32(buffer) + srcPos));
+            srcPos    := srcPos + batchBytes;
+            remaining := remaining - batchBytes;
+            copyBytes := copyBytes - batchBytes;
+            skipBytes := skipBytes + batchBytes;
+        end;
+
+        { Phase 3: Partial last sector — read-modify-write }
+        if copyBytes > 0 then begin
+            sectorLBA := runLBA + (skipBytes div secSize);
+            driver.storage.mgr.storage_read(volume^.device, sectorLBA, 1, ioBuf);
+            core.util.memcpy(uint32(buffer) + srcPos, uint32(ioBuf), copyBytes);
+            driver.storage.mgr.storage_write(volume^.device, sectorLBA, 1, ioBuf);
+            srcPos    := srcPos + copyBytes;
+            remaining := remaining - copyBytes;
+        end;
+
+        { Update chain cache to last cluster in this run }
+        sioc_vol        := volume;
+        sioc_fileClust  := cluster;
+        sioc_chainIdx   := chainPos + runLen - 1;
+        sioc_chainClust := curCluster;
+        sioc_valid      := true;
+        chainPos := chainPos + runLen;
+
+        if remaining > 0 then begin
+            nextFat := readFat(volume, curCluster, bootRecord);
+            if ((nextFat and $0FFFFFFF) >= $0FFFFFF8) or (nextFat = 0) then begin
+                io.syslog.log('FAT32', 'writeFileAtOffset: exit-D chain broke in write loop, srcPos=');
+                io.syslog.writeint(srcPos);
+                io.syslog.writestring(' remaining=');
+                io.syslog.writeint(remaining);
+                io.syslog.writestring(' cluster=');
+                io.syslog.writeint(curCluster);
+                io.syslog.writestring(' fat=');
+                io.syslog.writehexln(nextFat);
+                break;
+            end;
+            curCluster := nextFat;
+        end;
+    end;
+
+    kfree(ioBuf);
+
+    { Flush dirty FAT cache entries to disk }
+    fatCache := fatCacheGet(volume);
+    if fatCache <> nil then
+        fatCacheFlush(fatCache, volume);
+
+    { ---- Update directory entry byteSize if file was extended ---- }
+    { Only commit actual bytes written — never advance size past what was really written (Lesson 22) }
+    if (srcPos > 0) and ((offset + srcPos) > dir^.byteSize) then begin
+        { Lesson 18: search raw directory sectors, don't use LL indices. }
+        if (directory = nil) or (stringSize(directory) = 0) then
+            dirCluster := bootRecord^.rootCluster
+        else begin
+            dirCluster := bootRecord^.rootCluster;
+            if LL_size(dirs) > 0 then begin
+                tempdir := PDirectory(LL_get(dirs, 0));
+                if tempdir^.fileName[0] = '.' then
+                    dirCluster := uint32(tempdir^.clusterLow)
+                              or uint32(tempdir^.clusterHigh shl 16);
+            end;
+        end;
+
+        dirChain := getFatChain(volume, dirCluster, bootRecord);
+        entriesPerSec := bootRecord^.sectorSize div uint32(sizeof(TDirectory));
+        dirBuf := puint32(kalloc(bootRecord^.sectorSize));
+        foundRaw := false;
+
+        splitFileNameParts(fileName, namePart, extPart);
+        cleanFileName := cleanString(namePart, statusOut);
+
+        if LL_size(dirChain) > 0 then begin
+            for dc := 0 to LL_size(dirChain) - 1 do begin
+                curCluster := puint32(LL_Get(dirChain, dc))^;
+                clusterLBA := dataStart + (curCluster * uint32(bootRecord^.spc));
+                for ds := 0 to uint32(bootRecord^.spc) - 1 do begin
+                    driver.storage.mgr.storage_read(volume^.device, clusterLBA + ds, 1, dirBuf);
+                    if entriesPerSec > 0 then begin
+                        for entryIdx := 0 to entriesPerSec - 1 do begin
+                            rawDir := @PDirectory(dirBuf)[entryIdx];
+                            if rawDir^.fileName[0] = char(0) then begin
+                                foundRaw := true;
+                                break;
+                            end;
+                            if rawDir^.fileName[0] = char($E5) then continue;
+                            otherCFN := cleanString(rawDir^.filename, statusOut);
+                            if compareByteArray8(cleanFileName, otherCFN) and matchExtension(rawDir^.fileExtension, extPart) then begin
+                                rawDir^.byteSize := offset + srcPos;
+                                { If file was zero-length, update cluster pointers too }
+                                if dir^.byteSize = 0 then begin
+                                    rawDir^.clusterlow  := dir^.clusterlow;
+                                    rawDir^.clusterhigh := dir^.clusterhigh;
+                                end;
+                                driver.storage.mgr.storage_write(volume^.device, clusterLBA + ds, 1, dirBuf);
+                                foundRaw := true;
+                                break;
+                            end;
+                        end;
+                    end;
+                    if foundRaw then break;
+                end;
+                if foundRaw then break;
+            end;
+        end;
+
+        kfree(void(namePart));
+        kfree(void(extPart));
+        kfree(dirBuf);
+        LL_Free(dirChain);
+    end;
+
+    LL_Free(dirs);
+    kfree(puint32(bootRecord));
+    kfree(puint32(statusOut));
+    writeFileAtOffset := srcPos;
+    push_trace('driver.storage.fs.fat32.writeFileAtOffset.exit');
+end;
+
+{ Read byteCount bytes from a file beginning at byte offset 'offset'.
+  Returns the number of bytes actually read (may be less than byteCount if EOF reached).
+
+  NOTE: This implementation reads sectors sequentially from the first cluster of the
+  file, consistent with the existing readFile behaviour.  It does NOT follow the FAT
+  chain between clusters \u2014 it assumes contiguous allocation.  This is acceptable for
+  the initial streaming implementation.  A future improvement should cache the last
+  visited (offset, cluster) pair in the open-file entry to make sequential chunked
+  reads O(1) per call instead of O(n) in the FAT chain length. }
+
+function getFileSize(volume : PStorage_Volume; directory : pchar; fileName : pchar) : uint32;
+var
+    bootRecord       : PBootRecord;
+    dirs             : PLinkedListBase;
+    tempdir          : PDirectory;
+    statusOut        : puint32;
+    i                : uint32;
+    cleanFileName    : byteArray8;
+    otherCFN         : byteArray8;
+    namePart         : pchar;
+    extPart          : pchar;
+    fsize            : uint32;
+begin
+    push_trace('driver.storage.fs.fat32.getFileSize.enter');
+    getFileSize := 0;
+
+    statusOut := puint32(kalloc(sizeof(uint32)));
+    statusOut^ := 0;
+    bootRecord := readBootRecord(volume);
+    dirs := readDirectory(volume, directory, statusOut);
+
+    splitFileNameParts(fileName, namePart, extPart);
+
+    fsize := 0;
+    if LL_size(dirs) > 0 then begin
+        cleanFileName := cleanString(namePart, statusOut);
+        for i := 0 to LL_Size(dirs) - 1 do begin
+            tempdir := PDirectory(LL_get(dirs, i));
+            otherCFN := cleanString(tempdir^.filename, statusOut);
+            if compareByteArray8(cleanFileName, otherCFN) and matchExtension(tempdir^.fileExtension, extPart) then begin
+                fsize := tempdir^.byteSize;
+                break;
+            end;
+        end;
+    end;
+
+    kfree(void(namePart));
+    kfree(void(extPart));
+    LL_Free(dirs);
+    kfree(puint32(bootRecord));
+    kfree(puint32(statusOut));
+    getFileSize := fsize;
+    push_trace('driver.storage.fs.fat32.getFileSize.exit');
+end;
+
+function readFileAtOffset(volume : PStorage_Volume; directory : pchar; fileName : pchar; offset : uint32; buffer : puint32; byteCount : uint32) : uint32;
+const
+    MAX_RUN_SECTORS = 2048;  { cap per multi-sector read = 1 MB }
+var
+    bootRecord       : PBootRecord;
+    dirs             : PLinkedListBase;
+    dir              : PDirectory;
+    statusOut        : puint32;
+    i                : uint32;
+    exists           : boolean;
+    cluster          : uint32;
+    dataStart        : uint32;
+    cleanFileName    : byteArray8;
+    otherCFN         : byteArray8;
+    tempdir          : PDirectory;
+    namePart         : pchar;
+    extPart          : pchar;
+    bytesPerCluster  : uint32;
+    startClusterIdx  : uint32;
+    inClusterOffset  : uint32;
+    chainPos         : uint32;
+    curCluster       : uint32;
+    destPos          : uint32;
+    remaining        : uint32;
+    fileSize         : uint32;
+    nextFat          : uint32;
+    spc              : uint32;
+    secSize          : uint32;
+    { Multi-sector run variables }
+    runStartClust    : uint32;
+    runLen           : uint32;  { clusters in current contiguous run }
+    runSectors       : uint32;
+    runBytes         : uint32;
+    runBuf           : puint32;
+    runBufBytes      : uint32;
+    skipBytes        : uint32;  { bytes to skip at start of run buffer }
+    copyBytes        : uint32;
+    chunkSectors     : uint32;
+    chunkBytes       : uint32;
+    runLBA           : uint32;
+    ioBuf            : puint32;
+    partialBytes     : uint32;
 begin
     push_trace('driver.storage.fs.fat32.readFileAtOffset.enter');
-    io.syslog.logln('FAT32', 'readFileAtOffset: enter');
     readFileAtOffset := 0;
     exists := false;
 
@@ -2296,7 +2818,6 @@ begin
             if compareByteArray8(cleanFileName, otherCFN) and matchExtension(tempdir^.fileExtension, extPart) then begin
                 dir := tempdir;
                 exists := true;
-                statusOut^ := 0;
             end;
         end;
     end;
@@ -2305,7 +2826,6 @@ begin
     kfree(void(extPart));
 
     if not exists then begin
-        io.syslog.logln('FAT32', 'readFileAtOffset: file not found');
         LL_Free(dirs);
         kfree(puint32(bootRecord));
         kfree(puint32(statusOut));
@@ -2315,13 +2835,9 @@ begin
 
     fileSize   := dir^.byteSize;
     cluster    := uint32(dir^.clusterlow) or uint32(dir^.clusterhigh shl 16);
-    clusters   := getFatChain(volume, cluster, bootRecord);
-    noClusters := LL_size(clusters);
 
     if offset >= fileSize then begin
-        io.syslog.logln('FAT32', 'readFileAtOffset: offset past EOF');
         LL_Free(dirs);
-        LL_Free(clusters);
         kfree(puint32(bootRecord));
         kfree(puint32(statusOut));
         exit;
@@ -2332,69 +2848,121 @@ begin
     if offset + remaining > fileSize then
         remaining := fileSize - offset;
 
-    bytesPerCluster := uint32(bootRecord^.spc) * uint32(bootRecord^.sectorSize);
-
-    { Determine which cluster in the chain contains the starting offset }
+    spc     := uint32(bootRecord^.spc);
+    secSize := uint32(bootRecord^.sectorSize);
+    bytesPerCluster := spc * secSize;
     startClusterIdx := offset div bytesPerCluster;
     inClusterOffset := offset mod bytesPerCluster;
 
-    if startClusterIdx >= noClusters then begin
-        io.syslog.logln('FAT32', 'readFileAtOffset: startCluster past chain');
-        LL_Free(dirs);
-        LL_Free(clusters);
-        kfree(puint32(bootRecord));
-        kfree(puint32(statusOut));
-        exit;
+    { Determine curCluster at startClusterIdx using SIOC cache }
+    if sioc_valid and (sioc_vol = volume) and (sioc_fileClust = cluster)
+       and (sioc_chainIdx <= startClusterIdx) then begin
+        curCluster := sioc_chainClust;
+        chainPos   := sioc_chainIdx;
+    end else begin
+        curCluster := cluster;
+        chainPos   := 0;
     end;
 
-    readbuffer := puint32(kalloc(bootRecord^.sectorSize));
-    destPos    := 0;
-    chainPos   := startClusterIdx;
+    { Walk forward to startClusterIdx }
+    while chainPos < startClusterIdx do begin
+        nextFat := readFat(volume, curCluster, bootRecord);
+        if ((nextFat and $0FFFFFFF) >= $0FFFFFF8) or (nextFat = 0) then begin
+            LL_Free(dirs);
+            kfree(puint32(bootRecord));
+            kfree(puint32(statusOut));
+            exit;
+        end;
+        curCluster := nextFat;
+        chainPos   := chainPos + 1;
+    end;
 
-    while (remaining > 0) and (chainPos < noClusters) do begin
-        curCluster := puint32(LL_Get(clusters, chainPos))^;
-        clusterLBA := dataStart + (curCluster * uint32(bootRecord^.spc));
+    destPos := 0;
 
-        { Determine starting sector and byte offset within this cluster }
-        if chainPos = startClusterIdx then begin
-            startSecInClust := inClusterOffset div uint32(bootRecord^.sectorSize);
-            secByteOff      := inClusterOffset mod uint32(bootRecord^.sectorSize);
+    while (remaining > 0) do begin
+        { Build a contiguous cluster run starting at curCluster }
+        runStartClust := curCluster;
+        runLen := 1;
+
+        { Scan ahead for contiguous clusters, capped by MAX_RUN_SECTORS worth }
+        while (runLen * spc) < MAX_RUN_SECTORS do begin
+            nextFat := readFat(volume, curCluster, bootRecord);
+            if ((nextFat and $0FFFFFFF) >= $0FFFFFF8) or (nextFat = 0) then
+                break;
+            if nextFat <> curCluster + 1 then
+                break;
+            curCluster := nextFat;
+            runLen := runLen + 1;
+        end;
+
+        runSectors := runLen * spc;
+        runBytes   := runSectors * secSize;
+
+        { Calculate how many bytes from this run we actually need }
+        if destPos = 0 then
+            skipBytes := inClusterOffset
+        else
+            skipBytes := 0;
+
+        copyBytes := runBytes - skipBytes;
+        if copyBytes > remaining then
+            copyBytes := remaining;
+
+        { Determine if we can read directly into caller's buffer (aligned, full run) }
+        if (skipBytes = 0) and (copyBytes >= runBytes) then begin
+            { Direct read into output buffer — no temp allocation }
+            runLBA := dataStart + (runStartClust * spc);
+            driver.storage.mgr.storage_read(volume^.device, runLBA, runSectors,
+                puint32(uint32(buffer) + destPos));
+            destPos   := destPos + copyBytes;
+            remaining := remaining - copyBytes;
+        end else if (skipBytes = 0) and ((copyBytes mod secSize) = 0) then begin
+            { Partial run but sector-aligned — read only needed sectors }
+            chunkSectors := copyBytes div secSize;
+            runLBA := dataStart + (runStartClust * spc);
+            driver.storage.mgr.storage_read(volume^.device, runLBA, chunkSectors,
+                puint32(uint32(buffer) + destPos));
+            destPos   := destPos + copyBytes;
+            remaining := remaining - copyBytes;
         end else begin
-            startSecInClust := 0;
-            secByteOff      := 0;
+            { Unaligned — need temp buffer for partial first/last sectors }
+            { Only allocate for sectors we actually touch }
+            chunkSectors := (skipBytes + copyBytes + secSize - 1) div secSize;
+            if chunkSectors > runSectors then chunkSectors := runSectors;
+            chunkBytes := chunkSectors * secSize;
+            runBuf := puint32(kalloc(chunkBytes));
+            runLBA := dataStart + (runStartClust * spc) + (skipBytes div secSize);
+
+            { Adjust skipBytes for sectors we're skipping entirely }
+            skipBytes := skipBytes mod secSize;
+            driver.storage.mgr.storage_read(volume^.device, runLBA, chunkSectors, runBuf);
+            core.util.memcpy(uint32(runBuf) + skipBytes, uint32(buffer) + destPos, copyBytes);
+            kfree(runBuf);
+            destPos   := destPos + copyBytes;
+            remaining := remaining - copyBytes;
         end;
 
-        sectorIdx := startSecInClust;
-        while (sectorIdx < uint32(bootRecord^.spc)) and (remaining > 0) do begin
-            driver.storage.mgr.storage_read(volume^.device, clusterLBA + sectorIdx, 1, readbuffer);
+        { Update SIOC chain cache to last cluster in this run }
+        sioc_vol        := volume;
+        sioc_fileClust  := cluster;
+        sioc_chainIdx   := chainPos + runLen - 1;
+        sioc_chainClust := curCluster;
+        sioc_valid      := true;
+        chainPos := chainPos + runLen;
 
-            if secByteOff > 0 then begin
-                { Partial first sector — skip bytes before the offset }
-                bytesToCopy := uint32(bootRecord^.sectorSize) - secByteOff;
-                if bytesToCopy > remaining then bytesToCopy := remaining;
-                core.util.memcpy(uint32(readbuffer) + secByteOff, uint32(buffer) + destPos, bytesToCopy);
-                secByteOff := 0;  { Only applies to the very first sector }
-            end else begin
-                bytesToCopy := uint32(bootRecord^.sectorSize);
-                if bytesToCopy > remaining then bytesToCopy := remaining;
-                core.util.memcpy(uint32(readbuffer), uint32(buffer) + destPos, bytesToCopy);
-            end;
-
-            destPos   := destPos + bytesToCopy;
-            remaining := remaining - bytesToCopy;
-            sectorIdx := sectorIdx + 1;
+        { Advance to next cluster beyond this run }
+        if remaining > 0 then begin
+            nextFat := readFat(volume, curCluster, bootRecord);
+            if ((nextFat and $0FFFFFFF) >= $0FFFFFF8) or (nextFat = 0) then
+                break;
+            curCluster := nextFat;
         end;
-
-        chainPos := chainPos + 1;
     end;
 
-    kfree(readbuffer);
     LL_Free(dirs);
-    LL_Free(clusters);
     kfree(puint32(bootRecord));
     kfree(puint32(statusOut));
     readFileAtOffset := destPos;
-    io.syslog.logln('FAT32', 'readFileAtOffset: done');
     push_trace('driver.storage.fs.fat32.readFileAtOffset.exit');
 end;
 
@@ -2409,9 +2977,9 @@ begin
     filesystem.createcallback:= @create_volume;
     filesystem.createAsyncCallback := @create_volume_async;
     filesystem.detectcallback:= @detect_volumes;
-    filesystem.writecallback:= @writeFile;
-    filesystem.readcallback := @readFile;
     filesystem.readOffsetCallback := @readFileAtOffset;
+    filesystem.writeOffsetCallback := @writeFileAtOffset;
+    filesystem.fileSizeCallback := @getFileSize;
     filesystem.identifyCallback := @identify_volume;
     filesystem.deleteFileCallback := @deleteFile;
     filesystem.deleteDirCallback := @deleteDir;
@@ -2419,8 +2987,6 @@ begin
     { Async callbacks: nil - VFS falls through to the sync callbacks above.
       All disk I/O uses psAwaiting in submit_io_wait: the calling process is
       parked cleanly (CPU-free) while the driver.storage.ctl.ahci ISR completes the request. }
-    filesystem.writeAsyncCallback      := nil;
-    filesystem.readAsyncCallback       := nil;
     filesystem.createDirAsyncCallback  := nil;
     filesystem.readDirAsyncCallback    := nil;
     filesystem.deleteFileAsyncCallback := nil;

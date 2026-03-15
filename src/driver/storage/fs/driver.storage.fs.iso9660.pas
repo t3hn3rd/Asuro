@@ -88,9 +88,6 @@ var
     filesystem : TFilesystem;
 
 procedure init();
-procedure readFile_async(volume : PStorage_Volume; directory : pchar; fileName : pchar;
-                         buffer : puint32; bytecount : puint32;
-                         callback : TIOCallback; callbackData : pointer);
 procedure readDir_async(volume : PStorage_Volume; directory : pchar;
                          resultList : PPLinkedListBase; status : puint32;
                          callback : TIOCallback; callbackData : pointer);
@@ -102,17 +99,6 @@ uses
     proc.types;
 
 type
-    TISORdCtx = record
-        Volume       : PStorage_Volume;
-        Directory    : pchar;
-        FileName     : pchar;
-        RBuffer      : puint32;
-        RByteCount   : puint32;
-        Callback     : TIOCallback;
-        CallbackData : pointer;
-    end;
-    PISORdCtx = ^TISORdCtx;
-
     TISODirCtx = record
         Volume       : PStorage_Volume;
         Directory    : pchar;
@@ -584,108 +570,7 @@ begin
     readDirectoryEntries := entries;
 end;
 
-{ ReadFile: read file contents into buffer.
-  directory = parent directory path (e.g. '/' or '/BOOT')
-  fileName = file name (e.g. 'README.TXT')
-  buffer = destination buffer (caller allocates)
-  bytecount = pointer to uint32 receiving bytes read
-  Returns 0 on success, 1 on file not found. }
-function readFile(volume : PStorage_Volume; directory : pchar; fileName : pchar;
-                  buffer : puint32; bytecount : puint32) : uint32;
-var
-    buf     : puint32;
-    pvd     : PPVD;
-    dirLBA, dirLen : uint32;
-    fileLBA, fileLen : uint32;
-    isDirFlag : uint32;
-    dirBuf  : puint32;
-    fileBuf : puint32;
-    fullPath : pchar;
-    dirSize, nameSize : uint32;
-begin
-    readFile := 1;
-
-    if volume^.device = nil then exit;
-
-    { Read PVD }
-    buf := readSectors(volume^.device, volume^.sectorStart + PVD_SECTOR, 1);
-    if (buf = nil) or (not isPVD(buf)) then begin
-        if buf <> nil then kfree(buf);
-        exit;
-    end;
-    pvd := PPVD(buf);
-
-    { Resolve the parent directory }
-    if (directory = nil) or (stringSize(directory) = 0) or
-       ((stringSize(directory) = 1) and (puint8(directory)^ = ord('/'))) then begin
-        dirLBA := rootLBA(pvd);
-        dirLen := rootLen(pvd);
-    end else begin
-        if not resolvePath(volume^.device, pvd, directory, @dirLBA, @dirLen, @isDirFlag) then begin
-            kfree(buf);
-            exit;
-        end;
-    end;
-
-    kfree(buf);
-
-    { Read the directory and find the file }
-    dirBuf := readExtent(volume^.device, dirLBA, dirLen);
-    if dirBuf = nil then exit;
-
-    if not findEntry(dirBuf, dirLen, fileName, @fileLBA, @fileLen, @isDirFlag) then begin
-        kfree(dirBuf);
-        exit;
-    end;
-    kfree(dirBuf);
-
-    if isDirFlag <> 0 then exit;
-
-    { Read the file data — store pointer in buffer^ for the VFS to own }
-    fileBuf := readExtent(volume^.device, fileLBA, fileLen);
-    if fileBuf = nil then exit;
-    buffer^ := uint32(fileBuf);
-    bytecount^ := fileLen;
-
-    readFile := 0;
-end;
-
 { ==================== Async hooks ==================== }
-
-procedure readFile_worker(pctx : PProcessContext);
-var
-    ctx   : PISORdCtx;
-    err   : uint32;
-    error : TError;
-begin
-    ctx := PISORdCtx(pctx^.Local);
-    err := readFile(ctx^.Volume, ctx^.Directory, ctx^.FileName, ctx^.RBuffer, ctx^.RByteCount);
-    if err = 0 then error := eNone else error := eFileDoesNotExist;
-    if ctx^.Callback <> nil then ctx^.Callback(error, ctx^.CallbackData);
-    if ctx^.Directory <> nil then kfree(void(ctx^.Directory));
-    if ctx^.FileName  <> nil then kfree(void(ctx^.FileName));
-    kfree(void(ctx));
-    proc.mgr.proc_exit(0);
-end;
-
-procedure readFile_async(volume : PStorage_Volume; directory : pchar; fileName : pchar;
-                          buffer : puint32; bytecount : puint32;
-                          callback : TIOCallback; callbackData : pointer);
-var
-    ctx : PISORdCtx;
-begin
-    ctx := PISORdCtx(kalloc(sizeof(TISORdCtx)));
-    ctx^.Volume       := volume;
-    ctx^.Directory    := nil;
-    ctx^.FileName     := nil;
-    if directory <> nil then ctx^.Directory := stringCopy(directory);
-    if fileName  <> nil then ctx^.FileName  := stringCopy(fileName);
-    ctx^.RBuffer      := buffer;
-    ctx^.RByteCount   := bytecount;
-    ctx^.Callback     := callback;
-    ctx^.CallbackData := callbackData;
-    proc.mgr.create('iso.rd', @readFile_worker, void(ctx), 1);
-end;
 
 procedure readDir_worker(pctx : PProcessContext);
 var
@@ -720,6 +605,135 @@ begin
     proc.mgr.create('iso.rdir', @readDir_worker, void(ctx), 1);
 end;
 
+function getFileSize(volume : PStorage_Volume; directory : pchar; fileName : pchar) : uint32;
+var
+    buf        : puint32;
+    pvd        : PPVD;
+    dirLBA     : uint32;
+    dirLen     : uint32;
+    fileLBA    : uint32;
+    fileLen    : uint32;
+    isDirFlag  : uint32;
+    dirBuf     : puint32;
+begin
+    getFileSize := 0;
+    if volume^.device = nil then exit;
+
+    buf := readSectors(volume^.device, volume^.sectorStart + PVD_SECTOR, 1);
+    if (buf = nil) or (not isPVD(buf)) then begin
+        if buf <> nil then kfree(buf);
+        exit;
+    end;
+    pvd := PPVD(buf);
+
+    if (directory = nil) or (stringSize(directory) = 0) or
+       ((stringSize(directory) = 1) and (puint8(directory)^ = ord('/'))) then begin
+        dirLBA := rootLBA(pvd);
+        dirLen := rootLen(pvd);
+    end else begin
+        if not resolvePath(volume^.device, pvd, directory, @dirLBA, @dirLen, @isDirFlag) then begin
+            kfree(buf);
+            exit;
+        end;
+    end;
+    kfree(buf);
+
+    dirBuf := readExtent(volume^.device, dirLBA, dirLen);
+    if dirBuf = nil then exit;
+
+    if findEntry(dirBuf, dirLen, fileName, @fileLBA, @fileLen, @isDirFlag) then
+        getFileSize := fileLen;
+
+    kfree(dirBuf);
+end;
+
+function readFileAtOffset(volume : PStorage_Volume; directory : pchar;
+                          fileName : pchar; offset : uint32;
+                          buffer : puint32; byteCount : uint32) : uint32;
+var
+    buf        : puint32;
+    pvd        : PPVD;
+    dirLBA     : uint32;
+    dirLen     : uint32;
+    fileLBA    : uint32;
+    fileLen    : uint32;
+    isDirFlag  : uint32;
+    dirBuf     : puint32;
+    secSize    : uint32;
+    remaining  : uint32;
+    secOff     : uint32;
+    curLBA     : uint32;
+    destPos    : uint32;
+    bytesToCopy: uint32;
+    secBuf     : puint32;
+begin
+    readFileAtOffset := 0;
+    if volume^.device = nil then exit;
+
+    { Read PVD }
+    buf := readSectors(volume^.device, volume^.sectorStart + PVD_SECTOR, 1);
+    if (buf = nil) or (not isPVD(buf)) then begin
+        if buf <> nil then kfree(buf);
+        exit;
+    end;
+    pvd := PPVD(buf);
+
+    { Resolve parent directory }
+    if (directory = nil) or (stringSize(directory) = 0) or
+       ((stringSize(directory) = 1) and (puint8(directory)^ = ord('/'))) then begin
+        dirLBA := rootLBA(pvd);
+        dirLen := rootLen(pvd);
+    end else begin
+        if not resolvePath(volume^.device, pvd, directory, @dirLBA, @dirLen, @isDirFlag) then begin
+            kfree(buf);
+            exit;
+        end;
+    end;
+    kfree(buf);
+
+    { Find the file entry }
+    dirBuf := readExtent(volume^.device, dirLBA, dirLen);
+    if dirBuf = nil then exit;
+    if not findEntry(dirBuf, dirLen, fileName, @fileLBA, @fileLen, @isDirFlag) then begin
+        kfree(dirBuf);
+        exit;
+    end;
+    kfree(dirBuf);
+    if isDirFlag <> 0 then exit;
+
+    { Clamp to EOF }
+    if offset >= fileLen then exit;
+    remaining := fileLen - offset;
+    if byteCount < remaining then remaining := byteCount;
+
+    { ISO9660 files are contiguous — straight LBA arithmetic }
+    secSize := volume^.device^.sectorSize;
+    if secSize = 0 then secSize := 2048;
+
+    secBuf := puint32(kalloc(secSize));
+    if secBuf = nil then exit;
+
+    destPos := 0;
+    curLBA  := fileLBA + (offset div secSize);
+    secOff  := offset mod secSize;
+
+    while remaining > 0 do begin
+        driver.storage.mgr.storage_read(volume^.device, curLBA, 1, secBuf);
+
+        bytesToCopy := secSize - secOff;
+        if bytesToCopy > remaining then bytesToCopy := remaining;
+        core.util.memcpy(uint32(secBuf) + secOff, uint32(buffer) + destPos, bytesToCopy);
+
+        destPos   := destPos + bytesToCopy;
+        remaining := remaining - bytesToCopy;
+        secOff    := 0;
+        curLBA    := curLBA + 1;
+    end;
+
+    kfree(secBuf);
+    readFileAtOffset := destPos;
+end;
+
 { ==================== Init ==================== }
 
 procedure init();
@@ -728,16 +742,15 @@ begin
     filesystem.sName           := 'ISO9660';
     filesystem.system_id       := $05;
     filesystem.readDirCallback := @readDirectoryEntries;
-    filesystem.readCallback    := @readFile;
+    filesystem.fileSizeCallback := @getFileSize;
+    filesystem.readOffsetCallback := @readFileAtOffset;
     filesystem.detectCallback  := @detect_volumes;
     filesystem.identifyCallback := @identify_volume;
-    filesystem.writeCallback   := nil;
     filesystem.createCallback  := nil;
     filesystem.createDirCallback := nil;
     filesystem.deleteFileCallback := nil;
     filesystem.deleteDirCallback := nil;
     filesystem.renameFileCallback := nil;
-    filesystem.readAsyncCallback    := nil;
     filesystem.readDirAsyncCallback := nil;
 
     driver.storage.fs.mgr.register_filesystem(@filesystem);

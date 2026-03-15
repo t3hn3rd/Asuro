@@ -42,10 +42,7 @@ type
         FileName    : pchar;       { filename within that directory }
         VFSDir      : pchar;       { full VFS parent directory path, e.g. '/sys' }
         OpenMode    : uint8;       { TOpenMode ordinal — avoids VFS type dependency }
-        DataBuffer  : puint32;     { pre-loaded data for small files, nil otherwise }
-        DataSize    : uint32;      { size of pre-loaded data in bytes }
-        Loaded      : boolean;     { true if pre-loaded into DataBuffer }
-        StreamOff   : uint32;      { current byte offset for streaming / on-demand reads }
+        DataSize    : uint32;      { cached file size in bytes (from fileSizeCallback) }
         DeviceOps   : pointer;     { PVFSDeviceOps — non-nil for device FDs }
         DeviceData  : pointer;     { opaque data passed to device callbacks }
     end;
@@ -81,6 +78,10 @@ function  fd_close(table : PFDTable; handle : uint32) : boolean;
   Used during process cleanup. }
 procedure fd_close_all(table : PFDTable);
 
+{ Close all file descriptors in the table that reference a specific volume.
+  Called when a volume is removed to prevent dangling pointers. }
+procedure fd_close_for_volume(table : PFDTable; vol : PStorage_Volume);
+
 implementation
 
 function fd_table_new : PFDTable;
@@ -98,10 +99,6 @@ begin
     if entry = nil then exit;
     if not entry^.InUse then exit;
 
-    if entry^.DataBuffer <> nil then begin
-        kfree(entry^.DataBuffer);
-        entry^.DataBuffer := nil;
-    end;
     if entry^.Directory <> nil then begin
         kfree(void(entry^.Directory));
         entry^.Directory := nil;
@@ -116,9 +113,7 @@ begin
     end;
 
     entry^.InUse := false;
-    entry^.Loaded := false;
     entry^.DataSize := 0;
-    entry^.StreamOff := 0;
     entry^.DeviceOps := nil;
     entry^.DeviceData := nil;
 end;
@@ -170,6 +165,18 @@ begin
     if table = nil then exit;
     for i := 0 to MAX_FDS - 1 do begin
         if table^.Entries[i].InUse then
+            fd_free_entry(@table^.Entries[i]);
+    end;
+end;
+
+procedure fd_close_for_volume(table : PFDTable; vol : PStorage_Volume);
+var
+    i : uint32;
+begin
+    if table = nil then exit;
+    if vol = nil then exit;
+    for i := 0 to MAX_FDS - 1 do begin
+        if table^.Entries[i].InUse and (table^.Entries[i].Volume = vol) then
             fd_free_entry(@table^.Entries[i]);
     end;
 end;
