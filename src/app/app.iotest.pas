@@ -42,6 +42,20 @@ begin
             buf[i] := uint8((chunkIdx + i) and $FF);
 end;
 
+{ Write throughput with auto-scaled units: KB/s or MB/s }
+procedure writeThroughput(buf : POutBuf; kbps : uint32);
+begin
+    if kbps >= 1024 then begin
+        io.stdio.bufWriteInt(buf, kbps div 1024);
+        io.stdio.bufWriteStr(buf, '.');
+        io.stdio.bufWriteInt(buf, ((kbps mod 1024) * 10) div 1024);
+        io.stdio.bufWriteStr(buf, ' MB/s');
+    end else begin
+        io.stdio.bufWriteInt(buf, kbps);
+        io.stdio.bufWriteStr(buf, ' KB/s');
+    end;
+end;
+
 procedure run(Params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
 var
     path       : pchar;
@@ -109,8 +123,8 @@ begin
                 io.stdio.bufWriteStr(stdout_buf, '  W ');
                 io.stdio.bufWriteInt(stdout_buf, offset div 1024);
                 io.stdio.bufWriteStr(stdout_buf, ' KB  ');
-                io.stdio.bufWriteInt(stdout_buf, kbps);
-                io.stdio.bufWriteStrLn(stdout_buf, ' KB/s');
+                writeThroughput(stdout_buf, kbps);
+                io.stdio.bufWriteNewLine(stdout_buf);
                 tLast := t1;
                 bytesInSec := 0;
             end;
@@ -124,8 +138,8 @@ begin
         io.stdio.bufWriteStr(stdout_buf, 'Write complete: ');
         if elapsed > 0 then begin
             kbps := ((FILE_SIZE div 1024) * TICK_HZ) div elapsed;
-            io.stdio.bufWriteInt(stdout_buf, kbps);
-            io.stdio.bufWriteStr(stdout_buf, ' KB/s (');
+            writeThroughput(stdout_buf, kbps);
+            io.stdio.bufWriteStr(stdout_buf, ' (');
             io.stdio.bufWriteInt(stdout_buf, (elapsed * 1000) div TICK_HZ);
             io.stdio.bufWriteStrLn(stdout_buf, ' ms)');
         end else
@@ -193,8 +207,8 @@ begin
                 io.stdio.bufWriteStr(stdout_buf, '  R ');
                 io.stdio.bufWriteInt(stdout_buf, offset div 1024);
                 io.stdio.bufWriteStr(stdout_buf, ' KB  ');
-                io.stdio.bufWriteInt(stdout_buf, kbps);
-                io.stdio.bufWriteStrLn(stdout_buf, ' KB/s');
+                writeThroughput(stdout_buf, kbps);
+                io.stdio.bufWriteNewLine(stdout_buf);
                 tLast := t1;
                 bytesInSec := 0;
             end;
@@ -208,8 +222,8 @@ begin
         io.stdio.bufWriteStr(stdout_buf, 'Read+verify complete: ');
         if elapsed > 0 then begin
             kbps := ((FILE_SIZE div 1024) * TICK_HZ) div elapsed;
-            io.stdio.bufWriteInt(stdout_buf, kbps);
-            io.stdio.bufWriteStr(stdout_buf, ' KB/s (');
+            writeThroughput(stdout_buf, kbps);
+            io.stdio.bufWriteStr(stdout_buf, ' (');
             io.stdio.bufWriteInt(stdout_buf, (elapsed * 1000) div TICK_HZ);
             io.stdio.bufWriteStrLn(stdout_buf, ' ms)');
         end else
