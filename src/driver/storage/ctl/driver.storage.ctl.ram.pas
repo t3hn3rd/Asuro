@@ -82,33 +82,6 @@ end;
 
 { ---- Filesystem hook callbacks ---- }
 
-{ PPReadHook — load entire file into a new kalloc'd buffer.
-  Sets buffer^ to the data pointer, bytecount^ to the size.
-  Returns 0 on success, 1 on failure. }
-function rd_Read(volume : PStorage_Volume; directory : pchar;
-                 fileName : pchar; buffer : puint32;
-                 bytecount : puint32) : uint32;
-var
-    clean : pchar;
-    idx   : sint32;
-    dest  : puint8;
-begin
-    rd_Read := 1;
-    clean := stripLeadingSlash(fileName);
-    if clean = nil then exit;
-    idx := findFileByName(clean);
-    if idx < 0 then exit;
-
-    { VFS expects a fresh buffer it can own }
-    dest := puint8(kalloc(Files[idx].Size));
-    if dest = nil then exit;
-    memcpy(uint32(Files[idx].Data), uint32(dest), Files[idx].Size);
-
-    buffer^ := uint32(dest);
-    bytecount^ := Files[idx].Size;
-    rd_Read := 0;
-end;
-
 { PPReadOffsetHook — read byteCount bytes at offset into caller buffer.
   Returns actual bytes copied. }
 function rd_ReadOffset(volume : PStorage_Volume; directory : pchar;
@@ -131,6 +104,20 @@ begin
     if byteCount < avail then copyLen := byteCount else copyLen := avail;
     memcpy(uint32(Files[idx].Data) + offset, uint32(buffer), copyLen);
     rd_ReadOffset := copyLen;
+end;
+
+function rd_FileSize(volume : PStorage_Volume; directory : pchar;
+                     fileName : pchar) : uint32;
+var
+    clean : pchar;
+    idx   : sint32;
+begin
+    rd_FileSize := 0;
+    clean := stripLeadingSlash(fileName);
+    if clean = nil then exit;
+    idx := findFileByName(clean);
+    if idx < 0 then exit;
+    rd_FileSize := Files[idx].Size;
 end;
 
 { PPReadDirHook — return a linked list of TDirectory_Entry for all files.
@@ -269,9 +256,9 @@ begin
     { Set up a minimal filesystem descriptor with our callbacks }
     memset(uint32(@RAMFS), 0, sizeof(TFilesystem));
     RAMFS.sName := 'ramfs';
-    RAMFS.readCallback := @rd_Read;
     RAMFS.readDirCallback := @rd_ReadDir;
     RAMFS.readOffsetCallback := @rd_ReadOffset;
+    RAMFS.fileSizeCallback := @rd_FileSize;
     RAMFS.identifyCallback := @rd_Identify;
 
     { Set up a virtual volume backed by our filesystem }

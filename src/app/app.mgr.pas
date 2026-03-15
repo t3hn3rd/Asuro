@@ -26,7 +26,7 @@ uses
     boot.mgr,
     debug.tracer, io.stdio, proc.mgr,
     //progs
-    app.base64, app.md5sum, app.dhclient, app.vbeinfo, app.testcmd, app.ping, app.meminfo, app.setres,
+    app.base64, app.md5sum, app.dhclient, app.vbeinfo, app.testcmd, app.ping, app.meminfo, app.setres, app.iotest,
     //drivers
     driver.storage.ctl.ram, driver.mgr,
     //network
@@ -92,6 +92,7 @@ begin
     app.bsod.init();
     app.vterminal.init;
     app.filebrowser.init();
+    app.iotest.init();
 end;
 
 Initialization

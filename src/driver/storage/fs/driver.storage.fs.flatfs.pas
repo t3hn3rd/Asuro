@@ -843,12 +843,106 @@ begin
     readDirectoryEntries := entries;
 end;
 
+function getFileSize(volume : PStorage_Volume; directory : pchar; fileName : pchar) : uint32;
+var
+    fileEntries : PFile_Entry;
+    fileCount   : uint32;
+    i           : uint32;
+begin
+    getFileSize := 0;
+    fileCount := 1000;
+    fileEntries := PFile_Entry(kalloc(sizeof(TFile_Entry) * fileCount + 512));
+    memset(uint32(fileEntries), 0, sizeof(TFile_Entry) * fileCount);
+    driver.storage.mgr.storage_read(volume^.device, volume^.sectorStart + 1,
+        sizeof(TFile_Entry) * fileCount div 512, puint32(fileEntries));
+
+    for i := 0 to fileCount - 1 do begin
+        if fileEntries[i].attribues = 0 then break;
+        if stringEquals(fileEntries[i].name, fileName) then begin
+            getFileSize := fileEntries[i].size;
+            break;
+        end;
+    end;
+
+    kfree(puint32(fileEntries));
+end;
+
+function readFileAtOffset(volume : PStorage_Volume; directory : pchar;
+                          fileName : pchar; offset : uint32;
+                          buffer : puint32; byteCount : uint32) : uint32;
+var
+    fileEntries  : PFile_Entry;
+    fileCount    : uint32;
+    i            : uint32;
+    fileStart    : uint32;
+    fileSize     : uint32;
+    remaining    : uint32;
+    secOff       : uint32;
+    curSec       : uint32;
+    destPos      : uint32;
+    bytesToCopy  : uint32;
+    secBuf       : puint32;
+    found        : boolean;
+begin
+    readFileAtOffset := 0;
+    fileCount := 1000;
+    found := false;
+
+    fileEntries := PFile_Entry(kalloc(sizeof(TFile_Entry) * fileCount + 512));
+    memset(uint32(fileEntries), 0, sizeof(TFile_Entry) * fileCount);
+    driver.storage.mgr.storage_read(volume^.device, volume^.sectorStart + 1,
+        sizeof(TFile_Entry) * fileCount div 512, puint32(fileEntries));
+
+    for i := 0 to fileCount - 1 do begin
+        if fileEntries[i].attribues = 0 then break;
+        if stringEquals(fileEntries[i].name, fileName) then begin
+            fileStart := fileEntries[i].start;
+            fileSize  := fileEntries[i].size;
+            found := true;
+            break;
+        end;
+    end;
+
+    kfree(puint32(fileEntries));
+    if not found then exit;
+
+    { Clamp to EOF }
+    if offset >= fileSize then exit;
+    remaining := fileSize - offset;
+    if byteCount < remaining then remaining := byteCount;
+
+    secBuf := puint32(kalloc(512));
+    if secBuf = nil then exit;
+
+    destPos := 0;
+    curSec  := fileStart + (offset div 512);
+    secOff  := offset mod 512;
+
+    while remaining > 0 do begin
+        driver.storage.mgr.storage_read(volume^.device, curSec, 1, secBuf);
+
+        bytesToCopy := 512 - secOff;
+        if bytesToCopy > remaining then bytesToCopy := remaining;
+        core.util.memcpy(uint32(secBuf) + secOff, uint32(buffer) + destPos, bytesToCopy);
+
+        destPos   := destPos + bytesToCopy;
+        remaining := remaining - bytesToCopy;
+        secOff    := 0;
+        curSec    := curSec + 1;
+    end;
+
+    kfree(secBuf);
+    readFileAtOffset := destPos;
+end;
+
 procedure init();
 begin
     push_trace('driver.storage.fs.flatfs.init()');
     filesystem.sName:= 'driver.storage.fs.flatfs'; 
     filesystem.system_id:= $02; 
     filesystem.readDirCallback:= @readDirectoryEntries;
+    filesystem.fileSizeCallback:= @getFileSize;
+    filesystem.readOffsetCallback:= @readFileAtOffset;
     // filesystem.createDirCallback:= @writeDirectoryGen;
     filesystem.createcallback:= @create_volume;
     filesystem.detectcallback:= @detect_volumes;

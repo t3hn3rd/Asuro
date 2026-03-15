@@ -185,7 +185,8 @@ begin
     { Initialise new Phase 2 fields }
     device^.removed := false;
     device^.requestQueue := CFIFO_New(SizeOf(TIORequest), 32);
-    device^.activeRequest := nil;
+    device^.activeCount := 0;
+    if device^.maxActive = 0 then device^.maxActive := 1;
     device^.cachedMBR := nil;
     device^.isBootDevice := false;
     { dispatchRead/dispatchWrite: left as-is — driver sets them before
@@ -343,36 +344,36 @@ var
     reqBuf  : TIORequest;
     heapReq : PIORequest;
 begin
-    if device^.activeRequest <> nil then exit;   { hardware busy }
-    if not CFIFO_Dequeue(device^.requestQueue, @reqBuf) then exit;  { queue empty }
+    { Dispatch queued requests up to maxActive hardware slots }
+    while device^.activeCount < device^.maxActive do begin
+        if not CFIFO_Dequeue(device^.requestQueue, @reqBuf) then break;  { queue empty }
 
-    { Heap copy for ISR safety — driver completion may fire on any stack }
-    heapReq := ioreq_copy(@reqBuf);
-    if heapReq = nil then begin
-    { Out of memory — notify caller via callback }
-        if reqBuf.Callback <> nil then
-            reqBuf.Callback(eOutOfMemory, reqBuf.CallbackData);
-        exit;
-    end;
-
-    device^.activeRequest := heapReq;
-    heapReq^.State := iosDispatched;
-
-    case heapReq^.RequestType of
-        ioRead: begin
-            if device^.dispatchRead <> nil then
-                device^.dispatchRead(device, heapReq)
-            else begin
-                { No new dispatch — shouldn't happen if submit_io chose this path,
-                  but handle defensively }
-                complete_io(heapReq, false, eDeviceNotFound);
-            end;
+        { Heap copy for ISR safety — driver completion may fire on any stack }
+        heapReq := ioreq_copy(@reqBuf);
+        if heapReq = nil then begin
+        { Out of memory — notify caller via callback }
+            if reqBuf.Callback <> nil then
+                reqBuf.Callback(eOutOfMemory, reqBuf.CallbackData);
+            break;
         end;
-        ioWrite: begin
-            if device^.dispatchWrite <> nil then
-                device^.dispatchWrite(device, heapReq)
-            else
-                complete_io(heapReq, false, eDeviceNotFound);
+
+        device^.activeCount := device^.activeCount + 1;
+        heapReq^.State := iosDispatched;
+
+        case heapReq^.RequestType of
+            ioRead: begin
+                if device^.dispatchRead <> nil then
+                    device^.dispatchRead(device, heapReq)
+                else begin
+                    complete_io(heapReq, false, eDeviceNotFound);
+                end;
+            end;
+            ioWrite: begin
+                if device^.dispatchWrite <> nil then
+                    device^.dispatchWrite(device, heapReq)
+                else
+                    complete_io(heapReq, false, eDeviceNotFound);
+            end;
         end;
     end;
 end;
@@ -472,9 +473,10 @@ begin
         request^.Error := error;
     end;
 
-    { Clear active slot on the device }
+    { Decrement active count on the device }
     if device <> nil then
-        device^.activeRequest := nil;
+        if device^.activeCount > 0 then
+            device^.activeCount := device^.activeCount - 1;
 
     { Invoke completion callback (sync path uses sync_io_callback, async path uses caller's callback) }
     if request^.Callback <> nil then

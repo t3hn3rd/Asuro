@@ -80,6 +80,9 @@ procedure delete_volume(volume : PStorage_Volume);
 
 implementation
 
+uses
+    driver.storage.vfs;
+
 { ===================== helpers ===================== }
 
 { Create a TStorage_Volume from a partition entry and register it }
@@ -135,8 +138,10 @@ begin
             i := i + 1;
     end;
 
-    if found <> nil then
+    if found <> nil then begin
+        driver.storage.vfs.InvalidateVolume(found);
         kfree(puint32(found));
+    end;
 end;
 
 { Remove all volumes belonging to a device }
@@ -150,6 +155,7 @@ begin
         v := PStorage_Volume(Void(DL_Get(volumes, i))^);
         if v^.device = device then begin
             DL_Delete(volumes, i);
+            driver.storage.vfs.InvalidateVolume(v);
             kfree(puint32(v));
         end else
             i := i + 1;

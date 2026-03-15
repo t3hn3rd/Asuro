@@ -89,7 +89,7 @@ type
         { VFS / FD errors }
         eTooManyOpenFiles,        { per-process FD table full }
         eInvalidHandle,           { TFileHandle does not refer to an open FD }
-        eNotStreamMode,           { SeekFile called on a non-omStream handle }
+
         eFileNotLoaded,           { ReadFile on a pre-load handle whose data is not yet loaded }
         eAlreadyExists,           { generic: target name already exists (symlink, file, etc.) }
 
@@ -140,8 +140,6 @@ type
     TIOCallback = procedure(error : TError; userdata : pointer);
 
     { Filesystem callback core.types }
-    PPWriteHook     = procedure(volume : PStorage_volume; directory : pchar; entry : PDirectory_Entry; byteCount : uint32; buffer : puint32; statusOut : puint32);
-    PPReadHook      = function(volume : PStorage_Volume; directory : pchar; fileName : pchar; buffer : puint32; bytecount : puint32) : uint32;
     PPCreateHook    = procedure(volume : PStorage_volume; start : uint32; size : uint32; config : puint32);
     PPCreateAsyncHook = procedure(volume : PStorage_volume; start : uint32; size : uint32; config : puint32; callback : TIOCallback; callbackData : pointer);
     PPDetectHook    = procedure(disk : PStorage_Device);
@@ -152,23 +150,22 @@ type
     PPIdentifyHook   = function(volume : PStorage_Volume) : boolean;
     PPRenameFileHook = procedure(volume : PStorage_Volume; filePath : pchar; newName : pchar; status : puint32);
     { Offset-based read: reads byteCount bytes starting at byte offset into the file.
-      Returns the number of bytes actually read.
-      Filesystems that do not implement this leave the field nil and VFS falls back
-      to the load-all readCallback behaviour. }
+      Returns the number of bytes actually read. }
     PPReadOffsetHook = function(volume : PStorage_Volume; directory : pchar; fileName : pchar; offset : uint32; buffer : puint32; byteCount : uint32) : uint32;
     { Offset-based write: writes byteCount bytes starting at byte offset into the file.
       Returns the number of bytes actually written.
       Filesystems that do not implement this leave the field nil; VFS returns 0
       for stream-mode writes on volume FDs. }
     PPWriteOffsetHook = function(volume : PStorage_Volume; directory : pchar; fileName : pchar; offset : uint32; buffer : puint32; byteCount : uint32) : uint32;
+    { File size query: returns the size in bytes of the named file.
+      Returns 0 if the file does not exist or has zero length. }
+    PPFileSizeHook = function(volume : PStorage_Volume; directory : pchar; fileName : pchar) : uint32;
 
     { === Async filesystem hook core.types ===
       Each mirrors the corresponding sync hook but receives a TIOCallback + callbackData.
       The implementation must return immediately; the callback is fired when the
       operation completes from worker-process context (IF=1, safe to block). }
     PPLinkedListBase      = ^PLinkedListBase;   { needed for PPReadDirAsyncHook parameter }
-    PPWriteAsyncHook      = procedure(volume : PStorage_Volume; directory : pchar; entry : PDirectory_Entry; byteCount : uint32; buffer : puint32; callback : TIOCallback; callbackData : pointer);
-    PPReadAsyncHook       = procedure(volume : PStorage_Volume; directory : pchar; fileName : pchar; buffer : puint32; byteCount : puint32; callback : TIOCallback; callbackData : pointer);
     PPCreateDirAsyncHook  = procedure(volume : PStorage_Volume; directory : pchar; dirname : pchar; attributes : uint32; status : puint32; callback : TIOCallback; callbackData : pointer);
     PPReadDirAsyncHook    = procedure(volume : PStorage_Volume; directory : pchar; resultList : PPLinkedListBase; status : puint32; callback : TIOCallback; callbackData : pointer);
     PPDeleteFileAsyncHook = procedure(volume : PStorage_Volume; filePath : pchar; status : puint32; callback : TIOCallback; callbackData : pointer);
@@ -211,7 +208,8 @@ type
         dispatchRead     : TDriverDispatch;   { nil if driver not yet migrated }
         dispatchWrite    : TDriverDispatch;   { nil if driver not yet migrated }
         requestQueue     : PCFIFOQueue;       { per-device I/O request CFIFO }
-        activeRequest    : PIORequest;        { currently dispatched to HW, or nil }
+        activeCount      : uint32;            { number of commands currently dispatched to HW }
+        maxActive        : uint32;            { max concurrent commands (NCQ depth) }
 
         maxSectorCount   : uint32;
         sectorSize       : uint32; //in bytes
@@ -224,8 +222,6 @@ type
     TFilesystem = record
         sName              : pchar;
         system_id          : uint8;
-        writeCallback      : PPWriteHook;
-        readCallback       : PPReadHook;
         createCallback     : PPCreateHook;
         detectCallback     : PPDetectHook;
         createDirCallback  : PPCreateDirHook;
@@ -237,12 +233,10 @@ type
         readOffsetCallback : PPReadOffsetHook;
         { Offset-based write for streaming mode — nil if not implemented }
         writeOffsetCallback : PPWriteOffsetHook;
+        { File size query — returns size in bytes without loading the file }
+        fileSizeCallback : PPFileSizeHook;
         { Async format — nil if FS only supports synchronous create }
         createAsyncCallback : PPCreateAsyncHook;
-        { Async variants of the main I/O hooks — nil if FS only supports sync.
-          Sync VFS functions will call these + spin-wait when available. }
-        writeAsyncCallback      : PPWriteAsyncHook;
-        readAsyncCallback       : PPReadAsyncHook;
         createDirAsyncCallback  : PPCreateDirAsyncHook;
         readDirAsyncCallback    : PPReadDirAsyncHook;
         deleteFileAsyncCallback : PPDeleteFileAsyncHook;
@@ -260,6 +254,7 @@ type
         freeSectors  : uint32;
         filesystem   : PFilesystem;
         isBootDrive  : boolean;
+        fsPrivate    : pointer;      { FS-driver private data (e.g. PFATCache for FAT32) }
     end;
 
     { Generic directory entry }
