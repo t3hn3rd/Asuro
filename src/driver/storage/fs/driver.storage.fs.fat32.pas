@@ -107,16 +107,18 @@ type
     end;
     PFatVolumeInfo = ^TFatVolumeInfo;
 
+const
     { FAT sector cache — 2-way set-associative, 128 sets, LRU replacement }
     FAT_CACHE_SETS = 128;
     FAT_CACHE_WAYS = 2;
     FAT_CACHE_LINES = 256;  { SETS * WAYS }
 
+type
     TFATCacheLine = record
         SectorIdx : uint32;   { which FAT sector is stored here }
         Dirty     : boolean;  { true if written but not flushed to disk }
         Valid     : boolean;  { true if line contains valid data }
-        LRU       : uint8;    { 0 = MRU, 1 = LRU (for 2-way) }
+        LRU       : uint8;    { 0 = MRU, 1 = LRU, 2 = LRU (for 3-way), 3 = LRU (for 4-way) }
     end;
 
     PFATCache = ^TFATCache;
@@ -157,6 +159,21 @@ type
         ZeroBuffer   : puint32;
         Callback     : TIOCallback;
         CallbackData : pointer;
+    end;
+
+    { Per-file cached metadata created by fat32OpenFile and stored in the
+      file descriptor's FSPrivate pointer.  Avoids re-reading boot record,
+      directory listing, and searching for the file on every read/write. }
+    PFATOpenFile = ^TFATOpenFile;
+    TFATOpenFile = record
+        BootRecord   : PBootRecord;    { borrows from TFATCache — do NOT kfree }
+        DataStart    : uint32;         { fatDataStartLBA result }
+        FirstCluster : uint32;         { file's start cluster (0 if new/empty) }
+        ByteSize     : uint32;         { current file size in bytes }
+        DirCluster   : uint32;         { parent directory's start cluster }
+        CleanName    : byteArray8;     { cleaned 8.3 filename }
+        ExtPart      : pchar;          { heap-allocated extension string — owned }
+        Exists       : boolean;        { true if file existed at open time }
     end;
 
 var
@@ -373,14 +390,15 @@ begin
     end;
     cache := PFATCache(kalloc(sizeof(TFATCache)));
     memset(uint32(cache), 0, sizeof(TFATCache));
-    cache^.Data := puint32(kalloc(64 * 512));
-    memset(uint32(cache^.Data), 0, 64 * 512);
+    cache^.Data := puint32(kalloc(FAT_CACHE_LINES * 512));
+    memset(uint32(cache^.Data), 0, FAT_CACHE_LINES * 512);
     cache^.EvictBuf := puint32(kalloc(512));
     memset(uint32(cache^.EvictBuf), 0, 512);
     cache^.Busy := false;
-    for i := 0 to 63 do begin
+    for i := 0 to FAT_CACHE_LINES - 1 do begin
         cache^.Lines[i].Valid := false;
         cache^.Lines[i].Dirty := false;
+        cache^.Lines[i].LRU := uint8(i mod FAT_CACHE_WAYS);
     end;
     br := readBootRecord(volume);
     cache^.BootRecord := br;
@@ -410,7 +428,7 @@ begin
         asm hlt end;
     end;
 
-    for i := 0 to 63 do begin
+    for i := 0 to FAT_CACHE_LINES - 1 do begin
         asm pushf; cli end;
         needFlush := cache^.Lines[i].Valid and cache^.Lines[i].Dirty;
         if needFlush then begin
@@ -437,38 +455,55 @@ procedure fatCacheInvalidate(cache : PFATCache);
 var
     i : uint32;
 begin
-    for i := 0 to 63 do begin
+    for i := 0 to FAT_CACHE_LINES - 1 do begin
         cache^.Lines[i].Valid := false;
         cache^.Lines[i].Dirty := false;
+        cache^.Lines[i].LRU := uint8(i mod FAT_CACHE_WAYS);
     end;
 end;
 
+{ Return the per-volume cached boot record without any allocation.
+  The FAT cache lazily reads and keeps a single copy; callers MUST NOT kfree it. }
+function getCachedBootRecord(volume : PStorage_Volume) : PBootRecord;
+begin
+    getCachedBootRecord := fatCacheGet(volume)^.BootRecord;
+end;
+
 { Read a single FAT entry using the sector cache.
-  128 FAT entries per 512-byte sector. Direct-mapped: slot = fatSector mod 64.
+  128 FAT entries per 512-byte sector. 2-way set-associative: set = fatSector mod 128.
   CLI/STI protects cache metadata; disk I/O runs with interrupts enabled. }
 function readFat(volume : PStorage_volume; cluster : uint32; bootRecord : PBootRecord) : uint32;
 var
     cache       : PFATCache;
     fatSecIdx   : uint32;  { which FAT sector this cluster lives in }
-    slot        : uint32;  { cache line index }
+    setIdx      : uint32;  { cache set index }
+    baseSlot    : uint32;  { first line index of this set }
     entryOff    : uint32;  { offset within that sector (0..127) }
-    dataPtr     : puint32; { pointer into cache data for this slot }
+    dataPtr     : puint32; { pointer into cache data for the hit/victim slot }
     lba         : uint32;
     doEvict     : boolean;
     evictLBA    : uint32;
+    w           : uint32;  { way iterator }
+    victim      : uint32;  { chosen victim slot index }
 begin
     cache := fatCacheGet(volume);
     fatSecIdx := cluster div 128;
-    slot := fatSecIdx and 63;  { mod 64 }
+    setIdx := fatSecIdx mod FAT_CACHE_SETS;
+    baseSlot := setIdx * FAT_CACHE_WAYS;
     entryOff := cluster mod 128;
-    dataPtr := puint32(uint32(cache^.Data) + (slot * 512));
 
-    { Fast path: cache hit under CLI — no lock needed }
+    { Fast path: cache hit under CLI — check both ways }
     asm pushf; cli end;
-    if cache^.Lines[slot].Valid and (cache^.Lines[slot].SectorIdx = fatSecIdx) then begin
-        readFat := dataPtr[entryOff] and $0FFFFFFF;
-        asm popf end;
-        exit;
+    for w := 0 to FAT_CACHE_WAYS - 1 do begin
+        if cache^.Lines[baseSlot + w].Valid and (cache^.Lines[baseSlot + w].SectorIdx = fatSecIdx) then begin
+            dataPtr := puint32(uint32(cache^.Data) + ((baseSlot + w) * 512));
+            readFat := dataPtr[entryOff] and $0FFFFFFF;
+            { Update LRU: this way is MRU }
+            cache^.Lines[baseSlot + w].LRU := 0;
+            cache^.Lines[baseSlot + (1 - w)].LRU := 1;
+            asm popf end;
+            exit;
+        end;
     end;
     asm popf end;
 
@@ -476,19 +511,35 @@ begin
     while true do begin
         asm pushf; cli end;
         if not cache^.Busy then begin
-            { Re-check for hit — another process may have loaded this slot }
-            if cache^.Lines[slot].Valid and (cache^.Lines[slot].SectorIdx = fatSecIdx) then begin
-                readFat := dataPtr[entryOff] and $0FFFFFFF;
-                asm popf end;
-                exit;
+            { Re-check for hit — another process may have loaded this sector }
+            for w := 0 to FAT_CACHE_WAYS - 1 do begin
+                if cache^.Lines[baseSlot + w].Valid and (cache^.Lines[baseSlot + w].SectorIdx = fatSecIdx) then begin
+                    dataPtr := puint32(uint32(cache^.Data) + ((baseSlot + w) * 512));
+                    readFat := dataPtr[entryOff] and $0FFFFFFF;
+                    cache^.Lines[baseSlot + w].LRU := 0;
+                    cache^.Lines[baseSlot + (1 - w)].LRU := 1;
+                    asm popf end;
+                    exit;
+                end;
             end;
             cache^.Busy := true;
-            doEvict := cache^.Lines[slot].Valid and cache^.Lines[slot].Dirty;
+            { Pick victim: prefer invalid way, else LRU way }
+            victim := baseSlot;
+            if (not cache^.Lines[baseSlot].Valid) then
+                victim := baseSlot
+            else if (not cache^.Lines[baseSlot + 1].Valid) then
+                victim := baseSlot + 1
+            else if cache^.Lines[baseSlot + 1].LRU >= cache^.Lines[baseSlot].LRU then
+                victim := baseSlot + 1
+            else
+                victim := baseSlot;
+            dataPtr := puint32(uint32(cache^.Data) + (victim * 512));
+            doEvict := cache^.Lines[victim].Valid and cache^.Lines[victim].Dirty;
             if doEvict then begin
-                evictLBA := cache^.FatStart + cache^.Lines[slot].SectorIdx;
+                evictLBA := cache^.FatStart + cache^.Lines[victim].SectorIdx;
                 core.util.memcpy(uint32(dataPtr), uint32(cache^.EvictBuf), 512);
             end;
-            cache^.Lines[slot].Valid := false;
+            cache^.Lines[victim].Valid := false;
             asm popf end;
             break;
         end;
@@ -502,45 +553,61 @@ begin
     lba := cache^.FatStart + fatSecIdx;
     driver.storage.mgr.storage_read(cache^.Device, lba, 1, dataPtr);
 
-    { Update cache metadata and release lock under CLI }
+    { Update cache metadata, set LRU, release lock under CLI }
     asm pushf; cli end;
-    cache^.Lines[slot].SectorIdx := fatSecIdx;
-    cache^.Lines[slot].Valid := true;
-    cache^.Lines[slot].Dirty := false;
+    cache^.Lines[victim].SectorIdx := fatSecIdx;
+    cache^.Lines[victim].Valid := true;
+    cache^.Lines[victim].Dirty := false;
+    { New entry is MRU, the other way is LRU }
+    cache^.Lines[victim].LRU := 0;
+    if victim = baseSlot then
+        cache^.Lines[baseSlot + 1].LRU := 1
+    else
+        cache^.Lines[baseSlot].LRU := 1;
     readFat := dataPtr[entryOff] and $0FFFFFFF;
     cache^.Busy := false;
     asm popf end;
 end;
 
 { Write a single FAT entry into cache. No immediate disk I/O — call fatCacheFlush later.
+  2-way set-associative: set = fatSector mod 128.
   CLI/STI protects cache metadata; disk I/O runs with interrupts enabled. }
 procedure writeFat(volume : PStorage_volume; cluster : uint32; value : uint32; bootRecord : PBootRecord);
 var
     cache       : PFATCache;
     fatSecIdx   : uint32;
-    slot        : uint32;
+    setIdx      : uint32;
+    baseSlot    : uint32;
     entryOff    : uint32;
     dataPtr     : puint32;
     lba         : uint32;
     doEvict     : boolean;
     evictLBA    : uint32;
+    w           : uint32;
+    victim      : uint32;
 begin
     cache := fatCacheGet(volume);
     fatSecIdx := cluster div 128;
-    slot := fatSecIdx and 63;
+    setIdx := fatSecIdx mod FAT_CACHE_SETS;
+    baseSlot := setIdx * FAT_CACHE_WAYS;
     entryOff := cluster mod 128;
-    dataPtr := puint32(uint32(cache^.Data) + (slot * 512));
 
-    { Fast path: cache hit — no lock needed }
+    { Fast path: cache hit — check both ways }
     asm pushf; cli end;
-    if cache^.Lines[slot].Valid and (cache^.Lines[slot].SectorIdx = fatSecIdx) then begin
-        if value = 0 then
-            dataPtr[entryOff] := 0
-        else
-            dataPtr[entryOff] := (dataPtr[entryOff] and $F0000000) or (value and $0FFFFFFF);
-        cache^.Lines[slot].Dirty := true;
-        asm popf end;
-        exit;
+    for w := 0 to FAT_CACHE_WAYS - 1 do begin
+        if cache^.Lines[baseSlot + w].Valid and (cache^.Lines[baseSlot + w].SectorIdx = fatSecIdx) then begin
+            dataPtr := puint32(uint32(cache^.Data) + ((baseSlot + w) * 512));
+            if value = 0 then
+                dataPtr[entryOff] := 0
+            else
+                dataPtr[entryOff] := (dataPtr[entryOff] and $F0000000) or (value and $0FFFFFFF);
+            cache^.Lines[baseSlot + w].Dirty := true;
+            { Update LRU: this way is MRU }
+            cache^.Lines[baseSlot + w].LRU := 0;
+            cache^.Lines[baseSlot + (1 - w)].LRU := 1;
+            asm popf end;
+            exit;
+        end;
     end;
     asm popf end;
 
@@ -549,22 +616,38 @@ begin
         asm pushf; cli end;
         if not cache^.Busy then begin
             { Re-check for hit after acquiring lock }
-            if cache^.Lines[slot].Valid and (cache^.Lines[slot].SectorIdx = fatSecIdx) then begin
-                if value = 0 then
-                    dataPtr[entryOff] := 0
-                else
-                    dataPtr[entryOff] := (dataPtr[entryOff] and $F0000000) or (value and $0FFFFFFF);
-                cache^.Lines[slot].Dirty := true;
-                asm popf end;
-                exit;
+            for w := 0 to FAT_CACHE_WAYS - 1 do begin
+                if cache^.Lines[baseSlot + w].Valid and (cache^.Lines[baseSlot + w].SectorIdx = fatSecIdx) then begin
+                    dataPtr := puint32(uint32(cache^.Data) + ((baseSlot + w) * 512));
+                    if value = 0 then
+                        dataPtr[entryOff] := 0
+                    else
+                        dataPtr[entryOff] := (dataPtr[entryOff] and $F0000000) or (value and $0FFFFFFF);
+                    cache^.Lines[baseSlot + w].Dirty := true;
+                    cache^.Lines[baseSlot + w].LRU := 0;
+                    cache^.Lines[baseSlot + (1 - w)].LRU := 1;
+                    asm popf end;
+                    exit;
+                end;
             end;
             cache^.Busy := true;
-            doEvict := cache^.Lines[slot].Valid and cache^.Lines[slot].Dirty;
+            { Pick victim: prefer invalid way, else LRU way }
+            victim := baseSlot;
+            if (not cache^.Lines[baseSlot].Valid) then
+                victim := baseSlot
+            else if (not cache^.Lines[baseSlot + 1].Valid) then
+                victim := baseSlot + 1
+            else if cache^.Lines[baseSlot + 1].LRU >= cache^.Lines[baseSlot].LRU then
+                victim := baseSlot + 1
+            else
+                victim := baseSlot;
+            dataPtr := puint32(uint32(cache^.Data) + (victim * 512));
+            doEvict := cache^.Lines[victim].Valid and cache^.Lines[victim].Dirty;
             if doEvict then begin
-                evictLBA := cache^.FatStart + cache^.Lines[slot].SectorIdx;
+                evictLBA := cache^.FatStart + cache^.Lines[victim].SectorIdx;
                 core.util.memcpy(uint32(dataPtr), uint32(cache^.EvictBuf), 512);
             end;
-            cache^.Lines[slot].Valid := false;
+            cache^.Lines[victim].Valid := false;
             asm popf end;
             break;
         end;
@@ -578,16 +661,21 @@ begin
     lba := cache^.FatStart + fatSecIdx;
     driver.storage.mgr.storage_read(cache^.Device, lba, 1, dataPtr);
 
-    { Update cache, write value, release lock under CLI }
+    { Update cache, write value, set LRU, release lock under CLI }
     asm pushf; cli end;
-    cache^.Lines[slot].SectorIdx := fatSecIdx;
-    cache^.Lines[slot].Valid := true;
-    cache^.Lines[slot].Dirty := false;
+    cache^.Lines[victim].SectorIdx := fatSecIdx;
+    cache^.Lines[victim].Valid := true;
+    cache^.Lines[victim].Dirty := false;
     if value = 0 then
         dataPtr[entryOff] := 0
     else
         dataPtr[entryOff] := (dataPtr[entryOff] and $F0000000) or (value and $0FFFFFFF);
-    cache^.Lines[slot].Dirty := true;
+    cache^.Lines[victim].Dirty := true;
+    cache^.Lines[victim].LRU := 0;
+    if victim = baseSlot then
+        cache^.Lines[baseSlot + 1].LRU := 1
+    else
+        cache^.Lines[baseSlot].LRU := 1;
     cache^.Busy := false;
     asm popf end;
 end;
@@ -1038,6 +1126,12 @@ begin
     directories:= LL_New(sizeof(TDirectory));
 
     clusters:= PLinkedListBase(getFatChain(volume, cluster, bootRecord));
+    if (clusters = nil) or (LL_size(clusters) = 0) then begin
+        getDirEntries := directories;
+        if clusters <> nil then LL_Free(clusters);
+        push_trace('driver.storage.fs.fat32.getDirEntries.exit');
+        exit;
+    end;
     push_trace('driver.storage.fs.fat32.getDirEntries.allocBuffer');
     buffer:= puint32(kalloc( (bootRecord^.sectorSize * bootRecord^.spc) * LL_size(clusters) ));
     memset(uint32(buffer), 0, (bootRecord^.sectorSize * bootRecord^.spc) * LL_size(clusters) );
@@ -2380,17 +2474,110 @@ begin
     kfree(buffer);
 end;
 
+{ ---- Per-file open / close for VFS metadata caching ---- }
+
+{ Called by VFS on OpenFile.  Reads the boot record (cached per-volume),
+  scans the directory for the file, and returns a TFATOpenFile context
+  that writeFileAtOffset / readFileAtOffset can reuse on every call.
+  Also populates fileSize so the VFS can skip calling fileSizeCallback. }
+function fat32OpenFile(volume : PStorage_Volume; directory : pchar;
+                       fileName : pchar; var fileSize : uint32) : pointer;
+var
+    ofi           : PFATOpenFile;
+    bootRecord    : PBootRecord;
+    dirs          : PLinkedListBase;
+    status        : puint32;
+    tempdir       : PDirectory;
+    i             : uint32;
+    cleanFileName : byteArray8;
+    otherCFN      : byteArray8;
+    namePart      : pchar;
+    extPart       : pchar;
+begin
+    push_trace('driver.storage.fs.fat32.openFile.enter');
+    fileSize := 0;
+
+    bootRecord := getCachedBootRecord(volume);
+
+    ofi := PFATOpenFile(kalloc(SizeOf(TFATOpenFile)));
+    memset(uint32(ofi), 0, SizeOf(TFATOpenFile));
+    ofi^.BootRecord := bootRecord;
+    ofi^.DataStart := fatDataStartLBA(volume, bootRecord);
+    ofi^.Exists := false;
+
+    { Read directory entries }
+    status := puint32(kalloc(sizeof(uint32)));
+    status^ := 0;
+    dirs := readDirectory(volume, directory, status);
+
+    { Determine parent cluster (Lesson 18: root has no '.' entry) }
+    if (directory = nil) or (stringSize(directory) = 0) then
+        ofi^.DirCluster := bootRecord^.rootCluster
+    else begin
+        if (dirs <> nil) and (LL_size(dirs) > 0) then begin
+            tempdir := PDirectory(LL_get(dirs, 0));
+            if tempdir^.fileName[0] = '.' then
+                ofi^.DirCluster := dirFirstCluster(tempdir)
+            else
+                ofi^.DirCluster := bootRecord^.rootCluster;
+        end else
+            ofi^.DirCluster := bootRecord^.rootCluster;
+    end;
+
+    { Parse file name and compute cleaned 8.3 name }
+    splitFileNameParts(fileName, namePart, extPart);
+    cleanFileName := cleanString(namePart, status);
+    ofi^.CleanName := cleanFileName;
+    ofi^.ExtPart := stringCopy(extPart);
+
+    { Search for file in directory entries }
+    if (dirs <> nil) and (LL_size(dirs) > 0) then begin
+        for i := 0 to LL_Size(dirs) - 1 do begin
+            tempdir := PDirectory(LL_get(dirs, i));
+            otherCFN := cleanString(tempdir^.filename, status);
+            if compareByteArray8(cleanFileName, otherCFN) and matchExtension(tempdir^.fileExtension, extPart) then begin
+                ofi^.FirstCluster := dirFirstCluster(tempdir);
+                ofi^.ByteSize := tempdir^.byteSize;
+                ofi^.Exists := true;
+            end;
+        end;
+    end;
+
+    kfree(void(namePart));
+    kfree(void(extPart));
+    if dirs <> nil then LL_Free(dirs);
+    kfree(puint32(status));
+
+    fileSize := ofi^.ByteSize;
+    fat32OpenFile := pointer(ofi);
+    push_trace('driver.storage.fs.fat32.openFile.exit');
+end;
+
+{ Called by VFS on CloseFile to free the per-file context. }
+procedure fat32CloseFile(ctx : pointer);
+var
+    ofi : PFATOpenFile;
+begin
+    if ctx = nil then exit;
+    ofi := PFATOpenFile(ctx);
+    if ofi^.ExtPart <> nil then
+        kfree(void(ofi^.ExtPart));
+    kfree(puint32(ofi));
+end;
+
 { Write byteCount bytes to a file beginning at byte offset.
   If offset + byteCount exceeds the current file size, the file is extended
   by allocating new clusters.  Returns the number of bytes actually written. }
 function writeFileAtOffset(volume : PStorage_Volume; directory : pchar;
                            fileName : pchar; offset : uint32;
-                           buffer : puint32; byteCount : uint32) : uint32;
+                           buffer : puint32; byteCount : uint32;
+                           ctx : pointer) : uint32;
 const
     MAX_RUN_SECTORS = 2048;  { cap per multi-sector write = 1MB }
 var
     lookup           : TFileLookup;
     run              : TRunInfo;
+    ofi              : PFATOpenFile;
     i                : uint32;
     cluster          : uint32;
     dataStart        : uint32;
@@ -2408,6 +2595,7 @@ var
     srcPos           : uint32;
     remaining        : uint32;
     fileSize         : uint32;
+    origByteSize     : uint32;
     newEnd           : uint32;
     oldClusters      : uint32;
     needClusters     : uint32;
@@ -2421,7 +2609,6 @@ var
     dirBuf           : puint32;
     rawDir           : PDirectory;
     loc              : TDirEntryLocation;
-    newDirEntry      : TDirectory;
     { Multi-sector write variables }
     spc              : uint32;
     secSize          : uint32;
@@ -2436,33 +2623,49 @@ var
 begin
     push_trace('driver.storage.fs.fat32.writeFileAtOffset.enter');
     writeFileAtOffset := 0;
+    ofi := PFATOpenFile(ctx);
 
-    lookup.Status := puint32(kalloc(sizeof(uint32)));
-    lookup.Status^ := 0;
-    lookup.BootRecord := readBootRecord(volume);
-    lookup.Dirs := readDirectory(volume, directory, lookup.Status);
-    lookup.Exists := false;
-    dataStart := fatDataStartLBA(volume, lookup.BootRecord);
+    if ofi <> nil then begin
+        { Fast path: use cached open-file metadata }
+        lookup.BootRecord := ofi^.BootRecord;
+        lookup.Dirs := nil;
+        lookup.Dir := nil;
+        lookup.Status := nil;
+        lookup.Exists := ofi^.Exists;
+        dataStart := ofi^.DataStart;
+        dirCluster := ofi^.DirCluster;
+        cleanFileName := ofi^.CleanName;
+        extPart := ofi^.ExtPart;
+        namePart := nil;
+        if lookup.Exists then begin
+            origByteSize := ofi^.ByteSize;
+            cluster := ofi^.FirstCluster;
+        end else begin
+            origByteSize := 0;
+            cluster := 0;
+        end;
+    end else begin
+        { Slow path: rediscover everything from disk }
+        lookup.Status := puint32(kalloc(sizeof(uint32)));
+        lookup.Status^ := 0;
+        lookup.BootRecord := readBootRecord(volume);
+        lookup.Dirs := readDirectory(volume, directory, lookup.Status);
+        lookup.Exists := false;
+        dataStart := fatDataStartLBA(volume, lookup.BootRecord);
 
-    splitFileNameParts(fileName, namePart, extPart);
-
-    if LL_size(lookup.Dirs) > 0 then begin
+        splitFileNameParts(fileName, namePart, extPart);
         cleanFileName := cleanString(namePart, lookup.Status);
-        for i := 0 to LL_Size(lookup.Dirs) - 1 do begin
-            tempdir := PDirectory(LL_get(lookup.Dirs, i));
-            otherCFN := cleanString(tempdir^.filename, lookup.Status);
-            if compareByteArray8(cleanFileName, otherCFN) and matchExtension(tempdir^.fileExtension, extPart) then begin
-                lookup.Dir := tempdir;
-                lookup.Exists := true;
+
+        if LL_size(lookup.Dirs) > 0 then begin
+            for i := 0 to LL_Size(lookup.Dirs) - 1 do begin
+                tempdir := PDirectory(LL_get(lookup.Dirs, i));
+                otherCFN := cleanString(tempdir^.filename, lookup.Status);
+                if compareByteArray8(cleanFileName, otherCFN) and matchExtension(tempdir^.fileExtension, extPart) then begin
+                    lookup.Dir := tempdir;
+                    lookup.Exists := true;
+                end;
             end;
         end;
-    end;
-
-    kfree(void(namePart));
-    kfree(void(extPart));
-
-    if not lookup.Exists then begin
-        { --- Create a new zero-length file entry on disk --- }
 
         { Determine parent cluster (Lesson 18: root has no '.' entry) }
         if (directory = nil) or (stringSize(directory) = 0) then
@@ -2478,19 +2681,32 @@ begin
                 dirCluster := lookup.BootRecord^.rootCluster;
         end;
 
+        if lookup.Exists then begin
+            origByteSize := lookup.Dir^.byteSize;
+            cluster := dirFirstCluster(lookup.Dir);
+        end else begin
+            origByteSize := 0;
+            cluster := 0;
+        end;
+    end;
+    fileSize := origByteSize;
+
+    if not lookup.Exists then begin
+        { --- Create a new zero-length file entry on disk --- }
+        { dirCluster, cleanFileName, extPart already set above }
+
         dirBuf := puint32(kalloc(lookup.BootRecord^.sectorSize));
 
-        splitFileNameParts(fileName, namePart, extPart);
-        cleanFileName := cleanString(namePart, lookup.Status);
-
         if not locateFreeDirEntry(volume, dirCluster, lookup.BootRecord, loc, dirBuf) then begin
-            kfree(void(namePart));
-            kfree(void(extPart));
             kfree(dirBuf);
             io.syslog.logln('FAT32', 'writeFileAtOffset: exit-A no free dir slot');
-            LL_Free(lookup.Dirs);
-            kfree(puint32(lookup.BootRecord));
-            kfree(puint32(lookup.Status));
+            if ofi = nil then begin
+                if namePart <> nil then kfree(void(namePart));
+                if extPart <> nil then kfree(void(extPart));
+                LL_Free(lookup.Dirs);
+                kfree(puint32(lookup.BootRecord));
+                kfree(puint32(lookup.Status));
+            end;
             exit;
         end;
 
@@ -2504,23 +2720,11 @@ begin
         rawDir^.byteSize := 0;
         driver.storage.mgr.storage_write(volume^.device, loc.SectorLBA, 1, dirBuf);
 
-        kfree(void(namePart));
-        kfree(void(extPart));
         kfree(dirBuf);
 
         { Invalidate chain cache — new file }
         sioc_valid := false;
-
-        { Set up a local dir record so the rest of the function can use it }
-        memset(uint32(@newDirEntry), 0, sizeof(TDirectory));
-        newDirEntry.byteSize := 0;
-        newDirEntry.clusterLow := 0;
-        newDirEntry.clusterHigh := 0;
-        lookup.Dir := @newDirEntry;
     end;
-
-    fileSize := lookup.Dir^.byteSize;
-    cluster  := dirFirstCluster(lookup.Dir);
     newEnd   := offset + byteCount;
     bytesPerCluster := uint32(lookup.BootRecord^.spc) * uint32(lookup.BootRecord^.sectorSize);
 
@@ -2537,9 +2741,21 @@ begin
             newClusts := findFreeClusters(volume, extraClusters, lookup.BootRecord);
             if newClusts = nil then begin
                 io.syslog.logln('FAT32', 'writeFileAtOffset: exit-B disk full');
-                LL_Free(lookup.Dirs);
-                kfree(puint32(lookup.BootRecord));
-                kfree(puint32(lookup.Status));
+                { Undo just-created dir entry if file was new }
+                if not lookup.Exists then begin
+                    dirBuf := puint32(kalloc(lookup.BootRecord^.sectorSize));
+                    driver.storage.mgr.storage_read(volume^.device, loc.SectorLBA, 1, dirBuf);
+                    PDirectory(dirBuf)[loc.EntryIdx].fileName[0] := char($E5);
+                    driver.storage.mgr.storage_write(volume^.device, loc.SectorLBA, 1, dirBuf);
+                    kfree(dirBuf);
+                end;
+                if ofi = nil then begin
+                    if namePart <> nil then kfree(void(namePart));
+                    if extPart <> nil then kfree(void(extPart));
+                    LL_Free(lookup.Dirs);
+                    kfree(puint32(lookup.BootRecord));
+                    kfree(puint32(lookup.Status));
+                end;
                 exit;
             end;
 
@@ -2570,11 +2786,9 @@ begin
                 writeFat(volume, lastCluster, $FFFFFFF8, lookup.BootRecord);
             end;
 
-            { If file was zero-length, update dir entry's cluster pointer }
-            if oldClusters = 0 then begin
+            { If file was zero-length, first new cluster becomes start cluster }
+            if oldClusters = 0 then
                 cluster := puint32(LL_Get(newClusts, 0))^;
-                setDirFirstCluster(lookup.Dir, cluster);
-            end;
 
             { Update chain cache: last new cluster is the new tail }
             updateSIOC(volume, cluster, needClusters - 1, lastCluster);
@@ -2592,9 +2806,13 @@ begin
 
     if not seekToClusterIndex(volume, cluster, startClusterIdx, lookup.BootRecord, curCluster, chainPos) then begin
         io.syslog.logln('FAT32', 'writeFileAtOffset: exit-C chain broke seeking to start');
-        LL_Free(lookup.Dirs);
-        kfree(puint32(lookup.BootRecord));
-        kfree(puint32(lookup.Status));
+        if ofi = nil then begin
+            if namePart <> nil then kfree(void(namePart));
+            if extPart <> nil then kfree(void(extPart));
+            LL_Free(lookup.Dirs);
+            kfree(puint32(lookup.BootRecord));
+            kfree(puint32(lookup.Status));
+        end;
         exit;
     end;
 
@@ -2693,43 +2911,40 @@ begin
 
     { ---- Update directory entry byteSize if file was extended ---- }
     { Only commit actual bytes written — never advance size past what was really written (Lesson 22) }
-    if (srcPos > 0) and ((offset + srcPos) > lookup.Dir^.byteSize) then begin
-        { Lesson 18: search raw directory sectors, don't use LL indices. }
-        if (directory = nil) or (stringSize(directory) = 0) then
-            dirCluster := lookup.BootRecord^.rootCluster
-        else begin
-            dirCluster := lookup.BootRecord^.rootCluster;
-            if LL_size(lookup.Dirs) > 0 then begin
-                tempdir := PDirectory(LL_get(lookup.Dirs, 0));
-                if tempdir^.fileName[0] = '.' then
-                    dirCluster := dirFirstCluster(tempdir);
-            end;
-        end;
-
+    if (srcPos > 0) and ((offset + srcPos) > origByteSize) then begin
+        { Lesson 18: search raw directory sectors, don't use LL indices.
+          dirCluster, cleanFileName, extPart were set once in the discovery phase. }
         dirBuf := puint32(kalloc(lookup.BootRecord^.sectorSize));
-
-        splitFileNameParts(fileName, namePart, extPart);
-        cleanFileName := cleanString(namePart, lookup.Status);
 
         if locateDirEntry(volume, dirCluster, lookup.BootRecord, cleanFileName, extPart, loc, dirBuf) then begin
             rawDir := @PDirectory(dirBuf)[loc.EntryIdx];
             rawDir^.byteSize := offset + srcPos;
             { If file was zero-length, update cluster pointers too }
-            if lookup.Dir^.byteSize = 0 then begin
-                rawDir^.clusterlow  := lookup.Dir^.clusterlow;
-                rawDir^.clusterhigh := lookup.Dir^.clusterhigh;
-            end;
+            if origByteSize = 0 then
+                setDirFirstCluster(rawDir, cluster);
             driver.storage.mgr.storage_write(volume^.device, loc.SectorLBA, 1, dirBuf);
         end;
 
-        kfree(void(namePart));
-        kfree(void(extPart));
         kfree(dirBuf);
     end;
 
-    LL_Free(lookup.Dirs);
-    kfree(puint32(lookup.BootRecord));
-    kfree(puint32(lookup.Status));
+    { Update cached open-file metadata so the next read/write sees the new state }
+    if ofi <> nil then begin
+        if (srcPos > 0) and ((offset + srcPos) > ofi^.ByteSize) then
+            ofi^.ByteSize := offset + srcPos;
+        if (ofi^.FirstCluster = 0) and (cluster <> 0) then begin
+            ofi^.FirstCluster := cluster;
+            ofi^.Exists := true;
+        end;
+    end;
+
+    if ofi = nil then begin
+        if namePart <> nil then kfree(void(namePart));
+        if extPart <> nil then kfree(void(extPart));
+        LL_Free(lookup.Dirs);
+        kfree(puint32(lookup.BootRecord));
+        kfree(puint32(lookup.Status));
+    end;
     writeFileAtOffset := srcPos;
     push_trace('driver.storage.fs.fat32.writeFileAtOffset.exit');
 end;
@@ -2789,12 +3004,13 @@ begin
     push_trace('driver.storage.fs.fat32.getFileSize.exit');
 end;
 
-function readFileAtOffset(volume : PStorage_Volume; directory : pchar; fileName : pchar; offset : uint32; buffer : puint32; byteCount : uint32) : uint32;
+function readFileAtOffset(volume : PStorage_Volume; directory : pchar; fileName : pchar; offset : uint32; buffer : puint32; byteCount : uint32; ctx : pointer) : uint32;
 const
     MAX_RUN_SECTORS = 2048;  { cap per multi-sector read = 1 MB }
 var
     lookup           : TFileLookup;
     run              : TRunInfo;
+    ofi              : PFATOpenFile;
     i                : uint32;
     cluster          : uint32;
     dataStart        : uint32;
@@ -2823,46 +3039,74 @@ var
 begin
     push_trace('driver.storage.fs.fat32.readFileAtOffset.enter');
     readFileAtOffset := 0;
+    ofi := PFATOpenFile(ctx);
 
-    lookup.Status := puint32(kalloc(sizeof(uint32)));
-    lookup.Status^ := 0;
-    lookup.BootRecord := readBootRecord(volume);
-    lookup.Dirs := readDirectory(volume, directory, lookup.Status);
-    lookup.Exists := false;
-    dataStart := fatDataStartLBA(volume, lookup.BootRecord);
+    if ofi <> nil then begin
+        { Fast path: use cached open-file metadata }
+        lookup.BootRecord := ofi^.BootRecord;
+        lookup.Dirs := nil;
+        lookup.Dir := nil;
+        lookup.Status := nil;
+        lookup.Exists := ofi^.Exists;
+        dataStart := ofi^.DataStart;
+        if lookup.Exists then begin
+            fileSize := ofi^.ByteSize;
+            cluster := ofi^.FirstCluster;
+        end else begin
+            fileSize := 0;
+            cluster := 0;
+        end;
+    end else begin
+        { Slow path: rediscover everything from disk }
+        lookup.Status := puint32(kalloc(sizeof(uint32)));
+        lookup.Status^ := 0;
+        lookup.BootRecord := readBootRecord(volume);
+        lookup.Dirs := readDirectory(volume, directory, lookup.Status);
+        lookup.Exists := false;
+        dataStart := fatDataStartLBA(volume, lookup.BootRecord);
 
-    splitFileNameParts(fileName, namePart, extPart);
+        splitFileNameParts(fileName, namePart, extPart);
 
-    if LL_size(lookup.Dirs) > 0 then begin
-        cleanFileName := cleanString(namePart, lookup.Status);
-        for i := 0 to LL_Size(lookup.Dirs) - 1 do begin
-            tempdir := PDirectory(LL_get(lookup.Dirs, i));
-            otherCFN := cleanString(tempdir^.filename, lookup.Status);
-            if compareByteArray8(cleanFileName, otherCFN) and matchExtension(tempdir^.fileExtension, extPart) then begin
-                lookup.Dir := tempdir;
-                lookup.Exists := true;
+        if LL_size(lookup.Dirs) > 0 then begin
+            cleanFileName := cleanString(namePart, lookup.Status);
+            for i := 0 to LL_Size(lookup.Dirs) - 1 do begin
+                tempdir := PDirectory(LL_get(lookup.Dirs, i));
+                otherCFN := cleanString(tempdir^.filename, lookup.Status);
+                if compareByteArray8(cleanFileName, otherCFN) and matchExtension(tempdir^.fileExtension, extPart) then begin
+                    lookup.Dir := tempdir;
+                    lookup.Exists := true;
+                end;
             end;
+        end;
+
+        kfree(void(namePart));
+        kfree(void(extPart));
+
+        if lookup.Exists then begin
+            fileSize := lookup.Dir^.byteSize;
+            cluster := dirFirstCluster(lookup.Dir);
+        end else begin
+            fileSize := 0;
+            cluster := 0;
         end;
     end;
 
-    kfree(void(namePart));
-    kfree(void(extPart));
-
     if not lookup.Exists then begin
-        LL_Free(lookup.Dirs);
-        kfree(puint32(lookup.BootRecord));
-        kfree(puint32(lookup.Status));
+        if ofi = nil then begin
+            LL_Free(lookup.Dirs);
+            kfree(puint32(lookup.BootRecord));
+            kfree(puint32(lookup.Status));
+        end;
         push_trace('driver.storage.fs.fat32.readFileAtOffset.notFound');
         exit;
     end;
 
-    fileSize   := lookup.Dir^.byteSize;
-    cluster    := dirFirstCluster(lookup.Dir);
-
     if offset >= fileSize then begin
-        LL_Free(lookup.Dirs);
-        kfree(puint32(lookup.BootRecord));
-        kfree(puint32(lookup.Status));
+        if ofi = nil then begin
+            LL_Free(lookup.Dirs);
+            kfree(puint32(lookup.BootRecord));
+            kfree(puint32(lookup.Status));
+        end;
         exit;
     end;
 
@@ -2879,9 +3123,11 @@ begin
 
     { Determine curCluster at startClusterIdx using SIOC cache }
     if not seekToClusterIndex(volume, cluster, startClusterIdx, lookup.BootRecord, curCluster, chainPos) then begin
-        LL_Free(lookup.Dirs);
-        kfree(puint32(lookup.BootRecord));
-        kfree(puint32(lookup.Status));
+        if ofi = nil then begin
+            LL_Free(lookup.Dirs);
+            kfree(puint32(lookup.BootRecord));
+            kfree(puint32(lookup.Status));
+        end;
         exit;
     end;
 
@@ -2951,9 +3197,11 @@ begin
         end;
     end;
 
-    LL_Free(lookup.Dirs);
-    kfree(puint32(lookup.BootRecord));
-    kfree(puint32(lookup.Status));
+    if ofi = nil then begin
+        LL_Free(lookup.Dirs);
+        kfree(puint32(lookup.BootRecord));
+        kfree(puint32(lookup.Status));
+    end;
     readFileAtOffset := destPos;
     push_trace('driver.storage.fs.fat32.readFileAtOffset.exit');
 end;
@@ -2976,6 +3224,8 @@ begin
     filesystem.deleteFileCallback := @deleteFile;
     filesystem.deleteDirCallback := @deleteDir;
     filesystem.renameFileCallback := @renameFile;
+    filesystem.openFileCallback := @fat32OpenFile;
+    filesystem.closeFileCallback := @fat32CloseFile;
     { Async callbacks: nil - VFS falls through to the sync callbacks above.
       All disk I/O uses psAwaiting in submit_io_wait: the calling process is
       parked cleanly (CPU-free) while the driver.storage.ctl.ahci ISR completes the request. }
