@@ -27,8 +27,8 @@ uses
     core.strings, arch.x86.bda;
 
 const
-    FILE_SIZE  = 10 * 1024 * 1024;  { 10 MB }
-    CHUNK_SIZE = 4096*64;           { MB per is 4k*64 = 256 KB, so 40 chunks total }
+    FILE_SIZE  = 25 * 1024 * 1024;  { 25 MB }
+    CHUNK_SIZE = 4096*128;           { MB per is 4k*128 = 512 KB, so 50 chunks total }
     TICK_HZ    = 1024;               { timer ISR frequency }
     DEFAULT_PATH : pchar = '/disk/vol0/IOTEST.BIN';
 
@@ -89,7 +89,7 @@ begin
     verBuf := puint8(kalloc(CHUNK_SIZE));
 
     { ==================== WRITE PHASE ==================== }
-    io.stdio.bufWriteStr(stdout_buf, 'Writing 10 MB to ');
+    io.stdio.bufWriteStr(stdout_buf, 'Writing 25 MB to ');
     io.stdio.bufWriteStrLn(stdout_buf, path);
 
     fh := OpenFile(path, omCreate, @fErr);
@@ -131,7 +131,9 @@ begin
         end;
     end;
     t1 := arch.x86.bda.Counters.c32;
+    io.stdio.bufWriteStrLn(stdout_buf, 'Closing write handle...');
     CloseFile(fh);
+    io.stdio.bufWriteStrLn(stdout_buf, 'Write handle closed.');
 
     if ok then begin
         elapsed := t1 - t0;
@@ -215,7 +217,9 @@ begin
         end;
     end;
     t1 := arch.x86.bda.Counters.c32;
+    io.stdio.bufWriteStrLn(stdout_buf, 'Closing read handle...');
     CloseFile(fh);
+    io.stdio.bufWriteStrLn(stdout_buf, 'Read handle closed.');
 
     if ok then begin
         elapsed := t1 - t0;

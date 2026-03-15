@@ -45,10 +45,12 @@ const
     ATA_CMD_READ_PIO_EXT    = $24; 
     ATA_CMD_READ_DMA        = $C8; 
     ATA_CMD_READ_DMA_EXT    = $25; 
+    ATA_CMD_READ_FPDMA_QUEUED  = $60;
     ATA_CMD_WRITE_PIO       = $30; 
     ATA_CMD_WRITE_PIO_EXT   = $34; 
     ATA_CMD_WRITE_DMA       = $CA; 
     ATA_CMD_WRITE_DMA_EXT   = $35; 
+    ATA_CMD_WRITE_FPDMA_QUEUED = $61;
     ATA_CMD_CACHE_FLUSH     = $E7; 
     ATA_CMD_CACHE_FLUSH_EXT = $EA; 
     ATA_CMD_PACKET          = $A0; 

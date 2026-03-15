@@ -135,6 +135,15 @@ type
     end;
     PSyncWaitData = ^TSyncWaitData;
 
+    { Async MBR-write wrapper. Keeps a sector-sized DMA buffer alive until the
+      hardware completion fires, then frees it before forwarding the user's callback. }
+    TMBRWriteAsyncData = record
+        Buffer       : pointer;
+        UserCallback : TIOCallback;
+        UserData     : pointer;
+    end;
+    PMBRWriteAsyncData = ^TMBRWriteAsyncData;
+
 { Callback fired from ISR context by complete_io.
   Sets the error, wakes the parked process, then sets Done=1 so the
   pointer-dereferenced spin in submit_io_wait can exit.  Safe with IF=0. }
@@ -150,6 +159,40 @@ begin
     { Write Done last — submit_io_wait spins on this and must see State=psReady
       before it exits the loop (ISR ordering on x86 is program order). }
     puint32(@wait^.Done)^ := 1;
+end;
+
+function alloc_mbr_io_buffer(device : PStorage_Device; mbr : PMaster_Boot_Record) : puint32;
+var
+    bufSz : uint32;
+    buf   : puint32;
+begin
+    alloc_mbr_io_buffer := nil;
+    if (device = nil) or (mbr = nil) then exit;
+
+    bufSz := device^.sectorSize;
+    if bufSz < sizeof(TMaster_Boot_Record) then
+        bufSz := sizeof(TMaster_Boot_Record);
+
+    buf := puint32(kalloc(bufSz));
+    if buf = nil then exit;
+
+    memset(uint32(buf), 0, bufSz);
+    memcpy(uint32(mbr), uint32(buf), sizeof(TMaster_Boot_Record));
+    alloc_mbr_io_buffer := buf;
+end;
+
+procedure mbr_write_async_callback(error : TError; userdata : pointer);
+var
+    ctx : PMBRWriteAsyncData;
+begin
+    ctx := PMBRWriteAsyncData(userdata);
+    if ctx = nil then exit;
+
+    if ctx^.Buffer <> nil then
+        kfree(void(ctx^.Buffer));
+    if ctx^.UserCallback <> nil then
+        ctx^.UserCallback(error, ctx^.UserData);
+    kfree(void(ctx));
 end;
 
 procedure init();
@@ -184,7 +227,7 @@ begin
 
     { Initialise new Phase 2 fields }
     device^.removed := false;
-    device^.requestQueue := CFIFO_New(SizeOf(TIORequest), 32);
+    device^.requestQueue := CFIFO_New(SizeOf(PIORequest), 128);
     device^.activeCount := 0;
     if device^.maxActive = 0 then device^.maxActive := 1;
     device^.cachedMBR := nil;
@@ -294,9 +337,10 @@ end;
 procedure write_mbr(device : PStorage_Device; mbr : PMaster_Boot_Record);
 var
     cache : puint32;
+    buf   : puint32;
 begin
     push_trace('driver.storage.mgr.write_mbr');
-    if not device^.writable then exit;
+    if (device = nil) or (mbr = nil) or (not device^.writable) then exit;
     { Update cache }
     if device^.cachedMBR <> nil then
         kfree(device^.cachedMBR);
@@ -304,7 +348,11 @@ begin
     if cache <> nil then
         memcpy(uint32(mbr), uint32(cache), sizeof(TMaster_Boot_Record));
     device^.cachedMBR := pointer(cache);
-    storage_write(device, 0, 1, puint32(mbr));
+
+    buf := alloc_mbr_io_buffer(device, mbr);
+    if buf = nil then exit;
+    storage_write(device, 0, 1, buf);
+    kfree(void(buf));
 end;
 
 function get_cached_mbr(device : PStorage_Device) : PMaster_Boot_Record;
@@ -317,8 +365,15 @@ procedure write_mbr_async(device : PStorage_Device; mbr : PMaster_Boot_Record;
                           callback : TIOCallback; callbackData : pointer);
 var
     cache : puint32;
+    buf   : puint32;
+    ctx   : PMBRWriteAsyncData;
+    err   : TError;
 begin
     push_trace('driver.storage.mgr.write_mbr_async');
+    if (device = nil) or (mbr = nil) then begin
+        if callback <> nil then callback(eInvalidArgument, callbackData);
+        exit;
+    end;
     if not device^.writable then begin
         if callback <> nil then callback(eReadOnly, callbackData);
         exit;
@@ -330,7 +385,29 @@ begin
     if cache <> nil then
         memcpy(uint32(mbr), uint32(cache), sizeof(TMaster_Boot_Record));
     device^.cachedMBR := pointer(cache);
-    storage_write_async(device, 0, 1, puint32(mbr), callback, callbackData);
+
+    buf := alloc_mbr_io_buffer(device, mbr);
+    if buf = nil then begin
+        if callback <> nil then callback(eOutOfMemory, callbackData);
+        exit;
+    end;
+
+    ctx := PMBRWriteAsyncData(kalloc(sizeof(TMBRWriteAsyncData)));
+    if ctx = nil then begin
+        kfree(void(buf));
+        if callback <> nil then callback(eOutOfMemory, callbackData);
+        exit;
+    end;
+    ctx^.Buffer := pointer(buf);
+    ctx^.UserCallback := callback;
+    ctx^.UserData := callbackData;
+
+    err := storage_write_async(device, 0, 1, buf, @mbr_write_async_callback, ctx);
+    if err <> eNone then begin
+        kfree(void(buf));
+        kfree(void(ctx));
+        if callback <> nil then callback(err, callbackData);
+    end;
 end;
 
 { ========================================================================== }
@@ -341,21 +418,13 @@ end;
   Called with interrupts disabled (CLI context) or from ISR context. }
 procedure dispatch_next(device : PStorage_Device);
 var
-    reqBuf  : TIORequest;
     heapReq : PIORequest;
 begin
     { Dispatch queued requests up to maxActive hardware slots }
     while device^.activeCount < device^.maxActive do begin
-        if not CFIFO_Dequeue(device^.requestQueue, @reqBuf) then break;  { queue empty }
-
-        { Heap copy for ISR safety — driver completion may fire on any stack }
-        heapReq := ioreq_copy(@reqBuf);
-        if heapReq = nil then begin
-        { Out of memory — notify caller via callback }
-            if reqBuf.Callback <> nil then
-                reqBuf.Callback(eOutOfMemory, reqBuf.CallbackData);
+        if not CFIFO_Dequeue(device^.requestQueue, @heapReq) then break;  { queue empty }
+        if heapReq = nil then
             break;
-        end;
 
         device^.activeCount := device^.activeCount + 1;
         heapReq^.State := iosDispatched;
@@ -380,7 +449,8 @@ end;
 
 function submit_io(request : PIORequest) : TError;
 var
-    device : PStorage_Device;
+    device  : PStorage_Device;
+    heapReq : PIORequest;
 begin
     { Pre-checks — fail fast before touching the queue }
     if request = nil then begin submit_io := eInvalidArgument; exit; end;
@@ -400,9 +470,47 @@ begin
     request^.State := iosPending;
     request^.Error := eNone;
 
-    { Enqueue and attempt dispatch — must be ISR-safe }
+    { Copy once into the pooled request arena so the driver/ISR path never
+      depends on a caller-owned stack record. The queue stores pointers to
+      these owned requests; complete_io returns them to the pool. }
+    heapReq := ioreq_copy(request);
+    if heapReq = nil then begin
+        submit_io := eOutOfMemory;
+        exit;
+    end;
+
+    { Enqueue and attempt dispatch — must be ISR-safe and bounded.
+      Reject once the fixed queue is full instead of growing with CLI held. }
     asm pushf; cli end;
-    CFIFO_Enqueue(device^.requestQueue, @request^);
+    if (device^.activeCount < device^.maxActive) and (CFIFO_Size(device^.requestQueue) = 0) then begin
+        device^.activeCount := device^.activeCount + 1;
+        heapReq^.State := iosDispatched;
+        asm popf end;
+        case heapReq^.RequestType of
+            ioRead: begin
+                if device^.dispatchRead <> nil then
+                    device^.dispatchRead(device, heapReq)
+                else
+                    complete_io(heapReq, false, eDeviceNotFound);
+            end;
+            ioWrite: begin
+                if device^.dispatchWrite <> nil then
+                    device^.dispatchWrite(device, heapReq)
+                else
+                    complete_io(heapReq, false, eDeviceNotFound);
+            end;
+        end;
+        submit_io := eNone;
+        exit;
+    end;
+
+    if CFIFO_Size(device^.requestQueue) >= CFIFO_Capacity(device^.requestQueue) then begin
+        asm popf end;
+        ioreq_free(heapReq);
+        submit_io := eQueueFull;
+        exit;
+    end;
+    CFIFO_Enqueue(device^.requestQueue, @heapReq);
     dispatch_next(device);
     asm popf end;
 

@@ -46,9 +46,30 @@ uses
     core.strings,
     io.syslog,
     debug.tracer,
-    core.util, arch.x86.util,
+    core.util, arch.x86.util, arch.x86.bda,
     driver.storage.vfs,
     driver.storage.vol.mgr;
+
+const
+    STORBENCH_DEFAULT_MB = 32;
+    STORBENCH_BUFFER_BYTES = 1024 * 1024;
+    STORBENCH_TICK_HZ = 1024;
+
+function isNumericStr(s : pchar) : boolean;
+var
+    i : uint32;
+begin
+    isNumericStr := false;
+    if (s = nil) or (s[0] = char(0)) then
+        exit;
+    i := 0;
+    while s[i] <> char(0) do begin
+        if (s[i] < '0') or (s[i] > '9') then
+            exit;
+        i := i + 1;
+    end;
+    isNumericStr := true;
+end;
 
 { ============================================================
   run_tests — shared test body called by both UnitTest (boot)
@@ -475,8 +496,158 @@ begin
     kfree(void(fStr));
 end;
 
+procedure cmd_storbench(params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
+var
+    disk        : PStorage_Device;
+    devIdx      : uint32;
+    mbToRead    : uint32;
+    totalBytes  : uint32;
+    buf         : puint32;
+    chunkSectors: uint32;
+    sectorsLeft : uint32;
+    sectorsNow  : uint32;
+    startLBA    : uint32;
+    lba         : uint32;
+    t0, t1      : uint32;
+    tLast       : uint32;
+    elapsed     : uint32;
+    bytesInSec  : uint32;
+    doneBytes   : uint32;
+    kbps        : uint32;
+    err         : TError;
+
+    procedure writeThroughput(kbpsValue : uint32);
+    begin
+        if kbpsValue >= 1024 then begin
+            io.stdio.bufWriteInt(stdout_buf, kbpsValue div 1024);
+            io.stdio.bufWriteStr(stdout_buf, '.');
+            io.stdio.bufWriteInt(stdout_buf, ((kbpsValue mod 1024) * 10) div 1024);
+            io.stdio.bufWriteStr(stdout_buf, ' MB/s');
+        end else begin
+            io.stdio.bufWriteInt(stdout_buf, kbpsValue);
+            io.stdio.bufWriteStr(stdout_buf, ' KB/s');
+        end;
+    end;
+begin
+    devIdx := 0;
+    mbToRead := STORBENCH_DEFAULT_MB;
+
+    if paramCount(params) >= 1 then begin
+        if not isNumericStr(getParam(0, params)) then begin
+            io.stdio.bufWriteStrLn(stderr_buf, 'Usage: STORBENCH [device_index] [mb]');
+            exit;
+        end;
+        devIdx := stringToInt(getParam(0, params));
+    end;
+
+    if paramCount(params) >= 2 then begin
+        if not isNumericStr(getParam(1, params)) then begin
+            io.stdio.bufWriteStrLn(stderr_buf, 'Usage: STORBENCH [device_index] [mb]');
+            exit;
+        end;
+        mbToRead := stringToInt(getParam(1, params));
+        if mbToRead = 0 then
+            mbToRead := STORBENCH_DEFAULT_MB;
+    end;
+
+    disk := driver.storage.mgr.get_device(devIdx);
+    if disk = nil then begin
+        io.stdio.bufWriteStr(stderr_buf, 'No storage device at index ');
+        io.stdio.bufWriteIntLn(stderr_buf, devIdx);
+        exit;
+    end;
+
+    if disk^.sectorSize = 0 then begin
+        io.stdio.bufWriteStrLn(stderr_buf, 'Device has invalid sector size.');
+        exit;
+    end;
+
+    totalBytes := mbToRead * 1024 * 1024;
+    chunkSectors := STORBENCH_BUFFER_BYTES div disk^.sectorSize;
+    if chunkSectors = 0 then
+        chunkSectors := 1;
+
+    buf := puint32(kalloc(chunkSectors * disk^.sectorSize));
+    if buf = nil then begin
+        io.stdio.bufWriteStrLn(stderr_buf, 'Out of memory allocating benchmark buffer.');
+        exit;
+    end;
+
+    sectorsLeft := totalBytes div disk^.sectorSize;
+    if sectorsLeft = 0 then
+        sectorsLeft := 1;
+    if sectorsLeft > disk^.maxSectorCount then
+        sectorsLeft := disk^.maxSectorCount;
+
+    if disk^.maxSectorCount > (sectorsLeft + 2048) then
+        startLBA := 2048
+    else
+        startLBA := 0;
+    lba := startLBA;
+
+    io.stdio.bufWriteStr(stdout_buf, 'Raw read benchmark: disk ');
+    io.stdio.bufWriteInt(stdout_buf, devIdx);
+    io.stdio.bufWriteStr(stdout_buf, ', sectorSize=');
+    io.stdio.bufWriteInt(stdout_buf, disk^.sectorSize);
+    io.stdio.bufWriteStr(stdout_buf, ', maxActive=');
+    io.stdio.bufWriteInt(stdout_buf, disk^.maxActive);
+    io.stdio.bufWriteNewLine(stdout_buf);
+
+    t0 := arch.x86.bda.Counters.c32;
+    tLast := t0;
+    bytesInSec := 0;
+    doneBytes := 0;
+
+    while sectorsLeft > 0 do begin
+        sectorsNow := chunkSectors;
+        if sectorsNow > sectorsLeft then
+            sectorsNow := sectorsLeft;
+
+        err := driver.storage.mgr.storage_read(disk, lba, sectorsNow, buf);
+        if err <> eNone then begin
+            io.stdio.bufWriteStr(stderr_buf, 'Raw read failed at LBA ');
+            io.stdio.bufWriteInt(stderr_buf, lba);
+            io.stdio.bufWriteStr(stderr_buf, ' error=');
+            io.stdio.bufWriteIntLn(stderr_buf, ord(err));
+            kfree(void(buf));
+            exit;
+        end;
+
+        lba := lba + sectorsNow;
+        sectorsLeft := sectorsLeft - sectorsNow;
+        doneBytes := doneBytes + (sectorsNow * disk^.sectorSize);
+        bytesInSec := bytesInSec + (sectorsNow * disk^.sectorSize);
+
+        t1 := arch.x86.bda.Counters.c32;
+        if (t1 - tLast) >= STORBENCH_TICK_HZ then begin
+            kbps := (bytesInSec div 1024) * STORBENCH_TICK_HZ div (t1 - tLast);
+            io.stdio.bufWriteStr(stdout_buf, '  RAW ');
+            io.stdio.bufWriteInt(stdout_buf, doneBytes div 1024);
+            io.stdio.bufWriteStr(stdout_buf, ' KB  ');
+            writeThroughput(kbps);
+            io.stdio.bufWriteNewLine(stdout_buf);
+            tLast := t1;
+            bytesInSec := 0;
+        end;
+    end;
+
+    t1 := arch.x86.bda.Counters.c32;
+    elapsed := t1 - t0;
+    io.stdio.bufWriteStr(stdout_buf, 'Raw read complete: ');
+    if elapsed > 0 then begin
+        kbps := ((doneBytes div 1024) * STORBENCH_TICK_HZ) div elapsed;
+        writeThroughput(kbps);
+        io.stdio.bufWriteStr(stdout_buf, ' (');
+        io.stdio.bufWriteInt(stdout_buf, (elapsed * 1000) div STORBENCH_TICK_HZ);
+        io.stdio.bufWriteStrLn(stdout_buf, ' ms)');
+    end else
+        io.stdio.bufWriteStrLn(stdout_buf, '< 1 tick');
+
+    kfree(void(buf));
+end;
+
 { ============================================================
-  init — register the STORTEST and DISKTEST terminal commands
+  init — register the storage terminal commands
   ============================================================ }
 procedure init;
 begin
@@ -485,6 +656,8 @@ begin
         'Run storage subsystem unit tests.');
     io.stdio.registerCommand('DISKTEST', @cmd_disktest,
         'DESTRUCTIVE: wipe disk 0, format FAT32 4MB, write+read file.');
+    io.stdio.registerCommand('STORBENCH', @cmd_storbench,
+        'Read-only raw storage benchmark: STORBENCH [device_index] [mb].');
     debug.tracer.pop_trace;
 end;
 

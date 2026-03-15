@@ -86,7 +86,8 @@ end;
   Returns actual bytes copied. }
 function rd_ReadOffset(volume : PStorage_Volume; directory : pchar;
                        fileName : pchar; offset : uint32;
-                       buffer : puint32; byteCount : uint32) : uint32;
+                       buffer : puint32; byteCount : uint32;
+                       ctx : pointer) : uint32;
 var
     clean   : pchar;
     idx     : sint32;

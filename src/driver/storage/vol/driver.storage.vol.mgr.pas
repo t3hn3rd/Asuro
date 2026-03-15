@@ -530,8 +530,8 @@ begin
         end;
     end;
 
-    { Write cached mbr to disk — buffer is the persistent cache }
-    driver.storage.mgr.storage_write_async(device, 0, 1, puint32(mbr), callback, callbackData);
+    { Write cached mbr to disk through the storage manager's staged MBR path. }
+    driver.storage.mgr.write_mbr_async(device, mbr, callback, callbackData);
 end;
 
 procedure remove_partition_async(device : PStorage_Device; slot : uint32;
@@ -563,8 +563,8 @@ begin
     if (oldPart.LBA_start <> 0) and (oldPart.sector_count <> 0) then
         remove_volume_by_start(device, oldPart.LBA_start);
 
-    { Write cached mbr to disk }
-    driver.storage.mgr.storage_write_async(device, 0, 1, puint32(mbr), callback, callbackData);
+    { Write cached mbr to disk through the storage manager's staged MBR path. }
+    driver.storage.mgr.write_mbr_async(device, mbr, callback, callbackData);
 end;
 
 procedure init_disk_async(device : PStorage_Device;
@@ -594,8 +594,8 @@ begin
     PMaster_Boot_Record(cache)^.boot_sector := $AA55;
     device^.cachedMBR := pointer(cache);
 
-    { Write to disk }
-    driver.storage.mgr.storage_write_async(device, 0, 1, cache, callback, callbackData);
+    { Write to disk through the storage manager's staged MBR path. }
+    driver.storage.mgr.write_mbr_async(device, PMaster_Boot_Record(cache), callback, callbackData);
 end;
 
 { ===================== Filesystem operations ===================== }

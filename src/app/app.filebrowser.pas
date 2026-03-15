@@ -1860,7 +1860,7 @@ begin
     if (error = eNone) and (nfctx^.handle <> 0) then begin
         { WriteFileAsync needs a non-nil buffer; Length=0 so it is never read }
         driver.storage.vfs.WriteFileAsync(nfctx^.handle, 0,
-            puint8(@nfctx^.err), 0, @fb_newfile_written, nfctx);
+            puint8(@nfctx^.err), 0, nil, @fb_newfile_written, nfctx);
     end else begin
         if nfctx^.handle <> 0 then
             driver.storage.vfs.CloseFile(nfctx^.handle);
