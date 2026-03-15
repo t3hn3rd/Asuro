@@ -89,7 +89,7 @@ function CloseFile(Filehandle : TFileHandle) : TError;
 { Async public API — return immediately, callback fires on completion.
   Callers (e.g. LVGL callbacks) must keep all buffers alive until the
   callback fires. }
-procedure WriteFileAsync(FileHandle : TFileHandle; Position : uint32; Buffer : puint8; Length : uint32; Callback : TIOCallback; CallbackData : pointer);
+procedure WriteFileAsync(FileHandle : TFileHandle; Position : uint32; Buffer : puint8; Length : uint32; BytesWritten : puint32; Callback : TIOCallback; CallbackData : pointer);
 procedure ReadFileAsync(FileHandle : TFileHandle; Position : uint32; Buffer : puint8; Length : uint32; BytesRead : puint32; Callback : TIOCallback; CallbackData : pointer);
 procedure OpenFileAsync(Filename : pchar; OpenMode : TOpenMode; var OutHandle : TFileHandle; Error : PError; Callback : TIOCallback; CallbackData : pointer);
 procedure DeleteFileAsync(Path : pchar; Error : PError; Callback : TIOCallback; CallbackData : pointer);
@@ -177,6 +177,43 @@ type
     end;
     PVFSDirAsyncCtx = ^TVFSDirAsyncCtx;
 
+    TVFSPathAsyncCtx = record
+        Path         : pchar;
+        ErrorPtr     : PError;
+        IsDirectory  : boolean;
+        UserCallback : TIOCallback;
+        UserData     : pointer;
+    end;
+    PVFSPathAsyncCtx = ^TVFSPathAsyncCtx;
+
+    TVFSWriteAsyncCtx = record
+        FD           : PFileDescriptor;
+        Position     : uint32;
+        BytesWritten : uint32;
+        BytesWrittenPtr : puint32;
+        UserCallback : TIOCallback;
+        UserData     : pointer;
+    end;
+    PVFSWriteAsyncCtx = ^TVFSWriteAsyncCtx;
+
+    TVFSReadAsyncCtx = record
+        FD           : PFileDescriptor;
+        BytesReadPtr : puint32;
+        UserCallback : TIOCallback;
+        UserData     : pointer;
+    end;
+    PVFSReadAsyncCtx = ^TVFSReadAsyncCtx;
+
+    TVFSSyncWaitCtx = record
+        Done         : uint32;
+        Error        : TError;
+        BytesDone    : uint32;
+        Process      : proc.types.PProcessContext;
+        UserCallback : TIOCallback;
+        UserData     : pointer;
+    end;
+    PVFSSyncWaitCtx = ^TVFSSyncWaitCtx;
+
     { Watch/Notify infrastructure }
     TVFSWatch = record
         Active     : boolean;
@@ -206,6 +243,56 @@ var
     DirCache          : array[0..DIR_CACHE_SLOTS-1] of TVFSDirCacheEntry;
     DirCacheTick      : uint32;
     DirCacheReady     : boolean;
+
+procedure vfs_write_complete(error : TError; userdata : pointer);
+var
+    ctx : PVFSWriteAsyncCtx;
+begin
+    ctx := PVFSWriteAsyncCtx(userdata);
+    if ctx = nil then exit;
+
+    if (error = eNone) and (ctx^.FD <> nil) then begin
+        if ctx^.Position + ctx^.BytesWritten > ctx^.FD^.DataSize then
+            ctx^.FD^.DataSize := ctx^.Position + ctx^.BytesWritten;
+    end;
+    if ctx^.BytesWrittenPtr <> nil then
+        ctx^.BytesWrittenPtr^ := ctx^.BytesWritten;
+
+    if ctx^.FD <> nil then
+        fd_end_async(ctx^.FD);
+    if ctx^.UserCallback <> nil then
+        ctx^.UserCallback(error, ctx^.UserData);
+    kfree(void(ctx));
+end;
+
+procedure vfs_pathop_worker(pctx : proc.types.PProcessContext); forward;
+
+procedure vfs_read_complete(error : TError; userdata : pointer);
+var
+    ctx : PVFSReadAsyncCtx;
+begin
+    ctx := PVFSReadAsyncCtx(userdata);
+    if ctx = nil then exit;
+    if ctx^.FD <> nil then
+        fd_end_async(ctx^.FD);
+    if ctx^.UserCallback <> nil then
+        ctx^.UserCallback(error, ctx^.UserData);
+    kfree(void(ctx));
+end;
+
+procedure vfs_sync_complete(error : TError; userdata : pointer);
+var
+    ctx : PVFSSyncWaitCtx;
+begin
+    ctx := PVFSSyncWaitCtx(userdata);
+    if ctx = nil then exit;
+    if ctx^.Process <> nil then
+        ctx^.Process^.State := psReady;
+    ctx^.Error := error;
+    if ctx^.UserCallback <> nil then
+        ctx^.UserCallback(error, ctx^.UserData);
+    puint32(@ctx^.Done)^ := 1;
+end;
 
 { ===================== Watch/Notify infrastructure ========================= }
 
@@ -1220,9 +1307,17 @@ begin
     fd^.VFSDir := vfsParentDir(Filename);
     fd^.OpenMode := uint8(ord(OpenMode));
     fd^.DataSize := 0;
+    fd^.FSPrivate := nil;
+    fd^.FSCloseHook := nil;
 
-    { Query file size for read modes; for write-only just leave DataSize = 0 }
-    if (OpenMode = omRead) or (OpenMode = omReadWrite) then begin
+    { Cache per-file metadata and populate DataSize via FS open hook }
+    if (vol^.filesystem <> nil) and (vol^.filesystem^.openFileCallback <> nil) then begin
+        fd^.FSPrivate := vol^.filesystem^.openFileCallback(vol, dir, fname, fd^.DataSize);
+        if vol^.filesystem^.closeFileCallback <> nil then
+            fd^.FSCloseHook := pointer(vol^.filesystem^.closeFileCallback);
+        if Error <> nil then Error^ := eNone;
+    end else if (OpenMode = omRead) or (OpenMode = omReadWrite) then begin
+        { Fallback: query file size for read modes }
         if vol^.filesystem <> nil then begin
             if vol^.filesystem^.fileSizeCallback <> nil then begin
                 fd^.DataSize := vol^.filesystem^.fileSizeCallback(vol, dir, fname);
@@ -1252,88 +1347,73 @@ end;
 
 function WriteFile(FileHandle : TFileHandle; Position : uint32; Buffer : puint8; Length : uint32) : uint32;
 var
-    fd       : PFileDescriptor;
-    vol      : PStorage_Volume;
+    wait     : TVFSSyncWaitCtx;
 begin
     debug.tracer.push_trace('driver.storage.vfs.WriteFile.enter');
     WriteFile := 0;
 
-    fd := fd_get(currentFDTable, FileHandle);
-    if fd = nil then exit;
+    memset(uint32(@wait), 0, sizeof(TVFSSyncWaitCtx));
+    wait.Error := eUnknown;
+    wait.Process := CurrentProcess;
 
-    if (TOpenMode(fd^.OpenMode) <> omWrite) and (TOpenMode(fd^.OpenMode) <> omCreate) and (TOpenMode(fd^.OpenMode) <> omReadWrite) then exit;
-    if Buffer = nil then exit;
+    WriteFileAsync(FileHandle, Position, Buffer, Length, @wait.BytesDone, @vfs_sync_complete, @wait);
 
-    { Device dispatch: use the device write callback }
-    if fd^.DeviceOps <> nil then begin
-        if PVFSDeviceOps(fd^.DeviceOps)^.Write <> nil then
-            WriteFile := PVFSDeviceOps(fd^.DeviceOps)^.Write(fd^.DeviceData, Position, Buffer, Length);
-        debug.tracer.push_trace('driver.storage.vfs.WriteFile.exit');
-        exit;
+    asm pushf; cli end;
+    if puint32(@wait.Done)^ = 0 then begin
+        if CurrentProcess <> nil then
+            CurrentProcess^.State := psAwaiting;
     end;
+    asm popf end;
 
-    vol := fd^.Volume;
-    if vol = nil then exit;
-    if vol^.filesystem = nil then exit;
-    if vol^.filesystem^.writeOffsetCallback = nil then exit;
+    while puint32(@wait.Done)^ = 0 do
+        asm hlt end;
 
-    WriteFile := vol^.filesystem^.writeOffsetCallback(
-        vol, fd^.Directory, fd^.FileName,
-        Position, puint32(Buffer), Length);
-    if WriteFile > 0 then begin
-        { Update cached file size if write extended the file }
-        if Position + WriteFile > fd^.DataSize then
-            fd^.DataSize := Position + WriteFile;
-        VFS_OnMutation(weModified, fd^.VFSDir, fd^.VFSDir, vol, fd^.Directory);
-    end;
+    if wait.Error = eNone then
+        WriteFile := wait.BytesDone;
 
     debug.tracer.push_trace('driver.storage.vfs.WriteFile.exit');
 end;
 
 function ReadFile(FileHandle : TFileHandle; Position : uint32; Buffer : puint8; Length : uint32) : uint32;
 var
-    fd       : PFileDescriptor;
-    copyLen  : uint32;
+    wait : TVFSSyncWaitCtx;
 begin
     debug.tracer.push_trace('driver.storage.vfs.ReadFile.enter');
     ReadFile := 0;
 
-    fd := fd_get(currentFDTable, FileHandle);
-    if fd = nil then exit;
+    memset(uint32(@wait), 0, sizeof(TVFSSyncWaitCtx));
+    wait.Error := eUnknown;
+    wait.Process := CurrentProcess;
 
-    { Device dispatch: use the device read callback }
-    if fd^.DeviceOps <> nil then begin
-        if PVFSDeviceOps(fd^.DeviceOps)^.Read = nil then exit;
-        if Buffer = nil then exit;
-        ReadFile := PVFSDeviceOps(fd^.DeviceOps)^.Read(fd^.DeviceData, Position, Buffer, Length);
-        debug.tracer.push_trace('driver.storage.vfs.ReadFile.exit');
-        exit;
+    ReadFileAsync(FileHandle, Position, Buffer, Length, @wait.BytesDone, @vfs_sync_complete, @wait);
+
+    asm pushf; cli end;
+    if puint32(@wait.Done)^ = 0 then begin
+        if CurrentProcess <> nil then
+            CurrentProcess^.State := psAwaiting;
     end;
+    asm popf end;
 
-    { On-demand read via readOffsetCallback }
-    if Buffer = nil then exit;
-    if fd^.Volume = nil then exit;
-    if fd^.Volume^.filesystem = nil then exit;
-    if fd^.Volume^.filesystem^.readOffsetCallback = nil then exit;
-    if Position >= fd^.DataSize then exit;
+    while puint32(@wait.Done)^ = 0 do
+        asm hlt end;
 
-    { Clamp read length to remaining file size }
-    copyLen := fd^.DataSize - Position;
-    if Length < copyLen then
-        copyLen := Length;
-
-    if copyLen > 0 then
-        ReadFile := fd^.Volume^.filesystem^.readOffsetCallback(
-            fd^.Volume, fd^.Directory, fd^.FileName,
-            Position, puint32(Buffer), copyLen);
+    if wait.Error = eNone then
+        ReadFile := wait.BytesDone;
 
     debug.tracer.push_trace('driver.storage.vfs.ReadFile.exit');
 end;
 
 function CloseFile(Filehandle : TFileHandle) : TError;
+var
+    fd : PFileDescriptor;
 begin
     debug.tracer.push_trace('driver.storage.vfs.CloseFile.enter');
-    if fd_close(currentFDTable, FileHandle) then
+    fd := fd_get(currentFDTable, FileHandle);
+    if fd = nil then
+        CloseFile := eInvalidHandle
+    else if fd_has_async(fd) then
+        CloseFile := eFileInUse
+    else if fd_close(currentFDTable, FileHandle) then
         CloseFile := eNone
     else
         CloseFile := eInvalidHandle;
@@ -1364,15 +1444,17 @@ end;
 { === Async public API === }
 
 { WriteFileAsync — set up a write and return immediately.
-  driver.storage.fs.fat32 deep-copies the buffer on entry so the caller can free it after this returns.
-  Callback fires with eNone on success, or a TError code on failure. }
-procedure WriteFileAsync(FileHandle : TFileHandle; Position : uint32; Buffer : puint8; Length : uint32; Callback : TIOCallback; CallbackData : pointer);
+  Callers must keep Buffer alive until Callback fires.
+  BytesWritten may be nil; when provided it is filled before Callback. }
+procedure WriteFileAsync(FileHandle : TFileHandle; Position : uint32; Buffer : puint8; Length : uint32; BytesWritten : puint32; Callback : TIOCallback; CallbackData : pointer);
 var
     fd       : PFileDescriptor;
     vol      : PStorage_Volume;
     padSize  : uint32;
+    ctx      : PVFSWriteAsyncCtx;
 begin
     debug.tracer.push_trace('driver.storage.vfs.WriteFileAsync.enter');
+    if BytesWritten <> nil then BytesWritten^ := 0;
 
     fd := fd_get(currentFDTable, FileHandle);
     if fd = nil then begin
@@ -1396,6 +1478,7 @@ begin
             padSize := PVFSDeviceOps(fd^.DeviceOps)^.Write(fd^.DeviceData, Position, Buffer, Length)
         else
             padSize := 0;
+        if BytesWritten <> nil then BytesWritten^ := padSize;
         if Callback <> nil then Callback(eNone, CallbackData);
         debug.tracer.push_trace('driver.storage.vfs.WriteFileAsync.exit');
         exit;
@@ -1413,14 +1496,38 @@ begin
       finished and the fresh read will return the updated listing. }
     VFS_OnMutation(weModified, fd^.VFSDir, fd^.VFSDir, vol, fd^.Directory);
 
-    if vol^.filesystem^.writeOffsetCallback <> nil then begin
+    if vol^.filesystem^.writeOffsetAsyncCallback <> nil then begin
+        if not fd_begin_async(fd) then begin
+            if Callback <> nil then Callback(eInvalidHandle, CallbackData);
+            debug.tracer.push_trace('driver.storage.vfs.WriteFileAsync.exit');
+            exit;
+        end;
+        ctx := PVFSWriteAsyncCtx(kalloc(sizeof(TVFSWriteAsyncCtx)));
+        if ctx = nil then begin
+            fd_end_async(fd);
+            if Callback <> nil then Callback(eOutOfMemory, CallbackData);
+            debug.tracer.push_trace('driver.storage.vfs.WriteFileAsync.exit');
+            exit;
+        end;
+        memset(uint32(ctx), 0, sizeof(TVFSWriteAsyncCtx));
+        ctx^.FD              := fd;
+        ctx^.Position        := Position;
+        ctx^.BytesWrittenPtr := BytesWritten;
+        ctx^.UserCallback    := Callback;
+        ctx^.UserData        := CallbackData;
+        vol^.filesystem^.writeOffsetAsyncCallback(
+            vol, fd^.Directory, fd^.FileName,
+            Position, puint32(Buffer), Length, fd^.FSPrivate, @ctx^.BytesWritten,
+            @vfs_write_complete, ctx);
+    end else if vol^.filesystem^.writeOffsetCallback <> nil then begin
         padSize := vol^.filesystem^.writeOffsetCallback(
             vol, fd^.Directory, fd^.FileName,
-            Position, puint32(Buffer), Length);
+            Position, puint32(Buffer), Length, fd^.FSPrivate);
         if padSize > 0 then begin
             if Position + padSize > fd^.DataSize then
                 fd^.DataSize := Position + padSize;
         end;
+        if BytesWritten <> nil then BytesWritten^ := padSize;
         if Callback <> nil then Callback(eNone, CallbackData);
     end else begin
         if Callback <> nil then Callback(eNotSupported, CallbackData);
@@ -1486,9 +1593,17 @@ begin
     fd^.VFSDir    := vfsParentDir(Filename);
     fd^.OpenMode  := uint8(ord(OpenMode));
     fd^.DataSize  := 0;
+    fd^.FSPrivate   := nil;
+    fd^.FSCloseHook := nil;
     OutHandle := slot;
 
-    if (OpenMode = omRead) or (OpenMode = omReadWrite) then begin
+    if (vol^.filesystem <> nil) and (vol^.filesystem^.openFileCallback <> nil) then begin
+        fd^.FSPrivate := vol^.filesystem^.openFileCallback(vol, dir, fname, fd^.DataSize);
+        if vol^.filesystem^.closeFileCallback <> nil then
+            fd^.FSCloseHook := pointer(vol^.filesystem^.closeFileCallback);
+        if Error <> nil then Error^ := eNone;
+        if Callback <> nil then Callback(eNone, CallbackData);
+    end else if (OpenMode = omRead) or (OpenMode = omReadWrite) then begin
         if (vol^.filesystem <> nil) and (vol^.filesystem^.fileSizeCallback <> nil) then begin
             fd^.DataSize := vol^.filesystem^.fileSizeCallback(vol, dir, fname);
             if Error <> nil then Error^ := eNone;
@@ -2168,6 +2283,7 @@ procedure ReadFileAsync(FileHandle : TFileHandle; Position : uint32; Buffer : pu
 var
     fd       : PFileDescriptor;
     copyLen  : uint32;
+    ctx      : PVFSReadAsyncCtx;
 begin
     debug.tracer.push_trace('driver.storage.vfs.ReadFileAsync.enter');
 
@@ -2199,7 +2315,8 @@ begin
 
     { On-demand read via readOffsetCallback }
     if (fd^.Volume = nil) or (fd^.Volume^.filesystem = nil)
-       or (fd^.Volume^.filesystem^.readOffsetCallback = nil) then begin
+       or ((fd^.Volume^.filesystem^.readOffsetAsyncCallback = nil)
+           and (fd^.Volume^.filesystem^.readOffsetCallback = nil)) then begin
         if BytesRead <> nil then BytesRead^ := 0;
         if Callback <> nil then Callback(eNotSupported, CallbackData);
         exit;
@@ -2215,13 +2332,37 @@ begin
     if Length < copyLen then
         copyLen := Length;
 
-    if copyLen > 0 then
-        copyLen := fd^.Volume^.filesystem^.readOffsetCallback(
+    if (copyLen > 0) and (fd^.Volume^.filesystem^.readOffsetAsyncCallback <> nil) then begin
+        if not fd_begin_async(fd) then begin
+            if BytesRead <> nil then BytesRead^ := 0;
+            if Callback <> nil then Callback(eInvalidHandle, CallbackData);
+            exit;
+        end;
+        ctx := PVFSReadAsyncCtx(kalloc(sizeof(TVFSReadAsyncCtx)));
+        if ctx = nil then begin
+            fd_end_async(fd);
+            if BytesRead <> nil then BytesRead^ := 0;
+            if Callback <> nil then Callback(eOutOfMemory, CallbackData);
+            exit;
+        end;
+        memset(uint32(ctx), 0, sizeof(TVFSReadAsyncCtx));
+        ctx^.FD           := fd;
+        ctx^.BytesReadPtr := BytesRead;
+        ctx^.UserCallback := Callback;
+        ctx^.UserData     := CallbackData;
+        fd^.Volume^.filesystem^.readOffsetAsyncCallback(
             fd^.Volume, fd^.Directory, fd^.FileName,
-            Position, puint32(Buffer), copyLen);
+            Position, puint32(Buffer), copyLen, fd^.FSPrivate, BytesRead,
+            @vfs_read_complete, ctx);
+    end else begin
+        if copyLen > 0 then
+            copyLen := fd^.Volume^.filesystem^.readOffsetCallback(
+                fd^.Volume, fd^.Directory, fd^.FileName,
+                Position, puint32(Buffer), copyLen, fd^.FSPrivate);
 
-    if BytesRead <> nil then BytesRead^ := copyLen;
-    if Callback <> nil then Callback(eNone, CallbackData);
+        if BytesRead <> nil then BytesRead^ := copyLen;
+        if Callback <> nil then Callback(eNone, CallbackData);
+    end;
     debug.tracer.push_trace('driver.storage.vfs.ReadFileAsync.exit');
 end;
 
@@ -2229,13 +2370,7 @@ end;
 
 procedure DeleteFileAsync(Path : pchar; Error : PError; Callback : TIOCallback; CallbackData : pointer);
 var
-    vol      : PStorage_Volume;
-    dir      : pchar;
-    fname    : pchar;
-    fullPath : pchar;
-    tmpPath  : pchar;
-    status   : puint32;
-    errCode  : TError;
+    ctx : PVFSPathAsyncCtx;
 begin
     debug.tracer.push_trace('driver.storage.vfs.DeleteFileAsync.enter');
     if Error <> nil then Error^ := eUnknown;
@@ -2246,74 +2381,32 @@ begin
         exit;
     end;
 
-    if not ResolveFilePath(Path, PPStorage_Volume(@vol), PPChar(@dir), PPChar(@fname)) then begin
-        if Error <> nil then Error^ := eInvalidPath;
-        if Callback <> nil then Callback(eInvalidPath, CallbackData);
+    ctx := PVFSPathAsyncCtx(kalloc(sizeof(TVFSPathAsyncCtx)));
+    if ctx = nil then begin
+        if Error <> nil then Error^ := eOutOfMemory;
+        if Callback <> nil then Callback(eOutOfMemory, CallbackData);
         exit;
     end;
-
-    if (vol^.filesystem = nil) then begin
-        if Error <> nil then Error^ := eNotSupported;
-        kfree(void(dir));
-        kfree(void(fname));
-        if Callback <> nil then Callback(eNotSupported, CallbackData);
+    memset(uint32(ctx), 0, sizeof(TVFSPathAsyncCtx));
+    ctx^.Path := stringCopy(Path);
+    if ctx^.Path = nil then begin
+        kfree(void(ctx));
+        if Error <> nil then Error^ := eOutOfMemory;
+        if Callback <> nil then Callback(eOutOfMemory, CallbackData);
         exit;
     end;
-
-    { Build full relative path }
-    if (dir <> nil) and (stringSize(dir) > 0) then begin
-        tmpPath := stringConcat(dir, '/');
-        fullPath := stringConcat(tmpPath, fname);
-        kfree(void(tmpPath));
-        kfree(void(dir));
-        dir := nil;
-    end else begin
-        if dir <> nil then kfree(void(dir));
-        fullPath := stringCopy(fname);
-    end;
-
-    { Try async hook first, then sync fallback }
-    if vol^.filesystem^.deleteFileAsyncCallback <> nil then begin
-        status := puint32(kalloc(4));
-        status^ := 0;
-        vol^.filesystem^.deleteFileAsyncCallback(vol, fullPath, status, Callback, CallbackData);
-        { Note: status/fullPath/fname ownership — async callback must handle.
-          Since no FS currently implements this async hook, this is a placeholder. }
-        kfree(puint32(status));
-        kfree(void(fullPath));
-        kfree(void(fname));
-    end else if vol^.filesystem^.deleteFileCallback <> nil then begin
-        status := puint32(kalloc(4));
-        status^ := 0;
-        vol^.filesystem^.deleteFileCallback(vol, fullPath, status);
-        errCode := TError(status^);
-        if Error <> nil then Error^ := errCode;
-        { Fire watch event on success }
-        if errCode = eNone then
-            VFS_OnMutation(weDeleted, Path, Path, vol, fullPath);
-        kfree(puint32(status));
-        kfree(void(fullPath));
-        kfree(void(fname));
-        if Callback <> nil then Callback(errCode, CallbackData);
-    end else begin
-        if Error <> nil then Error^ := eNotSupported;
-        kfree(void(fullPath));
-        kfree(void(fname));
-        if Callback <> nil then Callback(eNotSupported, CallbackData);
-    end;
+    ctx^.ErrorPtr := Error;
+    ctx^.IsDirectory := false;
+    ctx^.UserCallback := Callback;
+    ctx^.UserData := CallbackData;
+    proc.mgr.create('vfs.delf', @vfs_pathop_worker, void(ctx), 1);
 
     debug.tracer.push_trace('driver.storage.vfs.DeleteFileAsync.exit');
 end;
 
 procedure DeleteDirectoryAsync(Path : pchar; Error : PError; Callback : TIOCallback; CallbackData : pointer);
 var
-    vol      : PStorage_Volume;
-    dir      : pchar;
-    dirName  : pchar;
-    fullPath : pchar;
-    tmpPath  : pchar;
-    status   : puint32;
-    errCode  : TError;
+    ctx : PVFSPathAsyncCtx;
 begin
     debug.tracer.push_trace('driver.storage.vfs.DeleteDirectoryAsync.enter');
     if Error <> nil then Error^ := eUnknown;
@@ -2324,58 +2417,25 @@ begin
         exit;
     end;
 
-    if not ResolveFilePath(Path, PPStorage_Volume(@vol), PPChar(@dir), PPChar(@dirName)) then begin
-        if Error <> nil then Error^ := eInvalidPath;
-        if Callback <> nil then Callback(eInvalidPath, CallbackData);
+    ctx := PVFSPathAsyncCtx(kalloc(sizeof(TVFSPathAsyncCtx)));
+    if ctx = nil then begin
+        if Error <> nil then Error^ := eOutOfMemory;
+        if Callback <> nil then Callback(eOutOfMemory, CallbackData);
         exit;
     end;
-
-    if (vol^.filesystem = nil) then begin
-        if Error <> nil then Error^ := eNotSupported;
-        kfree(void(dir));
-        kfree(void(dirName));
-        if Callback <> nil then Callback(eNotSupported, CallbackData);
+    memset(uint32(ctx), 0, sizeof(TVFSPathAsyncCtx));
+    ctx^.Path := stringCopy(Path);
+    if ctx^.Path = nil then begin
+        kfree(void(ctx));
+        if Error <> nil then Error^ := eOutOfMemory;
+        if Callback <> nil then Callback(eOutOfMemory, CallbackData);
         exit;
     end;
-
-    { Build full relative path }
-    if (dir <> nil) and (stringSize(dir) > 0) then begin
-        tmpPath := stringConcat(dir, '/');
-        fullPath := stringConcat(tmpPath, dirName);
-        kfree(void(tmpPath));
-        kfree(void(dir));
-        dir := nil;
-    end else begin
-        if dir <> nil then kfree(void(dir));
-        fullPath := stringCopy(dirName);
-    end;
-
-    { Try async hook first, then sync fallback }
-    if vol^.filesystem^.deleteDirAsyncCallback <> nil then begin
-        status := puint32(kalloc(4));
-        status^ := 0;
-        vol^.filesystem^.deleteDirAsyncCallback(vol, fullPath, status, Callback, CallbackData);
-        kfree(puint32(status));
-        kfree(void(fullPath));
-        kfree(void(dirName));
-    end else if vol^.filesystem^.deleteDirCallback <> nil then begin
-        status := puint32(kalloc(4));
-        status^ := 0;
-        vol^.filesystem^.deleteDirCallback(vol, fullPath, status);
-        errCode := TError(status^);
-        if Error <> nil then Error^ := errCode;
-        if errCode = eNone then
-            VFS_OnMutation(weDeleted, Path, Path, vol, fullPath);
-        kfree(puint32(status));
-        kfree(void(fullPath));
-        kfree(void(dirName));
-        if Callback <> nil then Callback(errCode, CallbackData);
-    end else begin
-        if Error <> nil then Error^ := eNotSupported;
-        kfree(void(fullPath));
-        kfree(void(dirName));
-        if Callback <> nil then Callback(eNotSupported, CallbackData);
-    end;
+    ctx^.ErrorPtr := Error;
+    ctx^.IsDirectory := true;
+    ctx^.UserCallback := Callback;
+    ctx^.UserData := CallbackData;
+    proc.mgr.create('vfs.deld', @vfs_pathop_worker, void(ctx), 1);
 
     debug.tracer.push_trace('driver.storage.vfs.DeleteDirectoryAsync.exit');
 end;
@@ -2406,6 +2466,30 @@ begin
         else
             ctx^.UserCallback(eInvalidPath, ctx^.UserData);
     end;
+    kfree(void(ctx));
+    proc.mgr.proc_exit(0);
+end;
+
+procedure vfs_pathop_worker(pctx : proc.types.PProcessContext);
+var
+    ctx : PVFSPathAsyncCtx;
+    err : TError;
+begin
+    ctx := PVFSPathAsyncCtx(pctx^.Local);
+    if ctx = nil then begin
+        proc.mgr.proc_exit(1);
+        exit;
+    end;
+
+    if ctx^.IsDirectory then
+        err := DeleteDirectory(ctx^.Path, ctx^.ErrorPtr)
+    else
+        err := DeleteFile(ctx^.Path, ctx^.ErrorPtr);
+
+    if ctx^.UserCallback <> nil then
+        ctx^.UserCallback(err, ctx^.UserData);
+    if ctx^.Path <> nil then
+        kfree(void(ctx^.Path));
     kfree(void(ctx));
     proc.mgr.proc_exit(0);
 end;
@@ -3286,7 +3370,7 @@ begin
 
         if mntLen > 0 then begin
             mntPath := pchar(kalloc(mntLen + 1));
-            readErr := vol^.filesystem^.readOffsetCallback(vol, '', 'MOUNT.ASR', 0, puint32(mntPath), mntLen);
+            readErr := vol^.filesystem^.readOffsetCallback(vol, '', 'MOUNT.ASR', 0, puint32(mntPath), mntLen, nil);
             mntPath[mntLen] := char(0);
 
             if readErr > 0 then begin
@@ -3881,7 +3965,7 @@ begin
     { /dev/null — write via WriteFileAsync }
     devHandle := OpenFile('/dev/null', omWrite, @devErr);
     Assert((devHandle <> 0) and (devErr = eNone), 'OpenFile /dev/null write async ok');
-    WriteFileAsync(devHandle, 0, devBuf, 16, nil, nil);
+    WriteFileAsync(devHandle, 0, devBuf, 16, nil, nil, nil);
     CloseFile(devHandle);
 
     { /dev/zero — write: accepted (discards data) }

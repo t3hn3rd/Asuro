@@ -869,7 +869,8 @@ end;
 
 function readFileAtOffset(volume : PStorage_Volume; directory : pchar;
                           fileName : pchar; offset : uint32;
-                          buffer : puint32; byteCount : uint32) : uint32;
+                          buffer : puint32; byteCount : uint32;
+                          ctx : pointer) : uint32;
 var
     fileEntries  : PFile_Entry;
     fileCount    : uint32;

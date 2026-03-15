@@ -134,9 +134,11 @@ type
 
     { === I/O callback type === }
 
-    { Async I/O completion callback — fired from ISR context when a request finishes.
+    { Completion callback used across storage/VFS async APIs.
       error = eNone on success; specific code on failure.
-      userdata is the opaque pointer passed by the submitter. }
+      userdata is the opaque pointer passed by the submitter.
+      Context is API-specific: some callers complete from ISR context, others
+      from task/worker context, and some may invoke the callback immediately. }
     TIOCallback = procedure(error : TError; userdata : pointer);
 
     { Filesystem callback core.types }
@@ -150,16 +152,29 @@ type
     PPIdentifyHook   = function(volume : PStorage_Volume) : boolean;
     PPRenameFileHook = procedure(volume : PStorage_Volume; filePath : pchar; newName : pchar; status : puint32);
     { Offset-based read: reads byteCount bytes starting at byte offset into the file.
-      Returns the number of bytes actually read. }
-    PPReadOffsetHook = function(volume : PStorage_Volume; directory : pchar; fileName : pchar; offset : uint32; buffer : puint32; byteCount : uint32) : uint32;
+      Returns the number of bytes actually read.  ctx is the opaque per-file
+      context returned by openFileCallback (nil when called without a handle). }
+    PPReadOffsetHook = function(volume : PStorage_Volume; directory : pchar; fileName : pchar; offset : uint32; buffer : puint32; byteCount : uint32; ctx : pointer) : uint32;
     { Offset-based write: writes byteCount bytes starting at byte offset into the file.
       Returns the number of bytes actually written.
       Filesystems that do not implement this leave the field nil; VFS returns 0
       for stream-mode writes on volume FDs. }
-    PPWriteOffsetHook = function(volume : PStorage_Volume; directory : pchar; fileName : pchar; offset : uint32; buffer : puint32; byteCount : uint32) : uint32;
+    PPWriteOffsetHook = function(volume : PStorage_Volume; directory : pchar; fileName : pchar; offset : uint32; buffer : puint32; byteCount : uint32; ctx : pointer) : uint32;
+    { Async offset-based read/write hooks. Implementations must return immediately
+      and fire callback when the transfer completes. BytesRead/BytesWritten may be
+      nil; if provided, implementations store the actual completed byte count. }
+    PPReadOffsetAsyncHook = procedure(volume : PStorage_Volume; directory : pchar; fileName : pchar; offset : uint32; buffer : puint32; byteCount : uint32; ctx : pointer; bytesRead : puint32; callback : TIOCallback; callbackData : pointer);
+    PPWriteOffsetAsyncHook = procedure(volume : PStorage_Volume; directory : pchar; fileName : pchar; offset : uint32; buffer : puint32; byteCount : uint32; ctx : pointer; bytesWritten : puint32; callback : TIOCallback; callbackData : pointer);
     { File size query: returns the size in bytes of the named file.
       Returns 0 if the file does not exist or has zero length. }
     PPFileSizeHook = function(volume : PStorage_Volume; directory : pchar; fileName : pchar) : uint32;
+    { Per-file open hook: called by VFS on OpenFile to create FS-level cached
+      metadata.  Returns an opaque pointer stored in the FD and passed as ctx
+      to read/write hooks.  Also returns the current file size through the
+      var parameter.  Returning nil is legal (disables per-call fast-path). }
+    PPOpenFileHook = function(volume : PStorage_Volume; directory : pchar; fileName : pchar; var fileSize : uint32) : pointer;
+    { Per-file close hook: frees the context allocated by openFileCallback. }
+    PPCloseFileHook = procedure(ctx : pointer);
 
     { === Async filesystem hook core.types ===
       Each mirrors the corresponding sync hook but receives a TIOCallback + callbackData.
@@ -168,8 +183,6 @@ type
     PPLinkedListBase      = ^PLinkedListBase;   { needed for PPReadDirAsyncHook parameter }
     PPCreateDirAsyncHook  = procedure(volume : PStorage_Volume; directory : pchar; dirname : pchar; attributes : uint32; status : puint32; callback : TIOCallback; callbackData : pointer);
     PPReadDirAsyncHook    = procedure(volume : PStorage_Volume; directory : pchar; resultList : PPLinkedListBase; status : puint32; callback : TIOCallback; callbackData : pointer);
-    PPDeleteFileAsyncHook = procedure(volume : PStorage_Volume; filePath : pchar; status : puint32; callback : TIOCallback; callbackData : pointer);
-    PPDeleteDirAsyncHook  = procedure(volume : PStorage_Volume; path : pchar; status : puint32; callback : TIOCallback; callbackData : pointer);
 
     { === I/O Request core.types === }
 
@@ -233,15 +246,19 @@ type
         readOffsetCallback : PPReadOffsetHook;
         { Offset-based write for streaming mode — nil if not implemented }
         writeOffsetCallback : PPWriteOffsetHook;
+        { Async offset-based read/write for streaming mode — nil if not implemented }
+        readOffsetAsyncCallback : PPReadOffsetAsyncHook;
+        writeOffsetAsyncCallback : PPWriteOffsetAsyncHook;
         { File size query — returns size in bytes without loading the file }
         fileSizeCallback : PPFileSizeHook;
         { Async format — nil if FS only supports synchronous create }
         createAsyncCallback : PPCreateAsyncHook;
         createDirAsyncCallback  : PPCreateDirAsyncHook;
         readDirAsyncCallback    : PPReadDirAsyncHook;
-        deleteFileAsyncCallback : PPDeleteFileAsyncHook;
-        deleteDirAsyncCallback  : PPDeleteDirAsyncHook;
         renameFileCallback      : PPRenameFileHook;
+        { Per-file open/close — nil if FS does not cache per-file metadata }
+        openFileCallback        : PPOpenFileHook;
+        closeFileCallback       : PPCloseFileHook;
     end;
 
     { Generic storage volume }

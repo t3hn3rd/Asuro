@@ -107,11 +107,24 @@ type
     end;
     PFatVolumeInfo = ^TFatVolumeInfo;
 
+    TClusterExtent = record
+        StartCluster : uint32;
+        ClusterCount : uint32;
+    end;
+    PClusterExtent = ^TClusterExtent;
+
 const
-    { FAT sector cache — 2-way set-associative, 128 sets, LRU replacement }
-    FAT_CACHE_SETS = 128;
+    { FAT sector cache — 2-way set-associative, 256 sets, LRU replacement.
+      This keeps small-cluster sequential files from churning the FAT cache
+      once they grow beyond a few megabytes. }
+    FAT_CACHE_SETS = 256;
     FAT_CACHE_WAYS = 2;
-    FAT_CACHE_LINES = 256;  { SETS * WAYS }
+    FAT_CACHE_LINES = 512;  { SETS * WAYS }
+    FAT_TRANSFER_POOL_CAPACITY = 64;
+    FAT_WORK_QUEUE_CAPACITY = FAT_TRANSFER_POOL_CAPACITY;
+    FAT_WRITE_PREALLOC_BYTES = 8 * 1024 * 1024;
+    FAT_WRITE_PREALLOC_MAX_CLUSTERS = 2048;
+    FAT_WRITE_PREALLOC_MIN_CLUSTERS = 64;
 
 type
     TFATCacheLine = record
@@ -124,12 +137,88 @@ type
     PFATCache = ^TFATCache;
     TFATCache = record
         Lines      : array[0..FAT_CACHE_LINES - 1] of TFATCacheLine;
-        Data       : puint32;   { kalloc'd 256*512 = 128 KB of FAT sector data }
+        Data       : puint32;   { kalloc'd FAT_CACHE_LINES * 512 bytes of FAT sector data }
         EvictBuf   : puint32;   { kalloc'd 512-byte scratch for eviction writes }
         Busy       : boolean;   { spinlock: serializes miss-path eviction+load }
         FatStart   : uint32;    { LBA of first FAT sector on disk }
         Device     : PStorage_Device; { device pointer for I/O }
         BootRecord : PBootRecord;     { cached boot record (read once) }
+    end;
+
+    TFATAsyncMode = (famRead, famWrite);
+
+    TFATTransferState = (
+        ftsIdle,
+        ftsPrepare,
+        ftsIssueIO,
+        ftsAwaitIO,
+        ftsAdvance,
+        ftsComplete,
+        ftsError
+    );
+
+    { Per-file cached metadata created by fat32OpenFile and stored in the
+      file descriptor's FSPrivate pointer.  Avoids re-reading boot record,
+      directory listing, and searching for the file on every read/write. }
+    PFATOpenFile = ^TFATOpenFile;
+    PFATVolumeCtx = ^TFATVolumeCtx;
+    PFATFileIOAsyncCtx = ^TFATFileIOAsyncCtx;
+
+    TFATOpenFile = record
+        Volume       : PStorage_Volume;
+        BootRecord   : PBootRecord;    { borrows from TFATCache — do NOT kfree }
+        DataStart    : uint32;         { fatDataStartLBA result }
+        FirstCluster : uint32;         { file's start cluster (0 if new/empty) }
+        ByteSize     : uint32;         { current file size in bytes }
+        AllocClusters: uint32;         { current reserved cluster count for appends }
+        Extents      : PLinkedListBase;{ cached cluster extents for fast sequential I/O }
+        DirCluster   : uint32;         { parent directory's start cluster }
+        CleanName    : byteArray8;     { cleaned 8.3 filename }
+        ExtPart      : pchar;          { heap-allocated extension string — owned }
+        ScratchSector: puint32;        { per-open-file sector scratch buffer }
+        ScratchSize  : uint32;         { size of ScratchSector in bytes }
+        Exists       : boolean;        { true if file existed at open time }
+        FatDirty     : boolean;        { true if FAT cache must be flushed on close }
+        MetaDirty    : boolean;        { true if dir entry size/cluster needs sync on close }
+    end;
+
+    TFATVolumeCtx = record
+        Cache            : TFATCache;
+        TransferPoolBuf  : pointer;
+        TransferFreeList : pointer;
+        Worker           : proc.types.PProcessContext;
+        WorkHead         : uint32;
+        WorkTail         : uint32;
+        WorkCount        : uint32;
+        WorkQueue        : array[0..FAT_WORK_QUEUE_CAPACITY - 1] of PFATFileIOAsyncCtx;
+    end;
+
+    TFATFileIOAsyncCtx = record
+        Next         : PFATFileIOAsyncCtx;
+        VolumeCtx    : PFATVolumeCtx;
+        State        : TFATTransferState;
+        Mode         : TFATAsyncMode;
+        Volume       : PStorage_Volume;
+        OpenFile     : PFATOpenFile;
+        Buffer       : puint32;
+        Offset       : uint32;
+        ByteCount    : uint32;
+        BytesDone    : uint32;
+        BytesOut     : puint32;
+        Callback     : TIOCallback;
+        CallbackData : pointer;
+        Cluster      : uint32;
+        OrigByteSize : uint32;
+        DataStart    : uint32;
+        BootRecord   : PBootRecord;
+        ChunkBytes   : uint32;
+        LastError    : TError;
+        CursorValid  : boolean;
+        CursorIndex  : uint32;
+        CursorCluster: uint32;
+        ExtentValid  : boolean;
+        ExtentIdx    : uint32;
+        ExtentStartIdx : uint32;
     end;
 
     { Async format state machine steps }
@@ -159,21 +248,6 @@ type
         ZeroBuffer   : puint32;
         Callback     : TIOCallback;
         CallbackData : pointer;
-    end;
-
-    { Per-file cached metadata created by fat32OpenFile and stored in the
-      file descriptor's FSPrivate pointer.  Avoids re-reading boot record,
-      directory listing, and searching for the file on every read/write. }
-    PFATOpenFile = ^TFATOpenFile;
-    TFATOpenFile = record
-        BootRecord   : PBootRecord;    { borrows from TFATCache — do NOT kfree }
-        DataStart    : uint32;         { fatDataStartLBA result }
-        FirstCluster : uint32;         { file's start cluster (0 if new/empty) }
-        ByteSize     : uint32;         { current file size in bytes }
-        DirCluster   : uint32;         { parent directory's start cluster }
-        CleanName    : byteArray8;     { cleaned 8.3 filename }
-        ExtPart      : pchar;          { heap-allocated extension string — owned }
-        Exists       : boolean;        { true if file existed at open time }
     end;
 
 var
@@ -376,36 +450,227 @@ end;
 
 { ---- FAT sector cache ---- }
 
-{ Get or lazily create the per-volume FAT cache.
-  Stores the cache pointer in volume^.fsPrivate. }
-function fatCacheGet(volume : PStorage_Volume) : PFATCache;
+{ Get or lazily create the per-volume FAT32 context.
+  Stores the context pointer in volume^.fsPrivate. }
+function fatVolumeCtxGet(volume : PStorage_Volume) : PFATVolumeCtx;
 var
-    cache : PFATCache;
-    br    : PBootRecord;
-    i     : uint32;
+    ctx  : PFATVolumeCtx;
+    br   : PBootRecord;
+    i    : uint32;
+    base : uint32;
+    tx   : PFATFileIOAsyncCtx;
 begin
+    fatVolumeCtxGet := nil;
+    if volume = nil then exit;
+
     if volume^.fsPrivate <> nil then begin
-        fatCacheGet := PFATCache(volume^.fsPrivate);
+        fatVolumeCtxGet := PFATVolumeCtx(volume^.fsPrivate);
         exit;
     end;
-    cache := PFATCache(kalloc(sizeof(TFATCache)));
-    memset(uint32(cache), 0, sizeof(TFATCache));
-    cache^.Data := puint32(kalloc(FAT_CACHE_LINES * 512));
-    memset(uint32(cache^.Data), 0, FAT_CACHE_LINES * 512);
-    cache^.EvictBuf := puint32(kalloc(512));
-    memset(uint32(cache^.EvictBuf), 0, 512);
-    cache^.Busy := false;
-    for i := 0 to FAT_CACHE_LINES - 1 do begin
-        cache^.Lines[i].Valid := false;
-        cache^.Lines[i].Dirty := false;
-        cache^.Lines[i].LRU := uint8(i mod FAT_CACHE_WAYS);
+
+    ctx := PFATVolumeCtx(kalloc(sizeof(TFATVolumeCtx)));
+    if ctx = nil then exit;
+    memset(uint32(ctx), 0, sizeof(TFATVolumeCtx));
+
+    ctx^.Cache.Data := puint32(kalloc(FAT_CACHE_LINES * 512));
+    if ctx^.Cache.Data = nil then begin
+        kfree(puint32(ctx));
+        exit;
     end;
+    memset(uint32(ctx^.Cache.Data), 0, FAT_CACHE_LINES * 512);
+
+    ctx^.Cache.EvictBuf := puint32(kalloc(512));
+    if ctx^.Cache.EvictBuf = nil then begin
+        kfree(ctx^.Cache.Data);
+        kfree(puint32(ctx));
+        exit;
+    end;
+    memset(uint32(ctx^.Cache.EvictBuf), 0, 512);
+
+    ctx^.Cache.Busy := false;
+    for i := 0 to FAT_CACHE_LINES - 1 do begin
+        ctx^.Cache.Lines[i].Valid := false;
+        ctx^.Cache.Lines[i].Dirty := false;
+        ctx^.Cache.Lines[i].LRU := uint8(i mod FAT_CACHE_WAYS);
+    end;
+
     br := readBootRecord(volume);
-    cache^.BootRecord := br;
-    cache^.FatStart := volume^.sectorStart + 1 + br^.rsvSectors;
-    cache^.Device := volume^.device;
-    volume^.fsPrivate := pointer(cache);
-    fatCacheGet := cache;
+    ctx^.Cache.BootRecord := br;
+    ctx^.Cache.FatStart := volume^.sectorStart + 1 + br^.rsvSectors;
+    ctx^.Cache.Device := volume^.device;
+
+    ctx^.TransferPoolBuf := kalloc(FAT_TRANSFER_POOL_CAPACITY * sizeof(TFATFileIOAsyncCtx));
+    if ctx^.TransferPoolBuf <> nil then begin
+        base := uint32(ctx^.TransferPoolBuf);
+        if FAT_TRANSFER_POOL_CAPACITY > 0 then
+            for i := 0 to FAT_TRANSFER_POOL_CAPACITY - 1 do begin
+                tx := PFATFileIOAsyncCtx(base + (i * sizeof(TFATFileIOAsyncCtx)));
+                tx^.Next := PFATFileIOAsyncCtx(ctx^.TransferFreeList);
+                tx^.VolumeCtx := ctx;
+                tx^.State := ftsIdle;
+                ctx^.TransferFreeList := pointer(tx);
+            end;
+    end;
+
+    volume^.fsPrivate := pointer(ctx);
+    fatVolumeCtxGet := ctx;
+end;
+
+{ Get or lazily create the per-volume FAT cache. }
+function fatCacheGet(volume : PStorage_Volume) : PFATCache;
+var
+    ctx : PFATVolumeCtx;
+begin
+    ctx := fatVolumeCtxGet(volume);
+    if ctx = nil then
+        fatCacheGet := nil
+    else
+        fatCacheGet := @ctx^.Cache;
+end;
+
+function fatTransferAlloc(volume : PStorage_Volume) : PFATFileIOAsyncCtx;
+var
+    ctx      : PFATVolumeCtx;
+    transfer : PFATFileIOAsyncCtx;
+begin
+    fatTransferAlloc := nil;
+    ctx := fatVolumeCtxGet(volume);
+    if ctx = nil then exit;
+
+    asm pushf; cli end;
+    transfer := PFATFileIOAsyncCtx(ctx^.TransferFreeList);
+    if transfer <> nil then
+        ctx^.TransferFreeList := pointer(transfer^.Next);
+    asm popf end;
+
+    if transfer = nil then exit;
+
+    memset(uint32(transfer), 0, sizeof(TFATFileIOAsyncCtx));
+    transfer^.VolumeCtx := ctx;
+    transfer^.State := ftsIdle;
+    fatTransferAlloc := transfer;
+end;
+
+procedure fatTransferFree(ctx : PFATFileIOAsyncCtx);
+var
+    volCtx : PFATVolumeCtx;
+begin
+    if ctx = nil then exit;
+    volCtx := ctx^.VolumeCtx;
+    if volCtx = nil then exit;
+
+    asm pushf; cli end;
+    ctx^.Next := PFATFileIOAsyncCtx(volCtx^.TransferFreeList);
+    volCtx^.TransferFreeList := pointer(ctx);
+    asm popf end;
+end;
+
+function fatWorkerQueuePush(volCtx : PFATVolumeCtx; transfer : PFATFileIOAsyncCtx) : boolean;
+begin
+    fatWorkerQueuePush := false;
+    if (volCtx = nil) or (transfer = nil) then exit;
+
+    asm pushf; cli end;
+    if volCtx^.WorkCount < FAT_WORK_QUEUE_CAPACITY then begin
+        volCtx^.WorkQueue[volCtx^.WorkTail] := transfer;
+        volCtx^.WorkTail := (volCtx^.WorkTail + 1) mod FAT_WORK_QUEUE_CAPACITY;
+        volCtx^.WorkCount := volCtx^.WorkCount + 1;
+        fatWorkerQueuePush := true;
+    end;
+    asm popf end;
+end;
+
+function fatWorkerQueuePop(volCtx : PFATVolumeCtx; var transfer : PFATFileIOAsyncCtx) : boolean;
+begin
+    fatWorkerQueuePop := false;
+    transfer := nil;
+    if volCtx = nil then exit;
+
+    asm pushf; cli end;
+    if volCtx^.WorkCount > 0 then begin
+        transfer := volCtx^.WorkQueue[volCtx^.WorkHead];
+        volCtx^.WorkQueue[volCtx^.WorkHead] := nil;
+        volCtx^.WorkHead := (volCtx^.WorkHead + 1) mod FAT_WORK_QUEUE_CAPACITY;
+        volCtx^.WorkCount := volCtx^.WorkCount - 1;
+        fatWorkerQueuePop := true;
+    end;
+    asm popf end;
+end;
+
+procedure fatWorkerWake(volCtx : PFATVolumeCtx);
+begin
+    if (volCtx = nil) or (volCtx^.Worker = nil) then exit;
+
+    asm pushf; cli end;
+    volCtx^.Worker^.PendingMsg := smCustom;
+    volCtx^.Worker^.MsgData := nil;
+    if volCtx^.Worker^.State = psAwaiting then
+        volCtx^.Worker^.State := psReady;
+    asm popf end;
+end;
+
+procedure fat32_fileio_async_run_next(ctx : PFATFileIOAsyncCtx); forward;
+
+procedure fat32_transfer_worker(pctx : proc.types.PProcessContext);
+var
+    volCtx   : PFATVolumeCtx;
+    transfer : PFATFileIOAsyncCtx;
+begin
+    volCtx := PFATVolumeCtx(pctx^.Local);
+    if volCtx = nil then begin
+        proc.mgr.proc_exit(1);
+        exit;
+    end;
+
+    while true do begin
+        if pctx^.PendingMsg = smTerminate then begin
+            pctx^.PendingMsg := smNone;
+            proc.mgr.proc_exit(0);
+            exit;
+        end;
+
+        if fatWorkerQueuePop(volCtx, transfer) then begin
+            fat32_fileio_async_run_next(transfer);
+            continue;
+        end;
+
+        asm pushf; cli end;
+        if volCtx^.WorkCount = 0 then begin
+            pctx^.PendingMsg := smNone;
+            pctx^.State := psAwaiting;
+        end;
+        asm popf end;
+
+        if pctx^.State = psAwaiting then
+            proc.mgr.proc_await;
+    end;
+end;
+
+procedure fatWorkerEnsure(volume : PStorage_Volume);
+var
+    volCtx : PFATVolumeCtx;
+begin
+    volCtx := fatVolumeCtxGet(volume);
+    if volCtx = nil then exit;
+    if volCtx^.Worker <> nil then exit;
+    volCtx^.Worker := proc.mgr.create('fat32.xfer', @fat32_transfer_worker, void(volCtx), 1);
+end;
+
+function fatScheduleTransfer(ctx : PFATFileIOAsyncCtx) : boolean;
+var
+    volCtx : PFATVolumeCtx;
+begin
+    fatScheduleTransfer := false;
+    if ctx = nil then exit;
+
+    volCtx := ctx^.VolumeCtx;
+    if volCtx = nil then exit;
+    if volCtx^.Worker = nil then exit;
+
+    if fatWorkerQueuePush(volCtx, ctx) then begin
+        fatWorkerWake(volCtx);
+        fatScheduleTransfer := true;
+    end;
 end;
 
 { Flush all dirty cache lines to disk.
@@ -470,7 +735,7 @@ begin
 end;
 
 { Read a single FAT entry using the sector cache.
-  128 FAT entries per 512-byte sector. 2-way set-associative: set = fatSector mod 128.
+  128 FAT entries per 512-byte sector. 2-way set-associative: set = fatSector mod FAT_CACHE_SETS.
   CLI/STI protects cache metadata; disk I/O runs with interrupts enabled. }
 function readFat(volume : PStorage_volume; cluster : uint32; bootRecord : PBootRecord) : uint32;
 var
@@ -570,7 +835,7 @@ begin
 end;
 
 { Write a single FAT entry into cache. No immediate disk I/O — call fatCacheFlush later.
-  2-way set-associative: set = fatSector mod 128.
+  2-way set-associative: set = fatSector mod FAT_CACHE_SETS.
   CLI/STI protects cache metadata; disk I/O runs with interrupts enabled. }
 procedure writeFat(volume : PStorage_volume; cluster : uint32; value : uint32; bootRecord : PBootRecord);
 var
@@ -686,12 +951,21 @@ var
     currentClusterValue : uint32;
     clusters            : PLinkedListBase;
     dirElm              : puint32;
+    maxCluster          : uint32;
+    iterCount           : uint32;
 begin
     clusters:= LL_New(sizeof(uint32));
     currentCluster:= cluster;
     currentClusterValue:= cluster;
+    if bootRecord^.sectorSize > 0 then
+        maxCluster := (bootRecord^.FATSize * bootRecord^.sectorSize) div 4
+    else
+        maxCluster := 0;
+    iterCount := 0;
 
     while true do begin
+        if (maxCluster > 0) and (iterCount >= maxCluster) then
+            break;
         currentClusterValue:= readFat(volume, currentClusterValue, bootRecord);
 
         if (currentClusterValue and $0FFFFFFF) = $0FFFFFF7 then begin
@@ -708,74 +982,415 @@ begin
         end;
 
         currentCluster := currentClusterValue;
+        iterCount := iterCount + 1;
     end;
 
     getFatChain:= clusters;
 end;
 
-//TODO improve with FSINFO
-function findFreeClusters(volume : PStorage_volume; amount : uint32; bootRecord : PBootRecord) : PLinkedListBase;
-var
-    i                   : uint32;
-    currentClusterValue : uint32;
-    currentAmount       : uint32 = 0;
-    maxCluster          : uint32;
-    clusters            : PLinkedListBase;
-    dirElm              : puint32;
+function fatMaxClusterCount(bootRecord : PBootRecord) : uint32;
 begin
-    clusters := LL_New(8);
-
-    { Calculate total number of data clusters on this volume }
-    if bootRecord^.sectorsize > 0 then
-        maxCluster := (bootRecord^.FATSize * bootRecord^.sectorsize) div 4
+    if (bootRecord <> nil) and (bootRecord^.sectorSize > 0) then
+        fatMaxClusterCount := (bootRecord^.FATSize * bootRecord^.sectorSize) div 4
     else
-        maxCluster := 0;
+        fatMaxClusterCount := 0;
+end;
 
-    { Start from allocation hint if valid for this volume }
-    if (sioc_allocVol = volume) and (sioc_allocHint >= 2) and (sioc_allocHint < maxCluster) then
-        i := sioc_allocHint
-    else
-        i := 2;
-
-    while (i < maxCluster) do begin
-        if currentAmount = amount then break;
-        currentClusterValue:= readFat(volume, i, bootRecord);
-        if currentClusterValue = 0 then begin
-            dirElm:= LL_add(clusters);
-            dirElm^:= i;
-            currentAmount+=1;
-        end;
-        i+=1;
-    end;
-
-    { Fallback: if hint caused us to miss free clusters, scan from 2 }
-    if (currentAmount < amount) and (sioc_allocVol = volume) and (sioc_allocHint > 2) then begin
-        i := 2;
-        while (i < sioc_allocHint) and (currentAmount < amount) do begin
-            currentClusterValue := readFat(volume, i, bootRecord);
-            if currentClusterValue = 0 then begin
-                dirElm := LL_add(clusters);
-                dirElm^ := i;
-                currentAmount += 1;
-            end;
-            i += 1;
-        end;
-    end;
-
-    { Update allocation hint for next call }
-    if currentAmount > 0 then begin
-        sioc_allocHint := puint32(LL_Get(clusters, currentAmount - 1))^ + 1;
-        sioc_allocVol  := volume;
-    end;
-
-    { If we couldn't find enough free clusters, the disk is full }
-    if currentAmount < amount then begin
-        LL_Free(clusters);
-        findFreeClusters := nil;
+function fatDefaultSPC(sectors : uint32; sectorSize : uint32) : uint32;
+begin
+    if sectorSize = 0 then begin
+        fatDefaultSPC := 1;
         exit;
     end;
 
-    findFreeClusters:= clusters;
+    { Default to 4 KiB clusters for sane FAT32 throughput without excessive
+      slack on small files. Callers can still override via config. }
+    fatDefaultSPC := 4096 div sectorSize;
+    if fatDefaultSPC = 0 then
+        fatDefaultSPC := 1;
+    if fatDefaultSPC > 64 then
+        fatDefaultSPC := 64;
+end;
+
+function fatComputeFATSize(sectors : uint32; spc : uint32; sectorSize : uint32) : uint32;
+var
+    clusterCount : uint32;
+    fatBytes     : uint32;
+begin
+    if spc = 0 then
+        spc := 1;
+    if sectorSize = 0 then begin
+        fatComputeFATSize := 0;
+        exit;
+    end;
+
+    clusterCount := (sectors + spc - 1) div spc;
+    fatBytes := clusterCount * 4;
+    fatComputeFATSize := (fatBytes + sectorSize - 1) div sectorSize;
+    if fatComputeFATSize = 0 then
+        fatComputeFATSize := 1;
+end;
+
+function fatClustersForBytes(byteCount : uint32; bytesPerCluster : uint32) : uint32;
+begin
+    if (byteCount = 0) or (bytesPerCluster = 0) then begin
+        fatClustersForBytes := 0;
+        exit;
+    end;
+
+    fatClustersForBytes := (byteCount + bytesPerCluster - 1) div bytesPerCluster;
+end;
+
+function fatPreallocClusterCount(bytesPerCluster : uint32) : uint32;
+begin
+    if bytesPerCluster = 0 then begin
+        fatPreallocClusterCount := 1;
+        exit;
+    end;
+
+    fatPreallocClusterCount := FAT_WRITE_PREALLOC_BYTES div bytesPerCluster;
+    if fatPreallocClusterCount = 0 then
+        fatPreallocClusterCount := 1;
+    if fatPreallocClusterCount < FAT_WRITE_PREALLOC_MIN_CLUSTERS then
+        fatPreallocClusterCount := FAT_WRITE_PREALLOC_MIN_CLUSTERS;
+    if fatPreallocClusterCount > FAT_WRITE_PREALLOC_MAX_CLUSTERS then
+        fatPreallocClusterCount := FAT_WRITE_PREALLOC_MAX_CLUSTERS;
+end;
+
+procedure fatUpdateAllocHint(volume : PStorage_volume; bootRecord : PBootRecord; nextCluster : uint32);
+var
+    maxCluster : uint32;
+begin
+    maxCluster := fatMaxClusterCount(bootRecord);
+    if maxCluster <= 2 then begin
+        sioc_allocHint := 2;
+        sioc_allocVol := volume;
+        exit;
+    end;
+
+    if nextCluster < 2 then
+        nextCluster := 2;
+    if nextCluster >= maxCluster then
+        nextCluster := 2;
+
+    sioc_allocHint := nextCluster;
+    sioc_allocVol := volume;
+end;
+
+function fatTryContiguousRange(volume : PStorage_volume; bootRecord : PBootRecord;
+                               rangeStart : uint32; rangeEnd : uint32; needed : uint32;
+                               var foundStart : uint32) : boolean;
+var
+    scanPos : uint32;
+    runLen  : uint32;
+    runPos  : uint32;
+    fatVal  : uint32;
+begin
+    fatTryContiguousRange := false;
+    if (needed = 0) or (bootRecord = nil) or (rangeStart >= rangeEnd) then
+        exit;
+
+    scanPos := rangeStart;
+    runLen := 0;
+    runPos := 0;
+
+    while scanPos < rangeEnd do begin
+        fatVal := readFat(volume, scanPos, bootRecord);
+        if fatVal = 0 then begin
+            if runLen = 0 then
+                runPos := scanPos;
+            runLen := runLen + 1;
+            if runLen >= needed then begin
+                foundStart := runPos;
+                fatTryContiguousRange := true;
+                exit;
+            end;
+        end else
+            runLen := 0;
+        scanPos := scanPos + 1;
+    end;
+end;
+
+function fatFindContiguousFreeRange(volume : PStorage_volume; amount : uint32;
+                                    bootRecord : PBootRecord; var runStart : uint32) : boolean;
+var
+    scanStart  : uint32;
+    maxCluster : uint32;
+begin
+    fatFindContiguousFreeRange := false;
+    if amount = 0 then exit;
+
+    maxCluster := fatMaxClusterCount(bootRecord);
+    if maxCluster <= 2 then exit;
+
+    if (sioc_allocVol = volume) and (sioc_allocHint >= 2) and (sioc_allocHint < maxCluster) then
+        scanStart := sioc_allocHint
+    else
+        scanStart := 2;
+
+    if fatTryContiguousRange(volume, bootRecord, scanStart, maxCluster, amount, runStart) or
+       ((scanStart > 2) and fatTryContiguousRange(volume, bootRecord, 2, scanStart, amount, runStart)) then
+        fatFindContiguousFreeRange := true;
+end;
+
+procedure fatLinkContiguousRange(volume : PStorage_volume; bootRecord : PBootRecord;
+                                 previousTail : uint32; firstCluster : uint32; clusterCount : uint32;
+                                 var lastCluster : uint32);
+var
+    cur : uint32;
+    i   : uint32;
+begin
+    lastCluster := previousTail;
+    if clusterCount = 0 then exit;
+
+    if previousTail <> 0 then
+        writeFat(volume, previousTail, firstCluster, bootRecord);
+
+    cur := firstCluster;
+    i := 1;
+    while i < clusterCount do begin
+        writeFat(volume, cur, cur + 1, bootRecord);
+        cur := cur + 1;
+        i := i + 1;
+    end;
+
+    writeFat(volume, cur, $FFFFFFF8, bootRecord);
+    lastCluster := cur;
+    fatUpdateAllocHint(volume, bootRecord, lastCluster + 1);
+end;
+
+function fatAppendExtent(extents : PLinkedListBase; firstCluster : uint32;
+                         clusterCount : uint32) : boolean;
+var
+    ext      : PClusterExtent;
+    lastExt  : PClusterExtent;
+    extCount : uint32;
+begin
+    fatAppendExtent := false;
+    if (extents = nil) or (clusterCount = 0) then
+        exit;
+
+    extCount := LL_Size(extents);
+    if extCount > 0 then begin
+        lastExt := PClusterExtent(LL_Get(extents, extCount - 1));
+        if (lastExt <> nil) and ((lastExt^.StartCluster + lastExt^.ClusterCount) = firstCluster) then begin
+            lastExt^.ClusterCount := lastExt^.ClusterCount + clusterCount;
+            fatAppendExtent := true;
+            exit;
+        end;
+    end;
+
+    ext := PClusterExtent(LL_Add(extents));
+    if ext = nil then
+        exit;
+    ext^.StartCluster := firstCluster;
+    ext^.ClusterCount := clusterCount;
+    fatAppendExtent := true;
+end;
+
+function fatBuildExtentList(volume : PStorage_volume; cluster : uint32;
+                            bootRecord : PBootRecord) : PLinkedListBase;
+var
+    extents      : PLinkedListBase;
+    current      : uint32;
+    nextCluster  : uint32;
+    runStart     : uint32;
+    runCount     : uint32;
+    maxCluster   : uint32;
+    iterCount    : uint32;
+begin
+    fatBuildExtentList := nil;
+    if (bootRecord = nil) or (cluster < 2) then
+        exit;
+
+    extents := LL_New(sizeof(TClusterExtent));
+    if extents = nil then
+        exit;
+
+    if bootRecord^.sectorSize > 0 then
+        maxCluster := (bootRecord^.FATSize * bootRecord^.sectorSize) div 4
+    else
+        maxCluster := 0;
+
+    current := cluster;
+    runStart := cluster;
+    runCount := 1;
+    iterCount := 0;
+
+    while true do begin
+        if (maxCluster > 0) and (iterCount >= maxCluster) then
+            break;
+
+        nextCluster := readFat(volume, current, bootRecord);
+        if (nextCluster = 0) or ((nextCluster and $0FFFFFFF) = $0FFFFFF7) then
+            break;
+
+        if (nextCluster and $0FFFFFFF) >= $0FFFFFF8 then begin
+            if not fatAppendExtent(extents, runStart, runCount) then begin
+                LL_Free(extents);
+                exit;
+            end;
+            fatBuildExtentList := extents;
+            exit;
+        end;
+
+        if nextCluster = (current + 1) then
+            runCount := runCount + 1
+        else begin
+            if not fatAppendExtent(extents, runStart, runCount) then begin
+                LL_Free(extents);
+                exit;
+            end;
+            runStart := nextCluster;
+            runCount := 1;
+        end;
+
+        current := nextCluster;
+        iterCount := iterCount + 1;
+    end;
+
+    if runCount > 0 then begin
+        if not fatAppendExtent(extents, runStart, runCount) then begin
+            LL_Free(extents);
+            exit;
+        end;
+    end;
+
+    fatBuildExtentList := extents;
+end;
+
+function fatLocateExtentRun(extents : PLinkedListBase; targetIdx : uint32;
+                            hintValid : boolean; hintExtentIdx : uint32;
+                            hintStartIdx : uint32; var runStartCluster : uint32;
+                            var runClusterCount : uint32; var outExtentIdx : uint32;
+                            var outExtentStartIdx : uint32) : boolean;
+var
+    i         : uint32;
+    clusterIx : uint32;
+    extCount  : uint32;
+    ext       : PClusterExtent;
+begin
+    fatLocateExtentRun := false;
+    if extents = nil then
+        exit;
+
+    extCount := LL_Size(extents);
+    if extCount = 0 then
+        exit;
+
+    if hintValid and (hintExtentIdx < extCount) and (hintStartIdx <= targetIdx) then begin
+        i := hintExtentIdx;
+        clusterIx := hintStartIdx;
+    end else begin
+        i := 0;
+        clusterIx := 0;
+    end;
+
+    while i < extCount do begin
+        ext := PClusterExtent(LL_Get(extents, i));
+        if ext = nil then
+            exit;
+
+        if targetIdx < (clusterIx + ext^.ClusterCount) then begin
+            runStartCluster := ext^.StartCluster + (targetIdx - clusterIx);
+            runClusterCount := ext^.ClusterCount - (targetIdx - clusterIx);
+            outExtentIdx := i;
+            outExtentStartIdx := clusterIx;
+            fatLocateExtentRun := true;
+            exit;
+        end;
+
+        clusterIx := clusterIx + ext^.ClusterCount;
+        i := i + 1;
+    end;
+end;
+
+function findFreeClusterExtents(volume : PStorage_volume; amount : uint32;
+                                bootRecord : PBootRecord) : PLinkedListBase;
+var
+    maxCluster    : uint32;
+    scanStart     : uint32;
+    currentAmount : uint32;
+    lastAllocated : uint32;
+    extents       : PLinkedListBase;
+
+    procedure appendExtent(firstCluster : uint32; clusterCount : uint32);
+    var
+        ext : PClusterExtent;
+    begin
+        ext := PClusterExtent(LL_Add(extents));
+        ext^.StartCluster := firstCluster;
+        ext^.ClusterCount := clusterCount;
+        currentAmount := currentAmount + clusterCount;
+        lastAllocated := firstCluster + clusterCount - 1;
+    end;
+
+    procedure scanRange(rangeStart : uint32; rangeEnd : uint32);
+    var
+        scanPos   : uint32;
+        runStart  : uint32;
+        runLen    : uint32;
+        takeCount : uint32;
+        fatVal    : uint32;
+    begin
+        scanPos := rangeStart;
+        while (scanPos < rangeEnd) and (currentAmount < amount) do begin
+            fatVal := readFat(volume, scanPos, bootRecord);
+            if fatVal <> 0 then begin
+                scanPos := scanPos + 1;
+                continue;
+            end;
+
+            runStart := scanPos;
+            runLen := 0;
+            while scanPos < rangeEnd do begin
+                fatVal := readFat(volume, scanPos, bootRecord);
+                if fatVal <> 0 then
+                    break;
+                runLen := runLen + 1;
+                scanPos := scanPos + 1;
+            end;
+
+            takeCount := amount - currentAmount;
+            if runLen < takeCount then
+                takeCount := runLen;
+            appendExtent(runStart, takeCount);
+        end;
+    end;
+begin
+    extents := LL_New(sizeof(TClusterExtent));
+    currentAmount := 0;
+    lastAllocated := 0;
+
+    if amount = 0 then begin
+        findFreeClusterExtents := extents;
+        exit;
+    end;
+
+    maxCluster := fatMaxClusterCount(bootRecord);
+    if maxCluster <= 2 then begin
+        LL_Free(extents);
+        findFreeClusterExtents := nil;
+        exit;
+    end;
+
+    if (sioc_allocVol = volume) and (sioc_allocHint >= 2) and (sioc_allocHint < maxCluster) then
+        scanStart := sioc_allocHint
+    else
+        scanStart := 2;
+
+    scanRange(scanStart, maxCluster);
+    if (currentAmount < amount) and (scanStart > 2) then
+        scanRange(2, scanStart);
+
+    if currentAmount < amount then begin
+        LL_Free(extents);
+        findFreeClusterExtents := nil;
+        exit;
+    end;
+
+    fatUpdateAllocHint(volume, bootRecord, lastAllocated + 1);
+    findFreeClusterExtents := extents;
 end;
 
 function compareByteArray8(str1 : byteArray8; str2 : byteArray8) : boolean;
@@ -1055,6 +1670,316 @@ begin
     buildContiguousRun := runLen;
 end;
 
+procedure updateSIOC(
+    volume           : PStorage_Volume;
+    fileStartCluster : uint32;
+    chainIdx         : uint32;
+    chainCluster     : uint32
+); forward;
+
+function seekToClusterIndex(
+    volume           : PStorage_Volume;
+    fileStartCluster : uint32;
+    targetIdx        : uint32;
+    bootRecord       : PBootRecord;
+    var curCluster   : uint32;
+    var chainPos     : uint32
+) : boolean; forward;
+
+function seekToClusterIndexHinted(
+    volume           : PStorage_Volume;
+    fileStartCluster : uint32;
+    targetIdx        : uint32;
+    bootRecord       : PBootRecord;
+    hintValid        : boolean;
+    hintIdx          : uint32;
+    hintCluster      : uint32;
+    var curCluster   : uint32;
+    var chainPos     : uint32
+) : boolean; forward;
+
+procedure fat32_fileio_async_complete(ctx : PFATFileIOAsyncCtx; error : TError);
+begin
+    if ctx = nil then exit;
+    if ctx^.BytesOut <> nil then
+        ctx^.BytesOut^ := ctx^.BytesDone;
+    if ctx^.Callback <> nil then
+        ctx^.Callback(error, ctx^.CallbackData);
+    fatTransferFree(ctx);
+end;
+
+function fat32_fileio_prepare_single_run(ctx : PFATFileIOAsyncCtx;
+    var sectorLBA : uint32; var chunkSectors : uint32) : boolean;
+const
+    MAX_RUN_SECTORS = 2048;
+var
+    run             : TRunInfo;
+    curCluster      : uint32;
+    chainPos        : uint32;
+    currentOffset   : uint32;
+    bytesPerCluster : uint32;
+    startClusterIdx : uint32;
+    inClusterOffset : uint32;
+    remaining       : uint32;
+    skipBytes       : uint32;
+    copyBytes       : uint32;
+    secSize         : uint32;
+    spc             : uint32;
+    lastBytePos     : uint32;
+    lastClusterUsed : uint32;
+    lastClusterIdx  : uint32;
+    maxRunClusters  : uint32;
+    extentIdx       : uint32;
+    extentStartIdx  : uint32;
+begin
+    fat32_fileio_prepare_single_run := false;
+    if ctx = nil then
+        exit;
+
+    currentOffset := ctx^.Offset + ctx^.BytesDone;
+    remaining := ctx^.ByteCount - ctx^.BytesDone;
+    spc := uint32(ctx^.BootRecord^.spc);
+    secSize := uint32(ctx^.BootRecord^.sectorSize);
+    bytesPerCluster := spc * secSize;
+    startClusterIdx := currentOffset div bytesPerCluster;
+    inClusterOffset := currentOffset mod bytesPerCluster;
+
+    maxRunClusters := MAX_RUN_SECTORS div spc;
+    if maxRunClusters = 0 then
+        maxRunClusters := 1;
+
+    if (ctx^.OpenFile <> nil) and (ctx^.OpenFile^.Extents <> nil) and
+       fatLocateExtentRun(ctx^.OpenFile^.Extents, startClusterIdx,
+           ctx^.ExtentValid, ctx^.ExtentIdx, ctx^.ExtentStartIdx,
+           run.StartCluster, run.RunLen, extentIdx, extentStartIdx) then begin
+        if run.RunLen > maxRunClusters then
+            run.RunLen := maxRunClusters;
+        run.LastCluster := run.StartCluster + run.RunLen - 1;
+        ctx^.ExtentValid := true;
+        ctx^.ExtentIdx := extentIdx;
+        ctx^.ExtentStartIdx := extentStartIdx;
+        curCluster := run.LastCluster;
+        chainPos := startClusterIdx + run.RunLen - 1;
+    end else begin
+        if not seekToClusterIndexHinted(
+            ctx^.Volume, ctx^.Cluster, startClusterIdx, ctx^.BootRecord,
+            ctx^.CursorValid, ctx^.CursorIndex, ctx^.CursorCluster,
+            curCluster, chainPos) then
+            exit;
+
+        run.StartCluster := curCluster;
+        buildContiguousRun(ctx^.Volume, curCluster, spc, MAX_RUN_SECTORS, ctx^.BootRecord, run.RunLen, run.LastCluster);
+    end;
+
+    run.RunSectors := run.RunLen * spc;
+    run.RunBytes := run.RunSectors * secSize;
+    run.LBA := clusterToLBA(ctx^.DataStart, spc, run.StartCluster);
+
+    skipBytes := inClusterOffset;
+    copyBytes := run.RunBytes - skipBytes;
+    if copyBytes > remaining then
+        copyBytes := remaining;
+
+    if (copyBytes = 0) or ((copyBytes mod secSize) <> 0) or ((skipBytes mod secSize) <> 0) then
+        exit;
+
+    sectorLBA := run.LBA + (skipBytes div secSize);
+    chunkSectors := copyBytes div secSize;
+    ctx^.ChunkBytes := copyBytes;
+
+    lastBytePos := skipBytes + copyBytes - 1;
+    lastClusterIdx := startClusterIdx + (lastBytePos div bytesPerCluster);
+    lastClusterUsed := run.StartCluster + (lastBytePos div bytesPerCluster);
+    updateSIOC(ctx^.Volume, ctx^.Cluster, lastClusterIdx, lastClusterUsed);
+    ctx^.CursorValid := true;
+    ctx^.CursorIndex := lastClusterIdx;
+    ctx^.CursorCluster := lastClusterUsed;
+
+    fat32_fileio_prepare_single_run := true;
+end;
+
+procedure fat32_fileio_direct_complete(error : TError; userdata : pointer);
+var
+    ctx : PFATFileIOAsyncCtx;
+begin
+    ctx := PFATFileIOAsyncCtx(userdata);
+    if ctx = nil then exit;
+
+    if error = eNone then begin
+        ctx^.BytesDone := ctx^.BytesDone + ctx^.ChunkBytes;
+        if (ctx^.Mode = famWrite) and (ctx^.OpenFile <> nil) then begin
+            if (ctx^.BytesDone > 0) and ((ctx^.Offset + ctx^.BytesDone) > ctx^.OpenFile^.ByteSize) then begin
+                ctx^.OpenFile^.ByteSize := ctx^.Offset + ctx^.BytesDone;
+                ctx^.OpenFile^.MetaDirty := true;
+            end;
+            if (ctx^.OpenFile^.FirstCluster = 0) and (ctx^.Cluster <> 0) then begin
+                ctx^.OpenFile^.FirstCluster := ctx^.Cluster;
+                ctx^.OpenFile^.Exists := true;
+                ctx^.OpenFile^.MetaDirty := true;
+            end;
+        end;
+    end;
+
+    fat32_fileio_async_complete(ctx, error);
+end;
+
+procedure fat32_fileio_async_step(error : TError; userdata : pointer); forward;
+
+procedure fat32_fileio_async_run_next(ctx : PFATFileIOAsyncCtx);
+const
+    MAX_RUN_SECTORS = 2048;
+var
+    run             : TRunInfo;
+    curCluster      : uint32;
+    chainPos        : uint32;
+    currentOffset   : uint32;
+    bytesPerCluster : uint32;
+    startClusterIdx : uint32;
+    inClusterOffset : uint32;
+    remaining       : uint32;
+    skipBytes       : uint32;
+    copyBytes       : uint32;
+    secSize         : uint32;
+    spc             : uint32;
+    sectorLBA       : uint32;
+    chunkSectors    : uint32;
+    lastBytePos     : uint32;
+    lastClusterUsed : uint32;
+    lastClusterIdx  : uint32;
+    maxRunClusters  : uint32;
+    extentIdx       : uint32;
+    extentStartIdx  : uint32;
+    err             : TError;
+begin
+    if ctx = nil then exit;
+
+    if ctx^.State = ftsAwaitIO then begin
+        if ctx^.LastError <> eNone then begin
+            ctx^.State := ftsError;
+            fat32_fileio_async_complete(ctx, ctx^.LastError);
+            exit;
+        end;
+
+        ctx^.State := ftsAdvance;
+        ctx^.BytesDone := ctx^.BytesDone + ctx^.ChunkBytes;
+
+        if (ctx^.Mode = famWrite) and (ctx^.OpenFile <> nil) then begin
+            if (ctx^.BytesDone > 0) and ((ctx^.Offset + ctx^.BytesDone) > ctx^.OpenFile^.ByteSize) then begin
+                ctx^.OpenFile^.ByteSize := ctx^.Offset + ctx^.BytesDone;
+                ctx^.OpenFile^.MetaDirty := true;
+            end;
+            if (ctx^.OpenFile^.FirstCluster = 0) and (ctx^.Cluster <> 0) then begin
+                ctx^.OpenFile^.FirstCluster := ctx^.Cluster;
+                ctx^.OpenFile^.Exists := true;
+                ctx^.OpenFile^.MetaDirty := true;
+            end;
+        end;
+    end;
+
+    if ctx^.BytesDone >= ctx^.ByteCount then begin
+        ctx^.State := ftsComplete;
+        fat32_fileio_async_complete(ctx, eNone);
+        exit;
+    end;
+
+    ctx^.State := ftsPrepare;
+
+    currentOffset := ctx^.Offset + ctx^.BytesDone;
+    remaining := ctx^.ByteCount - ctx^.BytesDone;
+    spc := uint32(ctx^.BootRecord^.spc);
+    secSize := uint32(ctx^.BootRecord^.sectorSize);
+    bytesPerCluster := spc * secSize;
+    startClusterIdx := currentOffset div bytesPerCluster;
+    inClusterOffset := currentOffset mod bytesPerCluster;
+
+    maxRunClusters := MAX_RUN_SECTORS div spc;
+    if maxRunClusters = 0 then
+        maxRunClusters := 1;
+
+    if (ctx^.OpenFile <> nil) and (ctx^.OpenFile^.Extents <> nil) and
+       fatLocateExtentRun(ctx^.OpenFile^.Extents, startClusterIdx,
+           ctx^.ExtentValid, ctx^.ExtentIdx, ctx^.ExtentStartIdx,
+           run.StartCluster, run.RunLen, extentIdx, extentStartIdx) then begin
+        if run.RunLen > maxRunClusters then
+            run.RunLen := maxRunClusters;
+        run.LastCluster := run.StartCluster + run.RunLen - 1;
+        ctx^.ExtentValid := true;
+        ctx^.ExtentIdx := extentIdx;
+        ctx^.ExtentStartIdx := extentStartIdx;
+        curCluster := run.LastCluster;
+        chainPos := startClusterIdx + run.RunLen - 1;
+    end else begin
+        if not seekToClusterIndexHinted(
+            ctx^.Volume, ctx^.Cluster, startClusterIdx, ctx^.BootRecord,
+            ctx^.CursorValid, ctx^.CursorIndex, ctx^.CursorCluster,
+            curCluster, chainPos) then begin
+            ctx^.State := ftsError;
+            fat32_fileio_async_complete(ctx, eCorruptFilesystem);
+            exit;
+        end;
+
+        run.StartCluster := curCluster;
+        buildContiguousRun(ctx^.Volume, curCluster, spc, MAX_RUN_SECTORS, ctx^.BootRecord, run.RunLen, run.LastCluster);
+    end;
+    run.RunSectors := run.RunLen * spc;
+    run.RunBytes := run.RunSectors * secSize;
+    run.LBA := clusterToLBA(ctx^.DataStart, spc, run.StartCluster);
+
+    skipBytes := inClusterOffset;
+    copyBytes := run.RunBytes - skipBytes;
+    if copyBytes > remaining then
+        copyBytes := remaining;
+
+    if (copyBytes = 0) or ((copyBytes mod secSize) <> 0) or ((skipBytes mod secSize) <> 0) then begin
+        ctx^.State := ftsError;
+        fat32_fileio_async_complete(ctx, eInvalidArgument);
+        exit;
+    end;
+
+    sectorLBA := run.LBA + (skipBytes div secSize);
+    chunkSectors := copyBytes div secSize;
+    ctx^.ChunkBytes := copyBytes;
+
+    lastBytePos := skipBytes + copyBytes - 1;
+    lastClusterIdx := startClusterIdx + (lastBytePos div bytesPerCluster);
+    lastClusterUsed := run.StartCluster + (lastBytePos div bytesPerCluster);
+    updateSIOC(ctx^.Volume, ctx^.Cluster, lastClusterIdx, lastClusterUsed);
+    ctx^.CursorValid := true;
+    ctx^.CursorIndex := lastClusterIdx;
+    ctx^.CursorCluster := lastClusterUsed;
+
+    ctx^.State := ftsIssueIO;
+
+    if ctx^.Mode = famRead then
+        err := driver.storage.mgr.storage_read_async(
+            ctx^.Volume^.device, sectorLBA, chunkSectors,
+            puint32(uint32(ctx^.Buffer) + ctx^.BytesDone), @fat32_fileio_async_step, ctx)
+    else
+        err := driver.storage.mgr.storage_write_async(
+            ctx^.Volume^.device, sectorLBA, chunkSectors,
+            puint32(uint32(ctx^.Buffer) + ctx^.BytesDone), @fat32_fileio_async_step, ctx);
+
+    if err = eNone then
+        ctx^.State := ftsAwaitIO
+    else
+        ctx^.State := ftsError;
+    if err <> eNone then
+        fat32_fileio_async_complete(ctx, err);
+end;
+
+procedure fat32_fileio_async_step(error : TError; userdata : pointer);
+var
+    ctx : PFATFileIOAsyncCtx;
+begin
+    ctx := PFATFileIOAsyncCtx(userdata);
+    if ctx = nil then exit;
+    ctx^.LastError := error;
+    if not fatScheduleTransfer(ctx) then begin
+        ctx^.State := ftsError;
+        fat32_fileio_async_complete(ctx, eQueueFull);
+    end;
+end;
+
 { Update the SIOC chain-position cache. }
 procedure updateSIOC(
     volume           : PStorage_Volume;
@@ -1084,8 +2009,13 @@ function seekToClusterIndex(
 ) : boolean;
 var
     nextFat : uint32;
+    maxCluster : uint32;
 begin
     seekToClusterIndex := false;
+    if bootRecord^.sectorSize > 0 then
+        maxCluster := (bootRecord^.FATSize * bootRecord^.sectorSize) div 4
+    else
+        maxCluster := 0;
 
     { Resume from SIOC cache if it covers this file at a useful position }
     if sioc_valid and (sioc_vol = volume) and (sioc_fileClust = fileStartCluster)
@@ -1099,6 +2029,8 @@ begin
 
     { Walk forward to targetIdx }
     while chainPos < targetIdx do begin
+        if (maxCluster > 0) and (chainPos >= maxCluster) then
+            exit;
         nextFat := readFat(volume, curCluster, bootRecord);
         if ((nextFat and $0FFFFFFF) >= $0FFFFFF8) or (nextFat = 0) then
             exit;
@@ -1107,6 +2039,50 @@ begin
     end;
 
     seekToClusterIndex := true;
+end;
+
+function seekToClusterIndexHinted(
+    volume           : PStorage_Volume;
+    fileStartCluster : uint32;
+    targetIdx        : uint32;
+    bootRecord       : PBootRecord;
+    hintValid        : boolean;
+    hintIdx          : uint32;
+    hintCluster      : uint32;
+    var curCluster   : uint32;
+    var chainPos     : uint32
+) : boolean;
+var
+    nextFat    : uint32;
+    maxCluster : uint32;
+begin
+    seekToClusterIndexHinted := false;
+    if bootRecord^.sectorSize > 0 then
+        maxCluster := (bootRecord^.FATSize * bootRecord^.sectorSize) div 4
+    else
+        maxCluster := 0;
+
+    if hintValid and (hintIdx <= targetIdx) then begin
+        curCluster := hintCluster;
+        chainPos := hintIdx;
+    end else begin
+        if not seekToClusterIndex(volume, fileStartCluster, targetIdx, bootRecord, curCluster, chainPos) then
+            exit;
+        seekToClusterIndexHinted := true;
+        exit;
+    end;
+
+    while chainPos < targetIdx do begin
+        if (maxCluster > 0) and (chainPos >= maxCluster) then
+            exit;
+        nextFat := readFat(volume, curCluster, bootRecord);
+        if ((nextFat and $0FFFFFFF) >= $0FFFFFF8) or (nextFat = 0) then
+            exit;
+        curCluster := nextFat;
+        chainPos := chainPos + 1;
+    end;
+
+    seekToClusterIndexHinted := true;
 end;
 
 //TODO add optional attributes flag to refine what i return
@@ -1310,7 +2286,8 @@ var
     directories     : PLinkedListBase;
     parentDirectory : PDirectory;
     parentCluster   : uint32;
-    clusters        : PLinkedListBase;
+    extents         : PLinkedListBase;
+    extent          : PClusterExtent;
     cluster         : uint32;
     bootRecord      : PBootRecord;
     buffer          : puint32;
@@ -1391,8 +2368,8 @@ begin
         parentDirectory:= PDirectory(LL_Get(directories, 0));
         parentCluster:= dirFirstCluster(parentDirectory);
 
-        clusters:= findFreeClusters(volume, 1, bootRecord);
-        if clusters = nil then begin
+        extents := findFreeClusterExtents(volume, 1, bootRecord);
+        if extents = nil then begin
             { No free clusters available — disk is full }
             io.syslog.logln('FAT32', 'writeDirectory: disk full');
             statusOut^:= ord(eDiskFull);
@@ -1401,9 +2378,10 @@ begin
             LL_Free(directories);
             exit;
         end;
-        cluster:= uint32(LL_Get(clusters, 0)^);
+        extent := PClusterExtent(LL_Get(extents, 0));
+        cluster := extent^.StartCluster;
         io.syslog.logln('FAT32', 'writeDirectory: allocated cluster');
-        LL_Free(clusters);
+        LL_Free(extents);
         buffer:= puint32(kalloc(bootRecord^.sectorSize));
 
         if attributes = $10 then begin // if directory
@@ -2141,11 +3119,12 @@ begin
     if config <> nil then
         spc := config^
     else
-        spc := 1;
-    if spc = 0 then spc := 1;
+        spc := fatDefaultSPC(sectors, ctx^.Disk^.sectorSize);
+    if spc = 0 then
+        spc := fatDefaultSPC(sectors, ctx^.Disk^.sectorSize);
     ctx^.SPC := spc;
 
-    ctx^.FATSize  := ((sectors div spc) * 4) div ctx^.Disk^.sectorSize;
+    ctx^.FATSize  := fatComputeFATSize(sectors, spc, ctx^.Disk^.sectorSize);
     ctx^.FATStart := start + 1 + 32;   { boot sector + 32 reserved sectors }
     ctx^.DataStart := ctx^.FATStart + ctx^.FATSize;
 
@@ -2169,7 +3148,7 @@ begin
     bootRecord^.OEMName[6]      := 'V';
     bootRecord^.OEMName[7]      := '1';
     bootRecord^.sectorSize      := ctx^.Disk^.sectorSize;
-    bootRecord^.spc             := 1;
+    bootRecord^.spc             := uint8(spc);
     bootRecord^.rsvSectors      := 32;
     bootRecord^.numFats         := 1;
     bootRecord^.mediaDescp      := $F8;
@@ -2257,8 +3236,9 @@ begin
     if config <> nil then
         spc := config^
     else
-        spc := 1;
-    if spc = 0 then spc := 1;
+        spc := fatDefaultSPC(sectors, disk^.sectorSize);
+    if spc = 0 then
+        spc := fatDefaultSPC(sectors, disk^.sectorSize);
 
     //driver.storage.fs.fat32 structure
     (* BootRecord            *)
@@ -2271,12 +3251,12 @@ begin
 
     bootRecord:= PBootRecord(buffer);
 
-    FATSize:= ((sectors div spc) * 4) div disk^.sectorsize;
+    FATSize:= fatComputeFATSize(sectors, spc, disk^.sectorsize);
 
     bootRecord^.jmp2boot        := $0; //TODO impliment boot jump
     bootRecord^.OEMName         := asuroArray;
     bootRecord^.sectorSize      := disk^.sectorsize;
-    bootRecord^.spc             := 1;
+    bootRecord^.spc             := uint8(spc);
     bootRecord^.rsvSectors      := 32; //32 is standard
     bootRecord^.numFats         := 1;
     bootRecord^.mediaDescp      := $F8;
@@ -2501,8 +3481,13 @@ begin
 
     ofi := PFATOpenFile(kalloc(SizeOf(TFATOpenFile)));
     memset(uint32(ofi), 0, SizeOf(TFATOpenFile));
+    ofi^.Volume := volume;
     ofi^.BootRecord := bootRecord;
     ofi^.DataStart := fatDataStartLBA(volume, bootRecord);
+    ofi^.ScratchSize := bootRecord^.sectorSize;
+    ofi^.ScratchSector := puint32(kalloc(ofi^.ScratchSize));
+    if ofi^.ScratchSector <> nil then
+        memset(uint32(ofi^.ScratchSector), 0, ofi^.ScratchSize);
     ofi^.Exists := false;
 
     { Read directory entries }
@@ -2531,17 +3516,22 @@ begin
     ofi^.ExtPart := stringCopy(extPart);
 
     { Search for file in directory entries }
-    if (dirs <> nil) and (LL_size(dirs) > 0) then begin
-        for i := 0 to LL_Size(dirs) - 1 do begin
-            tempdir := PDirectory(LL_get(dirs, i));
-            otherCFN := cleanString(tempdir^.filename, status);
-            if compareByteArray8(cleanFileName, otherCFN) and matchExtension(tempdir^.fileExtension, extPart) then begin
-                ofi^.FirstCluster := dirFirstCluster(tempdir);
-                ofi^.ByteSize := tempdir^.byteSize;
-                ofi^.Exists := true;
+        if (dirs <> nil) and (LL_size(dirs) > 0) then begin
+            for i := 0 to LL_Size(dirs) - 1 do begin
+                tempdir := PDirectory(LL_get(dirs, i));
+                otherCFN := cleanString(tempdir^.filename, status);
+                if compareByteArray8(cleanFileName, otherCFN) and matchExtension(tempdir^.fileExtension, extPart) then begin
+                    ofi^.FirstCluster := dirFirstCluster(tempdir);
+                    ofi^.ByteSize := tempdir^.byteSize;
+                    ofi^.Exists := true;
+                end;
             end;
         end;
-    end;
+
+    ofi^.AllocClusters := fatClustersForBytes(ofi^.ByteSize,
+        uint32(bootRecord^.spc) * uint32(bootRecord^.sectorSize));
+    if ofi^.Exists and (ofi^.FirstCluster >= 2) and (ofi^.ByteSize > 0) then
+        ofi^.Extents := fatBuildExtentList(volume, ofi^.FirstCluster, bootRecord);
 
     kfree(void(namePart));
     kfree(void(extPart));
@@ -2556,12 +3546,38 @@ end;
 { Called by VFS on CloseFile to free the per-file context. }
 procedure fat32CloseFile(ctx : pointer);
 var
-    ofi : PFATOpenFile;
+    ofi      : PFATOpenFile;
+    fatCache : PFATCache;
+    dirBuf   : puint32;
+    rawDir   : PDirectory;
+    loc      : TDirEntryLocation;
 begin
     if ctx = nil then exit;
     ofi := PFATOpenFile(ctx);
+    if ofi^.FatDirty and (ofi^.Volume <> nil) then begin
+        fatCache := fatCacheGet(ofi^.Volume);
+        if fatCache <> nil then
+            fatCacheFlush(fatCache, ofi^.Volume);
+    end;
+    if ofi^.MetaDirty and (ofi^.Volume <> nil) and (ofi^.BootRecord <> nil) then begin
+        dirBuf := puint32(kalloc(ofi^.BootRecord^.sectorSize));
+        if (dirBuf <> nil) and locateDirEntry(ofi^.Volume, ofi^.DirCluster, ofi^.BootRecord,
+                ofi^.CleanName, ofi^.ExtPart, loc, dirBuf) then begin
+            rawDir := @PDirectory(dirBuf)[loc.EntryIdx];
+            rawDir^.byteSize := ofi^.ByteSize;
+            if ofi^.FirstCluster <> 0 then
+                setDirFirstCluster(rawDir, ofi^.FirstCluster);
+            driver.storage.mgr.storage_write(ofi^.Volume^.device, loc.SectorLBA, 1, dirBuf);
+        end;
+        if dirBuf <> nil then
+            kfree(dirBuf);
+    end;
     if ofi^.ExtPart <> nil then
         kfree(void(ofi^.ExtPart));
+    if ofi^.Extents <> nil then
+        LL_Free(ofi^.Extents);
+    if ofi^.ScratchSector <> nil then
+        kfree(ofi^.ScratchSector);
     kfree(puint32(ofi));
 end;
 
@@ -2599,11 +3615,12 @@ var
     newEnd           : uint32;
     oldClusters      : uint32;
     needClusters     : uint32;
+    targetClusters   : uint32;
     extraClusters    : uint32;
-    newClusts        : PLinkedListBase;
+    newExtents       : PLinkedListBase;
     lastCluster      : uint32;
-    nextCluster      : uint32;
     nextFat          : uint32;
+    extent           : PClusterExtent;
     { dir entry update — raw sector scan (Lesson 18) }
     dirCluster       : uint32;
     dirBuf           : puint32;
@@ -2620,6 +3637,9 @@ var
     batchBytes       : uint32;
     sectorLBA        : uint32;
     fatCache         : PFATCache;
+    chainWalkLimit   : uint32;
+    firstNewCluster  : uint32;
+    reserveClusters  : uint32;
 begin
     push_trace('driver.storage.fs.fat32.writeFileAtOffset.enter');
     writeFileAtOffset := 0;
@@ -2690,6 +3710,10 @@ begin
         end;
     end;
     fileSize := origByteSize;
+    if lookup.BootRecord^.sectorSize > 0 then
+        chainWalkLimit := (lookup.BootRecord^.FATSize * lookup.BootRecord^.sectorSize) div 4
+    else
+        chainWalkLimit := 0;
 
     if not lookup.Exists then begin
         { --- Create a new zero-length file entry on disk --- }
@@ -2730,35 +3754,21 @@ begin
 
     { ---- Extend file if writing past EOF ---- }
     if newEnd > fileSize then begin
-        if fileSize = 0 then
-            oldClusters := 0
+        if ofi <> nil then
+            oldClusters := ofi^.AllocClusters
         else
-            oldClusters := (fileSize + bytesPerCluster - 1) div bytesPerCluster;
-        needClusters := (newEnd + bytesPerCluster - 1) div bytesPerCluster;
+            oldClusters := fatClustersForBytes(fileSize, bytesPerCluster);
+        needClusters := fatClustersForBytes(newEnd, bytesPerCluster);
+        targetClusters := needClusters;
+        if (ofi <> nil) and (needClusters > oldClusters) then begin
+            reserveClusters := fatPreallocClusterCount(bytesPerCluster);
+            targetClusters := oldClusters + reserveClusters;
+            if targetClusters < needClusters then
+                targetClusters := needClusters;
+        end;
 
-        if needClusters > oldClusters then begin
-            extraClusters := needClusters - oldClusters;
-            newClusts := findFreeClusters(volume, extraClusters, lookup.BootRecord);
-            if newClusts = nil then begin
-                io.syslog.logln('FAT32', 'writeFileAtOffset: exit-B disk full');
-                { Undo just-created dir entry if file was new }
-                if not lookup.Exists then begin
-                    dirBuf := puint32(kalloc(lookup.BootRecord^.sectorSize));
-                    driver.storage.mgr.storage_read(volume^.device, loc.SectorLBA, 1, dirBuf);
-                    PDirectory(dirBuf)[loc.EntryIdx].fileName[0] := char($E5);
-                    driver.storage.mgr.storage_write(volume^.device, loc.SectorLBA, 1, dirBuf);
-                    kfree(dirBuf);
-                end;
-                if ofi = nil then begin
-                    if namePart <> nil then kfree(void(namePart));
-                    if extPart <> nil then kfree(void(extPart));
-                    LL_Free(lookup.Dirs);
-                    kfree(puint32(lookup.BootRecord));
-                    kfree(puint32(lookup.Status));
-                end;
-                exit;
-            end;
-
+        if targetClusters > oldClusters then begin
+            extraClusters := targetClusters - oldClusters;
             if oldClusters > 0 then begin
                 { Walk to last cluster using cache if available }
                 if sioc_valid and (sioc_vol = volume) and (sioc_fileClust = cluster) then
@@ -2767,6 +3777,20 @@ begin
                     lastCluster := cluster;
                 nextFat := readFat(volume, lastCluster, lookup.BootRecord);
                 while ((nextFat and $0FFFFFFF) < $0FFFFFF8) and (nextFat <> 0) do begin
+                    if chainWalkLimit = 0 then
+                        break;
+                    chainWalkLimit := chainWalkLimit - 1;
+                    if chainWalkLimit = 0 then begin
+                        io.syslog.logln('FAT32', 'writeFileAtOffset: FAT loop detected while finding tail');
+                        if ofi = nil then begin
+                            if namePart <> nil then kfree(void(namePart));
+                            if extPart <> nil then kfree(void(extPart));
+                            LL_Free(lookup.Dirs);
+                            kfree(puint32(lookup.BootRecord));
+                            kfree(puint32(lookup.Status));
+                        end;
+                        exit;
+                    end;
                     lastCluster := nextFat;
                     nextFat := readFat(volume, lastCluster, lookup.BootRecord);
                 end;
@@ -2775,25 +3799,65 @@ begin
                 lastCluster := 0;
             end;
 
-            { Link new clusters }
-            if extraClusters > 0 then begin
-                for i := 0 to extraClusters - 1 do begin
-                    nextCluster := puint32(LL_Get(newClusts, i))^;
-                    if lastCluster <> 0 then
-                        writeFat(volume, lastCluster, nextCluster, lookup.BootRecord);
-                    lastCluster := nextCluster;
+            if fatFindContiguousFreeRange(volume, extraClusters, lookup.BootRecord, firstNewCluster) then begin
+                fatLinkContiguousRange(volume, lookup.BootRecord, lastCluster, firstNewCluster, extraClusters, lastCluster);
+                if oldClusters = 0 then
+                    cluster := firstNewCluster;
+                if ofi <> nil then begin
+                    if ofi^.Extents = nil then
+                        ofi^.Extents := LL_New(sizeof(TClusterExtent));
+                    if ofi^.Extents <> nil then
+                        fatAppendExtent(ofi^.Extents, firstNewCluster, extraClusters);
                 end;
-                writeFat(volume, lastCluster, $FFFFFFF8, lookup.BootRecord);
+            end else begin
+                newExtents := findFreeClusterExtents(volume, extraClusters, lookup.BootRecord);
+                if newExtents = nil then begin
+                    io.syslog.logln('FAT32', 'writeFileAtOffset: exit-B disk full');
+                    { Undo just-created dir entry if file was new }
+                    if not lookup.Exists then begin
+                        dirBuf := puint32(kalloc(lookup.BootRecord^.sectorSize));
+                        driver.storage.mgr.storage_read(volume^.device, loc.SectorLBA, 1, dirBuf);
+                        PDirectory(dirBuf)[loc.EntryIdx].fileName[0] := char($E5);
+                        driver.storage.mgr.storage_write(volume^.device, loc.SectorLBA, 1, dirBuf);
+                        kfree(dirBuf);
+                    end;
+                    if ofi = nil then begin
+                        if namePart <> nil then kfree(void(namePart));
+                        if extPart <> nil then kfree(void(extPart));
+                        LL_Free(lookup.Dirs);
+                        kfree(puint32(lookup.BootRecord));
+                        kfree(puint32(lookup.Status));
+                    end;
+                    exit;
+                end;
+
+                { Link new extents }
+                if LL_Size(newExtents) > 0 then begin
+                    for i := 0 to LL_Size(newExtents) - 1 do begin
+                        extent := PClusterExtent(LL_Get(newExtents, i));
+                        fatLinkContiguousRange(volume, lookup.BootRecord, lastCluster,
+                            extent^.StartCluster, extent^.ClusterCount, lastCluster);
+                        if (ofi <> nil) and (extent <> nil) then begin
+                            if ofi^.Extents = nil then
+                                ofi^.Extents := LL_New(sizeof(TClusterExtent));
+                            if ofi^.Extents <> nil then
+                                fatAppendExtent(ofi^.Extents, extent^.StartCluster, extent^.ClusterCount);
+                        end;
+                        if (oldClusters = 0) and (i = 0) then
+                            cluster := extent^.StartCluster;
+                    end;
+                end;
+                LL_Free(newExtents);
             end;
 
-            { If file was zero-length, first new cluster becomes start cluster }
-            if oldClusters = 0 then
-                cluster := puint32(LL_Get(newClusts, 0))^;
+            if ofi <> nil then
+                ofi^.FatDirty := true;
+
+            if ofi <> nil then
+                ofi^.AllocClusters := targetClusters;
 
             { Update chain cache: last new cluster is the new tail }
-            updateSIOC(volume, cluster, needClusters - 1, lastCluster);
-
-            LL_Free(newClusts);
+            updateSIOC(volume, cluster, targetClusters - 1, lastCluster);
 
         end;
 
@@ -2818,7 +3882,10 @@ begin
 
     spc       := uint32(lookup.BootRecord^.spc);
     secSize   := uint32(lookup.BootRecord^.sectorSize);
-    ioBuf     := puint32(kalloc(secSize));
+    if (ofi <> nil) and (ofi^.ScratchSector <> nil) and (ofi^.ScratchSize >= secSize) then
+        ioBuf := ofi^.ScratchSector
+    else
+        ioBuf := nil;
     remaining := byteCount;
     srcPos    := 0;
 
@@ -2845,6 +3912,10 @@ begin
 
         { Phase 1: Partial first sector — read-modify-write }
         if firstSectorOff > 0 then begin
+            if ioBuf = nil then
+                ioBuf := puint32(kalloc(secSize));
+            if ioBuf = nil then
+                break;
             sectorLBA := run.LBA + (skipBytes div secSize);
             partialBytes := secSize - firstSectorOff;
             if partialBytes > copyBytes then
@@ -2873,6 +3944,10 @@ begin
 
         { Phase 3: Partial last sector — read-modify-write }
         if copyBytes > 0 then begin
+            if ioBuf = nil then
+                ioBuf := puint32(kalloc(secSize));
+            if ioBuf = nil then
+                break;
             sectorLBA := run.LBA + (skipBytes div secSize);
             driver.storage.mgr.storage_read(volume^.device, sectorLBA, 1, ioBuf);
             core.util.memcpy(uint32(buffer) + srcPos, uint32(ioBuf), copyBytes);
@@ -2902,16 +3977,23 @@ begin
         end;
     end;
 
-    kfree(ioBuf);
+    if (ioBuf <> nil) and ((ofi = nil) or (ioBuf <> ofi^.ScratchSector)) then
+        kfree(ioBuf);
 
-    { Flush dirty FAT cache entries to disk }
-    fatCache := fatCacheGet(volume);
-    if fatCache <> nil then
-        fatCacheFlush(fatCache, volume);
+    { Flush dirty FAT cache entries to disk only for uncached callers.
+      Open-file callers defer this to fat32CloseFile to avoid flushing on every chunk. }
+    if ofi = nil then begin
+        fatCache := fatCacheGet(volume);
+        if fatCache <> nil then
+            fatCacheFlush(fatCache, volume);
+    end;
 
     { ---- Update directory entry byteSize if file was extended ---- }
     { Only commit actual bytes written — never advance size past what was really written (Lesson 22) }
     if (srcPos > 0) and ((offset + srcPos) > origByteSize) then begin
+        if ofi <> nil then begin
+            ofi^.MetaDirty := true;
+        end else begin
         { Lesson 18: search raw directory sectors, don't use LL indices.
           dirCluster, cleanFileName, extPart were set once in the discovery phase. }
         dirBuf := puint32(kalloc(lookup.BootRecord^.sectorSize));
@@ -2926,6 +4008,7 @@ begin
         end;
 
         kfree(dirBuf);
+        end;
     end;
 
     { Update cached open-file metadata so the next read/write sees the new state }
@@ -2935,6 +4018,7 @@ begin
         if (ofi^.FirstCluster = 0) and (cluster <> 0) then begin
             ofi^.FirstCluster := cluster;
             ofi^.Exists := true;
+            ofi^.MetaDirty := true;
         end;
     end;
 
@@ -3206,6 +4290,283 @@ begin
     push_trace('driver.storage.fs.fat32.readFileAtOffset.exit');
 end;
 
+procedure readFileAtOffsetAsync(volume : PStorage_Volume; directory : pchar; fileName : pchar;
+                                offset : uint32; buffer : puint32; byteCount : uint32;
+                                ctx : pointer; bytesRead : puint32;
+                                callback : TIOCallback; callbackData : pointer);
+var
+    ofi             : PFATOpenFile;
+    asyncCtx        : PFATFileIOAsyncCtx;
+    sectorLBA       : uint32;
+    chunkSectors    : uint32;
+    err             : TError;
+begin
+    if bytesRead <> nil then bytesRead^ := 0;
+    ofi := PFATOpenFile(ctx);
+
+    if (ofi = nil) or (buffer = nil) or (byteCount = 0) then begin
+        if callback <> nil then callback(eInvalidArgument, callbackData);
+        exit;
+    end;
+
+    if not ofi^.Exists then begin
+        if callback <> nil then callback(eFileDoesNotExist, callbackData);
+        exit;
+    end;
+
+    if offset >= ofi^.ByteSize then begin
+        if callback <> nil then callback(eNone, callbackData);
+        exit;
+    end;
+
+    if offset + byteCount > ofi^.ByteSize then
+        byteCount := ofi^.ByteSize - offset;
+
+    if ((offset mod ofi^.BootRecord^.sectorSize) <> 0) or ((byteCount mod ofi^.BootRecord^.sectorSize) <> 0) then begin
+        if bytesRead <> nil then
+            bytesRead^ := readFileAtOffset(volume, directory, fileName, offset, buffer, byteCount, ctx);
+        if callback <> nil then callback(eNone, callbackData);
+        exit;
+    end;
+
+    asyncCtx := fatTransferAlloc(volume);
+    if asyncCtx = nil then begin
+        if callback <> nil then callback(eOutOfMemory, callbackData);
+        exit;
+    end;
+    asyncCtx^.Mode := famRead;
+    asyncCtx^.State := ftsPrepare;
+    asyncCtx^.Volume := volume;
+    asyncCtx^.OpenFile := ofi;
+    asyncCtx^.Buffer := buffer;
+    asyncCtx^.Offset := offset;
+    asyncCtx^.ByteCount := byteCount;
+    asyncCtx^.BytesOut := bytesRead;
+    asyncCtx^.Callback := callback;
+    asyncCtx^.CallbackData := callbackData;
+    asyncCtx^.Cluster := ofi^.FirstCluster;
+    asyncCtx^.DataStart := ofi^.DataStart;
+    asyncCtx^.BootRecord := ofi^.BootRecord;
+    asyncCtx^.LastError := eNone;
+    asyncCtx^.CursorValid := false;
+    asyncCtx^.ExtentValid := false;
+    if fat32_fileio_prepare_single_run(asyncCtx, sectorLBA, chunkSectors) and
+       (asyncCtx^.ChunkBytes = asyncCtx^.ByteCount) then begin
+        err := driver.storage.mgr.storage_read_async(
+            volume^.device, sectorLBA, chunkSectors, buffer,
+            @fat32_fileio_direct_complete, asyncCtx);
+        if err <> eNone then begin
+            fatTransferFree(asyncCtx);
+            if callback <> nil then callback(err, callbackData);
+        end;
+        exit;
+    end;
+    fatWorkerEnsure(volume);
+    if not fatScheduleTransfer(asyncCtx) then begin
+        fatTransferFree(asyncCtx);
+        if callback <> nil then callback(eQueueFull, callbackData);
+    end;
+end;
+
+procedure writeFileAtOffsetAsync(volume : PStorage_Volume; directory : pchar; fileName : pchar;
+                                 offset : uint32; buffer : puint32; byteCount : uint32;
+                                 ctx : pointer; bytesWritten : puint32;
+                                 callback : TIOCallback; callbackData : pointer);
+var
+    ofi             : PFATOpenFile;
+    asyncCtx        : PFATFileIOAsyncCtx;
+    cluster         : uint32;
+    dataStart       : uint32;
+    origByteSize    : uint32;
+    newEnd          : uint32;
+    bytesPerCluster : uint32;
+    oldClusters     : uint32;
+    needClusters    : uint32;
+    targetClusters  : uint32;
+    extraClusters   : uint32;
+    newExtents      : PLinkedListBase;
+    lastCluster     : uint32;
+    nextFat         : uint32;
+    i               : uint32;
+    extent          : PClusterExtent;
+    dirBuf          : puint32;
+    rawDir          : PDirectory;
+    loc             : TDirEntryLocation;
+    chainWalkLimit  : uint32;
+    firstNewCluster : uint32;
+    reserveClusters : uint32;
+    sectorLBA       : uint32;
+    chunkSectors    : uint32;
+    err             : TError;
+begin
+    if bytesWritten <> nil then bytesWritten^ := 0;
+    ofi := PFATOpenFile(ctx);
+
+    if (ofi = nil) or (buffer = nil) or (byteCount = 0) then begin
+        if callback <> nil then callback(eInvalidArgument, callbackData);
+        exit;
+    end;
+
+    if ((offset mod ofi^.BootRecord^.sectorSize) <> 0) or ((byteCount mod ofi^.BootRecord^.sectorSize) <> 0) then begin
+        if bytesWritten <> nil then
+            bytesWritten^ := writeFileAtOffset(volume, directory, fileName, offset, buffer, byteCount, ctx);
+        if callback <> nil then callback(eNone, callbackData);
+        exit;
+    end;
+
+    dataStart := ofi^.DataStart;
+    origByteSize := ofi^.ByteSize;
+    if ofi^.BootRecord^.sectorSize > 0 then
+        chainWalkLimit := (ofi^.BootRecord^.FATSize * ofi^.BootRecord^.sectorSize) div 4
+    else
+        chainWalkLimit := 0;
+    if ofi^.Exists then
+        cluster := ofi^.FirstCluster
+    else
+        cluster := 0;
+
+    if not ofi^.Exists then begin
+        dirBuf := puint32(kalloc(ofi^.BootRecord^.sectorSize));
+        if dirBuf = nil then begin
+            if callback <> nil then callback(eOutOfMemory, callbackData);
+            exit;
+        end;
+        if not locateFreeDirEntry(volume, ofi^.DirCluster, ofi^.BootRecord, loc, dirBuf) then begin
+            kfree(dirBuf);
+            if callback <> nil then callback(eDirectoryFull, callbackData);
+            exit;
+        end;
+        rawDir := @PDirectory(dirBuf)[loc.EntryIdx];
+        memset(uint32(rawDir), 0, sizeof(TDirectory));
+        rawDir^.fileName := ofi^.CleanName;
+        rawDir^.attributes := 0;
+        fillFatExt(rawDir^.fileExtension, ofi^.ExtPart);
+        rawDir^.clusterLow := 0;
+        rawDir^.clusterHigh := 0;
+        rawDir^.byteSize := 0;
+        driver.storage.mgr.storage_write(volume^.device, loc.SectorLBA, 1, dirBuf);
+        kfree(dirBuf);
+        ofi^.Exists := true;
+        sioc_valid := false;
+    end;
+
+    newEnd := offset + byteCount;
+    bytesPerCluster := uint32(ofi^.BootRecord^.spc) * uint32(ofi^.BootRecord^.sectorSize);
+
+    if newEnd > origByteSize then begin
+        oldClusters := ofi^.AllocClusters;
+        needClusters := fatClustersForBytes(newEnd, bytesPerCluster);
+        targetClusters := needClusters;
+        if needClusters > oldClusters then begin
+            reserveClusters := fatPreallocClusterCount(bytesPerCluster);
+            targetClusters := oldClusters + reserveClusters;
+            if targetClusters < needClusters then
+                targetClusters := needClusters;
+        end;
+
+        if targetClusters > oldClusters then begin
+            extraClusters := targetClusters - oldClusters;
+            if oldClusters > 0 then begin
+                if sioc_valid and (sioc_vol = volume) and (sioc_fileClust = cluster) then
+                    lastCluster := sioc_chainClust
+                else
+                    lastCluster := cluster;
+                nextFat := readFat(volume, lastCluster, ofi^.BootRecord);
+                while ((nextFat and $0FFFFFFF) < $0FFFFFF8) and (nextFat <> 0) do begin
+                    if chainWalkLimit = 0 then begin
+                        if callback <> nil then callback(eCorruptFilesystem, callbackData);
+                        exit;
+                    end;
+                    chainWalkLimit := chainWalkLimit - 1;
+                    lastCluster := nextFat;
+                    nextFat := readFat(volume, lastCluster, ofi^.BootRecord);
+                end;
+            end else
+                lastCluster := 0;
+
+            if fatFindContiguousFreeRange(volume, extraClusters, ofi^.BootRecord, firstNewCluster) then begin
+                fatLinkContiguousRange(volume, ofi^.BootRecord, lastCluster, firstNewCluster, extraClusters, lastCluster);
+                if oldClusters = 0 then
+                    cluster := firstNewCluster;
+                if ofi^.Extents = nil then
+                    ofi^.Extents := LL_New(sizeof(TClusterExtent));
+                if ofi^.Extents <> nil then
+                    fatAppendExtent(ofi^.Extents, firstNewCluster, extraClusters);
+            end else begin
+                newExtents := findFreeClusterExtents(volume, extraClusters, ofi^.BootRecord);
+                if newExtents = nil then begin
+                    if callback <> nil then callback(eDiskFull, callbackData);
+                    exit;
+                end;
+
+                if LL_Size(newExtents) > 0 then begin
+                    for i := 0 to LL_Size(newExtents) - 1 do begin
+                        extent := PClusterExtent(LL_Get(newExtents, i));
+                        fatLinkContiguousRange(volume, ofi^.BootRecord, lastCluster,
+                            extent^.StartCluster, extent^.ClusterCount, lastCluster);
+                        if extent <> nil then begin
+                            if ofi^.Extents = nil then
+                                ofi^.Extents := LL_New(sizeof(TClusterExtent));
+                            if ofi^.Extents <> nil then
+                                fatAppendExtent(ofi^.Extents, extent^.StartCluster, extent^.ClusterCount);
+                        end;
+                        if (oldClusters = 0) and (i = 0) then
+                            cluster := extent^.StartCluster;
+                    end;
+                end;
+                LL_Free(newExtents);
+            end;
+
+            ofi^.FatDirty := true;
+            ofi^.AllocClusters := targetClusters;
+            updateSIOC(volume, cluster, targetClusters - 1, lastCluster);
+        end;
+    end;
+
+    asyncCtx := fatTransferAlloc(volume);
+    if asyncCtx = nil then begin
+        if callback <> nil then callback(eOutOfMemory, callbackData);
+        exit;
+    end;
+    asyncCtx^.Mode := famWrite;
+    asyncCtx^.State := ftsPrepare;
+    asyncCtx^.Volume := volume;
+    asyncCtx^.OpenFile := ofi;
+    asyncCtx^.Buffer := buffer;
+    asyncCtx^.Offset := offset;
+    asyncCtx^.ByteCount := byteCount;
+    asyncCtx^.BytesOut := bytesWritten;
+    asyncCtx^.Callback := callback;
+    asyncCtx^.CallbackData := callbackData;
+    asyncCtx^.Cluster := cluster;
+    asyncCtx^.OrigByteSize := origByteSize;
+    asyncCtx^.DataStart := dataStart;
+    asyncCtx^.BootRecord := ofi^.BootRecord;
+
+    if (cluster <> 0) and ((offset + byteCount) > ofi^.ByteSize) then
+        ofi^.MetaDirty := true;
+
+    asyncCtx^.LastError := eNone;
+    asyncCtx^.CursorValid := false;
+    asyncCtx^.ExtentValid := false;
+    if fat32_fileio_prepare_single_run(asyncCtx, sectorLBA, chunkSectors) and
+       (asyncCtx^.ChunkBytes = asyncCtx^.ByteCount) then begin
+        err := driver.storage.mgr.storage_write_async(
+            volume^.device, sectorLBA, chunkSectors, buffer,
+            @fat32_fileio_direct_complete, asyncCtx);
+        if err <> eNone then begin
+            fatTransferFree(asyncCtx);
+            if callback <> nil then callback(err, callbackData);
+        end;
+        exit;
+    end;
+    fatWorkerEnsure(volume);
+    if not fatScheduleTransfer(asyncCtx) then begin
+        fatTransferFree(asyncCtx);
+        if callback <> nil then callback(eQueueFull, callbackData);
+    end;
+end;
+
 procedure init();
 begin
     push_trace('driver.storage.fs.fat32.init()');
@@ -3219,6 +4580,8 @@ begin
     filesystem.detectcallback:= @detect_volumes;
     filesystem.readOffsetCallback := @readFileAtOffset;
     filesystem.writeOffsetCallback := @writeFileAtOffset;
+    filesystem.readOffsetAsyncCallback := @readFileAtOffsetAsync;
+    filesystem.writeOffsetAsyncCallback := @writeFileAtOffsetAsync;
     filesystem.fileSizeCallback := @getFileSize;
     filesystem.identifyCallback := @identify_volume;
     filesystem.deleteFileCallback := @deleteFile;
@@ -3231,8 +4594,6 @@ begin
       parked cleanly (CPU-free) while the driver.storage.ctl.ahci ISR completes the request. }
     filesystem.createDirAsyncCallback  := nil;
     filesystem.readDirAsyncCallback    := nil;
-    filesystem.deleteFileAsyncCallback := nil;
-    filesystem.deleteDirAsyncCallback  := nil;
 
     driver.storage.fs.mgr.register_filesystem(@filesystem);
     io.syslog.logln('FAT32', 'init: done');

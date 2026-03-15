@@ -37,6 +37,7 @@ type
     PFileDescriptor = ^TFileDescriptor;
     TFileDescriptor = record
         InUse       : boolean;
+        AsyncRefs   : uint32;      { in-flight async ops using this descriptor }
         Volume      : PStorage_Volume;
         Directory   : pchar;       { directory path within the volume }
         FileName    : pchar;       { filename within that directory }
@@ -45,6 +46,8 @@ type
         DataSize    : uint32;      { cached file size in bytes (from fileSizeCallback) }
         DeviceOps   : pointer;     { PVFSDeviceOps — non-nil for device FDs }
         DeviceData  : pointer;     { opaque data passed to device callbacks }
+        FSPrivate   : pointer;     { opaque FS-level per-file metadata (from openFileCallback) }
+        FSCloseHook : pointer;     { procedure(pointer) — frees FSPrivate on close }
     end;
 
     PFDTable = ^TFDTable;
@@ -68,6 +71,9 @@ function  fd_alloc(table : PFDTable) : uint32;
 { Get a pointer to the descriptor for a 1-based handle.
   Returns nil if handle is out of range or the slot is not in use. }
 function  fd_get(table : PFDTable; handle : uint32) : PFileDescriptor;
+function  fd_begin_async(entry : PFileDescriptor) : boolean;
+procedure fd_end_async(entry : PFileDescriptor);
+function  fd_has_async(entry : PFileDescriptor) : boolean;
 
 { Close a single file descriptor: free its buffers and core.strings,
   mark the slot as not-in-use.
@@ -94,10 +100,19 @@ begin
     fd_table_new := tbl;
 end;
 
+type
+    TFSPrivateClose = procedure(data : pointer);
+
 procedure fd_free_entry(entry : PFileDescriptor);
 begin
     if entry = nil then exit;
     if not entry^.InUse then exit;
+
+    { Free FS-level per-file metadata first }
+    if (entry^.FSPrivate <> nil) and (entry^.FSCloseHook <> nil) then
+        TFSPrivateClose(entry^.FSCloseHook)(entry^.FSPrivate);
+    entry^.FSPrivate := nil;
+    entry^.FSCloseHook := nil;
 
     if entry^.Directory <> nil then begin
         kfree(void(entry^.Directory));
@@ -113,6 +128,7 @@ begin
     end;
 
     entry^.InUse := false;
+    entry^.AsyncRefs := 0;
     entry^.DataSize := 0;
     entry^.DeviceOps := nil;
     entry^.DeviceData := nil;
@@ -146,6 +162,34 @@ begin
     if (handle = 0) or (handle > MAX_FDS) then exit;
     if not table^.Entries[handle - 1].InUse then exit;
     fd_get := @table^.Entries[handle - 1];
+end;
+
+function fd_begin_async(entry : PFileDescriptor) : boolean;
+begin
+    fd_begin_async := false;
+    if entry = nil then exit;
+    asm pushf; cli end;
+    if entry^.InUse then begin
+        entry^.AsyncRefs := entry^.AsyncRefs + 1;
+        fd_begin_async := true;
+    end;
+    asm popf end;
+end;
+
+procedure fd_end_async(entry : PFileDescriptor);
+begin
+    if entry = nil then exit;
+    asm pushf; cli end;
+    if entry^.AsyncRefs > 0 then
+        entry^.AsyncRefs := entry^.AsyncRefs - 1;
+    asm popf end;
+end;
+
+function fd_has_async(entry : PFileDescriptor) : boolean;
+begin
+    fd_has_async := false;
+    if entry = nil then exit;
+    fd_has_async := entry^.AsyncRefs > 0;
 end;
 
 function fd_close(table : PFDTable; handle : uint32) : boolean;

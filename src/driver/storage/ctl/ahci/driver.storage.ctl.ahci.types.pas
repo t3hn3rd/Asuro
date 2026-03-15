@@ -269,6 +269,9 @@ type
         port         : PHBA_Port;
         device_type  : TDeviceType;
         ata_info     : TIdentResponse;
+        supportsNCQ  : boolean;
+        queueDepth   : uint32;       { safe active depth for this device }
+        slotCount    : uint32;       { controller slot count from CAP.NCS + 1 }
         command_list : PHBA_CMD_HEADER;
         fis          : PHBA_FIS;
         command_table: PHBA_CMD_TABLE;
@@ -335,4 +338,3 @@ end;
 // end;
 
 end.
-
