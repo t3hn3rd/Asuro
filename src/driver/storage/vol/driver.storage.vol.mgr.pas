@@ -81,9 +81,159 @@ procedure delete_volume(volume : PStorage_Volume);
 implementation
 
 uses
-    driver.storage.vfs;
+    driver.storage.vfs,
+    proc.mgr,
+    proc.types;
+
+type
+    PFormatVolumeAsyncCtx = ^TFormatVolumeAsyncCtx;
+    TFormatVolumeAsyncCtx = record
+        Volume       : PStorage_Volume;
+        Filesystem   : PFilesystem;
+        Config       : puint32;
+        UserCallback : TIOCallback;
+        UserData     : pointer;
+    end;
 
 { ===================== helpers ===================== }
+
+function find_partition_slot_by_start(mbr : PMaster_Boot_Record; sectorStart : uint32) : sint32;
+var
+    i : uint32;
+begin
+    find_partition_slot_by_start := -1;
+    if mbr = nil then exit;
+    for i := 0 to 3 do begin
+        if mbr^.partition[i].LBA_start = sectorStart then begin
+            find_partition_slot_by_start := sint32(i);
+            exit;
+        end;
+    end;
+end;
+
+procedure update_partition_system_id_sync(device : PStorage_Device; sectorStart : uint32; systemId : uint8);
+var
+    srcMbr     : PMaster_Boot_Record;
+    tempMbr    : PMaster_Boot_Record;
+    slot       : sint32;
+    freeSrcMbr : boolean;
+begin
+    if device = nil then exit;
+
+    srcMbr := driver.storage.mgr.get_cached_mbr(device);
+    freeSrcMbr := false;
+    if srcMbr = nil then begin
+        srcMbr := driver.storage.mgr.read_mbr(device);
+        freeSrcMbr := srcMbr <> nil;
+    end;
+    if srcMbr = nil then exit;
+
+    slot := find_partition_slot_by_start(srcMbr, sectorStart);
+    if slot < 0 then begin
+        if freeSrcMbr then kfree(void(srcMbr));
+        exit;
+    end;
+
+    if srcMbr^.partition[slot].system_id = systemId then begin
+        if freeSrcMbr then kfree(void(srcMbr));
+        exit;
+    end;
+
+    tempMbr := PMaster_Boot_Record(kalloc(sizeof(TMaster_Boot_Record)));
+    if tempMbr = nil then begin
+        if freeSrcMbr then kfree(void(srcMbr));
+        exit;
+    end;
+    memcpy(uint32(srcMbr), uint32(tempMbr), sizeof(TMaster_Boot_Record));
+    tempMbr^.partition[slot].system_id := systemId;
+    driver.storage.mgr.write_mbr(device, tempMbr);
+    kfree(void(tempMbr));
+
+    if freeSrcMbr then kfree(void(srcMbr));
+end;
+
+procedure update_partition_system_id_async(device : PStorage_Device; sectorStart : uint32; systemId : uint8);
+var
+    srcMbr     : PMaster_Boot_Record;
+    tempMbr    : PMaster_Boot_Record;
+    slot       : sint32;
+    freeSrcMbr : boolean;
+begin
+    if device = nil then exit;
+
+    srcMbr := driver.storage.mgr.get_cached_mbr(device);
+    freeSrcMbr := false;
+    if srcMbr = nil then begin
+        srcMbr := driver.storage.mgr.read_mbr(device);
+        freeSrcMbr := srcMbr <> nil;
+    end;
+    if srcMbr = nil then exit;
+
+    slot := find_partition_slot_by_start(srcMbr, sectorStart);
+    if slot < 0 then begin
+        if freeSrcMbr then kfree(void(srcMbr));
+        exit;
+    end;
+
+    if srcMbr^.partition[slot].system_id = systemId then begin
+        if freeSrcMbr then kfree(void(srcMbr));
+        exit;
+    end;
+
+    tempMbr := PMaster_Boot_Record(kalloc(sizeof(TMaster_Boot_Record)));
+    if tempMbr = nil then begin
+        if freeSrcMbr then kfree(void(srcMbr));
+        exit;
+    end;
+    memcpy(uint32(srcMbr), uint32(tempMbr), sizeof(TMaster_Boot_Record));
+    tempMbr^.partition[slot].system_id := systemId;
+    driver.storage.mgr.write_mbr_async(device, tempMbr, nil, nil);
+    kfree(void(tempMbr));
+
+    if freeSrcMbr then kfree(void(srcMbr));
+end;
+
+procedure format_volume_worker(pctx : proc.types.PProcessContext);
+var
+    ctx : PFormatVolumeAsyncCtx;
+    err : TError;
+begin
+    ctx := PFormatVolumeAsyncCtx(pctx^.Local);
+    if ctx = nil then begin
+        proc.mgr.proc_exit(1);
+        exit;
+    end;
+
+    err := eNone;
+    if (ctx^.Volume = nil) or (ctx^.Filesystem = nil) then
+        err := eInvalidArgument
+    else if ctx^.Volume^.device = nil then
+        err := eDeviceNotFound
+    else if not ctx^.Volume^.device^.writable then
+        err := eReadOnly
+    else if ctx^.Filesystem^.createCallback = nil then
+        err := eInvalidArgument;
+
+    if err = eNone then begin
+        update_partition_system_id_sync(ctx^.Volume^.device, ctx^.Volume^.sectorStart, ctx^.Filesystem^.system_id);
+        ctx^.Volume^.filesystem := ctx^.Filesystem;
+        ctx^.Filesystem^.createCallback(ctx^.Volume, ctx^.Volume^.sectorCount, ctx^.Volume^.sectorStart, ctx^.Config);
+
+        { Re-probe the freshly formatted volume so the caller gets a verified
+          filesystem assignment and refreshed free-space metadata. }
+        ctx^.Volume^.filesystem := nil;
+        driver.storage.fs.mgr.probe_volume(ctx^.Volume);
+        if ctx^.Volume^.filesystem <> ctx^.Filesystem then
+            err := eUnsupportedFilesystem;
+    end;
+
+    if ctx^.Config <> nil then
+        kfree(void(ctx^.Config));
+    if ctx^.UserCallback <> nil then
+        ctx^.UserCallback(err, ctx^.UserData);
+    kfree(void(ctx));
+    proc.mgr.proc_exit(0);
+end;
 
 { Create a TStorage_Volume from a partition entry and register it }
 procedure create_volume_from_partition(device : PStorage_Device; sectorStart : uint32; sectorCount : uint32);
@@ -103,6 +253,23 @@ begin
     register_volume(device, volume);
 end;
 
+procedure remove_volume_from_device_list(device : PStorage_Device; volume : PStorage_Volume);
+var
+    i : uint32;
+    v : PStorage_Volume;
+begin
+    if (device = nil) or (device^.volumes = nil) or (volume = nil) then exit;
+    i := 0;
+    while i < DL_Size(device^.volumes) do begin
+        v := PStorage_Volume(Void(DL_Get(device^.volumes, i))^);
+        if v = volume then begin
+            DL_Delete(device^.volumes, i);
+            exit;
+        end;
+        i := i + 1;
+    end;
+end;
+
 { Remove from both global and device volume core.ds.lists, then free }
 procedure remove_volume_by_start(device : PStorage_Device; sectorStart : uint32);
 var
@@ -113,33 +280,21 @@ begin
     found := nil;
     if device = nil then exit;
 
-    { Remove from device list first (before we free the volume) }
-    if device^.volumes <> nil then begin
-        i := 0;
-        while i < DL_Size(device^.volumes) do begin
-            v := PStorage_Volume(Void(DL_Get(device^.volumes, i))^);
-            if v^.sectorStart = sectorStart then begin
-                DL_Delete(device^.volumes, i);
-                break;
-            end else
-                i := i + 1;
-        end;
-    end;
-
-    { Remove from global list and free }
     i := 0;
     while i < DL_Size(volumes) do begin
         v := PStorage_Volume(Void(DL_Get(volumes, i))^);
         if (v^.device = device) and (v^.sectorStart = sectorStart) then begin
             found := v;
-            DL_Delete(volumes, i);
             break;
         end else
             i := i + 1;
     end;
 
     if found <> nil then begin
-        driver.storage.vfs.InvalidateVolume(found);
+        if not driver.storage.vfs.InvalidateVolume(found) then
+            exit;
+        remove_volume_from_device_list(device, found);
+        DL_Delete(volumes, i);
         kfree(puint32(found));
     end;
 end;
@@ -154,15 +309,16 @@ begin
     while i < DL_Size(volumes) do begin
         v := PStorage_Volume(Void(DL_Get(volumes, i))^);
         if v^.device = device then begin
+            if not driver.storage.vfs.InvalidateVolume(v) then begin
+                i := i + 1;
+                continue;
+            end;
             DL_Delete(volumes, i);
-            driver.storage.vfs.InvalidateVolume(v);
+            remove_volume_from_device_list(device, v);
             kfree(puint32(v));
         end else
             i := i + 1;
     end;
-
-    if (device <> nil) and (device^.volumes <> nil) then
-        DL_Clear(device^.volumes);
 end;
 
 { ===================== Lifecycle ===================== }
@@ -616,9 +772,12 @@ begin
     if fs = nil then exit;
     if fs^.createCallback = nil then exit;
 
+    update_partition_system_id_sync(device, vol^.sectorStart, fs^.system_id);
     vol^.filesystem := fs;
     fs^.createCallback(vol, vol^.sectorCount, vol^.sectorStart, config);
-    format_volume := true;
+    vol^.filesystem := nil;
+    driver.storage.fs.mgr.probe_volume(vol);
+    format_volume := vol^.filesystem = fs;
 end;
 
 function format_volume_async(device : PStorage_Device; volIndex : uint32; filesystemName : pchar;
@@ -626,6 +785,8 @@ function format_volume_async(device : PStorage_Device; volIndex : uint32; filesy
 var
     vol : PStorage_Volume;
     fs  : PFilesystem;
+    ctx : PFormatVolumeAsyncCtx;
+    cfgCopy : puint32;
 begin
     push_trace('driver.storage.vol.mgr.format_volume_async');
     format_volume_async := false;
@@ -636,10 +797,37 @@ begin
 
     fs := driver.storage.fs.mgr.find_filesystem_by_name(filesystemName);
     if fs = nil then exit;
-    if fs^.createAsyncCallback = nil then exit;
+    if fs^.createCallback = nil then exit;
 
-    vol^.filesystem := fs;
-    fs^.createAsyncCallback(vol, vol^.sectorCount, vol^.sectorStart, config, callback, callbackData);
+    cfgCopy := nil;
+    if config <> nil then begin
+        cfgCopy := puint32(kalloc(sizeof(uint32)));
+        if cfgCopy = nil then begin
+            if callback <> nil then callback(eOutOfMemory, callbackData);
+            exit;
+        end;
+        cfgCopy^ := config^;
+    end;
+
+    ctx := PFormatVolumeAsyncCtx(kalloc(sizeof(TFormatVolumeAsyncCtx)));
+    if ctx = nil then begin
+        if cfgCopy <> nil then kfree(void(cfgCopy));
+        if callback <> nil then callback(eOutOfMemory, callbackData);
+        exit;
+    end;
+    ctx^.Volume := vol;
+    ctx^.Filesystem := fs;
+    ctx^.Config := cfgCopy;
+    ctx^.UserCallback := callback;
+    ctx^.UserData := callbackData;
+
+    if proc.mgr.create('vol.fmt', @format_volume_worker, void(ctx), 1) = nil then begin
+        if cfgCopy <> nil then kfree(void(cfgCopy));
+        kfree(void(ctx));
+        if callback <> nil then callback(eOutOfMemory, callbackData);
+        exit;
+    end;
+
     format_volume_async := true;
 end;
 

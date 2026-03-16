@@ -32,7 +32,8 @@ uses
     debug.tracer,
     driver.video,
     driver.storage.vol.mgr,
-    driver.video.windows;
+    driver.video.windows,
+    core.util, arch.x86.util;
 
 const
     WIN_W = 740;
@@ -62,6 +63,18 @@ var
     add_err_lbl        : Plv_obj;
     { Sidebar item tracking for highlight }
     active_sidebar_btn : Plv_obj;
+    fmt_poll_timer     : Plv_timer;
+    fmt_done_flag      : uint32;
+    fmt_done_error     : TError;
+    fmt_done_vol_idx   : uint32;
+    ui_session_id      : uint32;
+
+type
+    PFmtUICallbackCtx = ^TFmtUICallbackCtx;
+    TFmtUICallbackCtx = record
+        SessionID : uint32;
+        VolumeIdx : uint32;
+    end;
 
 { ============================================================
   Forward declarations
@@ -73,6 +86,7 @@ procedure refreshSidebar; forward;
 procedure showDeviceDetail(devIdx: uint32); forward;
 procedure showVolumeDetail(volIdx: uint32); forward;
 procedure clearDetail; forward;
+procedure fmt_poll_cb(tmr: Plv_timer); cdecl; forward;
 
 { ============================================================
   Helpers — size formatting
@@ -123,6 +137,53 @@ function boolStr(b: boolean): pchar;
 begin
     if b then boolStr := 'Yes'
     else boolStr := 'No';
+end;
+
+function formatErrorName(err : TError) : pchar;
+begin
+    case err of
+        eNone: formatErrorName := 'eNone';
+        eUnknown: formatErrorName := 'eUnknown';
+        eNotSupported: formatErrorName := 'eNotSupported';
+        eOutOfMemory: formatErrorName := 'eOutOfMemory';
+        eInvalidArgument: formatErrorName := 'eInvalidArgument';
+        eFileInUse: formatErrorName := 'eFileInUse';
+        eFileDoesNotExist: formatErrorName := 'eFileDoesNotExist';
+        eInvalidFileName: formatErrorName := 'eInvalidFileName';
+        eInvalidFileExtension: formatErrorName := 'eInvalidFileExtension';
+        eFilenameTooLong: formatErrorName := 'eFilenameTooLong';
+        eDirectoryDoesNotExist: formatErrorName := 'eDirectoryDoesNotExist';
+        eDirectoryAlreadyExists: formatErrorName := 'eDirectoryAlreadyExists';
+        eDirectoryNotEmpty: formatErrorName := 'eDirectoryNotEmpty';
+        eDirectoryFull: formatErrorName := 'eDirectoryFull';
+        eNotADirectory: formatErrorName := 'eNotADirectory';
+        eWriteOnly: formatErrorName := 'eWriteOnly';
+        eReadOnly: formatErrorName := 'eReadOnly';
+        ePermissionDenied: formatErrorName := 'ePermissionDenied';
+        eInvalidPath: formatErrorName := 'eInvalidPath';
+        eTooManyOpenFiles: formatErrorName := 'eTooManyOpenFiles';
+        eInvalidHandle: formatErrorName := 'eInvalidHandle';
+        eFileNotLoaded: formatErrorName := 'eFileNotLoaded';
+        eAlreadyExists: formatErrorName := 'eAlreadyExists';
+        eDiskFull: formatErrorName := 'eDiskFull';
+        eIOError: formatErrorName := 'eIOError';
+        eIOTimeout: formatErrorName := 'eIOTimeout';
+        eIOCancelled: formatErrorName := 'eIOCancelled';
+        eDeviceNotReady: formatErrorName := 'eDeviceNotReady';
+        eCorruptFilesystem: formatErrorName := 'eCorruptFilesystem';
+        eBadSector: formatErrorName := 'eBadSector';
+        eAlreadyMounted: formatErrorName := 'eAlreadyMounted';
+        eNotMounted: formatErrorName := 'eNotMounted';
+        eUnsupportedFilesystem: formatErrorName := 'eUnsupportedFilesystem';
+        eDeviceNotFound: formatErrorName := 'eDeviceNotFound';
+        eDeviceRemoved: formatErrorName := 'eDeviceRemoved';
+        eQueueFull: formatErrorName := 'eQueueFull';
+        eNoFreeSlot: formatErrorName := 'eNoFreeSlot';
+        eInvalidPartitionTable: formatErrorName := 'eInvalidPartitionTable';
+        eVolumeNotFound: formatErrorName := 'eVolumeNotFound';
+    else
+        formatErrorName := 'eUnknown';
+    end;
 end;
 
 { Check if a pchar string contains only digits }
@@ -453,6 +514,7 @@ begin
         end;
     end;
 
+    memset(uint32(@part), 0, sizeof(TPartition_table));
     driver.storage.vol.mbr.setup_partition(@part, lba, sectors);
     driver.storage.vol.mgr.add_partition_async(device, uint32(slot), part, nil, nil);
 
@@ -552,12 +614,41 @@ end;
   ============================================================ }
 
 { Async completion callback — fired from ISR context when format finishes.
-  Safe to touch LVGL here because LVGL and driver.storage.ctl.ahci ISRs are naturally
-  serialised (both run with IF=0). }
+  Only sets completion flags; LVGL work happens later on the UI poll timer. }
 procedure fmt_done_cb(error : TError; userdata : pointer);
+var
+    ctx : PFmtUICallbackCtx;
 begin
+    ctx := PFmtUICallbackCtx(userdata);
+    if ctx <> nil then begin
+        if ctx^.SessionID = ui_session_id then begin
+            fmt_done_error := error;
+            fmt_done_vol_idx := ctx^.VolumeIdx;
+            puint32(@fmt_done_flag)^ := 1;
+        end;
+        kfree(void(ctx));
+    end;
+end;
+
+procedure fmt_poll_cb(tmr: Plv_timer); cdecl;
+var
+    mbox : Plv_obj;
+begin
+    if puint32(@fmt_done_flag)^ <> 1 then exit;
+    puint32(@fmt_done_flag)^ := 0;
+
     refreshSidebar;
-    showVolumeDetail(sel_vol_idx);
+    showVolumeDetail(fmt_done_vol_idx);
+
+    if fmt_done_error <> eNone then begin
+        closeMsgBox;
+        mbox := lv_msgbox_create(lv_layer_top);
+        active_mbox := mbox;
+        lv_msgbox_add_title(mbox, 'Format Failed');
+        lv_msgbox_add_text(mbox, 'The volume was formatted but could not be verified.');
+        lv_msgbox_add_text(mbox, formatErrorName(fmt_done_error));
+        lv_msgbox_add_footer_button(mbox, 'OK');
+    end;
 end;
 
 procedure fmt_ok_cb(e: Plv_event); cdecl;
@@ -566,6 +657,7 @@ var
     selIdx : uint32;
     fs     : PFilesystem;
     vol    : PStorage_Volume;
+    cbCtx  : PFmtUICallbackCtx;
 begin
     code := lv_event_get_code(e);
     if code <> LV_EVENT_CLICKED then exit;
@@ -579,9 +671,21 @@ begin
 
     closeMsgBox;
 
-    { Submit async format — returns immediately, fmt_done_cb fires on completion }
-    driver.storage.vol.mgr.format_volume_async(vol^.device, sel_vol_idx, fs^.sName, nil,
-        @fmt_done_cb, nil);
+    cbCtx := PFmtUICallbackCtx(kalloc(sizeof(TFmtUICallbackCtx)));
+    if cbCtx = nil then exit;
+    cbCtx^.SessionID := ui_session_id;
+    cbCtx^.VolumeIdx := sel_vol_idx;
+
+    { Submit async format — returns immediately, fmt_done_cb only flips a flag. }
+    if not driver.storage.vol.mgr.format_volume_async(vol^.device, sel_vol_idx, fs^.sName, nil,
+        @fmt_done_cb, cbCtx) then begin
+        kfree(void(cbCtx));
+        closeMsgBox;
+        active_mbox := lv_msgbox_create(lv_layer_top);
+        lv_msgbox_add_title(active_mbox, 'Format Failed');
+        lv_msgbox_add_text(active_mbox, 'Could not start the format operation.');
+        lv_msgbox_add_footer_button(active_mbox, 'OK');
+    end;
 end;
 
 procedure fmt_cancel_cb(e: Plv_event); cdecl;
@@ -1292,6 +1396,12 @@ procedure onClose(wid: uint32);
 begin
     debug.tracer.push_trace('diskutil.onClose');
     closeMsgBox;
+    ui_session_id := ui_session_id + 1;
+    puint32(@fmt_done_flag)^ := 0;
+    if fmt_poll_timer <> nil then begin
+        lv_timer_delete(fmt_poll_timer);
+        fmt_poll_timer := nil;
+    end;
     if proc_pid <> 0 then begin
         proc.mgr.kill(proc_pid);
         proc_pid := 0;
@@ -1399,6 +1509,10 @@ begin
     add_textarea := nil;
     add_err_lbl := nil;
     active_sidebar_btn := nil;
+    fmt_done_flag := 0;
+    fmt_done_error := eNone;
+    fmt_done_vol_idx := 0;
+    fmt_poll_timer := lv_timer_create(@fmt_poll_cb, 50, nil);
 
     refreshSidebar;
 
@@ -1431,6 +1545,11 @@ begin
     add_textarea := nil;
     add_err_lbl := nil;
     active_sidebar_btn := nil;
+    fmt_poll_timer := nil;
+    fmt_done_flag := 0;
+    fmt_done_error := eNone;
+    fmt_done_vol_idx := 0;
+    ui_session_id := 1;
     driver.video.desktop.registerProgram('Disk Utility', @launch);
     debug.tracer.pop_trace;
 end;

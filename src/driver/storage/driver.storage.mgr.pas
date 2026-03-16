@@ -336,18 +336,20 @@ end;
 
 procedure write_mbr(device : PStorage_Device; mbr : PMaster_Boot_Record);
 var
+    oldCache : pointer;
     cache : puint32;
     buf   : puint32;
 begin
     push_trace('driver.storage.mgr.write_mbr');
     if (device = nil) or (mbr = nil) or (not device^.writable) then exit;
     { Update cache }
-    if device^.cachedMBR <> nil then
-        kfree(device^.cachedMBR);
+    oldCache := device^.cachedMBR;
     cache := puint32(kalloc(sizeof(TMaster_Boot_Record)));
     if cache <> nil then
         memcpy(uint32(mbr), uint32(cache), sizeof(TMaster_Boot_Record));
     device^.cachedMBR := pointer(cache);
+    if oldCache <> nil then
+        kfree(oldCache);
 
     buf := alloc_mbr_io_buffer(device, mbr);
     if buf = nil then exit;
@@ -364,6 +366,7 @@ end;
 procedure write_mbr_async(device : PStorage_Device; mbr : PMaster_Boot_Record;
                           callback : TIOCallback; callbackData : pointer);
 var
+    oldCache : pointer;
     cache : puint32;
     buf   : puint32;
     ctx   : PMBRWriteAsyncData;
@@ -379,12 +382,13 @@ begin
         exit;
     end;
     { Update cache }
-    if device^.cachedMBR <> nil then
-        kfree(device^.cachedMBR);
+    oldCache := device^.cachedMBR;
     cache := puint32(kalloc(sizeof(TMaster_Boot_Record)));
     if cache <> nil then
         memcpy(uint32(mbr), uint32(cache), sizeof(TMaster_Boot_Record));
     device^.cachedMBR := pointer(cache);
+    if oldCache <> nil then
+        kfree(oldCache);
 
     buf := alloc_mbr_io_buffer(device, mbr);
     if buf = nil then begin
