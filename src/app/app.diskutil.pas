@@ -59,6 +59,11 @@ var
     active_mbox        : Plv_obj;
     { Widgets kept across dialogs }
     fmt_dropdown       : Plv_obj;
+    fmt_param_area     : Plv_obj;
+    fmt_cluster_input  : Plv_obj;
+    fmt_filecount_input: Plv_obj;
+    fmt_label_input    : Plv_obj;
+    fmt_param_error_lbl: Plv_obj;
     add_textarea       : Plv_obj;
     add_err_lbl        : Plv_obj;
     { Sidebar item tracking for highlight }
@@ -67,6 +72,8 @@ var
     fmt_done_flag      : uint32;
     fmt_done_error     : TError;
     fmt_done_vol_idx   : uint32;
+    storage_dirty_flag : uint32;
+    storage_watch_id   : uint32;
     ui_session_id      : uint32;
 
 type
@@ -87,6 +94,8 @@ procedure showDeviceDetail(devIdx: uint32); forward;
 procedure showVolumeDetail(volIdx: uint32); forward;
 procedure clearDetail; forward;
 procedure fmt_poll_cb(tmr: Plv_timer); cdecl; forward;
+procedure diskutil_storage_event(event : TStorageLifecycleEvent; device : PStorage_Device; volume : PStorage_Volume; error : TError; userdata : pointer); forward;
+procedure rebuild_fmt_param_ui(fs : PFilesystem); forward;
 
 { ============================================================
   Helpers — size formatting
@@ -421,6 +430,73 @@ begin
     add_textarea := nil;
     add_err_lbl := nil;
     fmt_dropdown := nil;
+    fmt_param_area := nil;
+    fmt_cluster_input := nil;
+    fmt_filecount_input := nil;
+    fmt_param_error_lbl := nil;
+end;
+
+procedure set_fmt_param_error(text : pchar);
+begin
+    if fmt_param_area = nil then exit;
+    if fmt_param_error_lbl = nil then begin
+        fmt_param_error_lbl := lv_label_create(fmt_param_area);
+        lv_obj_set_style_text_color(fmt_param_error_lbl, lv_color_make(230, 80, 80), 0);
+        lv_obj_set_style_text_font(fmt_param_error_lbl, @lv_font_montserrat_14, 0);
+    end;
+    lv_label_set_text(fmt_param_error_lbl, text);
+end;
+
+procedure rebuild_fmt_param_ui(fs : PFilesystem);
+var
+    lbl : Plv_obj;
+begin
+    if fmt_param_area = nil then exit;
+    lv_obj_clean(fmt_param_area);
+    fmt_cluster_input := nil;
+    fmt_filecount_input := nil;
+    fmt_param_error_lbl := nil;
+
+    if fs = nil then exit;
+    if fs^.formatParamFlags = 0 then begin
+        addStatusLabel(fmt_param_area, 'No filesystem-specific format options.', 140, 150, 170);
+        exit;
+    end;
+
+    if (fs^.formatParamFlags and FS_FORMAT_PARAM_CLUSTER_SIZE) <> 0 then begin
+        lbl := lv_label_create(fmt_param_area);
+        lv_label_set_text(lbl, 'Sectors per cluster (blank = auto, power of 2)');
+        lv_obj_set_style_text_color(lbl, lv_color_make(180, 190, 210), 0);
+        lv_obj_set_style_text_font(lbl, @lv_font_montserrat_14, 0);
+        fmt_cluster_input := lv_textarea_create(fmt_param_area);
+        lv_textarea_set_one_line(fmt_cluster_input, true);
+        lv_textarea_set_placeholder_text(fmt_cluster_input, 'Auto');
+        lv_obj_set_width(fmt_cluster_input, 220);
+    end;
+
+    if (fs^.formatParamFlags and FS_FORMAT_PARAM_FILE_COUNT) <> 0 then begin
+        lbl := lv_label_create(fmt_param_area);
+        lv_label_set_text(lbl, 'Directory/file table entry count');
+        lv_obj_set_style_text_color(lbl, lv_color_make(180, 190, 210), 0);
+        lv_obj_set_style_text_font(lbl, @lv_font_montserrat_14, 0);
+        fmt_filecount_input := lv_textarea_create(fmt_param_area);
+        lv_textarea_set_one_line(fmt_filecount_input, true);
+        lv_textarea_set_placeholder_text(fmt_filecount_input, '1000');
+        lv_obj_set_width(fmt_filecount_input, 220);
+    end;
+end;
+
+procedure fmt_fs_change_cb(e: Plv_event); cdecl;
+var
+    code   : uint32;
+    selIdx : uint32;
+    fs     : PFilesystem;
+begin
+    code := lv_event_get_code(e);
+    if code <> LV_EVENT_VALUE_CHANGED then exit;
+    selIdx := lv_dropdown_get_selected(fmt_dropdown);
+    fs := driver.storage.fs.mgr.get_filesystem(selIdx);
+    rebuild_fmt_param_ui(fs);
 end;
 
 { ============================================================
@@ -630,23 +706,50 @@ begin
     end;
 end;
 
+procedure diskutil_storage_event(event : TStorageLifecycleEvent; device : PStorage_Device; volume : PStorage_Volume; error : TError; userdata : pointer);
+begin
+    puint32(@storage_dirty_flag)^ := 1;
+end;
+
 procedure fmt_poll_cb(tmr: Plv_timer); cdecl;
 var
     mbox : Plv_obj;
 begin
+    if puint32(@storage_dirty_flag)^ <> 0 then begin
+        puint32(@storage_dirty_flag)^ := 0;
+        refreshSidebar;
+        if sel_mode = SEL_VOLUME then begin
+            if driver.storage.vol.mgr.get_volume(sel_vol_idx) <> nil then
+                showVolumeDetail(sel_vol_idx)
+            else
+                clearDetail;
+        end else if sel_mode = SEL_DEVICE then begin
+            if driver.storage.mgr.get_device(sel_dev_idx) <> nil then
+                showDeviceDetail(sel_dev_idx)
+            else
+                clearDetail;
+        end;
+    end;
+
     if puint32(@fmt_done_flag)^ <> 1 then exit;
     puint32(@fmt_done_flag)^ := 0;
 
+    closeMsgBox;
     refreshSidebar;
     showVolumeDetail(fmt_done_vol_idx);
 
     if fmt_done_error <> eNone then begin
-        closeMsgBox;
         mbox := lv_msgbox_create(lv_layer_top);
         active_mbox := mbox;
         lv_msgbox_add_title(mbox, 'Format Failed');
         lv_msgbox_add_text(mbox, 'The volume was formatted but could not be verified.');
         lv_msgbox_add_text(mbox, formatErrorName(fmt_done_error));
+        lv_msgbox_add_footer_button(mbox, 'OK');
+    end else begin
+        mbox := lv_msgbox_create(lv_layer_top);
+        active_mbox := mbox;
+        lv_msgbox_add_title(mbox, 'Format Complete');
+        lv_msgbox_add_text(mbox, 'The volume is ready.');
         lv_msgbox_add_footer_button(mbox, 'OK');
     end;
 end;
@@ -658,16 +761,72 @@ var
     fs     : PFilesystem;
     vol    : PStorage_Volume;
     cbCtx  : PFmtUICallbackCtx;
+    params : TFSFormatParams;
+    paramPtr : PFSFormatParams;
+    text   : pchar;
+    value  : uint32;
 begin
     code := lv_event_get_code(e);
     if code <> LV_EVENT_CLICKED then exit;
 
     vol := driver.storage.vol.mgr.get_volume(sel_vol_idx);
     if vol = nil then begin closeMsgBox; exit; end;
+    if driver.storage.vol.mgr.volume_is_busy(vol) then begin
+        closeMsgBox;
+        active_mbox := lv_msgbox_create(lv_layer_top);
+        lv_msgbox_add_title(active_mbox, 'Format Busy');
+        lv_msgbox_add_text(active_mbox, 'This volume is busy. Wait for the current operation to finish.');
+        lv_msgbox_add_footer_button(active_mbox, 'OK');
+        exit;
+    end;
 
     selIdx := lv_dropdown_get_selected(fmt_dropdown);
     fs := driver.storage.fs.mgr.get_filesystem(selIdx);
     if fs = nil then begin closeMsgBox; exit; end;
+
+    memset(uint32(@params), 0, sizeof(TFSFormatParams));
+    params.Version := FS_FORMAT_PARAMS_VERSION_1;
+    paramPtr := nil;
+
+    if (fs^.formatParamFlags and FS_FORMAT_PARAM_CLUSTER_SIZE) <> 0 then begin
+        if fmt_cluster_input <> nil then begin
+            text := lv_textarea_get_text(fmt_cluster_input);
+            if (text <> nil) and (text^ <> #0) then begin
+                if not isNumericStr(text) then begin
+                    set_fmt_param_error('Cluster size must be a number.');
+                    exit;
+                end;
+                value := stringToInt(text);
+                if (value = 0) or (value > 128) or ((value and (value - 1)) <> 0) then begin
+                    set_fmt_param_error('Cluster size must be a power of two from 1 to 128.');
+                    exit;
+                end;
+                params.Flags := params.Flags or FS_FORMAT_PARAM_CLUSTER_SIZE;
+                params.ClusterSize := value;
+                paramPtr := @params;
+            end;
+        end;
+    end;
+
+    if (fs^.formatParamFlags and FS_FORMAT_PARAM_FILE_COUNT) <> 0 then begin
+        if fmt_filecount_input <> nil then begin
+            text := lv_textarea_get_text(fmt_filecount_input);
+            if (text <> nil) and (text^ <> #0) then begin
+                if not isNumericStr(text) then begin
+                    set_fmt_param_error('File count must be a number.');
+                    exit;
+                end;
+                value := stringToInt(text);
+                if (value = 0) or (value > 65535) then begin
+                    set_fmt_param_error('File count must be from 1 to 65535.');
+                    exit;
+                end;
+                params.Flags := params.Flags or FS_FORMAT_PARAM_FILE_COUNT;
+                params.FileCount := value;
+                paramPtr := @params;
+            end;
+        end;
+    end;
 
     closeMsgBox;
 
@@ -677,7 +836,7 @@ begin
     cbCtx^.VolumeIdx := sel_vol_idx;
 
     { Submit async format — returns immediately, fmt_done_cb only flips a flag. }
-    if not driver.storage.vol.mgr.format_volume_async(vol^.device, sel_vol_idx, fs^.sName, nil,
+    if not driver.storage.vol.mgr.format_volume_async(vol^.device, sel_vol_idx, fs^.sName, paramPtr,
         @fmt_done_cb, cbCtx) then begin
         kfree(void(cbCtx));
         closeMsgBox;
@@ -685,6 +844,11 @@ begin
         lv_msgbox_add_title(active_mbox, 'Format Failed');
         lv_msgbox_add_text(active_mbox, 'Could not start the format operation.');
         lv_msgbox_add_footer_button(active_mbox, 'OK');
+    end else begin
+        active_mbox := lv_msgbox_create(lv_layer_top);
+        lv_msgbox_add_title(active_mbox, 'Formatting');
+        lv_msgbox_add_text(active_mbox, 'Formatting is running in the background.');
+        lv_msgbox_add_text(active_mbox, 'The volume will remount automatically when complete.');
     end;
 end;
 
@@ -813,6 +977,15 @@ begin
 
     vol := driver.storage.vol.mgr.get_volume(sel_vol_idx);
     if vol = nil then exit;
+    if driver.storage.vol.mgr.volume_is_busy(vol) then begin
+        mbox := lv_msgbox_create(lv_layer_top);
+        active_mbox := mbox;
+        lv_msgbox_add_title(mbox, 'Cannot Format');
+        lv_msgbox_add_text(mbox, 'This volume is busy or already being formatted.');
+        btn_no := lv_msgbox_add_footer_button(mbox, 'OK');
+        lv_obj_add_event_cb(btn_no, @fmt_cancel_cb, LV_EVENT_CLICKED, nil);
+        exit;
+    end;
 
     { Check writable }
     if (vol^.device <> nil) and (not vol^.device^.writable) then begin
@@ -864,6 +1037,18 @@ begin
     lv_obj_set_width(fmt_dropdown, 280);
     if opts <> nil then
         lv_dropdown_set_options(fmt_dropdown, opts);
+    lv_obj_add_event_cb(fmt_dropdown, @fmt_fs_change_cb, LV_EVENT_VALUE_CHANGED, nil);
+
+    fmt_param_area := lv_obj_create(body);
+    lv_obj_remove_style_all(fmt_param_area);
+    lv_obj_set_width(fmt_param_area, 300);
+    lv_obj_set_style_layout(fmt_param_area, LV_LAYOUT_FLEX, 0);
+    lv_obj_set_flex_flow(fmt_param_area, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(fmt_param_area, 4, 0);
+    lv_obj_set_style_pad_all(fmt_param_area, 0, 0);
+    lv_obj_remove_flag(fmt_param_area, LV_OBJ_FLAG_SCROLLABLE);
+    fs := driver.storage.fs.mgr.get_filesystem(lv_dropdown_get_selected(fmt_dropdown));
+    rebuild_fmt_param_ui(fs);
 
     btn_ok := lv_msgbox_add_footer_button(mbox, 'Format');
     lv_obj_add_event_cb(btn_ok, @fmt_ok_cb, LV_EVENT_CLICKED, nil);
@@ -1220,8 +1405,12 @@ begin
     lv_obj_set_flex_align(btn_row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
     if (vol^.device <> nil) and vol^.device^.writable then begin
-        btn := makeButton(btn_row, 'Format', 100);
-        lv_obj_add_event_cb(btn, @btn_format_cb, LV_EVENT_CLICKED, nil);
+        if driver.storage.vol.mgr.volume_is_formatting(vol) then
+            addStatusLabel(detail, 'Format in progress. The volume will remount when complete.', 210, 180, 110)
+        else begin
+            btn := makeButton(btn_row, 'Format', 100);
+            lv_obj_add_event_cb(btn, @btn_format_cb, LV_EVENT_CLICKED, nil);
+        end;
     end else begin
         addStatusLabel(detail, 'Device is read-only. Format disabled.', 160, 150, 130);
     end;
@@ -1398,9 +1587,14 @@ begin
     closeMsgBox;
     ui_session_id := ui_session_id + 1;
     puint32(@fmt_done_flag)^ := 0;
+    puint32(@storage_dirty_flag)^ := 0;
     if fmt_poll_timer <> nil then begin
         lv_timer_delete(fmt_poll_timer);
         fmt_poll_timer := nil;
+    end;
+    if storage_watch_id <> 0 then begin
+        driver.storage.vol.mgr.unwatch_lifecycle(storage_watch_id);
+        storage_watch_id := 0;
     end;
     if proc_pid <> 0 then begin
         proc.mgr.kill(proc_pid);
@@ -1506,13 +1700,19 @@ begin
     pending_del_slot := -1;
     active_mbox := nil;
     fmt_dropdown := nil;
+    fmt_param_area := nil;
+    fmt_cluster_input := nil;
+    fmt_filecount_input := nil;
+    fmt_param_error_lbl := nil;
     add_textarea := nil;
     add_err_lbl := nil;
     active_sidebar_btn := nil;
     fmt_done_flag := 0;
     fmt_done_error := eNone;
     fmt_done_vol_idx := 0;
+    storage_dirty_flag := 0;
     fmt_poll_timer := lv_timer_create(@fmt_poll_cb, 50, nil);
+    storage_watch_id := driver.storage.vol.mgr.watch_lifecycle(@diskutil_storage_event, nil);
 
     refreshSidebar;
 
@@ -1542,6 +1742,10 @@ begin
     pending_del_slot := -1;
     active_mbox := nil;
     fmt_dropdown := nil;
+    fmt_param_area := nil;
+    fmt_cluster_input := nil;
+    fmt_filecount_input := nil;
+    fmt_param_error_lbl := nil;
     add_textarea := nil;
     add_err_lbl := nil;
     active_sidebar_btn := nil;
@@ -1549,6 +1753,8 @@ begin
     fmt_done_flag := 0;
     fmt_done_error := eNone;
     fmt_done_vol_idx := 0;
+    storage_dirty_flag := 0;
+    storage_watch_id := 0;
     ui_session_id := 1;
     driver.video.desktop.registerProgram('Disk Utility', @launch);
     debug.tracer.pop_trace;

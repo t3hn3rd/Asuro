@@ -42,6 +42,26 @@ function HexCharToDecimal(hex : char) : uint8;
 function abs(x : sint32) : uint32;
 
 implementation
+{$ifdef CPU386}
+uses
+    arch.x86.util;
+
+const
+    MEMCPY_X86_SMALL_COPY_THRESHOLD = 16;
+{$endif}
+
+procedure scalar_memcpy(source : uint32; dest : uint32; size : uint32);
+var
+    src, dst : puint8;
+    i : uint32;
+begin
+    if size = 0 then exit;
+    for i := 0 to size - 1 do begin
+        src := puint8(source + i);
+        dst := puint8(dest + i);
+        dst^ := src^;
+    end;
+end;
 
 function abs(x : sint32) : uint32;
 var
@@ -123,17 +143,16 @@ begin
 end;
 
 procedure memcpy(source : uint32; dest : uint32; size : uint32);
-var
-    src, dst : puint8;
-    i : uint32;
-
 begin
     if size = 0 then exit;
-    for i:=0 to size-1 do begin
-        src:= puint8(source + i);
-        dst:= puint8(dest + i);
-        dst^:= src^;
-    end;
+{$ifdef CPU386}
+    if size < MEMCPY_X86_SMALL_COPY_THRESHOLD then
+        scalar_memcpy(source, dest, size)
+    else
+        arch.x86.util.__REP_MOVSB_memcpy(source, dest, size);
+{$else}
+    scalar_memcpy(source, dest, size);
+{$endif}
 end;
 
 function getWord(i : uint32; hi : boolean) : uint16;

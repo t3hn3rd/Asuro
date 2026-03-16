@@ -63,7 +63,7 @@ var
 
 
 procedure init;
-procedure create_volume(volume : PStorage_Volume; sectors : uint32; start : uint32; config : puint32);
+procedure create_volume(volume : PStorage_Volume; sectors : uint32; start : uint32; config : PFSFormatParams);
 procedure detect_volumes(disk : PStorage_Device);
 function read_directory(volume : PStorage_Volume; directory : pchar; status : PuInt32) : PLinkedListBase;
 procedure write_directory(volume : PStorage_Volume; directory : pchar; status : PuInt32);
@@ -72,7 +72,7 @@ procedure read_file(volume : PStorage_Volume; fileName : pchar; data : PuInt32; 
 
 implementation
 
-procedure create_volume(volume : PStorage_Volume; sectors : uint32; start : uint32; config : puint32);
+procedure create_volume(volume : PStorage_Volume; sectors : uint32; start : uint32; config : PFSFormatParams);
 var
     info : PDisk_Info;
     entryTable : PFile_Entry;
@@ -102,8 +102,11 @@ begin
     info^.fileCount := 1000;
     info^.signature := $0B00B1E5;
 
-    if config^ <> 0 then begin
-        info^.fileCount := config^;
+    if (config <> nil) and
+       (config^.Version = FS_FORMAT_PARAMS_VERSION_1) and
+       ((config^.Flags and FS_FORMAT_PARAM_FILE_COUNT) <> 0) and
+       (config^.FileCount <> 0) then begin
+        info^.fileCount := config^.FileCount;
     end;
 
     driver.storage.mgr.storage_write(volume^.device, start, 1, PuInt32(info));// what happens if buffer is smaller than 512?
@@ -975,6 +978,7 @@ begin
     filesystem.createcallback:= @create_volume;
     filesystem.detectcallback:= @detect_volumes;
     filesystem.identifyCallback:= @identify_volume;
+    filesystem.formatParamFlags := FS_FORMAT_PARAM_FILE_COUNT;
     // filesystem.writecallback:= @writeFile;
     // filesystem.readcallback := @readFile;
 

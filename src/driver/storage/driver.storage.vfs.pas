@@ -558,6 +558,7 @@ begin
         debug.tracer.push_trace('driver.storage.vfs.InvalidateVolume.busy');
         exit;
     end;
+    driver.storage.vol.mgr.volume_set_mounted(vol, false);
 
     { 1. Evict all directory cache entries for this volume }
     DirCache_Invalidate(vol, nil);
@@ -1163,6 +1164,7 @@ begin
 
     core.ds.hashmap.add(ht, stringCopy(mountName), void(mountObj));
     mountVolume := pvRegistered;
+    driver.storage.vol.mgr.volume_set_mounted(volume, true);
 
     kfree(void(parentPath));
     STRLL_Free(splitPath);
@@ -2434,6 +2436,7 @@ end;
 procedure DeleteFileAsync(Path : pchar; Error : PError; Callback : TIOCallback; CallbackData : pointer);
 var
     ctx : PVFSPathAsyncCtx;
+    worker : proc.types.PProcessContext;
 begin
     debug.tracer.push_trace('driver.storage.vfs.DeleteFileAsync.enter');
     if Error <> nil then Error^ := eUnknown;
@@ -2462,7 +2465,15 @@ begin
     ctx^.IsDirectory := false;
     ctx^.UserCallback := Callback;
     ctx^.UserData := CallbackData;
-    proc.mgr.create('vfs.delf', @vfs_pathop_worker, void(ctx), 1);
+    worker := proc.mgr.create('vfs.delf', @vfs_pathop_worker, void(ctx), 1);
+    if worker = nil then begin
+        if ctx^.Path <> nil then
+            kfree(void(ctx^.Path));
+        kfree(void(ctx));
+        if Error <> nil then Error^ := eOutOfMemory;
+        if Callback <> nil then Callback(eOutOfMemory, CallbackData);
+        exit;
+    end;
 
     debug.tracer.push_trace('driver.storage.vfs.DeleteFileAsync.exit');
 end;
@@ -2470,6 +2481,7 @@ end;
 procedure DeleteDirectoryAsync(Path : pchar; Error : PError; Callback : TIOCallback; CallbackData : pointer);
 var
     ctx : PVFSPathAsyncCtx;
+    worker : proc.types.PProcessContext;
 begin
     debug.tracer.push_trace('driver.storage.vfs.DeleteDirectoryAsync.enter');
     if Error <> nil then Error^ := eUnknown;
@@ -2498,7 +2510,15 @@ begin
     ctx^.IsDirectory := true;
     ctx^.UserCallback := Callback;
     ctx^.UserData := CallbackData;
-    proc.mgr.create('vfs.deld', @vfs_pathop_worker, void(ctx), 1);
+    worker := proc.mgr.create('vfs.deld', @vfs_pathop_worker, void(ctx), 1);
+    if worker = nil then begin
+        if ctx^.Path <> nil then
+            kfree(void(ctx^.Path));
+        kfree(void(ctx));
+        if Error <> nil then Error^ := eOutOfMemory;
+        if Callback <> nil then Callback(eOutOfMemory, CallbackData);
+        exit;
+    end;
 
     debug.tracer.push_trace('driver.storage.vfs.DeleteDirectoryAsync.exit');
 end;
@@ -2561,6 +2581,7 @@ procedure GetDirectoryListingAsync(Path : pchar; ResultMap : PPHashMap; Callback
 var
     ctx     : PVFSDirAsyncCtx;
     absPath : pchar;
+    worker  : proc.types.PProcessContext;
 begin
     debug.tracer.push_trace('driver.storage.vfs.GetDirectoryListingAsync.enter');
     if ResultMap <> nil then ResultMap^ := nil;
@@ -2573,12 +2594,26 @@ begin
     absPath := MakeAbsolutePath(Path);
 
     ctx := PVFSDirAsyncCtx(kalloc(sizeof(TVFSDirAsyncCtx)));
+    if ctx = nil then begin
+        if absPath <> nil then
+            kfree(void(absPath));
+        if Callback <> nil then Callback(eOutOfMemory, CallbackData);
+        exit;
+    end;
+    memset(uint32(ctx), 0, sizeof(TVFSDirAsyncCtx));
     ctx^.Path         := absPath;
     ctx^.ResultMap    := ResultMap;
     ctx^.UserCallback := Callback;
     ctx^.UserData     := CallbackData;
 
-    proc.mgr.create('vfs.dirls', @vfs_dirlist_worker, void(ctx), 1);
+    worker := proc.mgr.create('vfs.dirls', @vfs_dirlist_worker, void(ctx), 1);
+    if worker = nil then begin
+        if ctx^.Path <> nil then
+            kfree(void(ctx^.Path));
+        kfree(void(ctx));
+        if Callback <> nil then Callback(eOutOfMemory, CallbackData);
+        exit;
+    end;
     debug.tracer.push_trace('driver.storage.vfs.GetDirectoryListingAsync.exit');
 end;
 

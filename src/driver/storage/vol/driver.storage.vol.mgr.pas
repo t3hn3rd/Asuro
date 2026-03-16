@@ -45,6 +45,11 @@ var
 
 { --- Lifecycle --- }
 procedure init();
+function watch_lifecycle(callback : TStorageLifecycleCallback; userdata : pointer) : uint32;
+procedure unwatch_lifecycle(watchId : uint32);
+function volume_is_busy(volume : PStorage_Volume) : boolean;
+function volume_is_formatting(volume : PStorage_Volume) : boolean;
+procedure volume_set_mounted(volume : PStorage_Volume; mounted : boolean);
 
 { --- Volume queries --- }
 function get_volume_list() : PDList;
@@ -74,8 +79,8 @@ procedure init_disk_async(device : PStorage_Device;
                           callback : TIOCallback; callbackData : pointer);
 
 { --- Filesystem operations --- }
-function format_volume(device : PStorage_Device; volIndex : uint32; filesystemName : pchar; config : puint32) : boolean;
-function format_volume_async(device : PStorage_Device; volIndex : uint32; filesystemName : pchar; config : puint32; callback : TIOCallback; callbackData : pointer) : boolean;
+function format_volume(device : PStorage_Device; volIndex : uint32; filesystemName : pchar; config : PFSFormatParams) : boolean;
+function format_volume_async(device : PStorage_Device; volIndex : uint32; filesystemName : pchar; config : PFSFormatParams; callback : TIOCallback; callbackData : pointer) : boolean;
 procedure delete_volume(volume : PStorage_Volume);
 
 implementation
@@ -86,16 +91,101 @@ uses
     proc.types;
 
 type
+    PStorageLifecycleWatch = ^TStorageLifecycleWatch;
+    TStorageLifecycleWatch = record
+        Active   : boolean;
+        ID       : uint32;
+        Callback : TStorageLifecycleCallback;
+        UserData : pointer;
+    end;
+
     PFormatVolumeAsyncCtx = ^TFormatVolumeAsyncCtx;
     TFormatVolumeAsyncCtx = record
         Volume       : PStorage_Volume;
         Filesystem   : PFilesystem;
-        Config       : puint32;
+        Config       : PFSFormatParams;
         UserCallback : TIOCallback;
         UserData     : pointer;
     end;
 
+const
+    MAX_STORAGE_LIFECYCLE_WATCHES = 32;
+
 { ===================== helpers ===================== }
+
+var
+    LifecycleWatches : array[0..MAX_STORAGE_LIFECYCLE_WATCHES - 1] of TStorageLifecycleWatch;
+    NextLifecycleWatchID : uint32;
+
+procedure notify_lifecycle(event : TStorageLifecycleEvent; device : PStorage_Device; volume : PStorage_Volume; error : TError);
+var
+    i : uint32;
+begin
+    for i := 0 to MAX_STORAGE_LIFECYCLE_WATCHES - 1 do begin
+        if LifecycleWatches[i].Active and (LifecycleWatches[i].Callback <> nil) then
+            LifecycleWatches[i].Callback(event, device, volume, error, LifecycleWatches[i].UserData);
+    end;
+end;
+
+procedure set_volume_flag(volume : PStorage_Volume; flag : uint32; enabled : boolean);
+begin
+    if volume = nil then exit;
+    if enabled then
+        volume^.lifecycleFlags := volume^.lifecycleFlags or flag
+    else
+        volume^.lifecycleFlags := volume^.lifecycleFlags and (not flag);
+end;
+
+function find_volume_index(volume : PStorage_Volume) : sint32;
+var
+    i : uint32;
+begin
+    find_volume_index := -1;
+    if volume = nil then exit;
+    if volumes = nil then exit;
+    if DL_Size(volumes) = 0 then exit;
+    for i := 0 to DL_Size(volumes) - 1 do begin
+        if get_volume(i) = volume then begin
+            find_volume_index := sint32(i);
+            exit;
+        end;
+    end;
+end;
+
+procedure auto_mount_volume(volume : PStorage_Volume);
+var
+    volIdx    : sint32;
+    volNumStr : pchar;
+    volName   : pchar;
+    prefix    : pchar;
+    mountPath : pchar;
+begin
+    if volume = nil then exit;
+    if volume^.filesystem = nil then exit;
+
+    volIdx := find_volume_index(volume);
+    if volIdx < 0 then exit;
+
+    volNumStr := intToString(uint32(volIdx));
+    volName := stringConcat('vol', volNumStr);
+    kfree(void(volNumStr));
+    prefix := stringNew(6);
+    prefix[0] := '/';
+    prefix[1] := 'd';
+    prefix[2] := 'i';
+    prefix[3] := 's';
+    prefix[4] := 'k';
+    prefix[5] := '/';
+    mountPath := stringConcat(prefix, volName);
+
+    driver.storage.vfs.mountVolume(mountPath, volume);
+    if volume^.isBootDrive then
+        driver.storage.vfs.mountVolume('/boot', volume);
+
+    kfree(void(volName));
+    kfree(void(prefix));
+    kfree(void(mountPath));
+end;
 
 function find_partition_slot_by_start(mbr : PMaster_Boot_Record; sectorStart : uint32) : sint32;
 var
@@ -215,17 +305,26 @@ begin
         err := eInvalidArgument;
 
     if err = eNone then begin
-        update_partition_system_id_sync(ctx^.Volume^.device, ctx^.Volume^.sectorStart, ctx^.Filesystem^.system_id);
-        ctx^.Volume^.filesystem := ctx^.Filesystem;
-        ctx^.Filesystem^.createCallback(ctx^.Volume, ctx^.Volume^.sectorCount, ctx^.Volume^.sectorStart, ctx^.Config);
+        if not driver.storage.vfs.InvalidateVolume(ctx^.Volume) then
+            err := eFileInUse
+        else begin
+            update_partition_system_id_sync(ctx^.Volume^.device, ctx^.Volume^.sectorStart, ctx^.Filesystem^.system_id);
+            ctx^.Volume^.filesystem := ctx^.Filesystem;
+            ctx^.Filesystem^.createCallback(ctx^.Volume, ctx^.Volume^.sectorCount, ctx^.Volume^.sectorStart, ctx^.Config);
 
-        { Re-probe the freshly formatted volume so the caller gets a verified
-          filesystem assignment and refreshed free-space metadata. }
-        ctx^.Volume^.filesystem := nil;
-        driver.storage.fs.mgr.probe_volume(ctx^.Volume);
-        if ctx^.Volume^.filesystem <> ctx^.Filesystem then
-            err := eUnsupportedFilesystem;
+            { Re-probe the freshly formatted volume so the caller gets a verified
+              filesystem assignment and refreshed free-space metadata. }
+            ctx^.Volume^.filesystem := nil;
+            driver.storage.fs.mgr.probe_volume(ctx^.Volume);
+            if ctx^.Volume^.filesystem <> ctx^.Filesystem then
+                err := eUnsupportedFilesystem
+            else
+                auto_mount_volume(ctx^.Volume);
+        end;
     end;
+
+    set_volume_flag(ctx^.Volume, STORAGE_VOLUME_FLAG_FORMATTING, false);
+    notify_lifecycle(sleVolumeFormatCompleted, ctx^.Volume^.device, ctx^.Volume, err);
 
     if ctx^.Config <> nil then
         kfree(void(ctx^.Config));
@@ -249,6 +348,7 @@ begin
     volume^.freeSectors  := 0;
     volume^.filesystem   := nil;
     volume^.isBootDrive  := device^.isBootDevice;
+    volume^.lifecycleFlags := 0;
     driver.storage.fs.mgr.probe_volume(volume);
     register_volume(device, volume);
 end;
@@ -291,8 +391,16 @@ begin
     end;
 
     if found <> nil then begin
-        if not driver.storage.vfs.InvalidateVolume(found) then
+        set_volume_flag(found, STORAGE_VOLUME_FLAG_INVALIDATING, true);
+        notify_lifecycle(sleVolumeInvalidating, device, found, eNone);
+        if not driver.storage.vfs.InvalidateVolume(found) then begin
+            set_volume_flag(found, STORAGE_VOLUME_FLAG_INVALIDATING, false);
             exit;
+        end;
+        set_volume_flag(found, STORAGE_VOLUME_FLAG_INVALIDATING, false);
+        notify_lifecycle(sleVolumeInvalidated, device, found, eNone);
+        set_volume_flag(found, STORAGE_VOLUME_FLAG_REMOVED, true);
+        notify_lifecycle(sleVolumeRemoved, device, found, eNone);
         remove_volume_from_device_list(device, found);
         DL_Delete(volumes, i);
         kfree(puint32(found));
@@ -309,10 +417,17 @@ begin
     while i < DL_Size(volumes) do begin
         v := PStorage_Volume(Void(DL_Get(volumes, i))^);
         if v^.device = device then begin
+            set_volume_flag(v, STORAGE_VOLUME_FLAG_INVALIDATING, true);
+            notify_lifecycle(sleVolumeInvalidating, device, v, eNone);
             if not driver.storage.vfs.InvalidateVolume(v) then begin
+                set_volume_flag(v, STORAGE_VOLUME_FLAG_INVALIDATING, false);
                 i := i + 1;
                 continue;
             end;
+            set_volume_flag(v, STORAGE_VOLUME_FLAG_INVALIDATING, false);
+            notify_lifecycle(sleVolumeInvalidated, device, v, eNone);
+            set_volume_flag(v, STORAGE_VOLUME_FLAG_REMOVED, true);
+            notify_lifecycle(sleVolumeRemoved, device, v, eNone);
             DL_Delete(volumes, i);
             remove_volume_from_device_list(device, v);
             kfree(puint32(v));
@@ -327,6 +442,76 @@ procedure init();
 begin
     push_trace('driver.storage.vol.mgr.init');
     volumes := DL_New(sizeof(Pointer));
+    memset(uint32(@LifecycleWatches[0]), 0, sizeof(LifecycleWatches));
+    NextLifecycleWatchID := 1;
+end;
+
+function watch_lifecycle(callback : TStorageLifecycleCallback; userdata : pointer) : uint32;
+var
+    i : uint32;
+begin
+    watch_lifecycle := 0;
+    if callback = nil then exit;
+    for i := 0 to MAX_STORAGE_LIFECYCLE_WATCHES - 1 do begin
+        if not LifecycleWatches[i].Active then begin
+            LifecycleWatches[i].Active := true;
+            LifecycleWatches[i].ID := NextLifecycleWatchID;
+            LifecycleWatches[i].Callback := callback;
+            LifecycleWatches[i].UserData := userdata;
+            watch_lifecycle := NextLifecycleWatchID;
+            NextLifecycleWatchID := NextLifecycleWatchID + 1;
+            if NextLifecycleWatchID = 0 then
+                NextLifecycleWatchID := 1;
+            exit;
+        end;
+    end;
+end;
+
+procedure unwatch_lifecycle(watchId : uint32);
+var
+    i : uint32;
+begin
+    if watchId = 0 then exit;
+    for i := 0 to MAX_STORAGE_LIFECYCLE_WATCHES - 1 do begin
+        if LifecycleWatches[i].Active and (LifecycleWatches[i].ID = watchId) then begin
+            LifecycleWatches[i].Active := false;
+            LifecycleWatches[i].ID := 0;
+            LifecycleWatches[i].Callback := nil;
+            LifecycleWatches[i].UserData := nil;
+            exit;
+        end;
+    end;
+end;
+
+function volume_is_busy(volume : PStorage_Volume) : boolean;
+begin
+    volume_is_busy := false;
+    if volume = nil then exit;
+    volume_is_busy :=
+        (volume^.lifecycleFlags and (STORAGE_VOLUME_FLAG_FORMATTING or STORAGE_VOLUME_FLAG_INVALIDATING or STORAGE_VOLUME_FLAG_REMOVED)) <> 0;
+end;
+
+function volume_is_formatting(volume : PStorage_Volume) : boolean;
+begin
+    volume_is_formatting := false;
+    if volume = nil then exit;
+    volume_is_formatting := (volume^.lifecycleFlags and STORAGE_VOLUME_FLAG_FORMATTING) <> 0;
+end;
+
+procedure volume_set_mounted(volume : PStorage_Volume; mounted : boolean);
+begin
+    if volume = nil then exit;
+    if mounted then begin
+        if (volume^.lifecycleFlags and STORAGE_VOLUME_FLAG_MOUNTED) = 0 then begin
+            set_volume_flag(volume, STORAGE_VOLUME_FLAG_MOUNTED, true);
+            notify_lifecycle(sleVolumeMounted, volume^.device, volume, eNone);
+        end;
+    end else begin
+        if (volume^.lifecycleFlags and STORAGE_VOLUME_FLAG_MOUNTED) <> 0 then begin
+            set_volume_flag(volume, STORAGE_VOLUME_FLAG_MOUNTED, false);
+            notify_lifecycle(sleVolumeUnmounted, volume^.device, volume, eNone);
+        end;
+    end;
 end;
 
 { ===================== Volume queries ===================== }
@@ -346,6 +531,7 @@ begin
         DL_Add(device^.volumes);
         DL_Set(device^.volumes, DL_Size(device^.volumes) - 1, puint32(@volPtr));
     end;
+    notify_lifecycle(sleVolumeAdded, device, volume, eNone);
 end;
 
 function get_volume_list() : PDList;
@@ -756,7 +942,7 @@ end;
 
 { ===================== Filesystem operations ===================== }
 
-function format_volume(device : PStorage_Device; volIndex : uint32; filesystemName : pchar; config : puint32) : boolean;
+function format_volume(device : PStorage_Device; volIndex : uint32; filesystemName : pchar; config : PFSFormatParams) : boolean;
 var
     vol : PStorage_Volume;
     fs  : PFilesystem;
@@ -771,6 +957,15 @@ begin
     fs := driver.storage.fs.mgr.find_filesystem_by_name(filesystemName);
     if fs = nil then exit;
     if fs^.createCallback = nil then exit;
+    if volume_is_busy(vol) then exit;
+
+    set_volume_flag(vol, STORAGE_VOLUME_FLAG_FORMATTING, true);
+    notify_lifecycle(sleVolumeFormatStarted, device, vol, eNone);
+    if not driver.storage.vfs.InvalidateVolume(vol) then begin
+        set_volume_flag(vol, STORAGE_VOLUME_FLAG_FORMATTING, false);
+        notify_lifecycle(sleVolumeFormatCompleted, device, vol, eFileInUse);
+        exit;
+    end;
 
     update_partition_system_id_sync(device, vol^.sectorStart, fs^.system_id);
     vol^.filesystem := fs;
@@ -778,15 +973,22 @@ begin
     vol^.filesystem := nil;
     driver.storage.fs.mgr.probe_volume(vol);
     format_volume := vol^.filesystem = fs;
+    if format_volume then
+        auto_mount_volume(vol);
+    set_volume_flag(vol, STORAGE_VOLUME_FLAG_FORMATTING, false);
+    if format_volume then
+        notify_lifecycle(sleVolumeFormatCompleted, device, vol, eNone)
+    else
+        notify_lifecycle(sleVolumeFormatCompleted, device, vol, eUnsupportedFilesystem);
 end;
 
 function format_volume_async(device : PStorage_Device; volIndex : uint32; filesystemName : pchar;
-                             config : puint32; callback : TIOCallback; callbackData : pointer) : boolean;
+                             config : PFSFormatParams; callback : TIOCallback; callbackData : pointer) : boolean;
 var
     vol : PStorage_Volume;
     fs  : PFilesystem;
     ctx : PFormatVolumeAsyncCtx;
-    cfgCopy : puint32;
+    cfgCopy : PFSFormatParams;
 begin
     push_trace('driver.storage.vol.mgr.format_volume_async');
     format_volume_async := false;
@@ -798,15 +1000,19 @@ begin
     fs := driver.storage.fs.mgr.find_filesystem_by_name(filesystemName);
     if fs = nil then exit;
     if fs^.createCallback = nil then exit;
+    if volume_is_busy(vol) then begin
+        if callback <> nil then callback(eFileInUse, callbackData);
+        exit;
+    end;
 
     cfgCopy := nil;
     if config <> nil then begin
-        cfgCopy := puint32(kalloc(sizeof(uint32)));
+        cfgCopy := PFSFormatParams(kalloc(sizeof(TFSFormatParams)));
         if cfgCopy = nil then begin
             if callback <> nil then callback(eOutOfMemory, callbackData);
             exit;
         end;
-        cfgCopy^ := config^;
+        memcpy(uint32(config), uint32(cfgCopy), sizeof(TFSFormatParams));
     end;
 
     ctx := PFormatVolumeAsyncCtx(kalloc(sizeof(TFormatVolumeAsyncCtx)));
@@ -821,7 +1027,12 @@ begin
     ctx^.UserCallback := callback;
     ctx^.UserData := callbackData;
 
+    set_volume_flag(vol, STORAGE_VOLUME_FLAG_FORMATTING, true);
+    notify_lifecycle(sleVolumeFormatStarted, device, vol, eNone);
+
     if proc.mgr.create('vol.fmt', @format_volume_worker, void(ctx), 1) = nil then begin
+        set_volume_flag(vol, STORAGE_VOLUME_FLAG_FORMATTING, false);
+        notify_lifecycle(sleVolumeFormatCompleted, device, vol, eOutOfMemory);
         if cfgCopy <> nil then kfree(void(cfgCopy));
         kfree(void(ctx));
         if callback <> nil then callback(eOutOfMemory, callbackData);
