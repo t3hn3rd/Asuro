@@ -50,6 +50,7 @@ begin
     filesystem.closeFileCallback := @FAT32CloseFile;
     filesystem.createDirAsyncCallback := nil;
     filesystem.readDirAsyncCallback := nil;
+    filesystem.formatParamFlags := FS_FORMAT_PARAM_CLUSTER_SIZE;
 
     driver.storage.fs.mgr.register_filesystem(@filesystem);
 end;

@@ -53,6 +53,22 @@ type
     { Directory entry core.types }
     TDirectory_Entry_Type = (directoryEntry, fileEntry, mountEntry);
 
+    { Generic directory entry }
+    TDirectory_Entry = record
+        fileName     : pchar;
+        entryType    : TDirectory_Entry_Type;
+        fileSize     : uint32;
+        modifiedDate : uint16;   { FAT-style: bits 15-9=year-1980, 8-5=month, 4-0=day }
+        modifiedTime : uint16;   { FAT-style: bits 15-11=hour, 10-5=min, 4-0=sec/2 }
+        attributes   : uint8;    { FS-specific attribute bits }
+    end;
+
+    TDrive_Error = record
+        code : uint16;
+        description : pchar;
+        recoverable : boolean;
+    end;
+
     { Storage error codes — shared across I/O layer, drivers, FS, and VFS }
     TError = (
         { Success }
@@ -126,6 +142,34 @@ type
     PDirectory_Entry = ^TDirectory_Entry;
     PDrive_Error     = ^TDrive_Error;
     PIORequest       = ^TIORequest;
+    PFSFormatParams  = ^TFSFormatParams;
+
+    TStorageLifecycleEvent = (
+        sleVolumeAdded,
+        sleVolumeMounted,
+        sleVolumeUnmounted,
+        sleVolumeFormatStarted,
+        sleVolumeFormatCompleted,
+        sleVolumeInvalidating,
+        sleVolumeInvalidated,
+        sleVolumeRemoved,
+        sleDeviceAdded,
+        sleDeviceRemoved
+    );
+
+    TStorageLifecycleCallback = procedure(event : TStorageLifecycleEvent;
+                                          device : PStorage_Device;
+                                          volume : PStorage_Volume;
+                                          error : TError;
+                                          userdata : pointer);
+
+    TFSFormatParams = record
+        Version     : uint16;
+        Flags       : uint16;
+        ClusterSize : uint32;
+        FileCount   : uint32;
+        LabelText   : array[0..11] of char;
+    end;
 
     { === Driver dispatch type (Phase 2+) === }
 
@@ -142,8 +186,8 @@ type
     TIOCallback = procedure(error : TError; userdata : pointer);
 
     { Filesystem callback core.types }
-    PPCreateHook    = procedure(volume : PStorage_volume; start : uint32; size : uint32; config : puint32);
-    PPCreateAsyncHook = procedure(volume : PStorage_volume; start : uint32; size : uint32; config : puint32; callback : TIOCallback; callbackData : pointer);
+    PPCreateHook    = procedure(volume : PStorage_volume; start : uint32; size : uint32; config : PFSFormatParams);
+    PPCreateAsyncHook = procedure(volume : PStorage_volume; start : uint32; size : uint32; config : PFSFormatParams; callback : TIOCallback; callbackData : pointer);
     PPDetectHook    = procedure(disk : PStorage_Device);
     PPCreateDirHook  = procedure(volume : PStorage_volume; directory : pchar; dirname : pchar; attributes : uint32; status : puint32);
     PPReadDirHook    = function(volume : PStorage_volume; directory : pchar; status : puint32) : PLinkedListBase;
@@ -259,6 +303,7 @@ type
         { Per-file open/close — nil if FS does not cache per-file metadata }
         openFileCallback        : PPOpenFileHook;
         closeFileCallback       : PPCloseFileHook;
+        formatParamFlags        : uint32;
     end;
 
     { Generic storage volume }
@@ -271,24 +316,19 @@ type
         freeSectors  : uint32;
         filesystem   : PFilesystem;
         isBootDrive  : boolean;
+        lifecycleFlags : uint32;
         fsPrivate    : pointer;      { FS-driver private data (e.g. PFATCache for FAT32) }
     end;
 
-    { Generic directory entry }
-    TDirectory_Entry = record
-        fileName     : pchar;
-        entryType    : TDirectory_Entry_Type;
-        fileSize     : uint32;
-        modifiedDate : uint16;   { FAT-style: bits 15-9=year-1980, 8-5=month, 4-0=day }
-        modifiedTime : uint16;   { FAT-style: bits 15-11=hour, 10-5=min, 4-0=sec/2 }
-        attributes   : uint8;    { FS-specific attribute bits }
-    end;
-
-    TDrive_Error = record 
-        code : uint16;
-        description : pchar;
-        recoverable : boolean;
-    end;
+const
+    FS_FORMAT_PARAM_CLUSTER_SIZE = 1;
+    FS_FORMAT_PARAM_FILE_COUNT   = 2;
+    FS_FORMAT_PARAM_LABEL        = 4;
+    FS_FORMAT_PARAMS_VERSION_1   = 1;
+    STORAGE_VOLUME_FLAG_MOUNTED      = 1;
+    STORAGE_VOLUME_FLAG_FORMATTING   = 2;
+    STORAGE_VOLUME_FLAG_INVALIDATING = 4;
+    STORAGE_VOLUME_FLAG_REMOVED      = 8;
 
 
 implementation
