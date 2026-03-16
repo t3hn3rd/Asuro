@@ -134,7 +134,7 @@ procedure UnwatchDirectory(WatchID : uint32);
 { Volume invalidation — must be called before freeing a volume.
   Closes all open FDs referencing the volume across all processes,
   evicts directory cache entries, and removes VFS mount points. }
-procedure InvalidateVolume(vol : PStorage_Volume);
+function InvalidateVolume(vol : PStorage_Volume) : boolean;
 
 { VFS Functions }
 function newVirtualDirectory(Path : pchar) : TError;
@@ -149,6 +149,7 @@ implementation
 
 uses
     driver.storage.fs.mgr,
+    driver.storage.fs.fat32,
     proc.mgr,
     proc.types,
     io.stdio,
@@ -508,7 +509,36 @@ end;
 function GetObjectFromPath(path : pchar) : PVFSObject; forward;
 function GetObjectFromPathEx(path : pchar; var volRelPath : pchar) : PVFSObject; forward;
 
-procedure InvalidateVolume(vol : PStorage_Volume);
+function volumeHasAsyncHandles(vol : PStorage_Volume) : boolean;
+var
+    pCount  : uint32;
+    pi      : uint32;
+    fi      : uint32;
+    pCtx    : proc.types.PProcessContext;
+    tbl     : PFDTable;
+begin
+    volumeHasAsyncHandles := false;
+    if vol = nil then exit;
+
+    pCount := proc.mgr.processCount();
+    if pCount = 0 then exit;
+
+    for pi := 0 to pCount - 1 do begin
+        pCtx := proc.mgr.getProcessByIndex(pi);
+        if pCtx = nil then continue;
+        tbl := PFDTable(pCtx^.FDTable);
+        if tbl = nil then continue;
+        for fi := 0 to MAX_FDS - 1 do begin
+            if tbl^.Entries[fi].InUse and (tbl^.Entries[fi].Volume = vol)
+               and (tbl^.Entries[fi].AsyncRefs > 0) then begin
+                volumeHasAsyncHandles := true;
+                exit;
+            end;
+        end;
+    end;
+end;
+
+function InvalidateVolume(vol : PStorage_Volume) : boolean;
 var
     pCount  : uint32;
     pi      : uint32;
@@ -522,7 +552,12 @@ var
     child   : PVFSObject;
 begin
     debug.tracer.push_trace('driver.storage.vfs.InvalidateVolume.enter');
+    InvalidateVolume := false;
     if vol = nil then exit;
+    if volumeHasAsyncHandles(vol) then begin
+        debug.tracer.push_trace('driver.storage.vfs.InvalidateVolume.busy');
+        exit;
+    end;
 
     { 1. Evict all directory cache entries for this volume }
     DirCache_Invalidate(vol, nil);
@@ -575,6 +610,10 @@ begin
         kfree(void(bootObj));
     end;
 
+    if (vol^.filesystem <> nil) and (stringCompare(vol^.filesystem^.sName, 'FAT32') = 0) then
+        FAT32ReleaseVolumeState(vol);
+
+    InvalidateVolume := true;
     debug.tracer.push_trace('driver.storage.vfs.InvalidateVolume.exit');
 end;
 
@@ -1313,6 +1352,17 @@ begin
     { Cache per-file metadata and populate DataSize via FS open hook }
     if (vol^.filesystem <> nil) and (vol^.filesystem^.openFileCallback <> nil) then begin
         fd^.FSPrivate := vol^.filesystem^.openFileCallback(vol, dir, fname, fd^.DataSize);
+        if fd^.FSPrivate = nil then begin
+            if Error <> nil then begin
+                if (OpenMode = omCreate) or (OpenMode = omWrite) then
+                    Error^ := eInvalidFileName
+                else
+                    Error^ := eFileDoesNotExist;
+            end;
+            fd_close(tbl, slot);
+            debug.tracer.push_trace('driver.storage.vfs.OpenFile.exit');
+            exit;
+        end;
         if vol^.filesystem^.closeFileCallback <> nil then
             fd^.FSCloseHook := pointer(vol^.filesystem^.closeFileCallback);
         if Error <> nil then Error^ := eNone;
@@ -1599,6 +1649,19 @@ begin
 
     if (vol^.filesystem <> nil) and (vol^.filesystem^.openFileCallback <> nil) then begin
         fd^.FSPrivate := vol^.filesystem^.openFileCallback(vol, dir, fname, fd^.DataSize);
+        if fd^.FSPrivate = nil then begin
+            if Error <> nil then begin
+                if (OpenMode = omCreate) or (OpenMode = omWrite) then
+                    Error^ := eInvalidFileName
+                else
+                    Error^ := eFileDoesNotExist;
+            end;
+            fd_close(tbl, slot);
+            OutHandle := 0;
+            if Callback <> nil then Callback(Error^, CallbackData);
+            debug.tracer.push_trace('driver.storage.vfs.OpenFileAsync.exit');
+            exit;
+        end;
         if vol^.filesystem^.closeFileCallback <> nil then
             fd^.FSCloseHook := pointer(vol^.filesystem^.closeFileCallback);
         if Error <> nil then Error^ := eNone;

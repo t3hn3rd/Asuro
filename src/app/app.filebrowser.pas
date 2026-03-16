@@ -195,6 +195,7 @@ procedure do_refresh_load(state: PFileBrowserState); forward;
 procedure do_refresh_build(state: PFileBrowserState); forward;
 procedure schedule_refresh(state: PFileBrowserState); forward;
 procedure fb_refresh_poll_cb(tmr: Plv_timer); cdecl; forward;
+function fb_error_name(err : TError) : pchar; forward;
 procedure fb_collect_cb(key: pchar; data: void; ud: void); forward;
 procedure do_refresh(state: PFileBrowserState); forward;
 procedure navigate_to(state: PFileBrowserState; newDir: pchar); forward;
@@ -582,6 +583,51 @@ begin
     puint32(@state^.refresh_pending)^ := 1;
 end;
 
+function fb_error_name(err : TError) : pchar;
+begin
+    case err of
+        eNone: fb_error_name := 'eNone';
+        eUnknown: fb_error_name := 'eUnknown';
+        eNotSupported: fb_error_name := 'eNotSupported';
+        eOutOfMemory: fb_error_name := 'eOutOfMemory';
+        eInvalidArgument: fb_error_name := 'eInvalidArgument';
+        eFileInUse: fb_error_name := 'eFileInUse';
+        eFileDoesNotExist: fb_error_name := 'eFileDoesNotExist';
+        eInvalidFileName: fb_error_name := 'eInvalidFileName';
+        eInvalidFileExtension: fb_error_name := 'eInvalidFileExtension';
+        eFilenameTooLong: fb_error_name := 'eFilenameTooLong';
+        eDirectoryDoesNotExist: fb_error_name := 'eDirectoryDoesNotExist';
+        eDirectoryAlreadyExists: fb_error_name := 'eDirectoryAlreadyExists';
+        eDirectoryNotEmpty: fb_error_name := 'eDirectoryNotEmpty';
+        eDirectoryFull: fb_error_name := 'eDirectoryFull';
+        eNotADirectory: fb_error_name := 'eNotADirectory';
+        eWriteOnly: fb_error_name := 'eWriteOnly';
+        eReadOnly: fb_error_name := 'eReadOnly';
+        ePermissionDenied: fb_error_name := 'ePermissionDenied';
+        eInvalidPath: fb_error_name := 'eInvalidPath';
+        eTooManyOpenFiles: fb_error_name := 'eTooManyOpenFiles';
+        eInvalidHandle: fb_error_name := 'eInvalidHandle';
+        eFileNotLoaded: fb_error_name := 'eFileNotLoaded';
+        eAlreadyExists: fb_error_name := 'eAlreadyExists';
+        eDiskFull: fb_error_name := 'eDiskFull';
+        eIOError: fb_error_name := 'eIOError';
+        eIOTimeout: fb_error_name := 'eIOTimeout';
+        eIOCancelled: fb_error_name := 'eIOCancelled';
+        eDeviceNotReady: fb_error_name := 'eDeviceNotReady';
+        eDeviceRemoved: fb_error_name := 'eDeviceRemoved';
+        eDeviceNotFound: fb_error_name := 'eDeviceNotFound';
+        eQueueFull: fb_error_name := 'eQueueFull';
+        eNoFreeSlot: fb_error_name := 'eNoFreeSlot';
+        eCorruptFilesystem: fb_error_name := 'eCorruptFilesystem';
+        eBadSector: fb_error_name := 'eBadSector';
+        eAlreadyMounted: fb_error_name := 'eAlreadyMounted';
+        eNotMounted: fb_error_name := 'eNotMounted';
+        eUnsupportedFilesystem: fb_error_name := 'eUnsupportedFilesystem';
+        eInvalidPartitionTable: fb_error_name := 'eInvalidPartitionTable';
+        eVolumeNotFound: fb_error_name := 'eVolumeNotFound';
+    end;
+end;
+
 { fb_refresh_poll_cb — 50ms LVGL poll timer; when rd_ready=1, build UI }
 procedure fb_refresh_poll_cb(tmr: Plv_timer); cdecl;
 var
@@ -604,9 +650,12 @@ begin
             case state^.wop_kind of
                 1: lv_msgbox_add_text(mbox, 'Could not create folder.');
                 2: lv_msgbox_add_text(mbox, 'Could not rename item.');
+                3: lv_msgbox_add_text(mbox, 'Could not create file.');
+                4: lv_msgbox_add_text(mbox, 'Could not delete item.');
             else
                 lv_msgbox_add_text(mbox, 'Operation failed.');
             end;
+            lv_msgbox_add_text(mbox, fb_error_name(state^.wop_result));
             ok_b := lv_msgbox_add_footer_button(mbox, 'OK');
             lv_obj_add_event_cb(ok_b, @fb_mbox_close_cb, LV_EVENT_CLICKED, mbox);
         end;
@@ -619,8 +668,8 @@ begin
             kfree(void(state^.wop_path2));
             state^.wop_path2 := nil;
         end;
-        { For rename, clear selection }
-        if state^.wop_kind = 2 then
+        { For rename/delete, clear selection }
+        if (state^.wop_kind = 2) or (state^.wop_kind = 4) then
             clear_selection(state);
         schedule_refresh(state);
     end;
@@ -1591,15 +1640,16 @@ begin
             @fb_delete_done, state);
 end;
 
-{ Async completion callback — runs in ISR/worker context, defer to LVGL }
+{ Async completion callback — runs outside the LVGL thread, so only set flags. }
 procedure fb_delete_done(error: TError; userdata: pointer);
 var
     state: PFileBrowserState;
 begin
     state := PFileBrowserState(userdata);
     if state = nil then exit;
-    state^.op_err := error;
-    lv_timer_create(@fb_delete_done_timer, 1, state);
+    state^.wop_kind := 4;
+    state^.wop_result := error;
+    puint32(@state^.wop_done)^ := 1;
 end;
 
 { Deferred UI update after delete }
@@ -1864,11 +1914,16 @@ begin
     end else begin
         if nfctx^.handle <> 0 then
             driver.storage.vfs.CloseFile(nfctx^.handle);
-        lv_timer_create(@fb_newfile_done_timer, 1, nfctx);
+        if nfctx^.state <> nil then begin
+            nfctx^.state^.wop_kind := 3;
+            nfctx^.state^.wop_result := nfctx^.err;
+            puint32(@nfctx^.state^.wop_done)^ := 1;
+        end;
+        kfree(void(nfctx));
     end;
 end;
 
-{ Async step 2: write complete — close handle and schedule UI refresh }
+{ Async step 2: write complete — close handle and defer UI work via poll flags }
 procedure fb_newfile_written(error: TError; userdata: pointer);
 var
     nfctx : PNewFileCtx;
@@ -1878,7 +1933,12 @@ begin
     if error <> eNone then nfctx^.err := error;
     if nfctx^.handle <> 0 then
         driver.storage.vfs.CloseFile(nfctx^.handle);
-    lv_timer_create(@fb_newfile_done_timer, 1, nfctx);
+    if nfctx^.state <> nil then begin
+        nfctx^.state^.wop_kind := 3;
+        nfctx^.state^.wop_result := nfctx^.err;
+        puint32(@nfctx^.state^.wop_done)^ := 1;
+    end;
+    kfree(void(nfctx));
 end;
 
 procedure fb_newfile_done_timer(tmr: Plv_timer); cdecl;

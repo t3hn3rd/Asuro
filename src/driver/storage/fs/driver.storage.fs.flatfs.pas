@@ -34,6 +34,7 @@ uses
     io.syslog,
     debug.tracer,
     core.util, arch.x86.util,
+    driver.storage.vol.mbr,
     driver.storage.vol.mgr;
 
 type
@@ -763,12 +764,37 @@ end;
 
 function identify_volume(volume : PStorage_Volume) : boolean;
 var
-    buffer  : puint32;
-    bufSize : uint32;
+    buffer   : puint32;
+    bufSize  : uint32;
+    mbr      : PMaster_Boot_Record;
+    freeMbr  : boolean;
+    slot     : sint32;
+    i        : uint32;
 begin
     push_trace('driver.storage.fs.flatfs.identify_volume');
     identify_volume := false;
     if volume^.device^.dispatchRead = nil then exit;
+
+    mbr := driver.storage.mgr.get_cached_mbr(volume^.device);
+    freeMbr := false;
+    if mbr = nil then begin
+        mbr := driver.storage.mgr.read_mbr(volume^.device);
+        freeMbr := mbr <> nil;
+    end;
+
+    slot := -1;
+    if mbr <> nil then begin
+        for i := 0 to 3 do begin
+            if mbr^.partition[i].LBA_start = volume^.sectorStart then begin
+                slot := sint32(i);
+                break;
+            end;
+        end;
+        if (slot >= 0) and (mbr^.partition[slot].system_id <> filesystem.system_id) then begin
+            if freeMbr then kfree(void(mbr));
+            exit;
+        end;
+    end;
 
     bufSize := volume^.device^.sectorSize;
     if bufSize < 512 then bufSize := 512;
@@ -783,6 +809,7 @@ begin
     end;
 
     kfree(buffer);
+    if freeMbr then kfree(void(mbr));
 end;
 
 function readDirectoryEntries(volume : PStorage_Volume; directory : pchar; status : PuInt32) : PLinkedListBase;
