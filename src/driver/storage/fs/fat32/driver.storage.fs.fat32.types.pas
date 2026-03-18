@@ -67,17 +67,16 @@ type
     end;
 
 const
-    FAT_CACHE_SETS = 512;
-    FAT_CACHE_WAYS = 2;
+    FAT_CACHE_SETS = 1024;
+    FAT_CACHE_WAYS = 4;
     FAT_CACHE_LINES = FAT_CACHE_SETS * FAT_CACHE_WAYS;
     FAT_TRANSFER_POOL_CAPACITY = 64;
     FAT_ALLOC_HINT_SLOTS = 8;
-    FAT_DIR_HINT_SLOTS = 16;
-    FAT_WRITE_PREALLOC_BYTES = 16 * 1024 * 1024;
+    FAT_DIR_HINT_SLOTS = 8;
     FAT_WRITE_PREALLOC_MAX_CLUSTERS = 2048;
     FAT_WRITE_PREALLOC_MIN_CLUSTERS = 64;
-    FAT_MAX_IO_SECTORS = 2048;
-
+    FAT_MAX_IO_SECTORS = 2048 * 2;    
+    FAT_OPEN_HANDLE_SLOTS = 65000;
 type
     TFATCacheLine = record
         SectorIdx : uint32;
@@ -162,6 +161,13 @@ type
         Exists        : boolean;
         FatDirty      : boolean;
         MetaDirty     : boolean;
+        Registered    : boolean;  { true once registered in the volume write-ref table }
+    end;
+
+    TFATWriteRef = record
+        SectorLBA : uint32;
+        EntryIdx  : uint32;
+        Count     : uint32;  { number of write handles with this dir entry open }
     end;
 
     TFATTransferMode = (ftmRead, ftmWrite);
@@ -215,6 +221,7 @@ type
         HintStamp         : uint32;
         AllocHints        : array[0..FAT_ALLOC_HINT_SLOTS - 1] of TFATAllocHint;
         DirHints          : array[0..FAT_DIR_HINT_SLOTS - 1] of TFATDirHint;
+        WriteRefs         : array[0..FAT_OPEN_HANDLE_SLOTS - 1] of TFATWriteRef;
     end;
 
 implementation

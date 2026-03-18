@@ -69,7 +69,7 @@ function send_read_capacity(device : PAHCI_Device; sectorCount : puint32; blockS
 implementation
 
 const
-    AHCI_ENABLE_NCQ = false;
+    AHCI_ENABLE_NCQ = true;
 
 function min_u32(a : uint32; b : uint32) : uint32;
 begin
@@ -421,15 +421,15 @@ begin
         start_port(device^.port);
 
         { Re-enable port interrupts and bail — device is non-functional. }
-        device^.port^.int_enable := $40000003;
+        device^.port^.int_enable := $4000000B;
         kfree(buffer);
         exit;
     end;
 
     { Re-enable port interrupts now that IDENTIFY polling is done.
-      $40000003 = bit 0 (D2H Register FIS) | bit 1 (PIO Setup FIS) | bit 30 (Task File Error)
-      These three bits cover all normal completions and hardware error events. }
-    device^.port^.int_enable := $40000003;
+      $4000000B = bit 0 (D2H Register FIS) | bit 1 (PIO Setup FIS) | bit 3 (Set Device Bits / NCQ) | bit 30 (Task File Error)
+      Bit 3 is required for NCQ completion notifications via SDB FIS. }
+    device^.port^.int_enable := $4000000B;
 
     b8 := puint16(buffer);
     memcpy(uint32(buffer), uint32(@device^.ata_info[0]), 512);
