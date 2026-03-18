@@ -34,7 +34,7 @@ const
     TICK_HZ    = 1024;               { timer ISR frequency }
     IO_WAIT_TIMEOUT_TICKS = 10 * TICK_HZ;
     DELETE_TIMEOUT_TICKS = 5 * TICK_HZ;
-    DEFAULT_PATH : pchar = '/disk/vol0/IOTEST.BIN';
+    DEFAULT_PATH : pchar = '/disk/vol2/IOTEST.BIN';
 
 type
     TIOTSyncWaitCtx = record

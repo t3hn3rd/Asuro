@@ -14,7 +14,8 @@ implementation
 
 uses
     io.syslog,
-    driver.storage.fs.fat32.old,
+    core.util,
+    driver.storage.fs.fat32.vol,
     driver.storage.fs.fat32.core,
     driver.storage.fs.fat32.transfer;
 
@@ -23,13 +24,13 @@ var
 
 procedure FAT32ReleaseVolumeState(volume : PStorage_Volume);
 begin
-    FAT32LegacyReleaseVolumeCtx(volume);
     FAT32ReleaseVolumeCtx(volume);
 end;
 
 procedure init;
 begin
     io.syslog.logln('FAT32', 'init: registering FAT32 filesystem');
+    memset(uint32(@filesystem), 0, sizeof(TFilesystem));
     filesystem.sName := 'FAT32';
     filesystem.system_id := $0B;
     filesystem.readDirCallback := @FAT32ReadDirectory;
@@ -52,6 +53,7 @@ begin
     filesystem.readDirAsyncCallback := nil;
     filesystem.formatParamFlags := FS_FORMAT_PARAM_CLUSTER_SIZE;
 
+    FAT32VolInit(@filesystem);
     driver.storage.fs.mgr.register_filesystem(@filesystem);
 end;
 

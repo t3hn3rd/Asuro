@@ -8,6 +8,7 @@ uses
     driver.storage.mgr,
     driver.storage.types,
     core.strings,
+
     core.util, arch.x86.util,
     debug.tracer,
     io.syslog,
@@ -59,6 +60,7 @@ var
 
 function readFat(volume : PStorage_Volume; cluster : uint32; bootRecord : PBootRecord) : uint32; forward;
 procedure writeFat(volume : PStorage_Volume; cluster : uint32; value : uint32; bootRecord : PBootRecord); forward;
+procedure fatFreeClusterChain(volume : PStorage_Volume; info : PFATVolumeInfo; startCluster : uint32); forward;
 
 function isEndOfChain(value : uint32) : boolean;
 begin
@@ -105,20 +107,66 @@ begin
         fatClustersForBytes := (byteCount + bytesPerCluster - 1) div bytesPerCluster;
 end;
 
+{ Register ofi in the volume write-ref table (call once DirLoc is valid). }
+procedure fatRegisterWriteHandle(volCtx : PFATVolumeCtx; ofi : PFATOpenFile);
+var
+    i        : uint32;
+    freeSlot : sint32;
+begin
+    if (volCtx = nil) or (ofi = nil) or ofi^.Registered then exit;
+    asm pushf; cli end;
+    freeSlot := -1;
+    for i := 0 to FAT_OPEN_HANDLE_SLOTS - 1 do begin
+        if (volCtx^.WriteRefs[i].Count > 0) and
+           (volCtx^.WriteRefs[i].SectorLBA = ofi^.DirLoc.SectorLBA) and
+           (volCtx^.WriteRefs[i].EntryIdx  = ofi^.DirLoc.EntryIdx) then begin
+            volCtx^.WriteRefs[i].Count := volCtx^.WriteRefs[i].Count + 1;
+            ofi^.Registered := true;
+            asm popf end;
+            exit;
+        end;
+        if (freeSlot < 0) and (volCtx^.WriteRefs[i].Count = 0) then
+            freeSlot := sint32(i);
+    end;
+    if freeSlot >= 0 then begin
+        volCtx^.WriteRefs[uint32(freeSlot)].SectorLBA := ofi^.DirLoc.SectorLBA;
+        volCtx^.WriteRefs[uint32(freeSlot)].EntryIdx  := ofi^.DirLoc.EntryIdx;
+        volCtx^.WriteRefs[uint32(freeSlot)].Count     := 1;
+        ofi^.Registered := true;
+    end;
+    { If all slots are full, Registered stays false → truncation skipped for safety }
+    asm popf end;
+end;
+
+{ Unregister ofi and return the count that was present before decrement. }
+function fatUnregisterWriteHandle(volCtx : PFATVolumeCtx; ofi : PFATOpenFile) : uint32;
+var
+    i : uint32;
+begin
+    fatUnregisterWriteHandle := 0;
+    if (volCtx = nil) or (ofi = nil) or not ofi^.Registered then exit;
+    asm pushf; cli end;
+    for i := 0 to FAT_OPEN_HANDLE_SLOTS - 1 do begin
+        if (volCtx^.WriteRefs[i].Count > 0) and
+           (volCtx^.WriteRefs[i].SectorLBA = ofi^.DirLoc.SectorLBA) and
+           (volCtx^.WriteRefs[i].EntryIdx  = ofi^.DirLoc.EntryIdx) then begin
+            fatUnregisterWriteHandle := volCtx^.WriteRefs[i].Count;
+            volCtx^.WriteRefs[i].Count := volCtx^.WriteRefs[i].Count - 1;
+            ofi^.Registered := false;
+            asm popf end;
+            exit;
+        end;
+    end;
+    asm popf end;
+end;
+
 function fatPreallocClusterCount(bytesPerCluster : uint32) : uint32;
 begin
-    if bytesPerCluster = 0 then begin
-        fatPreallocClusterCount := 1;
-        exit;
-    end;
-
-    fatPreallocClusterCount := FAT_WRITE_PREALLOC_BYTES div bytesPerCluster;
-    if fatPreallocClusterCount = 0 then
-        fatPreallocClusterCount := 1;
+    { Always pre-allocate FAT_WRITE_PREALLOC_MAX_CLUSTERS.  The MIN guard
+      keeps the value sane if the constant is ever lowered below MIN. }
+    fatPreallocClusterCount := FAT_WRITE_PREALLOC_MAX_CLUSTERS;
     if fatPreallocClusterCount < FAT_WRITE_PREALLOC_MIN_CLUSTERS then
         fatPreallocClusterCount := FAT_WRITE_PREALLOC_MIN_CLUSTERS;
-    if fatPreallocClusterCount > FAT_WRITE_PREALLOC_MAX_CLUSTERS then
-        fatPreallocClusterCount := FAT_WRITE_PREALLOC_MAX_CLUSTERS;
 end;
 
 function isValidFAT32Name(fullName : pchar) : boolean;
@@ -781,6 +829,10 @@ var
     w          : uint32;
 begin
     ctx := FAT32GetVolumeCtx(volume);
+    if ctx = nil then begin
+        readFat := 0;
+        exit;
+    end;
     cache := @ctx^.Cache;
     fatSecIdx := cluster div 128;
     setIdx := fatSecIdx mod FAT_CACHE_SETS;
@@ -870,6 +922,7 @@ var
     w          : uint32;
 begin
     ctx := FAT32GetVolumeCtx(volume);
+    if ctx = nil then exit;
     cache := @ctx^.Cache;
     fatSecIdx := cluster div 128;
     setIdx := fatSecIdx mod FAT_CACHE_SETS;
@@ -1617,6 +1670,10 @@ begin
     if FAT32EnsureCapacityForWrite <> eNone then
         exit;
 
+    { Register as a writer the first time we extend this file (DirLoc is now valid) }
+    if not ofi^.Registered then
+        fatRegisterWriteHandle(FAT32GetVolumeCtx(ofi^.Volume), ofi);
+
     newEnd := offset + byteCount;
     needClusters := fatClustersForBytes(newEnd, ofi^.VolumeInfo^.BytesPerCluster);
     targetClusters := needClusters;
@@ -1778,12 +1835,77 @@ end;
 
 procedure FAT32CloseFile(ctx : pointer);
 var
-    ofi       : PFATOpenFile;
-    sectorBuf : puint32;
-    rawDir    : PDirectory;
+    ofi          : PFATOpenFile;
+    sectorBuf    : puint32;
+    rawDir       : PDirectory;
+    keepClusters : uint32;
+    walked       : uint32;
+    ri           : uint32;
+    tailCluster  : uint32;
+    nextCluster  : uint32;
+    runOff       : uint32;
+    volCtx       : PFATVolumeCtx;
+    oldCount     : uint32;
+    isLastWriter : boolean;
 begin
     if ctx = nil then exit;
     ofi := PFATOpenFile(ctx);
+
+    { Determine whether this is the last writer for this file.
+      Unregister unconditionally so the slot is freed even when we skip truncation. }
+    isLastWriter := true;
+    if ofi^.Registered then begin
+        volCtx := FAT32GetVolumeCtx(ofi^.Volume);
+        oldCount := fatUnregisterWriteHandle(volCtx, ofi);
+        isLastWriter := (oldCount <= 1);
+    end;
+
+    { Truncate pre-allocated tail clusters back to ByteSize before flushing.
+      Only done when this is the last writer — another open handle may still
+      be expanding the file and relies on the pre-allocated chain. }
+    if isLastWriter and (ofi^.VolumeInfo <> nil) and (ofi^.FatDirty) and
+       (ofi^.Volume <> nil) and (ofi^.AllocClusters > 0) then begin
+        keepClusters := fatClustersForBytes(ofi^.ByteSize, ofi^.VolumeInfo^.BytesPerCluster);
+        if keepClusters < ofi^.AllocClusters then begin
+            { Walk RunMap to find the last cluster we are keeping (1-based) }
+            walked := 0;
+            tailCluster := 0;
+            nextCluster := 0;
+            if keepClusters = 0 then begin
+                { File has no data — free the entire chain }
+                if ofi^.RunMap.Count > 0 then begin
+                    nextCluster := ofi^.RunMap.Runs[0].StartCluster;
+                    fatFreeClusterChain(ofi^.Volume, ofi^.VolumeInfo, nextCluster);
+                end;
+                ofi^.FirstCluster := 0;
+            end else begin
+                ri := 0;
+                while ri < ofi^.RunMap.Count do begin
+                    if walked + ofi^.RunMap.Runs[ri].ClusterCount >= keepClusters then begin
+                        { The new tail is inside this run }
+                        runOff := keepClusters - walked - 1;
+                        tailCluster := ofi^.RunMap.Runs[ri].StartCluster + runOff;
+                        { First cluster to free is the one after the new tail }
+                        if runOff + 1 < ofi^.RunMap.Runs[ri].ClusterCount then
+                            nextCluster := ofi^.RunMap.Runs[ri].StartCluster + runOff + 1
+                        else if ri + 1 < ofi^.RunMap.Count then
+                            nextCluster := ofi^.RunMap.Runs[ri + 1].StartCluster
+                        else
+                            nextCluster := 0;
+                        break;
+                    end;
+                    walked := walked + ofi^.RunMap.Runs[ri].ClusterCount;
+                    ri := ri + 1;
+                end;
+                if tailCluster >= 2 then
+                    writeFat(ofi^.Volume, tailCluster, $0FFFFFF8, @ofi^.VolumeInfo^.BootRecord);
+                if nextCluster >= 2 then
+                    fatFreeClusterChain(ofi^.Volume, ofi^.VolumeInfo, nextCluster);
+            end;
+            ofi^.AllocClusters := keepClusters;
+            ofi^.FatDirty := true;
+        end;
+    end;
 
     if ofi^.FatDirty and (ofi^.Volume <> nil) then
         FAT32Flush(ofi^.Volume);
