@@ -61,6 +61,7 @@ var
 function readFat(volume : PStorage_Volume; cluster : uint32; bootRecord : PBootRecord) : uint32; forward;
 procedure writeFat(volume : PStorage_Volume; cluster : uint32; value : uint32; bootRecord : PBootRecord); forward;
 procedure fatFreeClusterChain(volume : PStorage_Volume; info : PFATVolumeInfo; startCluster : uint32); forward;
+function fatInitDirectoryCluster(volume : PStorage_Volume; info : PFATVolumeInfo; cluster : uint32; parentCluster : uint32) : boolean; forward;
 
 function isEndOfChain(value : uint32) : boolean;
 begin
@@ -1650,13 +1651,14 @@ var
     needClusters   : uint32;
     targetClusters : uint32;
     reserve        : uint32;
-    extraClusters  : uint32;
-    lastCluster    : uint32;
-    firstNew       : uint32;
-    tempRuns       : PLinkedListBase;
-    tempRun        : PFATTempRun;
-    i              : uint32;
-    lastTail       : uint32;
+    extraClusters    : uint32;
+    lastCluster      : uint32;
+    firstNew         : uint32;
+    tempRuns         : PLinkedListBase;
+    tempRun          : PFATTempRun;
+    i                : uint32;
+    lastTail         : uint32;
+    prevLastCluster  : uint32;
 begin
     FAT32EnsureCapacityForWrite := eNone;
     if (ofi = nil) or (ofi^.VolumeInfo = nil) then begin
@@ -1696,6 +1698,10 @@ begin
     if fatFindContiguousFreeRange(ofi^.Volume, ofi^.VolumeInfo, extraClusters, firstNew) then begin
         fatLinkContiguousRange(ofi^.Volume, ofi^.VolumeInfo, lastCluster, firstNew, extraClusters, lastTail);
         if not runMapAppend(ofi^.RunMap, firstNew, extraClusters) then begin
+            { Undo: free the newly linked clusters and restore the previous chain tail to EOC }
+            fatFreeClusterChain(ofi^.Volume, ofi^.VolumeInfo, firstNew);
+            if lastCluster >= 2 then
+                writeFat(ofi^.Volume, lastCluster, $0FFFFFF8, @ofi^.VolumeInfo^.BootRecord);
             FAT32EnsureCapacityForWrite := eOutOfMemory;
             exit;
         end;
@@ -1709,10 +1715,21 @@ begin
         end;
         for i := 0 to LL_Size(tempRuns) - 1 do begin
             tempRun := PFATTempRun(LL_Get(tempRuns, i));
+            prevLastCluster := lastCluster;
             fatLinkContiguousRange(ofi^.Volume, ofi^.VolumeInfo, lastCluster,
                 tempRun^.StartCluster, tempRun^.ClusterCount, lastTail);
             lastCluster := lastTail;
             if not runMapAppend(ofi^.RunMap, tempRun^.StartCluster, tempRun^.ClusterCount) then begin
+                { Undo: free the current run and restore the previous tail to EOC }
+                fatFreeClusterChain(ofi^.Volume, ofi^.VolumeInfo, tempRun^.StartCluster);
+                if prevLastCluster >= 2 then
+                    writeFat(ofi^.Volume, prevLastCluster, $0FFFFFF8, @ofi^.VolumeInfo^.BootRecord);
+                { Sync AllocClusters with what actually made it into the RunMap }
+                ofi^.AllocClusters := ofi^.RunMap.TotalClusters;
+                if ofi^.AllocClusters > 0 then begin
+                    ofi^.FatDirty := true;
+                    ofi^.MetaDirty := true;
+                end;
                 LL_Free(tempRuns);
                 FAT32EnsureCapacityForWrite := eOutOfMemory;
                 exit;
@@ -1810,6 +1827,13 @@ begin
     ofi^.DirLoc.ParentCluster := parentCluster;
 
     sectorBuf := puint32(kalloc(info^.BootRecord.sectorSize));
+    if (sectorBuf = nil) and (info^.BootRecord.sectorSize > 0) then begin
+        { OOM: cannot probe the directory — fail rather than silently treating an existing file as new }
+        if namePart <> nil then kfree(void(namePart));
+        if extPart <> nil then kfree(void(extPart));
+        FAT32CloseFile(ofi);
+        exit;
+    end;
     if sectorBuf <> nil then begin
         if locateDirEntry(volume, info, parentCluster, cleanName, extPart, ofi^.DirLoc, sectorBuf) then begin
             ofi^.Exists := true;
@@ -1836,7 +1860,6 @@ end;
 procedure FAT32CloseFile(ctx : pointer);
 var
     ofi          : PFATOpenFile;
-    sectorBuf    : puint32;
     rawDir       : PDirectory;
     keepClusters : uint32;
     walked       : uint32;
@@ -1910,16 +1933,14 @@ begin
     if ofi^.FatDirty and (ofi^.Volume <> nil) then
         FAT32Flush(ofi^.Volume);
 
-    if ofi^.MetaDirty and ofi^.DirLoc.Valid then begin
-        sectorBuf := puint32(kalloc(ofi^.VolumeInfo^.BootRecord.sectorSize));
-        if sectorBuf <> nil then begin
-            driver.storage.mgr.storage_read(ofi^.Volume^.device, ofi^.DirLoc.SectorLBA, 1, sectorBuf);
-            rawDir := @PDirectory(sectorBuf)[ofi^.DirLoc.EntryIdx];
-            rawDir^.byteSize := ofi^.ByteSize;
-            setDirFirstCluster(rawDir, ofi^.FirstCluster);
-            driver.storage.mgr.storage_write(ofi^.Volume^.device, ofi^.DirLoc.SectorLBA, 1, sectorBuf);
-            kfree(sectorBuf);
-        end;
+    { Use the already-allocated ScratchSector (same size as a disk sector) to avoid
+      a kalloc in close; an allocation failure here would silently lose metadata. }
+    if ofi^.MetaDirty and ofi^.DirLoc.Valid and (ofi^.ScratchSector <> nil) then begin
+        driver.storage.mgr.storage_read(ofi^.Volume^.device, ofi^.DirLoc.SectorLBA, 1, ofi^.ScratchSector);
+        rawDir := @PDirectory(ofi^.ScratchSector)[ofi^.DirLoc.EntryIdx];
+        rawDir^.byteSize := ofi^.ByteSize;
+        setDirFirstCluster(rawDir, ofi^.FirstCluster);
+        driver.storage.mgr.storage_write(ofi^.Volume^.device, ofi^.DirLoc.SectorLBA, 1, ofi^.ScratchSector);
     end;
 
     runMapFree(ofi^.RunMap);
@@ -2070,13 +2091,14 @@ begin
     statusOut := eNone;
 end;
 
-procedure fatInitDirectoryCluster(volume : PStorage_Volume; info : PFATVolumeInfo; cluster : uint32; parentCluster : uint32);
+function fatInitDirectoryCluster(volume : PStorage_Volume; info : PFATVolumeInfo; cluster : uint32; parentCluster : uint32) : boolean;
 var
     buffer   : puint32;
     ds       : uint32;
     clusterLBA : uint32;
     dir      : PDirectory;
 begin
+    fatInitDirectoryCluster := false;
     if (volume = nil) or (info = nil) or (cluster < 2) then exit;
     buffer := puint32(kalloc(info^.BootRecord.sectorSize));
     if buffer = nil then exit;
@@ -2113,6 +2135,7 @@ begin
     end;
 
     kfree(buffer);
+    fatInitDirectoryCluster := true;
 end;
 
 function FAT32ReadDirectory(volume : PStorage_Volume; directory : pchar; statusOut : puint32) : PLinkedListBase;
@@ -2300,7 +2323,15 @@ begin
         LL_Free(tempRuns);
     end;
 
-    fatInitDirectoryCluster(volume, info, cluster, parentCluster);
+    if not fatInitDirectoryCluster(volume, info, cluster, parentCluster) then begin
+        { OOM in fatInitDirectoryCluster: free the allocated cluster and bail out }
+        fatFreeClusterChain(volume, info, cluster);
+        if statusOut <> nil then statusOut^ := ord(eOutOfMemory);
+        kfree(sectorBuf);
+        if namePart <> nil then kfree(void(namePart));
+        if extPart <> nil then kfree(void(extPart));
+        exit;
+    end;
 
     rawDir := @PDirectory(sectorBuf)[loc.EntryIdx];
     memset(uint32(rawDir), 0, sizeof(TDirectory));
