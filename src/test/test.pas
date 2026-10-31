@@ -34,6 +34,7 @@ uses
     driver.storage.vfs,
     driver.storage.test,
     driver.storage.metatest,
+    driver.storage.ctl.ahci,
     core.enc.fnv1a,
     core.enc.djb2,
     core.ds.bloom,
@@ -70,6 +71,7 @@ begin
     driver.storage.vfs.UnitTest;
     driver.storage.test.UnitTest;
     driver.storage.metatest.UnitTest;
+    driver.storage.ctl.ahci.UnitTest;
     core.enc.fnv1a.UnitTest;
     core.enc.djb2.UnitTest;
     core.ds.bloom.UnitTest;
