@@ -35,6 +35,7 @@ unit driver.storage.mgr;
 interface
 
 uses
+    arch.x86.bda,
     boot.mgr,
     core.ds.cfifo,
     core.ds.types,
@@ -59,6 +60,7 @@ var
     hdCount        : uint32;    { non-ATAPI devices registered so far }
     atapiCount     : uint32;    { ATAPI devices registered so far }
 
+procedure storage_get_stats(device : PStorage_Device; var stats : TStorageStats);
 procedure init();
 procedure set_boot_drive_byte(driveByte : uint8);
 function  get_boot_drive_byte() : uint8;
@@ -212,6 +214,14 @@ begin
     kfree(void(ctx));
 end;
 
+procedure storage_get_stats(device : PStorage_Device; var stats : TStorageStats);
+begin
+    asm pushf; cli end;
+    if device <> nil then stats := device^.Stats
+    else memset(uint32(@stats),0,sizeof(stats));
+    asm popf end;
+end;
+
 procedure init();
 begin
     push_trace('driver.storage.mgr.init');
@@ -245,6 +255,7 @@ begin
     { Initialise new Phase 2 fields }
     device^.removed := false;
     device^.requestQueue := CFIFO_New(SizeOf(PIORequest), 128);
+    memset(uint32(@device^.Stats),0,sizeof(TStorageStats));
     device^.activeCount := 0;
     device^.dispatching := false;
     if device^.maxActive = 0 then device^.maxActive := 1;
@@ -415,7 +426,9 @@ end;
   Called with interrupts disabled (CLI context) or from ISR context. }
 procedure dispatch_next(device : PStorage_Device);
 var
-    heapReq : PIORequest;
+    heapReq, nextReq, tail : PIORequest;
+    peek : pointer;
+    merged, bytes, ticks : uint32;
 begin
     if device^.dispatching then exit;
     device^.dispatching := true;
@@ -425,8 +438,41 @@ begin
         if heapReq = nil then
             break;
 
+        { Merge only consecutive FIFO entries with consecutive DMA buffers.
+          Bound both command size and completion fan-out; never reorder writes. }
+        tail := heapReq; merged := 1;
+        while (merged < 32) and (device^.mergeMaxSectors > 0) and
+              (device^.sectorSize > 0) do begin
+            peek := CFIFO_Peek(device^.requestQueue);
+            if peek = nil then break;
+            nextReq := PIORequest(puint32(peek)^);
+            if nextReq = nil then break;
+            if (nextReq^.Device <> device) or (nextReq^.RequestType <> heapReq^.RequestType) then break;
+            if heapReq^.SectorCount > device^.mergeMaxSectors then break;
+            if nextReq^.SectorCount > device^.mergeMaxSectors-heapReq^.SectorCount then break;
+            if heapReq^.SectorCount > ($FFFFFFFF div device^.sectorSize) then break;
+            bytes := heapReq^.SectorCount*device^.sectorSize;
+            if (heapReq^.LBA > $FFFFFFFF-heapReq^.SectorCount) or
+               (uint32(heapReq^.Buffer) > $FFFFFFFF-bytes) then break;
+            if (nextReq^.LBA <> heapReq^.LBA+heapReq^.SectorCount) or
+               (uint32(nextReq^.Buffer) <> uint32(heapReq^.Buffer)+bytes) then break;
+            if not CFIFO_Dequeue(device^.requestQueue,@nextReq) then break;
+            tail^.MergeNext := nextReq; tail := nextReq;
+            Inc(heapReq^.SectorCount,nextReq^.SectorCount); Inc(merged);
+            Inc(device^.Stats.Merged);
+        end;
+        ticks := puint32(@Counters.c32)^;
+        tail := heapReq;
+        while tail <> nil do begin
+            tail^.DispatchTick := ticks; tail^.State := iosDispatched;
+            bytes := ticks-tail^.QueuedTick;
+            Inc(device^.Stats.QueueTicks,bytes);
+            if bytes > device^.Stats.MaxQueueTicks then device^.Stats.MaxQueueTicks := bytes;
+            tail := tail^.MergeNext;
+        end;
+        Inc(device^.Stats.Commands);
         device^.activeCount := device^.activeCount + 1;
-        heapReq^.State := iosDispatched;
+        if device^.activeCount > device^.Stats.ActivePeak then device^.Stats.ActivePeak := device^.activeCount;
 
         case heapReq^.RequestType of
             ioRead: begin
@@ -484,12 +530,20 @@ begin
       Reject once the fixed queue is full instead of growing with CLI held. }
     asm pushfd; cli; pop flags end;
     if CFIFO_Size(device^.requestQueue) >= CFIFO_Capacity(device^.requestQueue) then begin
+        Inc(device^.Stats.QueueFull);
         if (flags and $200) <> 0 then asm sti end;
         ioreq_free(heapReq);
         submit_io := eQueueFull;
         exit;
     end;
+    heapReq^.QueuedTick := puint32(@Counters.c32)^;
+    Inc(device^.Stats.Submitted);
+    if request^.SectorCount <= 8 then Inc(device^.Stats.SmallRequests)
+    else if request^.SectorCount <= 256 then Inc(device^.Stats.MediumRequests)
+    else Inc(device^.Stats.LargeRequests);
     CFIFO_Enqueue(device^.requestQueue, @heapReq);
+    if CFIFO_Size(device^.requestQueue) > device^.Stats.QueuePeak then
+        device^.Stats.QueuePeak := CFIFO_Size(device^.requestQueue);
     dispatch_next(device);
     if (flags and $200) <> 0 then asm sti end;
 
@@ -545,36 +599,39 @@ begin
 end;
 
 procedure complete_io(request : PIORequest; success : boolean; error : TError);
-var
-    device : PStorage_Device;
+var device : PStorage_Device; next : PIORequest; ticks, flags : uint32;
+    wasDispatching : boolean;
 begin
     if request = nil then exit;
-
     device := request^.Device;
-
-    if success then begin
-        request^.State := iosComplete;
-        request^.Error := eNone;
-    end else begin
-        request^.State := iosError;
-        request^.Error := error;
+    asm pushfd; cli; pop flags end;
+    wasDispatching := false;
+    if device <> nil then begin
+        wasDispatching := device^.dispatching;
+        device^.dispatching := true; { callbacks cannot dispatch inside merged fan-out }
+        if device^.activeCount > 0 then Dec(device^.activeCount);
+        ticks := puint32(@Counters.c32)^-request^.DispatchTick;
+        Inc(device^.Stats.ServiceTicks,ticks);
+        if ticks > device^.Stats.MaxServiceTicks then device^.Stats.MaxServiceTicks := ticks;
     end;
-
-    { Decrement active count on the device }
-    if device <> nil then
-        if device^.activeCount > 0 then
-            device^.activeCount := device^.activeCount - 1;
-
-    { Invoke completion callback (sync path uses sync_io_callback, async path uses caller's callback) }
-    if request^.Callback <> nil then
-        request^.Callback(request^.Error, request^.CallbackData);
-
-    { Free the heap copy of the request }
-    ioreq_free(request);
-
-    { Dispatch next queued request for this device }
-    if device <> nil then
+    while request <> nil do begin
+        next := request^.MergeNext;
+        if success then begin request^.State := iosComplete; request^.Error := eNone; end
+        else begin request^.State := iosError; request^.Error := error; end;
+        if device <> nil then begin
+            Inc(device^.Stats.Completed);
+            if not success then Inc(device^.Stats.Failed)
+            else if request^.RequestType = ioRead then Inc(device^.Stats.ReadSectors,request^.OriginalSectors)
+            else Inc(device^.Stats.WriteSectors,request^.OriginalSectors);
+        end;
+        if request^.Callback <> nil then request^.Callback(request^.Error,request^.CallbackData);
+        ioreq_free(request); request := next;
+    end;
+    if device <> nil then begin
+        device^.dispatching := wasDispatching;
         dispatch_next(device);
+    end;
+    if (flags and $200) <> 0 then asm sti end;
 end;
 
 { ========================================================================== }

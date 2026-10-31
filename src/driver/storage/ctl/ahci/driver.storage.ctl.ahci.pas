@@ -397,6 +397,7 @@ begin
         storageDev^.controllerId0  := uint32(device);  { store PAHCI_Device for callback wrappers }
         storageDev^.sectorSize     := storageDev_sectorSize;
         storageDev^.maxSectorCount := sec_count;
+        if not isATAPI then storageDev^.mergeMaxSectors := 65536;
         storageDev^.start          := 0;
         storageDev^.volumes        := DL_New(sizeof(Pointer));
 

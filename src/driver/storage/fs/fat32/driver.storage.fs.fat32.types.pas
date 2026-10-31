@@ -99,6 +99,7 @@ type
     TFATRun = record
         StartCluster : uint32;
         ClusterCount : uint32;
+        FileClusterStart : uint32;
     end;
 
     TFATAllocHint = record
@@ -183,6 +184,13 @@ type
     PFATVolumeCtx = ^TFATVolumeCtx;
     PFATTransferCtx = ^TFATTransferCtx;
 
+    PFATReadSlot = ^TFATReadSlot;
+    TFATReadSlot = record
+        Owner : PFATTransferCtx;
+        Bytes : uint32;
+        Error : TError;
+    end;
+
     TFATTransferCtx = record
         Next                 : PFATTransferCtx;
         VolumeCtx            : PFATVolumeCtx;
@@ -209,6 +217,10 @@ type
         RunHintIndex         : uint32;
         RunHintFileCluster   : uint32;
         LastError            : TError;
+        Pumping, Resume, Finished : boolean;
+        ReadSubmitting : boolean;
+        ReadPending, ReadCount : uint32;
+        ReadSlots : array[0..3] of TFATReadSlot;
     end;
 
     TFATVolumeCtx = record
