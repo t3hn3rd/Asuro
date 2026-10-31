@@ -1,7 +1,25 @@
+//  Copyright 2021 Aaron Hance
+//  Copyright 2026 Aaron Hance
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//  http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+
 { USB Mass Storage: SCSI transparent commands over Bulk-Only Transport.
   LUN 0, one interface, READ/WRITE(10), 512..4096 byte sectors.
   A persistent worker owns all storage I/O. No caller buffer is ever DMA-visible.
   Protocol reference: https://www.usb.org/sites/default/files/usbmassbulk_10.pdf }
+{
+    @author(Aaron Hance <ah@aaronhance.me>)
+}
 unit driver.storage.ctl.usb;
 
 interface
