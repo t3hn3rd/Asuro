@@ -392,6 +392,15 @@ end;
 
 { ==================== Filesystem callbacks ==================== }
 
+procedure cacheVolumeLabel(volume : PStorage_Volume; pvd : PPVD);
+var n, i : uint32;
+begin
+    memset(uint32(@volume^.labelText[0]),0,sizeof(volume^.labelText));
+    n := 32;
+    while (n > 0) and ((pvd^.volumeId[n-1] = ' ') or (pvd^.volumeId[n-1] = #0)) do Dec(n);
+    i := 0; while i < n do begin volume^.labelText[i] := pvd^.volumeId[i]; Inc(i); end;
+end;
+
 { Identify: check for 'CD001' at sector 16 }
 function identify_volume(volume : PStorage_Volume) : boolean;
 var
@@ -405,6 +414,7 @@ begin
     buf := readSectors(volume^.device, volume^.sectorStart + PVD_SECTOR, 1);
     if buf = nil then exit;
     identify_volume := isPVD(buf);
+    if identify_volume then cacheVolumeLabel(volume,PPVD(buf));
     kfree(buf);
 end;
 
@@ -437,6 +447,7 @@ begin
     volume^.filesystem  := @filesystem;
     volume^.isBootDrive := disk^.isBootDevice;
 
+    cacheVolumeLabel(volume,pvd);
     driver.storage.vol.mgr.register_volume(disk, volume);
 
     kfree(buf);

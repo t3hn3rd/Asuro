@@ -16,6 +16,7 @@ uses
     io.syslog,
     core.util,
     driver.storage.fs.fat32.vol,
+    driver.storage.fs.fat32.labels,
     driver.storage.fs.fat32.core,
     driver.storage.fs.fat32.transfer;
 
@@ -36,7 +37,8 @@ begin
     filesystem.readDirCallback := @FAT32ReadDirectory;
     filesystem.createDirCallback := @FAT32CreateDirectory;
     filesystem.createCallback := @create_volume;
-    filesystem.createAsyncCallback := @create_volume_async;
+    filesystem.validateFormat := @validate_format;
+    filesystem.createAsyncCallback := nil; { volume manager runs checked formatter in a worker }
     filesystem.detectCallback := @detect_volumes;
     filesystem.readOffsetCallback := @FAT32ReadFileAtOffset;
     filesystem.writeOffsetCallback := @FAT32WriteFileAtOffset;
@@ -51,7 +53,9 @@ begin
     filesystem.closeFileCallback := @FAT32CloseFile;
     filesystem.createDirAsyncCallback := nil;
     filesystem.readDirAsyncCallback := nil;
-    filesystem.formatParamFlags := FS_FORMAT_PARAM_CLUSTER_SIZE;
+    filesystem.formatParamFlags := FS_FORMAT_PARAM_CLUSTER_SIZE or FS_FORMAT_PARAM_LABEL;
+    filesystem.validateLabelCallback := @normalize_label;
+    filesystem.setLabelCallback := @write_label;
 
     FAT32VolInit(@filesystem);
     driver.storage.fs.mgr.register_filesystem(@filesystem);

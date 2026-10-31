@@ -94,10 +94,7 @@ end;
 
 function fatMaxClusterCount(bootRecord : PBootRecord) : uint32;
 begin
-    if (bootRecord = nil) or (bootRecord^.sectorSize = 0) then
-        fatMaxClusterCount := 0
-    else
-        fatMaxClusterCount := (bootRecord^.FATSize * bootRecord^.sectorSize) div 4;
+    fatMaxClusterCount := FAT32ClusterLimit(bootRecord);
 end;
 
 function fatClustersForBytes(byteCount : uint32; bytesPerCluster : uint32) : uint32;
@@ -391,7 +388,9 @@ begin
     sectorBuf := puint32(kalloc(bufSize));
     if sectorBuf = nil then exit;
     memset(uint32(sectorBuf), 0, bufSize);
-    driver.storage.mgr.storage_read(volume^.device, volume^.sectorStart, 1, sectorBuf);
+    if driver.storage.mgr.storage_read(volume^.device, volume^.sectorStart, 1, sectorBuf) <> eNone then begin
+        kfree(sectorBuf); exit;
+    end;
     bootRecord := PBootRecord(sectorBuf)^;
     kfree(sectorBuf);
     readBootRecordRaw := true;
@@ -699,9 +698,13 @@ begin
 
     { Keep runtime addressing compatible with the legacy formatter and metadata paths. }
     ctx^.Info.DataStart := volume^.sectorStart + ctx^.Info.BootRecord.rsvSectors +
-        ctx^.Info.BootRecord.FATSize;
+        uint32(ctx^.Info.BootRecord.numFats) * ctx^.Info.BootRecord.FATSize;
     ctx^.Info.BytesPerCluster := uint32(ctx^.Info.BootRecord.spc) * uint32(ctx^.Info.BootRecord.sectorSize);
     ctx^.Info.MaxCluster := fatMaxClusterCount(@ctx^.Info.BootRecord);
+    if (ctx^.Info.MaxCluster <= 2) or
+       (ctx^.Info.BootRecord.manySectors > volume^.sectorCount) then begin
+        fatCtxFree(ctx); exit;
+    end;
     ctx^.InfoValid := true;
 
     ctx^.Cache.Data := puint32(kalloc(FAT_CACHE_LINES * 512));
@@ -1135,6 +1138,7 @@ begin
         end;
         if dir^.fileName[0] = char($E5) then
             continue;
+        if (dir^.attributes and $08) <> 0 then continue; { volume labels and LFN entries are not files }
         if compareByteArray8(dir^.fileName, cleanName) and matchExtension(dir^.fileExtension, ext) then begin
             findEntryInSector := integer(idx);
             exit;
@@ -2048,7 +2052,7 @@ begin
                 end;
                 if dir^.fileName[0] = char($E5) then
                     continue;
-                if dir^.attributes = $0F then
+                if (dir^.attributes and $08) <> 0 then
                     continue;
                 if fatIsDotEntry(dir) then
                     continue;

@@ -288,7 +288,9 @@ begin
     if bootrecord <> nil then begin
         if bootrecord^.boot_sector <> $AA55 then begin
             println('No valid mbr found, initialising disk...');
-            driver.storage.vol.mgr.init_disk(device);
+            if driver.storage.vol.mgr.init_disk(device) <> eNone then begin
+                println('Error: disk initialization failed.'); exit;
+            end;
         end;
         kfree(puint32(bootrecord));
     end;
@@ -335,7 +337,9 @@ begin
 
     driver.storage.vol.mbr.setup_partition(@part, lba, sectors);
     part.system_id := 0;
-    driver.storage.vol.mgr.add_partition(device, slot, part);
+    if driver.storage.vol.mgr.add_partition(device, slot, part) <> eNone then begin
+        println('Error: partition creation failed.'); exit;
+    end;
 
     print('Partition added in slot ');
     printint(slot);
@@ -407,7 +411,9 @@ begin
         exit;
     end;
 
-    driver.storage.vol.mgr.remove_partition(device, slot);
+    if driver.storage.vol.mgr.remove_partition(device, slot) <> eNone then begin
+        println('Error: partition removal failed.'); exit;
+    end;
 
     print('Partition slot ');
     printint(slot);
@@ -523,11 +529,14 @@ begin
         exit;
     end;
 
-    vol^.filesystem := fs;
-    fs^.createCallback(vol, vol^.sectorCount, vol^.sectorStart, nil);
-
-    { Re-probe filesystem so identify picks up the new signature }
-    driver.storage.fs.mgr.probe_volume(vol);
+    i := 0;
+    while i < driver.storage.vol.mgr.get_volume_count() do begin
+        if driver.storage.vol.mgr.get_volume(i) = vol then break;
+        Inc(i);
+    end;
+    if not driver.storage.vol.mgr.format_volume(device, i, fsName, nil) then begin
+        println('Error: format failed; the volume was not reported ready.'); exit;
+    end;
 
     print('Partition ');
     printint(slot);

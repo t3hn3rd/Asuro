@@ -271,6 +271,7 @@ procedure fpc_shortstr_assign(len: longint; sstr, dstr: Pointer); compilerproc;
   any int64/uint64 arithmetic occurs (e.g. sint32 * uint32 promotion).
   Must live in the system unit so the compiler can resolve it. }
 function fpc_mul_int64(f1, f2: int64): int64; compilerproc;
+function fpc_mul_dword_to_qword(f1, f2: uint32): qword; compilerproc;
 function fpc_div_int64(d, n: int64): int64; compilerproc;
 function fpc_mod_int64(d, n: int64): int64; compilerproc;
 function fpc_mod_qword(d, n: qword): qword; compilerproc;
@@ -521,6 +522,18 @@ begin
         MOV  DWORD [res+4], ECX     { result_hi }
     end;
     fpc_mul_int64 := res;
+end;
+
+function fpc_mul_dword_to_qword(f1, f2: uint32): qword; [public, alias: 'FPC_MUL_DWORD_TO_QWORD']; compilerproc;
+var res: qword;
+begin
+    asm
+        MOV EAX, f1
+        MUL f2
+        MOV DWORD [res], EAX
+        MOV DWORD [res+4], EDX
+    end;
+    fpc_mul_dword_to_qword := res;
 end;
 
 { ---------- 64-bit division / modulo ---------- }

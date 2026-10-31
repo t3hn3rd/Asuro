@@ -86,7 +86,7 @@ procedure set_bootable(partition_table : PPartition_table);
 begin
     push_trace('driver.storage.vol.mbr.set_bootable');
     //set the bootble bit in attributes
-    partition_table^.attributes := (partition_table^.attributes and $80);
+    partition_table^.attributes := (partition_table^.attributes or $80);
 end;
 
 { Check a partitions bootable bit }
@@ -105,7 +105,7 @@ begin
     partition_table^.LBA_start := address;
     partition_table^.sector_count := sectorSize;
     partition_table^.CHS_start := LBA_2_CHS(address);
-    partition_table^.CHS_start := LBA_2_CHS(address + sectorSize);  
+    partition_table^.CHS_end := LBA_2_CHS(address + sectorSize - 1);
     push_trace('driver.storage.vol.mbr.setup_partition.end');
 end;
 

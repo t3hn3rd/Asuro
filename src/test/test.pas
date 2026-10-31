@@ -12,6 +12,7 @@ implementation
 
 uses
     core.strings,
+    app.diskutil,
     driver.bus.usb.types,
     driver.bus.usb.core,
     driver.bus.usb.uhci,
@@ -32,6 +33,7 @@ uses
     core.ds.prio,
     driver.storage.vfs,
     driver.storage.test,
+    driver.storage.metatest,
     core.enc.fnv1a,
     core.enc.djb2,
     core.ds.bloom,
@@ -46,6 +48,7 @@ procedure runAllTests();
 begin
     { Run unit tests }
     core.strings.UnitTest;
+    app.diskutil.UnitTest;
     driver.bus.usb.types.UnitTest;
     driver.bus.usb.core.UnitTest;
     driver.bus.usb.uhci.UnitTest;
@@ -66,6 +69,7 @@ begin
     core.ds.prio.UnitTest;
     driver.storage.vfs.UnitTest;
     driver.storage.test.UnitTest;
+    driver.storage.metatest.UnitTest;
     core.enc.fnv1a.UnitTest;
     core.enc.djb2.UnitTest;
     core.ds.bloom.UnitTest;

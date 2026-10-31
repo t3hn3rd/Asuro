@@ -63,7 +63,7 @@ var
 
 
 procedure init;
-procedure create_volume(volume : PStorage_Volume; sectors : uint32; start : uint32; config : PFSFormatParams);
+function create_volume(volume : PStorage_Volume; sectors : uint32; start : uint32; config : PFSFormatParams) : TError;
 procedure detect_volumes(disk : PStorage_Device);
 function read_directory(volume : PStorage_Volume; directory : pchar; status : PuInt32) : PLinkedListBase;
 procedure write_directory(volume : PStorage_Volume; directory : pchar; status : PuInt32);
@@ -72,87 +72,55 @@ procedure read_file(volume : PStorage_Volume; fileName : pchar; data : PuInt32; 
 
 implementation
 
-procedure create_volume(volume : PStorage_Volume; sectors : uint32; start : uint32; config : PFSFormatParams);
-var
-    info : PDisk_Info;
-    entryTable : PFile_Entry;
-    i : uint32;
-
-    directories : PLinkedListBase;
-    status : PuInt32;
-
-    data : pchar;
-
-const
-    asuroArray : array[0..7] of char = 'ASURO';
-    systemArray : array[0..6] of char = '/system';
-    programsArray : array[0..8] of char = '/programs';
-    userArray : array[0..4] of char = '/user';
-
-    testArray : array[0..23] of char = 'ASURO TEST DATA ARRAY';
+function validate_format(volume : PStorage_Volume; sectors, start : uint32; config : PFSFormatParams) : TError;
 begin
-
-    info := PDisk_Info(Kalloc(512));
-    memset(uint32(info), 0, 512);
-
-    info^.jmp2boot := $0;
-    info^.OEMName := asuroArray;
-    info^.version := 1;
-    info^.sectorCount := sectors;
-    info^.fileCount := 1000;
-    info^.signature := $0B00B1E5;
-
-    if (config <> nil) and
-       (config^.Version = FS_FORMAT_PARAMS_VERSION_1) and
-       ((config^.Flags and FS_FORMAT_PARAM_FILE_COUNT) <> 0) and
-       (config^.FileCount <> 0) then begin
-        info^.fileCount := config^.FileCount;
+    validate_format := eInvalidArgument;
+    if (volume = nil) or (volume^.device = nil) then exit;
+    if not volume^.device^.writable then begin validate_format := eReadOnly; exit; end;
+    { Legacy FlatFS readers use 512-byte sectors and exactly 1000 entries. }
+    if (volume^.device^.sectorSize <> 512) or (sectors > 65535) or
+       (sectors <= 126) or (start <> volume^.sectorStart) or
+       (sectors <> volume^.sectorCount) or (start >= volume^.device^.maxSectorCount) or
+       (sectors > volume^.device^.maxSectorCount-start) then exit;
+    if config <> nil then begin
+        if (config^.Version <> FS_FORMAT_PARAMS_VERSION_1) or
+           ((config^.Flags and (not FS_FORMAT_PARAM_FILE_COUNT)) <> 0) then exit;
+        if ((config^.Flags and FS_FORMAT_PARAM_FILE_COUNT) <> 0) and
+           (config^.FileCount <> 1000) then exit;
     end;
+    validate_format := eNone;
+end;
 
-    driver.storage.mgr.storage_write(volume^.device, start, 1, PuInt32(info));// what happens if buffer is smaller than 512?
-    
-    // create file table
-    entryTable := PFile_Entry(Kalloc(126 * 512));
-    memset(uint32(entryTable), 0, 126 * 512);
-
-    //create system folders
-    entryTable[0].attribues := $10;
-    memcpy(uint32(@systemArray), uint32(@entryTable[0].name), 7);
-    entryTable[0].size := 0;
-    entryTable[0].start := 0;
-
-    entryTable[1].attribues := $10;
-    memcpy(uint32(@programsArray), uint32(@entryTable[1].name), 9);
-    entryTable[1].size := 0;
-    entryTable[1].start := 0;
-
-    entryTable[2].attribues := $10;
-    memcpy(uint32(@userArray), uint32(@entryTable[2].name), 5);
-    entryTable[2].size := 0;
-    entryTable[2].start := 0;
-
-    //write file table
-    driver.storage.mgr.storage_write(volume^.device, start + 1, ((sizeof(TFile_Entry) * info^.fileCount) div 512), puint32(entryTable));
-    //volume^.device^.writeCallback(volume^.device, start + 1, 1, puint32(entryTable));
-
-    //temp read
-    status := PuInt32(Kalloc(sizeof(uint32)));
-    // directories := read_directory(volume, '/', status);
-
-    data := stringNew(1024);
-    memset(uint32(data), 0, 513);
-    memcpy(uint32(@testArray), uint32(data), 23);
-    
-    write_directory(volume, '/logs', status);
-    write_directory(volume, '/logs/test', status);
-    write_file(volume, '/logs/log.txt', PuInt32(data), 1, status);
-    write_file(volume, '/logs/log2.txt', PuInt32(data), 1, status);
-    write_file(volume, '/logs/log3.txt', PuInt32(data), 1, status);
-    read_directory(volume, '/logs', status);
-
-    kfree(puint32(data));
-
-    read_file(volume, '/logs/log.txt', PuInt32(data), status);
+function create_volume(volume : PStorage_Volume; sectors : uint32; start : uint32; config : PFSFormatParams) : TError;
+var info : PDisk_Info; entries : PFile_Entry; err : TError;
+begin
+    create_volume := validate_format(volume, sectors, start, config);
+    if create_volume <> eNone then exit;
+    info := PDisk_Info(kalloc(512)); entries := PFile_Entry(kalloc(125*512));
+    if (info = nil) or (entries = nil) then begin
+        if info <> nil then kfree(void(info));
+        if entries <> nil then kfree(void(entries));
+        create_volume := eOutOfMemory; exit;
+    end;
+    memset(uint32(info), 0, 512); memset(uint32(entries), 0, 125*512);
+    err := storage_write(volume^.device, start, 1, puint32(info));
+    if err = eNone then begin
+        entries[0].attribues := $10;
+        memcpy(uint32(pchar('/system')), uint32(@entries[0].name[0]), 7);
+        entries[1].attribues := $10;
+        memcpy(uint32(pchar('/programs')), uint32(@entries[1].name[0]), 9);
+        entries[2].attribues := $10;
+        memcpy(uint32(pchar('/user')), uint32(@entries[2].name[0]), 5);
+        err := storage_write(volume^.device, start+1, 125, puint32(entries));
+    end;
+    if err = eNone then begin
+        memcpy(uint32(pchar('ASURO   ')), uint32(@info^.OEMName[0]), 8);
+        info^.version := 1; info^.sectorCount := sectors; info^.fileCount := 1000;
+        info^.signature := $0B00B1E5;
+        err := storage_write(volume^.device, start, 1, puint32(info));
+    end;
+    kfree(void(entries)); kfree(void(info));
+    create_volume := err;
 end;
 
 procedure write_directory(volume : PStorage_Volume; directory : pchar; status : PuInt32);
@@ -976,9 +944,10 @@ begin
     filesystem.readOffsetCallback:= @readFileAtOffset;
     // filesystem.createDirCallback:= @writeDirectoryGen;
     filesystem.createcallback:= @create_volume;
+    filesystem.validateFormat := @validate_format;
     filesystem.detectcallback:= @detect_volumes;
     filesystem.identifyCallback:= @identify_volume;
-    filesystem.formatParamFlags := FS_FORMAT_PARAM_FILE_COUNT;
+    filesystem.formatParamFlags := 0; { fixed 1000-entry legacy format }
     // filesystem.writecallback:= @writeFile;
     // filesystem.readcallback := @readFile;
 

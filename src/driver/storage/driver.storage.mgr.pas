@@ -68,7 +68,7 @@ function get_device_count() : uint32;
 function get_device(index : uint32) : PStorage_Device;
 function controller_type_2_string(controllerType : TControllerType) : pchar;
 function read_mbr(device : PStorage_Device) : PMaster_Boot_Record;
-procedure write_mbr(device : PStorage_Device; mbr : PMaster_Boot_Record);
+function write_mbr(device : PStorage_Device; mbr : PMaster_Boot_Record) : TError;
 
 { Return pointer to cached mbr data (nil if not cached).
   Caller must NOT free the returned pointer. }
@@ -139,6 +139,7 @@ type
       hardware completion fires, then frees it before forwarding the user's callback. }
     TMBRWriteAsyncData = record
         Buffer       : pointer;
+        Device       : PStorage_Device;
         UserCallback : TIOCallback;
         UserData     : pointer;
     end;
@@ -181,17 +182,33 @@ begin
     alloc_mbr_io_buffer := buf;
 end;
 
+function claim_mbr(device : PStorage_Device) : boolean;
+var flags : uint32;
+begin
+    asm pushfd; cli; pop flags end;
+    claim_mbr := not device^.mbrWriteBusy;
+    if claim_mbr then device^.mbrWriteBusy := true;
+    if (flags and $200) <> 0 then asm sti end;
+end;
+
+procedure publish_mbr(device : PStorage_Device; buffer : pointer);
+var old : pointer;
+begin
+    { The DMA buffer becomes the cache only after a successful write. }
+    old := device^.cachedMBR;
+    device^.cachedMBR := buffer;
+    if old <> nil then kfree(old);
+end;
+
 procedure mbr_write_async_callback(error : TError; userdata : pointer);
-var
-    ctx : PMBRWriteAsyncData;
+var ctx : PMBRWriteAsyncData;
 begin
     ctx := PMBRWriteAsyncData(userdata);
     if ctx = nil then exit;
-
-    if ctx^.Buffer <> nil then
-        kfree(void(ctx^.Buffer));
-    if ctx^.UserCallback <> nil then
-        ctx^.UserCallback(error, ctx^.UserData);
+    if error = eNone then publish_mbr(ctx^.Device, ctx^.Buffer)
+    else kfree(ctx^.Buffer);
+    ctx^.Device^.mbrWriteBusy := false;
+    if ctx^.UserCallback <> nil then ctx^.UserCallback(error, ctx^.UserData);
     kfree(void(ctx));
 end;
 
@@ -231,6 +248,8 @@ begin
     device^.activeCount := 0;
     if device^.maxActive = 0 then device^.maxActive := 1;
     device^.cachedMBR := nil;
+    device^.metadataBusy := false;
+    device^.mbrWriteBusy := false;
     device^.isBootDevice := false;
     { dispatchRead/dispatchWrite: left as-is — driver sets them before
       calling register_device. memset(0) guarantees nil for unmigrated drivers. }
@@ -334,27 +353,21 @@ begin
     end;
 end;
 
-procedure write_mbr(device : PStorage_Device; mbr : PMaster_Boot_Record);
-var
-    oldCache : pointer;
-    cache : puint32;
-    buf   : puint32;
+function write_mbr(device : PStorage_Device; mbr : PMaster_Boot_Record) : TError;
+var buf : puint32;
 begin
-    push_trace('driver.storage.mgr.write_mbr');
-    if (device = nil) or (mbr = nil) or (not device^.writable) then exit;
-    { Update cache }
-    oldCache := device^.cachedMBR;
-    cache := puint32(kalloc(sizeof(TMaster_Boot_Record)));
-    if cache <> nil then
-        memcpy(uint32(mbr), uint32(cache), sizeof(TMaster_Boot_Record));
-    device^.cachedMBR := pointer(cache);
-    if oldCache <> nil then
-        kfree(oldCache);
-
+    write_mbr := eInvalidArgument;
+    if (device = nil) or (mbr = nil) then exit;
+    if not device^.writable then begin write_mbr := eReadOnly; exit; end;
+    if not claim_mbr(device) then begin write_mbr := eFileInUse; exit; end;
+    { Snapshot first: mbr may alias device^.cachedMBR. }
     buf := alloc_mbr_io_buffer(device, mbr);
-    if buf = nil then exit;
-    storage_write(device, 0, 1, buf);
-    kfree(void(buf));
+    if buf = nil then write_mbr := eOutOfMemory
+    else begin
+        write_mbr := storage_write(device, 0, 1, buf);
+        if write_mbr = eNone then publish_mbr(device, buf) else kfree(buf);
+    end;
+    device^.mbrWriteBusy := false;
 end;
 
 function get_cached_mbr(device : PStorage_Device) : PMaster_Boot_Record;
@@ -365,53 +378,32 @@ end;
 
 procedure write_mbr_async(device : PStorage_Device; mbr : PMaster_Boot_Record;
                           callback : TIOCallback; callbackData : pointer);
-var
-    oldCache : pointer;
-    cache : puint32;
-    buf   : puint32;
-    ctx   : PMBRWriteAsyncData;
-    err   : TError;
+var ctx : PMBRWriteAsyncData; buf : puint32; err : TError;
 begin
-    push_trace('driver.storage.mgr.write_mbr_async');
-    if (device = nil) or (mbr = nil) then begin
-        if callback <> nil then callback(eInvalidArgument, callbackData);
+    err := eNone;
+    if (device = nil) or (mbr = nil) then err := eInvalidArgument
+    else if not device^.writable then err := eReadOnly
+    else if not claim_mbr(device) then err := eFileInUse;
+    if err <> eNone then begin
+        if callback <> nil then callback(err, callbackData);
         exit;
     end;
-    if not device^.writable then begin
-        if callback <> nil then callback(eReadOnly, callbackData);
-        exit;
-    end;
-    { Update cache }
-    oldCache := device^.cachedMBR;
-    cache := puint32(kalloc(sizeof(TMaster_Boot_Record)));
-    if cache <> nil then
-        memcpy(uint32(mbr), uint32(cache), sizeof(TMaster_Boot_Record));
-    device^.cachedMBR := pointer(cache);
-    if oldCache <> nil then
-        kfree(oldCache);
-
     buf := alloc_mbr_io_buffer(device, mbr);
     if buf = nil then begin
+        device^.mbrWriteBusy := false;
         if callback <> nil then callback(eOutOfMemory, callbackData);
         exit;
     end;
-
     ctx := PMBRWriteAsyncData(kalloc(sizeof(TMBRWriteAsyncData)));
     if ctx = nil then begin
-        kfree(void(buf));
+        kfree(buf); device^.mbrWriteBusy := false;
         if callback <> nil then callback(eOutOfMemory, callbackData);
         exit;
     end;
-    ctx^.Buffer := pointer(buf);
-    ctx^.UserCallback := callback;
-    ctx^.UserData := callbackData;
-
+    ctx^.Buffer := buf; ctx^.Device := device;
+    ctx^.UserCallback := callback; ctx^.UserData := callbackData;
     err := storage_write_async(device, 0, 1, buf, @mbr_write_async_callback, ctx);
-    if err <> eNone then begin
-        kfree(void(buf));
-        kfree(void(ctx));
-        if callback <> nil then callback(err, callbackData);
-    end;
+    if err <> eNone then mbr_write_async_callback(err, ctx);
 end;
 
 { ========================================================================== }

@@ -224,6 +224,28 @@ type
         WriteRefs         : array[0..FAT_OPEN_HANDLE_SLOTS - 1] of TFATWriteRef;
     end;
 
+{ Exclusive cluster bound, constrained by both data area and FAT capacity. }
+function FAT32ClusterLimit(br : PBootRecord) : uint32;
+
 implementation
+
+function FAT32ClusterLimit(br : PBootRecord) : uint32;
+var overhead, total, capacity, limit : uint64;
+begin
+    FAT32ClusterLimit := 0;
+    if br = nil then exit;
+    if (br^.sectorSize <> 512) or (br^.spc = 0) or (br^.spc > 128) or
+       ((br^.spc and (br^.spc - 1)) <> 0) or (br^.rsvSectors = 0) or
+       (br^.numFats = 0) or (br^.FATSize = 0) then exit;
+    total := br^.manySectors;
+    if total = 0 then total := br^.numSectors;
+    overhead := uint64(br^.rsvSectors) + uint64(br^.numFats) * br^.FATSize;
+    if overhead >= total then exit;
+    limit := (total - overhead) div br^.spc + 2;
+    capacity := uint64(br^.FATSize) * (br^.sectorSize div 4);
+    if (limit > capacity) or (limit > $0FFFFFF0) then exit;
+    FAT32ClusterLimit := uint32(limit);
+end;
+
 
 end.
