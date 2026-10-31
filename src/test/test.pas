@@ -33,6 +33,7 @@ uses
     core.ds.prio,
     driver.storage.vfs,
     driver.storage.test,
+    driver.storage.bench,
     driver.storage.metatest,
     driver.storage.perftest,
     driver.storage.ctl.ahci,
@@ -71,6 +72,7 @@ begin
     core.ds.prio.UnitTest;
     driver.storage.vfs.UnitTest;
     driver.storage.test.UnitTest;
+    driver.storage.bench.UnitTest;
     driver.storage.metatest.UnitTest;
     driver.storage.perftest.UnitTest;
     driver.storage.ctl.ahci.UnitTest;

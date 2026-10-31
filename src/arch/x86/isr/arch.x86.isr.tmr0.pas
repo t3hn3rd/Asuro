@@ -27,6 +27,10 @@ uses
     arch.x86.isr.mgr,
     arch.x86.idt;
 
+const
+    PIT_INPUT_HZ = 1193182;
+    PIT_DIVISOR = 149;
+
 procedure register();
 procedure hook(hook_method : uint32);
 procedure unhook(hook_method : uint32);
@@ -54,7 +58,7 @@ procedure register();
 begin
     if not registered then begin
         asm
-            mov ax, 149
+            mov ax, PIT_DIVISOR
             out $40, al
             mov al, ah
             out $40, al
