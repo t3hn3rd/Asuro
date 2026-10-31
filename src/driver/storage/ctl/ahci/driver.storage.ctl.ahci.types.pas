@@ -21,6 +21,7 @@ unit driver.storage.ctl.ahci.types;
 interface
 uses
     io.syslog,
+    driver.storage.types,
     driver.mgr,
     driver.types,
     driver.storage.ctl.ide.types,
@@ -251,11 +252,13 @@ type
     { Callback signature fired from IRQ context when an async I/O command completes.
       Must be very short — set a flag or post to a queue.
       Never call kalloc/kfree/VFS from within this callback. }
-    TIOCompletion = procedure(success : boolean; userdata : puint32);
+    TIOCompletion = procedure(error : TError; userdata : puint32);
 
     { Per-slot pending operation — one entry per HBA command slot }
     TPendingOp = record
         inUse      : boolean;
+        issued     : boolean;
+        started    : uint32;
         completion : TIOCompletion;
         userdata   : puint32;
     end;
@@ -267,6 +270,11 @@ type
     }
     TAHCI_Device = record
         port         : PHBA_Port;
+        owner        : pointer; { stable PAHCI_Controller }
+        offline      : boolean;
+        recovering   : boolean;
+        recoveryTick : uint32;
+        recoveryError: TError;
         device_type  : TDeviceType;
         ata_info     : TIdentResponse;
         supportsNCQ  : boolean;
@@ -288,6 +296,7 @@ type
     }
     TAHCI_Controller = record
         pci_device : PPCI_Device;
+        offline : boolean;
         mio: PHBA_Memory;
         ata_info : TIdentResponse;
         devices : array[0..31] of TAHCI_Device;

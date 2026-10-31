@@ -14,7 +14,7 @@ type
     PMock = ^TMock;
     TMock = record
         Data : puint8;
-        Writes, FailWrite, Callbacks : uint32;
+        Writes, FailWrite, Callbacks, Depth, MaxDepth : uint32;
         Error : TError;
         OutOfBounds, FailRead : boolean;
     end;
@@ -27,7 +27,10 @@ begin
        (request^.SectorCount > device^.maxSectorCount-request^.LBA) then begin
         m^.OutOfBounds := true; complete_io(request, false, eInvalidArgument); exit;
     end;
-    if (request^.RequestType <> ioWrite) and m^.FailRead then begin complete_io(request, false, eIOError); exit; end;
+    if (request^.RequestType <> ioWrite) and m^.FailRead then begin
+        Inc(m^.Depth); if m^.Depth > m^.MaxDepth then m^.MaxDepth := m^.Depth;
+        complete_io(request,false,eIOError); Dec(m^.Depth); exit;
+    end;
     offset := request^.LBA*512; size := request^.SectorCount*512;
     if request^.RequestType = ioWrite then begin
         Inc(m^.Writes);
@@ -81,7 +84,17 @@ begin
     device^.controllerId0 := uint32(mock); device^.sectorSize := 512;
     device^.maxSectorCount := 256; device^.writable := true; device^.maxActive := 1;
     device^.dispatchRead := @dispatch; device^.dispatchWrite := @dispatch;
-    device^.requestQueue := CFIFO_New(sizeof(Pointer),4);
+    device^.requestQueue := CFIFO_New(sizeof(Pointer),8);
+    device^.maxActive := 0; mock^.FailRead := true;
+    for i := 1 to 4 do
+        Assert(storage_read_async(device,0,1,puint32(mock^.Data),@completion,mock)=eNone,'queued fault request accepted');
+    Assert(mock^.Callbacks=0,'queued requests wait for dispatch');
+    device^.maxActive := 1;
+    Assert(storage_read_async(device,0,1,puint32(mock^.Data),@completion,mock)=eNone,'fault queue drain accepted');
+    Assert((mock^.Callbacks=5) and (mock^.Error=eIOError),'every queued error completes once');
+    Assert((mock^.MaxDepth=1) and (device^.activeCount=0) and (CFIFO_Size(device^.requestQueue)=0),
+           'inline failures drain without recursive driver dispatch');
+    mock^.FailRead := false; mock^.Callbacks := 0;
     device^.cachedMBR := kalloc(512);
     mbr := PMaster_Boot_Record(device^.cachedMBR);
     memset(uint32(mbr),0,512); mbr^.boot_sector := $AA55; mbr^.signature := $12345678;

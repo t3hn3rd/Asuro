@@ -246,6 +246,7 @@ begin
     device^.removed := false;
     device^.requestQueue := CFIFO_New(SizeOf(PIORequest), 128);
     device^.activeCount := 0;
+    device^.dispatching := false;
     if device^.maxActive = 0 then device^.maxActive := 1;
     device^.cachedMBR := nil;
     device^.metadataBusy := false;
@@ -416,6 +417,8 @@ procedure dispatch_next(device : PStorage_Device);
 var
     heapReq : PIORequest;
 begin
+    if device^.dispatching then exit;
+    device^.dispatching := true;
     { Dispatch queued requests up to maxActive hardware slots }
     while device^.activeCount < device^.maxActive do begin
         if not CFIFO_Dequeue(device^.requestQueue, @heapReq) then break;  { queue empty }
@@ -441,12 +444,14 @@ begin
             end;
         end;
     end;
+    device^.dispatching := false;
 end;
 
 function submit_io(request : PIORequest) : TError;
 var
     device  : PStorage_Device;
     heapReq : PIORequest;
+    flags : uint32;
 begin
     { Pre-checks — fail fast before touching the queue }
     if request = nil then begin submit_io := eInvalidArgument; exit; end;
@@ -477,38 +482,16 @@ begin
 
     { Enqueue and attempt dispatch — must be ISR-safe and bounded.
       Reject once the fixed queue is full instead of growing with CLI held. }
-    asm pushf; cli end;
-    if (device^.activeCount < device^.maxActive) and (CFIFO_Size(device^.requestQueue) = 0) then begin
-        device^.activeCount := device^.activeCount + 1;
-        heapReq^.State := iosDispatched;
-        asm popf end;
-        case heapReq^.RequestType of
-            ioRead: begin
-                if device^.dispatchRead <> nil then
-                    device^.dispatchRead(device, heapReq)
-                else
-                    complete_io(heapReq, false, eDeviceNotFound);
-            end;
-            ioWrite: begin
-                if device^.dispatchWrite <> nil then
-                    device^.dispatchWrite(device, heapReq)
-                else
-                    complete_io(heapReq, false, eDeviceNotFound);
-            end;
-        end;
-        submit_io := eNone;
-        exit;
-    end;
-
+    asm pushfd; cli; pop flags end;
     if CFIFO_Size(device^.requestQueue) >= CFIFO_Capacity(device^.requestQueue) then begin
-        asm popf end;
+        if (flags and $200) <> 0 then asm sti end;
         ioreq_free(heapReq);
         submit_io := eQueueFull;
         exit;
     end;
     CFIFO_Enqueue(device^.requestQueue, @heapReq);
     dispatch_next(device);
-    asm popf end;
+    if (flags and $200) <> 0 then asm sti end;
 
     submit_io := eNone;
 end;

@@ -43,6 +43,7 @@ var
     ahciControllers : PDList;
     page_base : puint32;
 
+procedure UnitTest;
 procedure init();
 function load(ptr : void) : boolean;
 procedure check_ports(controller : PAHCI_Controller);
@@ -68,8 +69,20 @@ function send_read_capacity(device : PAHCI_Device; sectorCount : puint32; blockS
 
 implementation
 
+uses arch.x86.bda, arch.x86.isr.tmr0, core.panic, io.stdio, core.strings;
+
 const
     AHCI_ENABLE_NCQ = true;
+    AHCI_IO_TICKS = 80000; { about 10 seconds at the ~8 kHz PIT }
+    AHCI_STOP_TICKS = 8000;
+    AHCI_FATAL_MASK = $79000000; { TFES, HBFS, HBDS, IFS, OFS }
+    AHCI_IRQ_MASK = $7900000B;
+
+var watchdogDivider : uint32 = 0;
+
+procedure cmd_ahcitest(params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf); forward;
+procedure ahci_watchdog(data : void); forward;
+procedure fail_controller(controller : PAHCI_Controller; error : TError); forward;
 
 function min_u32(a : uint32; b : uint32) : uint32;
 begin
@@ -92,7 +105,8 @@ begin
     devID.id4:= idANY;
     devID.ex:= nil;
     driver.mgr.register_driver('ATA/PI driver.storage.ctl.ahci Driver', @devID, @load);
-    //TODO check driver.storage.ctl.ide devices in driver.storage.ctl.ide for sata devices
+    arch.x86.isr.tmr0.hook(uint32(@ahci_watchdog));
+    io.stdio.registerCommand('AHCITEST',@cmd_ahcitest,'Run AHCI tests using simulated registers');
 end;
 
 { Poll MMIO through a pointer on every iteration. The PIT runs at ~8 kHz;
@@ -170,11 +184,12 @@ var
     command_header : PHBA_CMD_HEADER;
 begin
     for i:=0 to 31 do begin
+        if controller^.offline then break;
         if ((controller^.mio^.ports_implimented shr i) and 1) = 1 then begin
             port := @controller^.mio^.ports[i];
 
             device := PAHCI_Device(@controller^.devices[i]);
-            device^.port := port;
+            device^.port := port; device^.owner := controller;
 
             port^.int_enable := 0;
             if not stop_port(port) then begin log_port_failure(i,port,'cannot stop engine'); continue; end;
@@ -225,12 +240,13 @@ begin
                 //set command header locations
                 command_header := PHBA_CMD_HEADER(uint32(cmd_list_base) + (ii * sizeof(THBA_CMD_HEADER)));
                 command_header^.prdtl := 32;
-                command_header^.cmd_table_base := vtop(uint32(cmd_table_base)) + (ii * sizeof(THBA_CMD_TABLE));
+                command_header^.cmd_table_base := vtop(uint32(cmd_table_base) + (ii * sizeof(THBA_CMD_TABLE)));
                 command_header^.cmd_table_baseu := 0;
             end;
 
             registered := false;
             for attempt := 1 to 2 do begin
+                if controller^.offline or device^.offline then break;
                 if not reset_port(port) then begin log_port_failure(i,port,'reset/readiness timeout'); continue; end;
                 signatureWait := 0;
                 while (puint32(@port^.signature)^ = 0) or (puint32(@port^.signature)^ = $FFFFFFFF) do begin
@@ -247,7 +263,9 @@ begin
             end;
             if not registered then begin
                 port^.int_enable := 0;
-                if stop_port(port) then begin
+                if not controller^.offline then
+                    if not stop_port(port) then fail_controller(controller,eIOTimeout);
+                begin
                     port^.cmdl_basel := 0; port^.fis_basel := 0;
                     kfree(listAlloc); kfree(fisAlloc); kfree(tableAlloc);
                     device^.command_list := nil; device^.fis := nil; device^.command_table := nil;
@@ -332,9 +350,8 @@ begin
     if (not wait_register(@device^.port^.cmd_issue,1,0,2500)) or
        ((device^.port^.tfd and $1) <> 0) or ((device^.port^.int_status and $40000000) <> 0) then begin
         log_port_failure(portIndex,device^.port,'IDENTIFY timeout or task-file error');
-        { Free DMA memory only once both engines have stopped. If hardware cannot
-          stop, retaining this one buffer is safer than a late DMA into freed memory. }
-        if stop_port(device^.port) then kfree(buffer);
+        if not stop_port(device^.port) then fail_controller(controller,eIOTimeout);
+        kfree(buffer);
         exit;
     end;
     device^.port^.int_status := $FFFFFFFF;
@@ -342,13 +359,13 @@ begin
     { Re-enable port interrupts now that IDENTIFY polling is done.
       $4000000B = bit 0 (D2H Register FIS) | bit 1 (PIO Setup FIS) | bit 3 (Set Device Bits / NCQ) | bit 30 (Task File Error)
       Bit 3 is required for NCQ completion notifications via SDB FIS. }
-    device^.port^.int_enable := $4000000B;
+    device^.port^.int_enable := AHCI_IRQ_MASK;
 
     b8 := puint16(buffer);
     memcpy(uint32(buffer), uint32(@device^.ata_info[0]), 512);
     sec_count := (b8[61] shl 16) or b8[60];
     ncqDepth := (b8[75] and $1F) + 1;
-    ncqSupported := ((b8[76] and (1 shl 8)) <> 0) and (not isATAPI) and AHCI_ENABLE_NCQ;
+    ncqSupported := ((b8[76] and (1 shl 8)) <> 0) and (not isATAPI) and AHCI_ENABLE_NCQ and ((controller^.mio^.capabilites and (1 shl 30)) <> 0);
     if ncqSupported then begin
         device^.supportsNCQ := true;
         device^.queueDepth := min_u32(slotCount, ncqDepth);
@@ -357,10 +374,7 @@ begin
         device^.queueDepth := 1;
     end;
 
-    { Free the 512-byte IDENTIFY buffer before allocating the write-test buffer }
     kfree(buffer);
-    buffer := puint32(kalloc(2048));
-    memset(uint32(buffer), 0, 2048);
 
     { For ATAPI devices, get capacity from SCSI READ CAPACITY instead of IDENTIFY }
     if isATAPI then begin
@@ -419,8 +433,7 @@ begin
         io.syslog.writestringln(': sector count is 0, skipping registration.');
     end;
 
-    { Free the write-test buffer allocated above }
-    kfree(buffer);
+
 
 end;
 
@@ -461,10 +474,10 @@ var
     cmd_table_base : puint32;
     int_no : uInt8;
     timeout : uint32;
-    bohc : uint32;
+    flags : uint32;
 begin
     if ahciControllers = nil then begin
-        ahciControllers := DL_New(SizeOf(TAHCI_Controller));
+        ahciControllers := DL_New(SizeOf(Pointer));
     end;
 
     device := PPCI_Device(ptr);
@@ -473,7 +486,9 @@ begin
     psleep(5);
     int_no := device^.interrupt_line + 32;
 
-    controller := PAHCI_Controller(DL_Add(ahciControllers));
+    load := false;
+    controller := PAHCI_Controller(kalloc(sizeof(TAHCI_Controller)));
+    if controller = nil then exit;
 
     controller^.pci_device := PPCI_Device(device);
     
@@ -485,40 +500,23 @@ begin
     base := PHBA_Memory(device^.address5);
     controller^.mio := base;
 
-    bohc := controller^.mio^.bohc;
-
-    if (bohc and $1) <> 0 or (bohc and not (1 shl 1)) then begin
-
-        // Set the OS Owned Semaphore (typically bit 1).
-        bohc := bohc or (1 shl 1);
-        controller^.mio^.bohc := bohc;
-
-        // Wait until the BIOS Owned Semaphore (bit 0) is cleared.
-        timeout := 0;
-        while ((controller^.mio^.bohc and $1) <> 0) and (timeout < 10000) do begin
-        timeout := timeout + 1;
+    if (base^.capabilites2 and 1) <> 0 then begin
+        base^.bohc := base^.bohc or 2;
+        if not wait_register(@base^.bohc,$11,0,1000) then begin
+            io.syslog.logln('AHCI','BIOS handoff timed out; controller not started.');
+            kfree(void(controller)); exit;
         end;
-
-        if timeout = 10000 then begin
-        io.syslog.writestringln('driver.storage.ctl.ahci: BIOS/OS handoff timed out.');
-        end else begin
-        // io.syslog.writestringln('driver.storage.ctl.ahci: BIOS/OS handoff successful.');
-        end;
-    end else begin
-        // io.syslog.writestringln('driver.storage.ctl.ahci: BIOS not holding controller or handoff already complete.');
     end;
-    
-    //print ghc
-    // io.syslog.writestring('driver.storage.ctl.ahci: GHC: ');
-    // io.syslog.writebin32ln(base^.global_ctrl);
-
-    base^.global_ctrl := base^.global_ctrl or AHCI_CONTROLLER_MODE;
-
-    base^.global_ctrl := base^.global_ctrl or 1;
-
-    while (base^.global_ctrl and 1) <> 0 do begin
+    base^.global_ctrl := base^.global_ctrl or AHCI_CONTROLLER_MODE or 1;
+    if not wait_register(@base^.global_ctrl,1,0,500) then begin
+        io.syslog.logln('AHCI','Controller reset timed out; controller not started.');
+        driver.bus.pci.setBusMaster(device^.bus,device^.slot,device^.func,false);
+        kfree(void(controller)); exit;
     end;
-    
+    { Publish a stable heap pointer, never an interior pointer into a growing DList. }
+    asm pushfd; cli; pop flags end;
+    DL_Add(ahciControllers); DL_Set(ahciControllers,DL_Size(ahciControllers)-1,puint32(@controller));
+    if (flags and $200) <> 0 then asm sti end;
 
     registerISR(int_no, @ahci_isr);
 
@@ -545,472 +543,294 @@ begin
     base^.int_status := $FFFFFFFF;
 
     check_ports(controller);
+    load := not controller^.offline;
 end;
 
-procedure ahci_isr();
-var
-    i          : uint32;
-    j          : uint32;
-    k          : uint32;
-    ctrl_is    : uint32;
-    port_is    : uint32;
-    active     : uint32;
-    slotCount  : uint32;
-    completionCb : TIOCompletion;
-    completionData : puint32;
-    port       : PHBA_Port;
-    controller : PAHCI_Controller;
-    device     : PAHCI_Device;
-    success    : boolean;
+function now_tick : uint32;
+begin now_tick := puint32(@Counters.c32)^; end;
+
+{ Only complete commands whose DMA ownership has ended. Callback re-entry may
+  submit more work, so consume a fixed mask rather than rescanning new slots. }
+procedure finish_slots(device : PAHCI_Device; mask : uint32; error : TError);
+var slot : uint32; cb : TIOCompletion; data : puint32;
 begin
-    if ahciControllers = nil then exit;
-    for i := 0 to DL_Size(ahciControllers) - 1 do begin
-        controller := PAHCI_Controller(DL_Get(ahciControllers, i));
-        ctrl_is := controller^.mio^.int_status;
-        if ctrl_is = 0 then continue;
-
-        for j := 0 to 31 do begin
-            if (ctrl_is shr j) and 1 = 0 then continue;
-
-            port    := @controller^.mio^.ports[j];
-            port_is := port^.int_status;
-            device  := PAHCI_Device(@controller^.devices[j]);
-
-            { success: no ERR bit in TFD, and no Task File Error interrupt }
-            success := ((port^.tfd and $1) = 0) and ((port_is and $40000000) = 0);
-
-            { Scan all command slots for completed operations }
-            active := port^.cmd_issue or port^.sata_active;
-            slotCount := device^.slotCount;
-            if slotCount = 0 then slotCount := 32;
-            if slotCount > 32 then slotCount := 32;
-            if slotCount > 0 then
-                for k := 0 to slotCount - 1 do begin
-                    if device^.pending[k].inUse then begin
-                        if ((active shr k) and 1) = 0 then begin
-                            completionCb := device^.pending[k].completion;
-                            completionData := device^.pending[k].userdata;
-                            device^.pending[k].inUse := false;
-                            device^.pending[k].completion := nil;
-                            device^.pending[k].userdata := nil;
-                            if completionCb <> nil then
-                                completionCb(success, completionData);
-                        end;
-                    end;
-                end;
-
-            { Acknowledge port interrupt by writing back the read value }
-            port^.int_status := port_is;
+    for slot := 0 to 31 do if (mask and (uint32(1) shl slot)) <> 0 then begin
+        if device^.pending[slot].inUse and device^.pending[slot].issued then begin
+            cb := device^.pending[slot].completion; data := device^.pending[slot].userdata;
+            device^.pending[slot].inUse := false; device^.pending[slot].issued := false;
+            device^.pending[slot].completion := nil; device^.pending[slot].userdata := nil;
+            if cb <> nil then cb(error,data);
         end;
-
-        { Acknowledge controller interrupt }
-        controller^.mio^.int_status := ctrl_is;
     end;
 end;
 
-function find_cmd_slot(device : PAHCI_Device) : uint32;
-var
-    i         : uint32;
-    active    : uint32;
-    slotCount : uint32;
+procedure fail_controller(controller : PAHCI_Controller; error : TError);
+var j, command : uint32; pci : PPCI_Device; device : PAHCI_Device;
 begin
-    active := device^.port^.cmd_issue or device^.port^.sata_active;
-    slotCount := device^.slotCount;
-    if slotCount = 0 then slotCount := 32;
-    if slotCount > 32 then slotCount := 32;
-    if slotCount > 0 then
-        for i := 0 to slotCount - 1 do begin
-            if ((active shr i) and 1 = 0) and (not device^.pending[i].inUse) then begin
-                find_cmd_slot := i;
+    if controller = nil then exit;
+    controller^.offline := true;
+    pci := controller^.pci_device;
+    { Last resort: fence DMA for the whole controller before returning buffers.
+      Write only PCI command bits, not the adjacent write-one-to-clear status. }
+    driver.bus.pci.requestConfig(pci^.bus,pci^.slot,pci^.func,1);
+    command := inl($CFC) and $FFFF;
+    driver.bus.pci.writeConfig(pci^.bus,pci^.slot,pci^.func,1,command and not uint32(4));
+    driver.bus.pci.requestConfig(pci^.bus,pci^.slot,pci^.func,1);
+    command := inl($CFC);
+    if (command <> $FFFFFFFF) and ((command and 4) <> 0) then
+        core.panic.panic('AHCI DMA cannot be stopped','PCI bus mastering could not be disabled',nil);
+    controller^.mio^.global_ctrl := controller^.mio^.global_ctrl and not uint32(2);
+    { Reject all new work before any callback drains a queued request. }
+    for j := 0 to 31 do controller^.devices[j].offline := true;
+    for j := 0 to 31 do begin
+        device := @controller^.devices[j];
+        device^.recovering := false;
+        if device^.port <> nil then begin
+            device^.port^.int_enable := 0;
+            device^.port^.cmd := device^.port^.cmd and not uint32($11);
+        end;
+        finish_slots(device,$FFFFFFFF,error);
+    end;
+    io.syslog.logln('AHCI','Controller taken offline after DMA stop timeout.');
+end;
+
+procedure begin_recovery(device : PAHCI_Device; error : TError);
+begin
+    if device^.recovering or device^.offline then exit;
+    device^.offline := true; device^.recovering := true;
+    device^.recoveryTick := now_tick; device^.recoveryError := error;
+    device^.port^.int_enable := 0;
+    device^.port^.cmd := device^.port^.cmd and not uint32(1);
+    io.syslog.logln('AHCI','I/O failed or timed out; stopping port before releasing DMA buffers.');
+end;
+
+{ Nonblocking; called by IRQ and the timer watchdog with interrupts disabled. }
+procedure service_port(device : PAHCI_Device; now, status : uint32);
+var active, doneMask, pendingMask, slot : uint32; expired : boolean;
+begin
+    if device^.port = nil then exit;
+    if device^.recovering then begin
+        if (puint32(@device^.port^.cmd)^ and $8000) = 0 then begin
+            device^.port^.cmd := device^.port^.cmd and not uint32($10);
+            if (puint32(@device^.port^.cmd)^ and $4000) = 0 then begin
+                device^.recovering := false;
+                device^.port^.int_status := $FFFFFFFF;
+                finish_slots(device,$FFFFFFFF,device^.recoveryError);
                 exit;
             end;
         end;
-    { All usable slots busy }
-    find_cmd_slot := $FFFFFFFF;
+        if uint32(now-device^.recoveryTick) >= AHCI_STOP_TICKS then
+            fail_controller(PAHCI_Controller(device^.owner),device^.recoveryError);
+        exit;
+    end;
+    if device^.offline then exit;
+    active := puint32(@device^.port^.cmd_issue)^ or puint32(@device^.port^.sata_active)^;
+    doneMask := 0; pendingMask := 0; expired := false;
+    for slot := 0 to 31 do if device^.pending[slot].inUse and device^.pending[slot].issued then begin
+        pendingMask := pendingMask or (uint32(1) shl slot);
+        if (active and (uint32(1) shl slot)) = 0 then doneMask := doneMask or (uint32(1) shl slot)
+        else if uint32(now-device^.pending[slot].started) >= AHCI_IO_TICKS then expired := true;
+    end;
+    if pendingMask = 0 then exit; { polling IDENTIFY owns its own recovery }
+    if (status and AHCI_FATAL_MASK) <> 0 then begin
+        begin_recovery(device,eIOError); exit;
+    end;
+    if (doneMask <> 0) and ((device^.port^.tfd and $1) <> 0) then begin
+        begin_recovery(device,eIOError); exit;
+    end;
+    if expired then begin begin_recovery(device,eIOTimeout); exit; end;
+    finish_slots(device,doneMask,eNone);
 end;
 
-{ Shared completion callback used by all sync wrappers.
-  userdata points to a stack-local boolean; sets it true so the spin loop exits.
-  Called from IRQ context \u2014 must stay short. }
-procedure sync_completion(success : boolean; userdata : puint32);
+procedure ahci_isr();
+var i,j,ctrlIS,portIS : uint32; controller : PAHCI_Controller; device : PAHCI_Device;
 begin
-    userdata^ := 1;
+    if (ahciControllers = nil) or (DL_Size(ahciControllers) = 0) then exit;
+    for i := 0 to DL_Size(ahciControllers)-1 do begin
+        controller := PAHCI_Controller(puint32(DL_Get(ahciControllers,i))^);
+        if controller^.offline then continue;
+        ctrlIS := controller^.mio^.int_status;
+        if ctrlIS = 0 then continue;
+        { Acknowledge before callbacks can submit a new command/interrupt. }
+        for j := 0 to 31 do if (ctrlIS and (uint32(1) shl j)) <> 0 then begin
+            device := @controller^.devices[j];
+            if device^.port = nil then continue;
+            portIS := device^.port^.int_status;
+            device^.port^.int_status := portIS;
+            controller^.mio^.int_status := uint32(1) shl j;
+            service_port(device,now_tick,portIS);
+        end;
+    end;
 end;
 
-{ ---- Async send functions ---- }
+procedure ahci_watchdog(data : void);
+var i,j,now : uint32; controller : PAHCI_Controller;
+begin
+    Inc(watchdogDivider); if watchdogDivider < 80 then exit; watchdogDivider := 0;
+    if (ahciControllers = nil) or (DL_Size(ahciControllers) = 0) then exit;
+    now := now_tick;
+    for i := 0 to DL_Size(ahciControllers)-1 do begin
+        controller := PAHCI_Controller(puint32(DL_Get(ahciControllers,i))^);
+        if controller^.offline then continue;
+        for j := 0 to 31 do
+            if controller^.devices[j].slotCount <> 0 then service_port(@controller^.devices[j],now,controller^.devices[j].port^.int_status);
+    end;
+end;
+
+{ Atomic reserve: software ownership precedes descriptor construction. }
+function find_cmd_slot(device : PAHCI_Device) : uint32;
+var flags, slot, active, count : uint32;
+begin
+    find_cmd_slot := $FFFFFFFF;
+    if (device = nil) or (device^.port = nil) then exit;
+    asm pushfd; cli; pop flags end;
+    if not device^.offline then begin
+        active := device^.port^.cmd_issue or device^.port^.sata_active;
+        count := device^.slotCount; if count > 32 then count := 32;
+        if not device^.supportsNCQ then if count > 1 then count := 1;
+        if count > 0 then for slot := 0 to count-1 do begin
+            if ((active and (uint32(1) shl slot)) = 0) and (not device^.pending[slot].inUse) then begin
+                device^.pending[slot].inUse := true; device^.pending[slot].issued := false;
+                find_cmd_slot := slot; break;
+            end;
+        end;
+    end;
+    if (flags and $200) <> 0 then asm sti end;
+end;
+
+{ Split at the kernel's 4 MiB virtual mapping boundaries. Every segment gets
+  its own physical translation, including buffers with an unaligned start. }
+function build_prdt(table : PHBA_CMD_TABLE; address, bytes : uint32; var entries : uint32) : TError;
+var remaining, chunk : uint32;
+begin
+    build_prdt := eInvalidArgument; entries := 0;
+    if (bytes = 0) or ((address and 1) <> 0) or ((bytes and 1) <> 0) or (bytes > $FFFFFFFF-address) then exit;
+    remaining := bytes;
+    while remaining > 0 do begin
+        if entries = 32 then exit;
+        chunk := $400000-(address and $3FFFFF); if chunk > remaining then chunk := remaining;
+        table^.prdt[entries].dba := vtop(address); table^.prdt[entries].dbau := 0;
+        table^.prdt[entries].rsv0 := 0; table^.prdt[entries].reserved := 0;
+        table^.prdt[entries].dbc := chunk-1; table^.prdt[entries].int := 0;
+        Inc(entries); address := address+chunk; remaining := remaining-chunk;
+    end;
+    table^.prdt[entries-1].int := 1;
+    build_prdt := eNone;
+end;
+
+{ mode: 0 SATA read, 1 SATA write, 2 ATAPI READ(12), 3 READ CAPACITY. }
+function submit_command(device : PAHCI_Device; lba : uint64; bytes : uint32; buffer : puint32;
+                        mode : uint32; completion : TIOCompletion; userdata : puint32) : TError;
+var slot, entries, sectors, flags : uint32; header : PHBA_CMD_HEADER; table : PHBA_CMD_TABLE;
+    fis : PHBA_FIS_REG_H2D; err : TError;
+begin
+    submit_command := eInvalidArgument;
+    if (device = nil) or (buffer = nil) or (bytes = 0) then exit;
+    if (device^.port = nil) or (device^.command_list = nil) or (device^.command_table = nil) then exit;
+    if device^.offline then begin submit_command := eDeviceNotReady; exit; end;
+    if mode < 2 then begin
+        if ((bytes mod 512) <> 0) or (bytes > 33554432) or (lba > $FFFFFFFFFFFF) then exit;
+        sectors := bytes div 512;
+        if uint64(sectors-1) > $FFFFFFFFFFFF-lba then exit;
+    end else if mode = 2 then begin
+        if ((bytes mod 2048) <> 0) or (lba > $FFFFFFFF) then exit;
+        sectors := bytes div 2048;
+        if uint64(sectors-1) > $FFFFFFFF-lba then exit;
+    end else begin
+        if (mode <> 3) or (bytes <> 8) then exit;
+        sectors := 0;
+    end;
+    slot := find_cmd_slot(device);
+    if slot = $FFFFFFFF then begin submit_command := eNoFreeSlot; exit; end;
+    header := @device^.command_list[slot]; table := @device^.command_table[slot];
+    { Preserve the command-table pointer but reset every per-command header flag. }
+    puint32(header)^ := 0; header^.prdbc := 0;
+    header^.cmd_fis_length := sizeof(THBA_FIS_REG_H2D) div 4;
+    if mode = 1 then header^.wrt := 1;
+    if mode >= 2 then header^.atapi := 1;
+    memset(uint32(table),0,128);
+    err := build_prdt(table,uint32(buffer),bytes,entries);
+    if err = eNone then begin
+        header^.prdtl := entries; fis := PHBA_FIS_REG_H2D(@table^.cmd_fis);
+        fis^.fis_type := uint8(FIS_TYPE_REG_H2D); fis^.c := 1;
+        if mode < 2 then begin
+            fis^.device := $40;
+            fis^.lba0 := lba and $FF; fis^.lba1 := (lba shr 8) and $FF;
+            fis^.lba2 := (lba shr 16) and $FF; fis^.lba3 := (lba shr 24) and $FF;
+            fis^.lba4 := (lba shr 32) and $FF; fis^.lba5 := (lba shr 40) and $FF;
+            if device^.supportsNCQ then begin
+                if mode = 0 then fis^.command := ATA_CMD_READ_FPDMA_QUEUED else fis^.command := ATA_CMD_WRITE_FPDMA_QUEUED;
+                fis^.featurel := sectors and $FF; fis^.featureh := (sectors shr 8) and $FF;
+                fis^.countl := slot shl 3;
+            end else begin
+                if mode = 0 then fis^.command := ATA_CMD_READ_DMA_EXT else fis^.command := ATA_CMD_WRITE_DMA_EXT;
+                fis^.countl := sectors and $FF; fis^.counth := (sectors shr 8) and $FF;
+            end;
+        end else begin
+            fis^.command := ATA_CMD_PACKET; fis^.device := $A0; fis^.featurel := 1;
+            if mode = 3 then table^.acmd[0] := $25
+            else begin
+                table^.acmd[0] := $A8;
+                table^.acmd[2] := (lba shr 24) and $FF; table^.acmd[3] := (lba shr 16) and $FF;
+                table^.acmd[4] := (lba shr 8) and $FF; table^.acmd[5] := lba and $FF;
+                table^.acmd[6] := (sectors shr 24) and $FF; table^.acmd[7] := (sectors shr 16) and $FF;
+                table^.acmd[8] := (sectors shr 8) and $FF; table^.acmd[9] := sectors and $FF;
+            end;
+        end;
+    end;
+    asm pushfd; cli; pop flags end;
+    if err = eNone then begin
+        if device^.offline then err := eDeviceNotReady
+        else if (device^.port^.tfd and $88) <> 0 then err := eDeviceNotReady;
+    end;
+    if err = eNone then begin
+        device^.pending[slot].completion := completion; device^.pending[slot].userdata := userdata;
+        device^.pending[slot].started := now_tick; device^.pending[slot].issued := true;
+        { RW1 registers: never write a stale snapshot of other command bits. }
+        if (mode < 2) and device^.supportsNCQ then device^.port^.sata_active := uint32(1) shl slot;
+        device^.port^.cmd_issue := uint32(1) shl slot;
+    end else device^.pending[slot].inUse := false;
+    if (flags and $200) <> 0 then asm sti end;
+    submit_command := err;
+end;
 
 function send_read_dma_async(device : PAHCI_Device; lba : uint64; count : uint32; buffer : puint32; completion : TIOCompletion; userdata : puint32) : TError;
-var
-    fis        : PHBA_FIS_REG_H2D;
-    cmd_header : PHBA_CMD_HEADER;
-    cmd_table  : PHBA_CMD_TABLE;
-    i          : uint32;
-    timeout    : uint32;
-    sec_count  : uint32;
-    prdt_count : uint32;
-    slot       : uint32;
-begin
-    send_read_dma_async := eIOError;
-
-    prdt_count := (count div 4194304) + 1;
-    if prdt_count > 32 then exit;
-
-    slot := find_cmd_slot(device);
-    if slot = $FFFFFFFF then begin
-        send_read_dma_async := eNoFreeSlot;
-        exit;
-    end;
-
-    cmd_header := PHBA_CMD_HEADER(uint32(device^.command_list) + (slot * sizeof(THBA_CMD_HEADER)));
-    cmd_header^.cmd_fis_length := sizeof(THBA_FIS_REG_H2D) div sizeof(uint32);
-    cmd_header^.wrt        := 0;
-    cmd_header^.prdtl      := prdt_count;
-    cmd_header^.clear_busy := 1;
-
-    cmd_table := PHBA_CMD_TABLE(uint32(device^.command_table) + (slot * sizeof(THBA_CMD_TABLE)));
-
-    for i := 0 to prdt_count - 1 do begin
-        cmd_table^.prdt[i].dba := vtop(uint32(buffer) + (i * 4194304));
-        if i = prdt_count - 1 then
-            cmd_table^.prdt[i].dbc := count - (i * 4194304) - 1
-        else
-            cmd_table^.prdt[i].dbc := 4194304 - 1;
-        cmd_table^.prdt[i].int := 1;
-    end;
-
-    fis := PHBA_FIS_REG_H2D(@cmd_table^.cmd_fis);
-    memset(uint32(fis), 0, sizeof(THBA_FIS_REG_H2D));
-    fis^.fis_type := uint8(FIS_TYPE_REG_H2D);
-    fis^.c        := $1;
-    fis^.device   := $40;
-
-    fis^.lba0 := lba and $FF;
-    fis^.lba1 := (lba shr 8)  and $FF;
-    fis^.lba2 := (lba shr 16) and $FF;
-    fis^.lba3 := (lba shr 24) and $FF;
-    fis^.lba4 := (lba shr 32) and $FF;
-    fis^.lba5 := (lba shr 40) and $FF;
-
-    sec_count := count div 512;
-    if sec_count = 0 then sec_count := 1;
-    if device^.supportsNCQ then begin
-        fis^.command  := ATA_CMD_READ_FPDMA_QUEUED;
-        fis^.featurel := sec_count and $FF;
-        fis^.featureh := (sec_count shr 8) and $FF;
-        fis^.countl := (slot and $1F) shl 3;
-        fis^.counth := 0;
-    end else begin
-        fis^.command  := ATA_CMD_READ_DMA_EXT;
-        fis^.countl := sec_count and $FF;
-        fis^.counth := (sec_count shr 8) and $FF;
-    end;
-
-    { Wait for TFD BSY+DRQ to clear }
-    timeout := 0;
-    while (device^.port^.tfd and $88) <> 0 do begin
-        timeout := timeout + 1;
-        if timeout > 100000 then begin
-            io.syslog.writestringln('driver.storage.ctl.ahci: Timeout waiting for port ready (async read)');
-            send_read_dma_async := eIOTimeout;
-            exit;
-        end;
-    end;
-
-    { Record the pending operation before issuing (ISR may fire immediately) }
-    device^.pending[slot].inUse      := true;
-    device^.pending[slot].completion := completion;
-    device^.pending[slot].userdata   := userdata;
-
-    if device^.supportsNCQ then
-        device^.port^.sata_active := device^.port^.sata_active or (1 shl slot);
-
-    { Issue command \u2014 returns immediately }
-    device^.port^.cmd_issue := device^.port^.cmd_issue or (1 shl slot);
-
-    send_read_dma_async := eNone;
-end;
-
-
+begin send_read_dma_async := submit_command(device,lba,count,buffer,0,completion,userdata); end;
 function send_write_dma_async(device : PAHCI_Device; lba : uint64; count : uint32; buffer : puint32; completion : TIOCompletion; userdata : puint32) : TError;
-var
-    fis        : PHBA_FIS_REG_H2D;
-    cmd_header : PHBA_CMD_HEADER;
-    cmd_table  : PHBA_CMD_TABLE;
-    i          : uint32;
-    timeout    : uint32;
-    sec_count  : uint32;
-    prdt_count : uint32;
-    slot       : uint32;
-begin
-    send_write_dma_async := eIOError;
-
-    prdt_count := (count div 4194304) + 1;
-    if prdt_count > 32 then exit;
-
-    slot := find_cmd_slot(device);
-    if slot = $FFFFFFFF then begin
-        send_write_dma_async := eNoFreeSlot;
-        exit;
-    end;
-
-    cmd_header := PHBA_CMD_HEADER(uint32(device^.command_list) + (slot * sizeof(THBA_CMD_HEADER)));
-    cmd_header^.cmd_fis_length := sizeof(THBA_FIS_REG_H2D) div sizeof(uint32);
-    cmd_header^.wrt        := 1;
-    cmd_header^.prdtl      := prdt_count;
-    cmd_header^.clear_busy := 1;
-
-    cmd_table := PHBA_CMD_TABLE(uint32(device^.command_table) + (slot * sizeof(THBA_CMD_TABLE)));
-
-    for i := 0 to prdt_count - 1 do begin
-        cmd_table^.prdt[i].dba := vtop(uint32(buffer) + (i * 4194304));
-        if i = prdt_count - 1 then
-            cmd_table^.prdt[i].dbc := count - (i * 4194304) - 1
-        else
-            cmd_table^.prdt[i].dbc := 4194304 - 1;
-        cmd_table^.prdt[i].int := 1;
-    end;
-
-    fis := PHBA_FIS_REG_H2D(@cmd_table^.cmd_fis);
-    memset(uint32(fis), 0, sizeof(THBA_FIS_REG_H2D));
-    fis^.fis_type := uint8(FIS_TYPE_REG_H2D);
-    fis^.c        := $1;
-    fis^.device   := $40;
-
-    fis^.lba0 := lba and $FF;
-    fis^.lba1 := (lba shr 8)  and $FF;
-    fis^.lba2 := (lba shr 16) and $FF;
-    fis^.lba3 := (lba shr 24) and $FF;
-    fis^.lba4 := (lba shr 32) and $FF;
-    fis^.lba5 := (lba shr 40) and $FF;
-
-    sec_count := count div 512;
-    if sec_count = 0 then sec_count := 1;
-    if device^.supportsNCQ then begin
-        fis^.command  := ATA_CMD_WRITE_FPDMA_QUEUED;
-        fis^.featurel := sec_count and $FF;
-        fis^.featureh := (sec_count shr 8) and $FF;
-        fis^.countl := (slot and $1F) shl 3;
-        fis^.counth := 0;
-    end else begin
-        fis^.command  := ATA_CMD_WRITE_DMA_EXT;
-        fis^.countl := sec_count and $FF;
-        fis^.counth := (sec_count shr 8) and $FF;
-    end;
-
-    { Wait for TFD BSY+DRQ to clear }
-    timeout := 0;
-    while (device^.port^.tfd and $88) <> 0 do begin
-        timeout := timeout + 1;
-        if timeout > 100000 then begin
-            io.syslog.writestringln('driver.storage.ctl.ahci: Timeout waiting for port ready (async write)');
-            send_write_dma_async := eIOTimeout;
-            exit;
-        end;
-    end;
-
-    { Record the pending operation before issuing }
-    device^.pending[slot].inUse      := true;
-    device^.pending[slot].completion := completion;
-    device^.pending[slot].userdata   := userdata;
-
-    if device^.supportsNCQ then
-        device^.port^.sata_active := device^.port^.sata_active or (1 shl slot);
-
-    { Issue command \u2014 returns immediately }
-    device^.port^.cmd_issue := device^.port^.cmd_issue or (1 shl slot);
-
-    send_write_dma_async := eNone;
-end;
-
-//read atapi 
+begin send_write_dma_async := submit_command(device,lba,count,buffer,1,completion,userdata); end;
 function read_atapi_async(device : PAHCI_Device; lba : uint64; count : uint32; buffer : puint32; completion : TIOCompletion; userdata : puint32) : TError;
-var
-    fis        : PHBA_FIS_REG_H2D;
-    cmd_header : PHBA_CMD_HEADER;
-    cmd_table  : PHBA_CMD_TABLE;
-    timeout    : uint32;
-    sec_count  : uint32;
-    prdt_count : uint32;
-    slot       : uint32;
-begin
-    read_atapi_async := eIOError;
+begin read_atapi_async := submit_command(device,lba,count,buffer,2,completion,userdata); end;
 
-    prdt_count := (count div 4194304) + 1;
-    if prdt_count > 32 then exit;
+type TCapacityWait = record Done : uint32; Error : TError; end;
+     PCapacityWait = ^TCapacityWait;
+procedure capacity_done(error : TError; userdata : puint32);
+var state : PCapacityWait;
+begin state := PCapacityWait(userdata); state^.Error := error; puint32(@state^.Done)^ := 1; end;
 
-    slot := find_cmd_slot(device);
-    if slot = $FFFFFFFF then begin
-        read_atapi_async := eNoFreeSlot;
-        exit;
-    end;
-
-    cmd_header := PHBA_CMD_HEADER(uint32(device^.command_list) + (slot * sizeof(THBA_CMD_HEADER)));
-    cmd_header^.cmd_fis_length := sizeof(THBA_FIS_REG_H2D) div sizeof(uint32);
-    cmd_header^.wrt        := 0;
-    cmd_header^.prdtl      := 1;
-    cmd_header^.atapi      := 1;
-    cmd_header^.clear_busy := 1;
-
-    cmd_table := PHBA_CMD_TABLE(uint32(device^.command_table) + (slot * sizeof(THBA_CMD_TABLE)));
-    cmd_table^.prdt[0].dba := vtop(uint32(buffer));
-    cmd_table^.prdt[0].dbc := count - 1;
-    cmd_table^.prdt[0].int := 1;
-
-    fis := PHBA_FIS_REG_H2D(@cmd_table^.cmd_fis);
-    memset(uint32(fis), 0, sizeof(THBA_FIS_REG_H2D));
-    fis^.fis_type := uint8(FIS_TYPE_REG_H2D);
-    fis^.c        := $1;
-    fis^.command  := ATA_CMD_PACKET;
-    fis^.device   := $A0;
-    fis^.featurel := fis^.featurel or 1;
-    fis^.featurel := fis^.featurel or (1 shl 2);
-
-    { SCSI READ(12) CDB }
-    memset(uint32(@cmd_table^.acmd[0]), 0, 16);
-    cmd_table^.acmd[0] := $A8;
-
-    cmd_table^.acmd[2] := uInt8((lba shr 24) and $FF);
-    cmd_table^.acmd[3] := uInt8((lba shr 16) and $FF);
-    cmd_table^.acmd[4] := uInt8((lba shr 8)  and $FF);
-    cmd_table^.acmd[5] := uInt8(lba and $FF);
-
-    sec_count := count div 2048;
-    if sec_count = 0 then sec_count := 1;
-    cmd_table^.acmd[6] := uInt8((sec_count shr 24) and $FF);
-    cmd_table^.acmd[7] := uInt8((sec_count shr 16) and $FF);
-    cmd_table^.acmd[8] := uInt8((sec_count shr 8)  and $FF);
-    cmd_table^.acmd[9] := uInt8(sec_count and $FF);
-
-    { Wait for TFD BSY+DRQ to clear }
-    timeout := 0;
-    while (device^.port^.tfd and $88) <> 0 do begin
-        timeout := timeout + 1;
-        if timeout > 100000 then begin
-            io.syslog.writestringln('driver.storage.ctl.ahci: Timeout waiting for port ready (async ATAPI)');
-            read_atapi_async := eIOTimeout;
-            exit;
-        end;
-    end;
-
-    { Record the pending operation before issuing }
-    device^.pending[slot].inUse      := true;
-    device^.pending[slot].completion := completion;
-    device^.pending[slot].userdata   := userdata;
-
-    { Issue command \u2014 returns immediately }
-    device^.port^.cmd_issue := device^.port^.cmd_issue or (1 shl slot);
-
-    read_atapi_async := eNone;
-end;
-
-{ Send a SCSI READ CAPACITY (10) command to an ATAPI device via AHCI.
-  Returns the total sector count and block size (typically 2048 for CD-ROM). }
 function send_read_capacity(device : PAHCI_Device; sectorCount : puint32; blockSize : puint32) : boolean;
-var
-    fis         : PHBA_FIS_REG_H2D;
-    cmd_header  : PHBA_CMD_HEADER;
-    cmd_table   : PHBA_CMD_TABLE;
-    cmd         : uint32;
-    timeout     : uint32;
-    tfd         : uint32;
-    buffer      : puint32;
-    slot        : uint32;
-    rawLBA      : uint32;
-    rawBlkSz    : uint32;
+var buffer : puint32; state : TCapacityWait; rawLBA, rawBlkSz : uint32; err : TError;
 begin
-    send_read_capacity := false;
-    sectorCount^ := 0;
-    blockSize^ := 0;
-
-    { Allocate an 8-byte buffer for the READ CAPACITY response }
-    buffer := kalloc(512);
-    memset(uint32(buffer), 0, 512);
-
-    slot := find_cmd_slot(device);
-    if slot = $FFFFFFFF then begin
-        kfree(buffer);
-        exit;
+    send_read_capacity := false; sectorCount^ := 0; blockSize^ := 0;
+    if not INTE then exit; { init/task context only }
+    buffer := kalloc(512); if buffer = nil then exit;
+    memset(uint32(buffer),0,512); state.Done := 0; state.Error := eNone;
+    err := submit_command(device,0,8,buffer,3,@capacity_done,puint32(@state));
+    if err = eNone then begin
+        { The watchdog ends ownership only after stopping DMA on error/timeout. }
+        while puint32(@state.Done)^ = 0 do asm hlt end;
+        err := state.Error;
     end;
-    cmd_header := PHBA_CMD_HEADER(uint32(device^.command_list) + (slot * sizeof(THBA_CMD_HEADER)));
-    cmd_header^.cmd_fis_length := sizeof(THBA_FIS_REG_H2D) div sizeof(uint32);
-    cmd_header^.wrt := 0;
-    cmd_header^.prdtl := 1;
-    cmd_header^.atapi := 1;
-    cmd_header^.clear_busy := 1;
-
-    cmd_table := PHBA_CMD_TABLE(uint32(device^.command_table) + (slot * sizeof(THBA_CMD_TABLE)));
-    cmd_table^.prdt[0].dba := vtop(uint32(buffer));
-    cmd_table^.prdt[0].dbc := 8 - 1;  { 8 bytes response }
-    cmd_table^.prdt[0].int := 1;
-
-    { Build the ATA PACKET command FIS }
-    fis := PHBA_FIS_REG_H2D(@cmd_table^.cmd_fis);
-    memset(uint32(fis), 0, sizeof(THBA_FIS_REG_H2D));
-    fis^.fis_type := uint8(FIS_TYPE_REG_H2D);
-    fis^.c   := $1;
-    fis^.command  := ATA_CMD_PACKET;
-    fis^.device   := $A0;
-    fis^.featurel := fis^.featurel or 1;
-    fis^.featurel := fis^.featurel or (1 shl 2);
-
-    { Build the 12-byte SCSI READ CAPACITY(10) CDB }
-    memset(uint32(@cmd_table^.acmd[0]), 0, 16);
-    cmd_table^.acmd[0] := $25;  { READ CAPACITY(10) opcode }
-
-    { Wait for port ready }
-    timeout := 0;
-    while (device^.port^.tfd and $88) <> 0 do begin
-        timeout := timeout + 1;
-        if timeout > 100000 then begin
-            io.syslog.writestringln('driver.storage.ctl.ahci: Timeout waiting for port ready (READ CAPACITY)');
-            kfree(buffer);
-            exit;
+    if err = eNone then begin
+        rawLBA := buffer[0]; rawBlkSz := buffer[1];
+        rawLBA := ((rawLBA and $FF) shl 24) or ((rawLBA and $FF00) shl 8) or
+                  ((rawLBA and $FF0000) shr 8) or ((rawLBA and $FF000000) shr 24);
+        rawBlkSz := ((rawBlkSz and $FF) shl 24) or ((rawBlkSz and $FF00) shl 8) or
+                    ((rawBlkSz and $FF0000) shr 8) or ((rawBlkSz and $FF000000) shr 24);
+        if (rawLBA <> $FFFFFFFF) and (rawBlkSz = 2048) then begin
+            sectorCount^ := rawLBA+1; blockSize^ := rawBlkSz; send_read_capacity := true;
         end;
     end;
-
-    { Issue the command }
-    device^.port^.cmd_issue := device^.port^.cmd_issue or (1 shl slot);
-
-    { Wait for completion }
-    timeout := 0;
-    repeat
-        tfd := device^.port^.tfd;
-        timeout := timeout + 1;
-        if timeout > 100 then begin
-            io.syslog.writestringln('driver.storage.ctl.ahci: READ CAPACITY command timeout');
-            kfree(buffer);
-            exit;
-        end;
-        if (tfd and $1) <> 0 then break;  { ERR bit set }
-        psleep(1);
-    until ((device^.port^.cmd_issue and (1 shl slot)) = 0);
-
-    if (device^.port^.cmd_issue and (1 shl slot)) <> 0 then begin
-        io.syslog.writestringln('driver.storage.ctl.ahci: Error sending READ CAPACITY command');
-        io.syslog.writestring('driver.storage.ctl.ahci: Error register: ');
-        io.syslog.writehexln(device^.port^.sata_error);
-        kfree(buffer);
-        exit;
-    end;
-
-    { Parse the 8-byte response: bytes 0-3 = last LBA (big-endian), bytes 4-7 = block size (big-endian) }
-    rawLBA := puint32(buffer)[0];
-    rawBlkSz := puint32(buffer)[1];
-
-    { Byte-swap from big-endian to little-endian }
-    sectorCount^ := ((rawLBA and $FF) shl 24) or
-                    ((rawLBA and $FF00) shl 8) or
-                    ((rawLBA and $FF0000) shr 8) or
-                    ((rawLBA and $FF000000) shr 24);
-    sectorCount^ := sectorCount^ + 1; { Last LBA + 1 = total sectors }
-
-    blockSize^ := ((rawBlkSz and $FF) shl 24) or
-                  ((rawBlkSz and $FF00) shl 8) or
-                  ((rawBlkSz and $FF0000) shr 8) or
-                  ((rawBlkSz and $FF000000) shr 24);
-
     kfree(buffer);
-    send_read_capacity := true;
 end;
 
 { ---------- StorageManager async callback wrappers ---------- }
@@ -1021,17 +841,12 @@ end;
 
 { ISR-safe completion — bridges from per-slot TIOCompletion callback to
   driver.storage.mgr.complete_io.  userdata is the PIORequest pointer. }
-procedure ahci_io_completion(success : boolean; userdata : puint32);
-var
-    request : PIORequest;
-    err     : TError;
+procedure ahci_io_completion(error : TError; userdata : puint32);
+var request : PIORequest;
 begin
     request := PIORequest(userdata);
-    if success then
-        err := eNone
-    else
-        err := eIOError;
-    driver.storage.mgr.complete_io(request, success, err);
+    if error = eNone then request^.ByteCount := request^.SectorCount*request^.Device^.sectorSize;
+    driver.storage.mgr.complete_io(request,error = eNone,error);
 end;
 
 { TDriverDispatch — SATA read via DMA }
@@ -1040,6 +855,12 @@ var
     ahciDev : PAHCI_Device;
     err     : TError;
 begin
+    if (device^.sectorSize = 0) or (request^.SectorCount = 0) or
+       (request^.SectorCount > $FFFFFFFF div device^.sectorSize) or
+       (request^.LBA >= device^.maxSectorCount) or
+       (request^.SectorCount > device^.maxSectorCount-request^.LBA) then begin
+        driver.storage.mgr.complete_io(request,false,eInvalidArgument); exit;
+    end;
     ahciDev := PAHCI_Device(device^.controllerId0);
     err := send_read_dma_async(ahciDev, request^.LBA,
             request^.SectorCount * device^.sectorSize,
@@ -1055,6 +876,12 @@ var
     ahciDev : PAHCI_Device;
     err     : TError;
 begin
+    if (device^.sectorSize = 0) or (request^.SectorCount = 0) or
+       (request^.SectorCount > $FFFFFFFF div device^.sectorSize) or
+       (request^.LBA >= device^.maxSectorCount) or
+       (request^.SectorCount > device^.maxSectorCount-request^.LBA) then begin
+        driver.storage.mgr.complete_io(request,false,eInvalidArgument); exit;
+    end;
     ahciDev := PAHCI_Device(device^.controllerId0);
     err := send_write_dma_async(ahciDev, request^.LBA,
             request^.SectorCount * device^.sectorSize,
@@ -1070,6 +897,12 @@ var
     ahciDev : PAHCI_Device;
     err     : TError;
 begin
+    if (device^.sectorSize = 0) or (request^.SectorCount = 0) or
+       (request^.SectorCount > $FFFFFFFF div device^.sectorSize) or
+       (request^.LBA >= device^.maxSectorCount) or
+       (request^.SectorCount > device^.maxSectorCount-request^.LBA) then begin
+        driver.storage.mgr.complete_io(request,false,eInvalidArgument); exit;
+    end;
     ahciDev := PAHCI_Device(device^.controllerId0);
     err := read_atapi_async(ahciDev, request^.LBA,
             request^.SectorCount * device^.sectorSize,
@@ -1078,6 +911,116 @@ begin
     if err <> eNone then
         driver.storage.mgr.complete_io(request, false, err);
 end;
+
+
+{ Synthetic MMIO only: these tests never issue I/O to a real disk. }
+type TTestCompletion = record Count : uint32; Error : TError; end;
+     PTestCompletion = ^TTestCompletion;
+procedure test_done(error : TError; data : puint32);
+begin
+    Inc(PTestCompletion(data)^.Count); PTestCompletion(data)^.Error := error;
+end;
+
+procedure run_ahci_tests(stdout_buf : POutBuf);
+var device : PAHCI_Device; port : PHBA_Port; table : PHBA_CMD_TABLE;
+    buffer : pointer; aligned, entries, first, second, passed, failed : uint32;
+    result : TError; completed : TTestCompletion; msg, number : pchar;
+    procedure Assert(ok : boolean; name : pchar);
+    begin
+        if ok then Inc(passed) else begin
+            Inc(failed); io.syslog.log('AHCITEST','FAIL: '); io.syslog.writestringln(name);
+            if stdout_buf <> nil then begin
+                io.stdio.bufWriteStr(stdout_buf,'FAIL: '); io.stdio.bufWriteStrLn(stdout_buf,name);
+            end;
+        end;
+    end;
+    procedure reset_fake;
+    begin
+        memset(uint32(port),0,sizeof(THBA_Port));
+        memset(uint32(@device^.pending),0,sizeof(device^.pending));
+        device^.offline := false; device^.recovering := false;
+        device^.supportsNCQ := true; completed.Count := 0; completed.Error := eNone;
+    end;
+begin
+    passed := 0; failed := 0;
+    device := PAHCI_Device(kalloc(sizeof(TAHCI_Device)));
+    port := PHBA_Port(kalloc(sizeof(THBA_Port))); device^.port := port;
+    device^.command_list := PHBA_CMD_HEADER(kalloc(32*sizeof(THBA_CMD_HEADER)));
+    device^.command_table := PHBA_CMD_TABLE(kalloc(32*sizeof(THBA_CMD_TABLE)));
+    device^.slotCount := 32; table := device^.command_table;
+    buffer := kalloc($800000); aligned := (uint32(buffer)+$3FFFFF) and $FFC00000;
+    reset_fake;
+    Assert(build_prdt(table,aligned,$400000,entries)=eNone,'exact 4 MiB accepted');
+    Assert((entries=1) and (table^.prdt[0].dbc=$3FFFFF),'exact 4 MiB has one nonempty PRD');
+    Assert(build_prdt(table,aligned-512,1024,entries)=eNone,'cross-page transfer accepted');
+    Assert((entries=2) and (table^.prdt[0].dbc=511) and (table^.prdt[1].dbc=511),'cross-page segments bounded');
+    Assert((table^.prdt[0].dba=vtop(aligned-512)) and (table^.prdt[1].dba=vtop(aligned)),'each page translated independently');
+    Assert((table^.prdt[0].int=0) and (table^.prdt[1].int=1),'only final PRD interrupts');
+    Assert(build_prdt(table,aligned,0,entries)=eInvalidArgument,'zero length rejected');
+    Assert(build_prdt(table,aligned+1,512,entries)=eInvalidArgument,'odd address rejected');
+    Assert(build_prdt(table,aligned,513,entries)=eInvalidArgument,'odd length rejected');
+    Assert(build_prdt(table,$FFFFFF00,512,entries)=eInvalidArgument,'address wrap rejected');
+    first := find_cmd_slot(device); second := find_cmd_slot(device);
+    Assert((first=0) and (second=1),'reservation excludes concurrent builder');
+    service_port(device,now_tick,AHCI_FATAL_MASK);
+    Assert(device^.pending[0].inUse and not device^.offline,'unissued reservation not completed or recovered');
+    reset_fake; device^.supportsNCQ := false;
+    first := find_cmd_slot(device); second := find_cmd_slot(device);
+    Assert((first=0) and (second=$FFFFFFFF),'non-NCQ serializes commands');
+    reset_fake; port^.cmd_issue := $20; port^.sata_active := $20;
+    result := send_read_dma_async(device,0,512,puint32(buffer),@test_done,puint32(@completed));
+    Assert(result=eNone,'valid read accepted');
+    Assert((port^.cmd_issue=1) and (port^.sata_active=1),'issue writes only newly set bit');
+    Assert(device^.pending[0].issued,'ownership published before issuing');
+    port^.cmd_issue := 0; port^.sata_active := 0;
+    service_port(device,now_tick,0); service_port(device,now_tick,0);
+    Assert((completed.Count=1) and (completed.Error=eNone),'successful completion exactly once');
+    reset_fake;
+    Assert(send_read_dma_async(device,0,513,puint32(buffer),nil,nil)=eInvalidArgument,'partial sector rejected');
+    Assert(send_read_dma_async(device,0,33554944,puint32(buffer),nil,nil)=eInvalidArgument,'ATA count overflow rejected');
+    Assert(send_read_dma_async(device,$FFFFFFFFFFFF,1024,puint32(buffer),nil,nil)=eInvalidArgument,'ATA LBA wrap rejected');
+    Assert(read_atapi_async(device,$FFFFFFFF,4096,puint32(buffer),nil,nil)=eInvalidArgument,'ATAPI LBA wrap rejected');
+    Assert((port^.cmd_issue=0) and not device^.pending[0].inUse,'invalid requests do not acquire DMA ownership');
+    port^.tfd := $80;
+    Assert(send_read_dma_async(device,0,512,puint32(buffer),nil,nil)=eDeviceNotReady,'busy device fails without spinning');
+    Assert(not device^.pending[0].inUse,'rejected command releases reservation');
+    reset_fake;
+    result := send_read_dma_async(device,0,512,puint32(buffer),@test_done,puint32(@completed));
+    port^.cmd := $C011;
+    service_port(device,now_tick,$40000000);
+    Assert(device^.recovering and (completed.Count=0),'task-file error begins recovery without releasing buffer');
+    service_port(device,device^.recoveryTick,0);
+    Assert((completed.Count=0) and device^.pending[0].inUse,'CR retains DMA ownership');
+    port^.cmd := $4010; service_port(device,device^.recoveryTick,0);
+    Assert((completed.Count=0) and ((port^.cmd and $10)=0),'FR retains DMA ownership after FRE cleared');
+    port^.cmd := 0; service_port(device,device^.recoveryTick,0); service_port(device,now_tick,0);
+    Assert((completed.Count=1) and (completed.Error=eIOError),'stopped error completes exactly once');
+    Assert(send_read_dma_async(device,0,512,puint32(buffer),nil,nil)=eDeviceNotReady,'failed port rejects new commands');
+    reset_fake;
+    result := submit_command(device,0,8,puint32(buffer),3,@test_done,puint32(@completed));
+    Assert((result=eNone) and (table^.acmd[0]=$25),'READ CAPACITY uses tracked ownership');
+    device^.pending[0].started := 0; port^.cmd := $C011;
+    service_port(device,AHCI_IO_TICKS,0);
+    Assert(device^.recovering and (completed.Count=0),'watchdog retains timed-out capacity buffer');
+    port^.cmd := 0; service_port(device,device^.recoveryTick,0);
+    Assert((completed.Count=1) and (completed.Error=eIOTimeout),'timeout completes after DMA stop');
+    port^.cmd := 1;
+    Assert(not wait_register(@port^.cmd,1,0,0),'stuck reset exits at bounded deadline');
+    port^.cmd := 0;
+    Assert(wait_register(@port^.cmd,1,0,0),'cleared reset succeeds');
+    kfree(buffer); kfree(void(device^.command_table)); kfree(void(device^.command_list)); kfree(void(port)); kfree(void(device));
+    number := intToString(passed); msg := stringConcat(number,' passed, '); kfree(void(number));
+    number := intToString(failed); buffer := msg; msg := stringConcat(msg,number); kfree(buffer); kfree(void(number));
+    buffer := msg; msg := stringConcat(msg,' failed'); kfree(buffer);
+    io.syslog.logln('AHCITEST',msg);
+    if stdout_buf <> nil then io.stdio.bufWriteStrLn(stdout_buf,msg);
+    kfree(void(msg));
+end;
+
+procedure UnitTest;
+begin run_ahci_tests(nil); end;
+procedure cmd_ahcitest(params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
+begin run_ahci_tests(stdout_buf); end;
 
 Initialization
     boot.mgr.registerBoot('driver.storage.ctl.ahci', @init, 'AHCI Controller', 'driver.storage.fs.*');

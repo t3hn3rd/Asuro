@@ -270,6 +270,7 @@ type
         dispatchRead     : TDriverDispatch;   { nil if driver not yet migrated }
         dispatchWrite    : TDriverDispatch;   { nil if driver not yet migrated }
         requestQueue     : PCFIFOQueue;       { per-device I/O request CFIFO }
+        dispatching      : boolean; { prevents recursive synchronous-error queue draining }
         activeCount      : uint32;            { number of commands currently dispatched to HW }
         maxActive        : uint32;            { max concurrent commands (NCQ depth) }
 
