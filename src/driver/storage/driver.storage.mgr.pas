@@ -19,14 +19,14 @@
     and provides the submit_io / complete_io request-based I/O path.
     Device drivers call register_device() when they discover a new device.
 
-    Phase 2 I/O model:
+    Request-based I/O model:
     - submit_io enqueues a TIORequest into the device's per-device CFIFO,
-      dispatches to hardware, and sleeps the calling task (proc_await).
-    - complete_io is called from ISR/completion context, wakes the caller.
+      dispatches to hardware, and returns without waiting for completion.
+    - complete_io delivers callbacks from the driver's completion context.
     - storage_read / storage_write are thin wrappers that build a stack-local
-      TIORequest, call submit_io, and return the resulting TError.
-    - Legacy sync/async callbacks are still supported as fallback for drivers
-      not yet migrated to the TDriverDispatch interface.
+      TIORequest, call submit_io_wait, and return the resulting TError.
+    - Drivers must provide the TDriverDispatch interface; there is no legacy
+      callback fallback.
 
     @author(Aaron Hance <ah@aaronhance.me>)
 }
@@ -111,12 +111,6 @@ function storage_read_async(device : PStorage_Device; addr : uint32; sectors : u
                             buffer : puint32; callback : TIOCallback; callbackData : pointer) : TError;
 function storage_write_async(device : PStorage_Device; addr : uint32; sectors : uint32;
                              buffer : puint32; callback : TIOCallback; callbackData : pointer) : TError;
-
-{ Legacy wrappers — procedure signatures matching the old API.
-  Forward to the new functions, silently discard errors.
-  TODO: migrate all callers and remove these. }
-procedure storage_read_legacy(device : PStorage_Device; addr : uint32; sectors : uint32; buffer : puint32);
-procedure storage_write_legacy(device : PStorage_Device; addr : uint32; sectors : uint32; buffer : puint32);
 
 implementation
 
@@ -742,17 +736,6 @@ begin
     req.CallbackData := callbackData;
 
     storage_write_async := submit_io(@req);
-end;
-
-{ Legacy procedure wrappers — drop-in replacements for old callers }
-procedure storage_read_legacy(device : PStorage_Device; addr : uint32; sectors : uint32; buffer : puint32);
-begin
-    storage_read(device, addr, sectors, buffer);
-end;
-
-procedure storage_write_legacy(device : PStorage_Device; addr : uint32; sectors : uint32; buffer : puint32);
-begin
-    storage_write(device, addr, sectors, buffer);
 end;
 
 initialization
