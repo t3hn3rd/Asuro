@@ -107,10 +107,10 @@ procedure process_trampoline; forward;
 
 { ---- Process creation ---- }
 
-function create(name : pchar;
+function createInternal(name : pchar;
                 entry : TProcessEntryPoint;
                 localData : void;
-                priority : uint8) : PProcessContext;
+                priority : uint8; runnable : boolean) : PProcessContext;
 var
     ctx      : PProcessContext;
     slotPtr  : ^uint32;
@@ -119,7 +119,7 @@ var
     prio     : uint8;
 begin
     push_trace('proc.mgr.create');
-    create := nil;
+    createInternal := nil;
 
     if priority = 0 then prio := 1 else prio := priority;
 
@@ -140,7 +140,7 @@ begin
         ctx^.ParentID := CurrentProcess^.ProcessID;
 
     { State }
-    ctx^.State := psCreated;
+    ctx^.State := psSuspended;
     ctx^.ExitCode := 0;
 
     { Entry point }
@@ -269,14 +269,22 @@ begin
     slotPtr^ := uint32(ctx);
 
     { Mark as ready for scheduling }
-    ctx^.State := psReady;
+    if runnable then ctx^.State := psReady;
     asm popf end;
 
     io.syslog.log('PROCMGR', 'Created process: ');
     io.syslog.writestringln(name);
 
     pop_trace;
-    create := ctx;
+    createInternal := ctx;
+end;
+
+{ Public creation retains its ready-on-return behavior. Commands need their
+  arguments and streams installed before the scheduler may enter them. }
+function create(name : pchar; entry : TProcessEntryPoint;
+                localData : void; priority : uint8) : PProcessContext;
+begin
+    create := createInternal(name, entry, localData, priority, true);
 end;
 
 { ---- Process trampoline ---- }
@@ -543,12 +551,17 @@ function runCommand(name : pchar; method : TCommandMethod; params : PParamList;
 var
     ctx : PProcessContext;
 begin
-    ctx := create(name, @legacy_entry, void(method), 1);
+    ctx := createInternal(name, @legacy_entry, void(method), 1, false);
     if ctx <> nil then begin
         ctx^.MsgData := void(params);
         ctx^.StdIn := stdin_buf;
         ctx^.StdOut := stdout_buf;
         ctx^.StdErr := stderr_buf;
+        { Publish only after all fields read by legacy_entry are initialized.
+          psCreated is also runnable, so creation must use psSuspended. }
+        asm pushf; cli end;
+        ctx^.State := psReady;
+        asm popf end;
     end;
     runCommand := ctx;
 end;
