@@ -963,6 +963,8 @@ end;
 
 { ========================= Submit Transfer ========================= }
 
+procedure ehci_free_qtd_chain(first : PEHCI_qTD); forward;
+
 function ehci_submit_control(hc : PUSBHCDriver; transfer : PUSBTransfer) : boolean;
 var
     priv     : PEHCI_PrivData;
@@ -1004,7 +1006,7 @@ begin
 
     { SETUP qTD }
     qtd := ehci_alloc_qtd;
-    if qtd = nil then begin pop_trace; exit; end;
+    if qtd = nil then begin ehci_free_qtd_chain(firstqTD); pop_trace; exit; end;
     firstqTD := qtd;
     qtd^.Token := ehci_make_qtd_token(EHCI_QTD_PID_SETUP, false, 8, false, 3);
     ehci_fill_qtd_buffers(qtd, @transfer^.Setup, 8);
@@ -1021,7 +1023,7 @@ begin
 
     while remaining > 0 do begin
         qtd := ehci_alloc_qtd;
-        if qtd = nil then begin pop_trace; exit; end;
+        if qtd = nil then begin ehci_free_qtd_chain(firstqTD); pop_trace; exit; end;
 
         if remaining > maxPkt then
             pktLen := maxPkt
@@ -1034,6 +1036,7 @@ begin
             pid := EHCI_QTD_PID_OUT;
 
         qtd^.Token := ehci_make_qtd_token(pid, toggle, pktLen, false, 3);
+        qtd^.SWPad0 := pktLen; { Original data length, excluding SETUP/status }
         ehci_fill_qtd_buffers(qtd, Pointer(uint32(transfer^.Buffer) + offset), pktLen);
         qtd^.NextqTD    := EHCI_QTD_T;
         qtd^.AltNextqTD := EHCI_QTD_T;
@@ -1052,7 +1055,7 @@ begin
 
     { STATUS qTD (opposite direction, DATA1) }
     qtd := ehci_alloc_qtd;
-    if qtd = nil then begin pop_trace; exit; end;
+    if qtd = nil then begin ehci_free_qtd_chain(firstqTD); pop_trace; exit; end;
 
     if (transfer^.Setup.bmRequestType AND $80) <> 0 then
         pid := EHCI_QTD_PID_OUT
@@ -1070,7 +1073,7 @@ begin
 
     { Build QH }
     qh := ehci_alloc_qh;
-    if qh = nil then begin pop_trace; exit; end;
+    if qh = nil then begin ehci_free_qtd_chain(firstqTD); pop_trace; exit; end;
 
     qh^.EPChars  := ehci_make_qh_epchars(devAddr, 0, speedBits, maxPkt,
                                            true, false, isCtrlEP, 4);
@@ -1152,7 +1155,7 @@ begin
 
     repeat
         qtd := ehci_alloc_qtd;
-        if qtd = nil then begin pop_trace; exit; end;
+        if qtd = nil then begin ehci_free_qtd_chain(firstqTD); pop_trace; exit; end;
 
         if firstqTD = nil then firstqTD := qtd;
 
@@ -1164,6 +1167,7 @@ begin
             pktLen := 0;
 
         qtd^.Token := ehci_make_qtd_token(pid, toggle, pktLen, false, 3);
+        qtd^.SWPad0 := pktLen; { Original data length, excluding SETUP/status }
         if pktLen > 0 then
             ehci_fill_qtd_buffers(qtd, Pointer(uint32(transfer^.Buffer) + offset), pktLen);
         qtd^.NextqTD    := EHCI_QTD_T;
@@ -1200,7 +1204,7 @@ begin
 
     { Build QH }
     qh := ehci_alloc_qh;
-    if qh = nil then begin pop_trace; exit; end;
+    if qh = nil then begin ehci_free_qtd_chain(firstqTD); pop_trace; exit; end;
 
     qh^.EPChars := ehci_make_qh_epchars(devAddr, epNum, speedBits, maxPkt,
                                           true, false, false, 4);
@@ -1297,6 +1301,11 @@ begin
             ehci_transfer_done := true;
             exit;
         end;
+        if (qh^.SWTransfer <> nil) and
+           (PUSBTransfer(qh^.SWTransfer)^.PipeType = ptBulk) and
+           (((qtd^.Token SHR 16) AND $7FFF) <> 0) then begin
+            ehci_transfer_done := true; exit;
+        end;
         qtd := qtd^.SWNext;
     end;
     ehci_transfer_done := true;
@@ -1385,6 +1394,8 @@ var
     transfer : PUSBTransfer;
     head     : PEHCI_QH;
     listIdx  : uint32;
+    qtd      : PEHCI_qTD;
+    residual : uint32;
 begin
     if (hc = nil) or (hc^.PrivData = nil) then exit;
     priv := PEHCI_PrivData(hc^.PrivData);
@@ -1422,7 +1433,15 @@ begin
                 if transfer^.Status = tsInProgress then begin
                     if ehci_transfer_done(qh) then begin
                         transfer^.Status := ehci_transfer_status(qh);
-                        transfer^.ActualLen := transfer^.BufferLen;
+                        transfer^.ActualLen := 0;
+                        qtd := qh^.SWFirstqTD;
+                        while qtd <> nil do begin
+                            if (qtd^.Token AND EHCI_QTD_STS_ACTIVE) <> 0 then break;
+                            residual := (qtd^.Token SHR 16) AND $7FFF;
+                            if (qtd^.SWPad0 > 0) and (residual <= qtd^.SWPad0) then
+                                inc(transfer^.ActualLen, qtd^.SWPad0 - residual);
+                            qtd := qtd^.SWNext;
+                        end;
                         { Remove QH from schedule and free qTD chain }
                         if listIdx = 0 then
                             ehci_remove_async_qh(priv, qh)

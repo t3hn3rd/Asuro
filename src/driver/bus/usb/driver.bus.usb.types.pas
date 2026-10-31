@@ -249,6 +249,8 @@ type
         Endpoints    : array[0..USB_MAX_ENDPOINTS-1] of TUSBEndpoint;
         NumEndpoints : uint8;
         Configured   : boolean;
+        InterfaceNumber : uint8;   { First interface, alternate setting zero }
+        InterfaceCount  : uint8;   { Class drivers may reject composite devices }
         fnDisconnect : TUSBDisconnectCallback; { Called before device is freed on unplug }
     end;
 

@@ -658,6 +658,7 @@ begin
 
     { Step 2: Create device at address 0 }
     dev := PUSBDevice(kalloc(sizeof(TUSBDevice)));
+    if dev = nil then begin pop_trace; exit; end;
     dev^.Address     := 0;
     dev^.Speed       := speed;
     dev^.MaxPacket0  := 8;  { Default, will be updated from descriptor }
@@ -667,6 +668,8 @@ begin
     dev^.ParentPort  := parentPort;
     dev^.NumEndpoints := 0;
     dev^.Configured  := false;
+    dev^.InterfaceNumber := 0;
+    dev^.InterfaceCount := 0;
     dev^.fnDisconnect := nil;
 
     { Step 3: Get first 8 bytes of device descriptor to learn MaxPacketSize0 }
@@ -730,7 +733,14 @@ begin
     end;
 
     totalLen := cfgDesc.wTotalLength;
+    if totalLen < sizeof(TUSBConfigDescriptor) then begin
+        kfree(void(dev));
+        pop_trace;
+        exit;
+    end;
+    dev^.InterfaceCount := cfgDesc.bNumInterfaces;
     cfgBuf := Pointer(kalloc(totalLen));
+    if cfgBuf = nil then begin kfree(void(dev)); pop_trace; exit; end;
 
     status := usb_get_descriptor(dev, USB_DESC_CONFIGURATION, 0, cfgBuf, totalLen);
     if status <> tsSuccess then begin
@@ -744,12 +754,14 @@ begin
     { Step 7: Parse interface and endpoint descriptors }
     offset := sizeof(TUSBConfigDescriptor);
     dev^.NumEndpoints := 0;
-    while offset < totalLen do begin
+    while offset + 2 <= totalLen do begin
         { Read descriptor length and type }
-        if PUint8(uint32(cfgBuf) + offset)^ = 0 then break; { Safety: zero-length = corrupt }
+        if PUint8(uint32(cfgBuf) + offset)^ < 2 then break;
+        if offset + PUint8(uint32(cfgBuf) + offset)^ > totalLen then break;
 
         if PUint8(uint32(cfgBuf) + offset + 1)^ = USB_DESC_ENDPOINT then begin
-            if dev^.NumEndpoints < USB_MAX_ENDPOINTS then begin
+            if (PUint8(uint32(cfgBuf) + offset)^ >= sizeof(TUSBEndpointDescriptor)) and
+               (dev^.NumEndpoints < USB_MAX_ENDPOINTS) then begin
                 epDesc := PUSBEndpointDescriptor(uint32(cfgBuf) + offset);
                 dev^.Endpoints[dev^.NumEndpoints].Address   := usb_ep_number(epDesc^.bEndpointAddress);
                 dev^.Endpoints[dev^.NumEndpoints].Direction  := usb_ep_direction(epDesc^.bEndpointAddress);
@@ -780,16 +792,22 @@ begin
     { Find the first interface descriptor for class/subclass/protocol }
     offset := sizeof(TUSBConfigDescriptor);
     ifDesc := nil;
-    while offset < totalLen do begin
-        if PUint8(uint32(cfgBuf) + offset)^ = 0 then break;
-        if PUint8(uint32(cfgBuf) + offset + 1)^ = USB_DESC_INTERFACE then begin
+    while offset + 2 <= totalLen do begin
+        if PUint8(uint32(cfgBuf) + offset)^ < 2 then break;
+        if offset + PUint8(uint32(cfgBuf) + offset)^ > totalLen then break;
+        if (PUint8(uint32(cfgBuf) + offset + 1)^ = USB_DESC_INTERFACE) and
+           (PUint8(uint32(cfgBuf) + offset)^ >= sizeof(TUSBInterfaceDescriptor)) then begin
             ifDesc := PUSBInterfaceDescriptor(uint32(cfgBuf) + offset);
+            dev^.InterfaceNumber := ifDesc^.bInterfaceNumber;
             break;
         end;
         offset := offset + PUint8(uint32(cfgBuf) + offset)^;
     end;
 
     DevID := PDeviceIdentifier(kalloc(sizeof(TDeviceIdentifier)));
+    if DevID = nil then begin
+        kfree(void(cfgBuf)); kfree(void(dev)); pop_trace; exit;
+    end;
     DevID^.Bus := biUSB;
     DevID^.id0 := (uint32(devDesc.idVendor) SHL 16) OR devDesc.idProduct;
     DevID^.id1 := devDesc.bDeviceClass;

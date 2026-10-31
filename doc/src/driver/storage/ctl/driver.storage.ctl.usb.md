@@ -1,49 +1,68 @@
-# driver.storage.ctl.usb
+# USB mass storage
 
-USB Mass Storage Class driver stub.
+`driver.storage.ctl.usb` implements SCSI transparent commands over USB Mass
+Storage Bulk-Only Transport (interface class/subclass/protocol `08/06/50`).
 
-## Overview
+It probes INQUIRY, TEST UNIT READY and READ CAPACITY(10), registers LUN 0 with
+the storage manager, and exposes READ(10), WRITE(10), REQUEST SENSE and
+SYNCHRONIZE CACHE(10). Existing partition discovery and filesystem mounting
+apply to the resulting USB disk. Writes complete only after cache synchronization.
 
-This unit registers a USB class driver with the driver manager (`driver.mgr`) to claim USB Mass Storage Class interfaces (class `$08`, subclass `$06` SCSI, protocol `$50` Bulk-Only). When the USB stack enumerates a matching interface, the `load` callback is invoked. Currently the callback only logs a detection message; no I/O infrastructure is established.
+## Execution and ownership
 
-Full Bulk-Only Transport (BOT) support — including Max LUN query, endpoint setup, CBW/CSW command exchange, and `driver.storage.mgr` device registration — is planned but not yet implemented.
+An attachment task probes and registers each disk after scheduling starts; boot
+initialization never waits on a worker that cannot run yet.
 
-## Boot Registration
+Storage dispatch only publishes a request. One persistent `usb.storage` worker
+performs I/O in task context, with one command active per device and a reusable,
+page-aligned 4 KiB bounce buffer. Caller buffers are never submitted for DMA.
+Commands are split at the bounce-buffer boundary; all LBA/count and buffer-end
+arithmetic is checked before submission. CBW/CSW wire sizes, tags, status,
+residue, and actual transfer lengths are validated.
 
-Registered with `boot.mgr` as `driver.storage.ctl.usb` at the `device` barrier. The barrier order places `device` after `bus`, ensuring `driver.bus.usb.core.init` has run before the storage class driver registers with the driver manager.
+OHCI batches bulk data into spans of at most 4 KiB per transfer descriptor,
+using the endpoint's hardware toggle carry across packets. A 4 KiB full-speed
+read uses one data descriptor instead of 64. Short packets still halt the chain
+and report the actual byte count; interrupt endpoint packet sizing is unchanged.
 
-## Dependencies
+The worker performs reset recovery (class reset, clear bulk-IN halt, clear
+bulk-OUT halt) after malformed status or phase errors. Failed SCSI commands
+request sense and return storage errors, including write protection.
 
-- `boot.mgr`
+On disconnect the disk is marked removed immediately. Accepted requests are
+completed with errors, and idle volumes are invalidated/unmounted by the worker;
+busy volumes are retried. Storage-manager records remain stable tombstones.
+Class-driver buffers and context are freed after pending hardware work drains.
 
-- `driver.mgr`
-- `memory.heap`
-- `driver.storage.types`
-- `io.syslog`
-- `debug.tracer`
-- `driver.bus.usb.core`
-- `driver.bus.usb.types`
-- `core.util`, `arch.x86.util`
+Host controllers currently have no cancellation API. A timed-out transfer is
+therefore quarantined with its private device snapshot and DMA memory. No further
+commands are issued to that device. If hardware never completes, those allocations
+remain retained until reboot; freeing them would permit DMA into reused memory.
+The timeout uses the PIT's actual frequency and a bounded polling fallback.
 
-## Constants
+## Supported scope
 
-| Constant | Value | Description |
-|---|---|---|
-| `USB_CLASS_MASS_STORAGE` | `$08` | USB interface class for mass storage |
-| `USB_SC_SCSI` | `$06` | SCSI transparent command set subclass |
-| `USB_PROTO_BBB` | `$50` | Bulk-Only (BOT) transport protocol |
+- LUN 0 on a single-interface device with one bulk-IN and one bulk-OUT endpoint.
+- Direct-access disks with power-of-two sectors from 512 through 4096 bytes.
+- Capacity representable by the existing 32-bit storage-sector API; the
+  READ CAPACITY(16) sentinel is rejected.
+- OHCI, EHCI and xHCI bulk transfers. OHCI/EHCI report actual data lengths and
+  terminate bulk reads on short packets.
 
-## Functions and Procedures
+UAS, additional LUNs, composite/alternate-setting interfaces, UHCI storage,
+optical devices, and media replacement without USB reconnect are not supported.
+The current xHCI driver lacks endpoint-ring reset support: a halted bulk endpoint
+fails the device closed rather than attempting an unsafe ring reuse.
 
-### init
+## Validation
 
-```pascal
-procedure init;
-```
+`UnitTest` is called by the boot test suite and is available as `USBMSCTEST`.
+Tests use a memory-only mock host controller: wire layout, byte order, capacity
+limits, reads, writes, sense errors, short transfers, status stalls, reset ordering,
+and request bounds. They perform no disk I/O.
 
-Constructs a `TDeviceIdentifier` matching any USB device with `bInterfaceClass = $08`, `bInterfaceSubClass = $06`, `bInterfaceProtocol = $50`, and registers the `load` callback with `driver.mgr`.
+For hardware/VM checks, boot with a disposable USB disk, confirm `USBMSC` discovery
+and filesystem mounting, test file read/write/read-back, then unplug while idle
+and during I/O. Do not run destructive disk tests against a disk containing data.
 
-## Notes
-
-- The `load` callback currently returns true unconditionally after logging a detection message.
-- Once full BOT support is implemented, `load` should query the Max LUN, allocate endpoint structures, and call `driver.storage.mgr.register_device` for each logical unit.
+Protocol: [USB-IF Bulk-Only Transport 1.0](https://www.usb.org/sites/default/files/usbmassbulk_10.pdf).

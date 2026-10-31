@@ -678,6 +678,8 @@ begin
 end;
 
 { Build a control transfer: SETUP TD, optional DATA TDs, STATUS TD, all on a new ED }
+procedure ohci_free_td_chain(firstTD : POHCI_TD); forward;
+
 function ohci_submit_control(hc : PUSBHCDriver; transfer : PUSBTransfer) : boolean;
 var
     priv     : POHCI_PrivData;
@@ -713,7 +715,7 @@ begin
 
     { === SETUP TD === }
     td := ohci_alloc_td;
-    if td = nil then begin pop_trace; exit; end;
+    if td = nil then begin ohci_free_td_chain(firstTD); pop_trace; exit; end;
     firstTD := td;
 
     td^.Control := ohci_make_td_control(OHCI_TD_DP_SETUP, OHCI_TD_DT_DATA0,
@@ -732,7 +734,7 @@ begin
 
     while remaining > 0 do begin
         td := ohci_alloc_td;
-        if td = nil then begin pop_trace; exit; end;
+        if td = nil then begin ohci_free_td_chain(firstTD); pop_trace; exit; end;
 
         if remaining > maxPkt then
             pktLen := maxPkt
@@ -752,6 +754,7 @@ begin
             td^.BE := vtop(uint32(transfer^.Buffer) + offset + uint32(pktLen) - 1)
         else
             td^.BE := 0;
+        td^.SWPad := pktLen; { Original data length, excluding SETUP/status }
         td^.NextTD  := 0;
         td^.SWTransfer := Pointer(transfer);
         td^.SWNext  := nil;
@@ -773,7 +776,7 @@ begin
 
     { === STATUS TD === }
     td := ohci_alloc_td;
-    if td = nil then begin pop_trace; exit; end;
+    if td = nil then begin ohci_free_td_chain(firstTD); pop_trace; exit; end;
 
     { Status stage direction is opposite of data stage }
     if (transfer^.Setup.bmRequestType AND $80) <> 0 then
@@ -794,13 +797,13 @@ begin
 
     { Allocate a dummy/sentinel TD for the tail pointer (driver.bus.usb.ohci requires HeadP <> TailP to process) }
     tailTD := ohci_alloc_td;
-    if tailTD = nil then begin pop_trace; exit; end;
+    if tailTD = nil then begin ohci_free_td_chain(firstTD); pop_trace; exit; end;
     td^.NextTD := vtop(uint32(tailTD));
     td^.SWNext := tailTD;
 
     { === Create ED === }
     ed := ohci_alloc_ed;
-    if ed = nil then begin pop_trace; exit; end;
+    if ed = nil then begin ohci_free_td_chain(firstTD); pop_trace; exit; end;
 
     ed^.Control := ohci_make_ed_control(devAddr, 0, OHCI_ED_DIR_FROM_TD,
                                          speedBit, maxPkt, false);
@@ -823,6 +826,18 @@ begin
 
     ohci_submit_control := true;
     pop_trace;
+end;
+
+{ A general TD covers at most two physical pages. A 4 KiB span is safe
+  even for an unaligned buffer; intermediate TDs must end on packet boundaries. }
+function ohci_async_length(remaining, maxPkt : uint32; bulk : boolean) : uint32;
+var limit : uint32;
+begin
+    limit := maxPkt;
+    if bulk and (maxPkt > 0) and (maxPkt <= 4096) then
+        limit := 4096 - (4096 mod maxPkt);
+    if remaining < limit then limit := remaining;
+    ohci_async_length := limit;
 end;
 
 { Build TDs for an interrupt or bulk transfer on a new ED }
@@ -882,24 +897,25 @@ begin
     { Build TD chain }
     repeat
         td := ohci_alloc_td;
-        if td = nil then begin pop_trace; exit; end;
+        if td = nil then begin ohci_free_td_chain(firstTD); pop_trace; exit; end;
 
         if firstTD = nil then firstTD := td;
 
-        if remaining > maxPkt then
-            pktLen := maxPkt
-        else if remaining > 0 then
-            pktLen := remaining
-        else
-            pktLen := 0;
+        pktLen := ohci_async_length(remaining, maxPkt, transfer^.PipeType = ptBulk);
+
+        { Hardware advances the carry after every packet in a bulk TD. }
+        if transfer^.PipeType = ptBulk then toggle := OHCI_TD_DT_FROM_ED;
 
         td^.Control := ohci_make_td_control(dirPID, toggle,
-                                             OHCI_TD_DI_NONE, true);
-        td^.CBP := vtop(uint32(transfer^.Buffer) + offset);
-        if pktLen > 0 then
+                                             OHCI_TD_DI_NONE, transfer^.PipeType <> ptBulk);
+        if pktLen > 0 then begin
+            td^.CBP := vtop(uint32(transfer^.Buffer) + offset);
             td^.BE := vtop(uint32(transfer^.Buffer) + offset + uint32(pktLen) - 1)
-        else
+        end else begin
+            td^.CBP := 0;
             td^.BE := 0;
+        end;
+        td^.SWPad := pktLen; { Original data length }
         td^.NextTD := 0;
         td^.SWTransfer := Pointer(transfer);
         td^.SWNext := nil;
@@ -916,13 +932,8 @@ begin
         else
             toggle := OHCI_TD_DT_DATA1;
 
-        if remaining > maxPkt then begin
-            offset := offset + maxPkt;
-            remaining := remaining - maxPkt;
-        end else begin
-            offset := offset + remaining;
-            remaining := 0;
-        end;
+        inc(offset, pktLen);
+        dec(remaining, pktLen);
     until remaining = 0;
 
     { Mark last TD with immediate interrupt }
@@ -930,24 +941,28 @@ begin
         prevTD^.Control := (prevTD^.Control AND (NOT OHCI_TD_DI_MASK)) OR OHCI_TD_DI_IMMEDIATE;
 
     { Update endpoint toggle }
-    if toggle = OHCI_TD_DT_DATA1 then
-        transfer^.Endpoint^.Toggle := 1
-    else
-        transfer^.Endpoint^.Toggle := 0;
+    if transfer^.PipeType <> ptBulk then begin
+        if toggle = OHCI_TD_DT_DATA1 then
+            transfer^.Endpoint^.Toggle := 1
+        else
+            transfer^.Endpoint^.Toggle := 0;
+    end;
 
     { Allocate tail sentinel TD }
     tailTD := ohci_alloc_td;
-    if tailTD = nil then begin pop_trace; exit; end;
+    if tailTD = nil then begin ohci_free_td_chain(firstTD); pop_trace; exit; end;
     prevTD^.NextTD := vtop(uint32(tailTD));
     prevTD^.SWNext := tailTD;
 
     { Create ED }
     ed := ohci_alloc_ed;
-    if ed = nil then begin pop_trace; exit; end;
+    if ed = nil then begin ohci_free_td_chain(firstTD); pop_trace; exit; end;
 
     ed^.Control := ohci_make_ed_control(devAddr, epNum, edDir,
                                          speedBit, maxPkt, false);
     ed^.HeadP   := vtop(uint32(firstTD));
+    if transfer^.PipeType = ptBulk then
+        ed^.HeadP := ed^.HeadP or ((uint32(transfer^.Endpoint^.Toggle) and 1) shl 1);
     ed^.TailP   := vtop(uint32(tailTD));
     ed^.NextED   := 0;
     ed^.SWTransfer := Pointer(transfer);
@@ -1078,6 +1093,22 @@ begin
     io.syslog.logln('driver.bus.usb.ohci', 'Hardware interrupts enabled.');
 end;
 
+{ Data bytes completed by one TD. SWPad excludes SETUP and status bytes. }
+function ohci_td_data_length(td : POHCI_TD) : uint32;
+var residual : uint32; cc : uint8;
+begin
+    ohci_td_data_length := 0;
+    cc := ohci_td_cc(td);
+    if (td^.SWPad = 0) or ((cc <> OHCI_CC_NO_ERROR) and (cc <> OHCI_CC_DATA_UNDERRUN)) then exit;
+    residual := 0;
+    if td^.CBP <> 0 then begin
+        residual := (td^.BE AND $FFF) + 1;
+        if (td^.CBP AND $FFFFF000) <> (td^.BE AND $FFFFF000) then inc(residual, 4096);
+        residual := residual - (td^.CBP AND $FFF);
+    end;
+    if residual <= td^.SWPad then ohci_td_data_length := td^.SWPad - residual;
+end;
+
 procedure ohci_poll(hc : PUSBHCDriver);
 var
     priv     : POHCI_PrivData;
@@ -1133,31 +1164,40 @@ begin
                     if (ed^.HeadP AND $FFFFFFF0) = (ed^.TailP AND $FFFFFFF0) then begin
                         { All TDs consumed — walk chain via virtual SWNext to check CCs }
                         transfer^.Status := tsSuccess;
-                        transfer^.ActualLen := transfer^.BufferLen;
+                        transfer^.ActualLen := 0;
                         td := POHCI_TD(ed^.SWPad1); { Virtual firstTD }
                         while td <> nil do begin
                             cc := ohci_td_cc(td);
+                            inc(transfer^.ActualLen, ohci_td_data_length(td));
                             if (cc <> OHCI_CC_NO_ERROR) and (cc <> OHCI_CC_NOT_ACCESSED) then begin
                                 transfer^.Status := ohci_cc_to_status(cc);
                                 break;
                             end;
                             td := td^.SWNext;
                         end;
+                        if transfer^.PipeType = ptBulk then
+                            transfer^.Endpoint^.Toggle := (ed^.HeadP shr 1) and 1;
+                        transfer^.HCPriv := nil;
                         ohci_remove_ed(sentinel, ed);
                         ohci_free_td_chain(POHCI_TD(ed^.SWPad1));
                         ohci_free_ed(ed);
                     end else if (ed^.HeadP AND $01) <> 0 then begin
                         { ED is halted — walk virtual chain to find the error CC }
                         transfer^.Status := tsStall;
+                        transfer^.ActualLen := 0;
                         td := POHCI_TD(ed^.SWPad1); { Virtual firstTD }
                         while td <> nil do begin
                             cc := ohci_td_cc(td);
+                            inc(transfer^.ActualLen, ohci_td_data_length(td));
                             if (cc <> OHCI_CC_NO_ERROR) and (cc <> OHCI_CC_NOT_ACCESSED) then begin
                                 transfer^.Status := ohci_cc_to_status(cc);
                                 break;
                             end;
                             td := td^.SWNext;
                         end;
+                        if transfer^.PipeType = ptBulk then
+                            transfer^.Endpoint^.Toggle := (ed^.HeadP shr 1) and 1;
+                        transfer^.HCPriv := nil;
                         ohci_remove_ed(sentinel, ed);
                         ohci_free_td_chain(POHCI_TD(ed^.SWPad1));
                         ohci_free_ed(ed);
@@ -1413,6 +1453,12 @@ begin
     Assert((tdCtrl AND OHCI_TD_DP_MASK) = OHCI_TD_DP_OUT, 'td dp=OUT');
     Assert((tdCtrl AND OHCI_TD_DT_MASK) = OHCI_TD_DT_FROM_ED, 'td dt=FROM_ED');
 
+    Assert(ohci_async_length(4096,64,true)=4096, 'bulk page uses one TD, not 64');
+    Assert(ohci_async_length(8192,64,true)=4096, 'bulk TD bounded to two pages');
+    Assert(ohci_async_length(31,64,true)=31, 'bulk CBW retains short length');
+    Assert(ohci_async_length(0,64,true)=0, 'bulk zero length packet');
+    Assert(ohci_async_length(4096,64,false)=64, 'interrupt packet sizing unchanged');
+
     { === Condition Code Mapping === }
     Assert(ohci_cc_to_status(OHCI_CC_NO_ERROR) = tsSuccess, 'cc NO_ERROR->tsSuccess');
     Assert(ohci_cc_to_status(OHCI_CC_CRC) = tsCRCError, 'cc CRC->tsCRCError');
@@ -1441,6 +1487,16 @@ begin
     Assert(td^.CBP = 0, 'alloc_td zeroed cbp');
     Assert(td^.NextTD = 0, 'alloc_td zeroed nexttd');
     Assert(td^.BE = 0, 'alloc_td zeroed be');
+    td^.SWPad := 4096;
+    td^.Control := OHCI_CC_NO_ERROR shl OHCI_TD_CC_SHIFT;
+    Assert(ohci_td_data_length(td)=4096, 'multi-packet TD complete length');
+    td^.Control := OHCI_CC_DATA_UNDERRUN shl OHCI_TD_CC_SHIFT;
+    td^.CBP := $1200; td^.BE := $1FFF;
+    Assert(ohci_td_data_length(td)=512, 'multi-packet TD short read length');
+    td^.CBP := $1F00; td^.BE := $8EFF;
+    Assert(ohci_td_data_length(td)=0, 'two noncontiguous pages residual');
+    td^.CBP := $8100;
+    Assert(ohci_td_data_length(td)=512, 'short read across physical page boundary');
     ohci_free_td(td);
 
     { === HCCA Size / Alignment === }
