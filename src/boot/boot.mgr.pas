@@ -96,6 +96,7 @@ uses
     driver.net.dev.e1000,
     driver.bus.usb.ehci,
     driver.storage.fs.fat32,
+    driver.storage.fs.ext2,
     arch.x86.fault,
     core.ds.fifo,
     driver.storage.fs.mgr,
