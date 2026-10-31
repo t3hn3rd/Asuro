@@ -154,7 +154,8 @@ type
         sleVolumeInvalidated,
         sleVolumeRemoved,
         sleDeviceAdded,
-        sleDeviceRemoved
+        sleDeviceRemoved,
+        sleVolumeLabelChanged
     );
 
     TStorageLifecycleCallback = procedure(event : TStorageLifecycleEvent;
@@ -162,6 +163,8 @@ type
                                           volume : PStorage_Volume;
                                           error : TError;
                                           userdata : pointer);
+
+    TVolumeLabel = array[0..32] of char; { cached, NUL-terminated display name }
 
     TFSFormatParams = record
         Version     : uint16;
@@ -186,13 +189,15 @@ type
     TIOCallback = procedure(error : TError; userdata : pointer);
 
     { Filesystem callback core.types }
-    PPCreateHook    = procedure(volume : PStorage_volume; start : uint32; size : uint32; config : PFSFormatParams);
+    PPCreateHook    = function(volume : PStorage_volume; sectors : uint32; start : uint32; config : PFSFormatParams) : TError;
     PPCreateAsyncHook = procedure(volume : PStorage_volume; start : uint32; size : uint32; config : PFSFormatParams; callback : TIOCallback; callbackData : pointer);
     PPDetectHook    = procedure(disk : PStorage_Device);
     PPCreateDirHook  = procedure(volume : PStorage_volume; directory : pchar; dirname : pchar; attributes : uint32; status : puint32);
     PPReadDirHook    = function(volume : PStorage_volume; directory : pchar; status : puint32) : PLinkedListBase;
     PPDeleteFileHook = procedure(volume : PStorage_Volume; filePath : pchar; status : puint32);
     PPDeleteDirHook  = procedure(volume : PStorage_Volume; path : pchar; status : puint32);
+    PPValidateLabelHook = function(text : pchar; var normalized : TVolumeLabel) : TError;
+    PPSetLabelHook = function(volume : PStorage_Volume; text : pchar) : TError;
     PPIdentifyHook   = function(volume : PStorage_Volume) : boolean;
     PPRenameFileHook = procedure(volume : PStorage_Volume; filePath : pchar; newName : pchar; status : puint32);
     { Offset-based read: reads byteCount bytes starting at byte offset into the file.
@@ -271,6 +276,8 @@ type
         maxSectorCount   : uint32;
         sectorSize       : uint32; //in bytes
         start            : uint32; //start of device in sectors
+        metadataBusy     : boolean; { volume/partition operation owns device }
+        mbrWriteBusy     : boolean; { serializes staged sector-zero writes }
         cachedMBR        : pointer;           { cached mbr data, nil if not yet read }
         isBootDevice     : boolean;           { true if this is the device GRUB booted from }
     end;
@@ -280,6 +287,7 @@ type
         sName              : pchar;
         system_id          : uint8;
         createCallback     : PPCreateHook;
+        validateFormat     : PPCreateHook; { pure preflight, before invalidation }
         detectCallback     : PPDetectHook;
         createDirCallback  : PPCreateDirHook;
         readDirCallback    : PPReadDirHook;
@@ -304,6 +312,8 @@ type
         openFileCallback        : PPOpenFileHook;
         closeFileCallback       : PPCloseFileHook;
         formatParamFlags        : uint32;
+        validateLabelCallback   : PPValidateLabelHook;
+        setLabelCallback        : PPSetLabelHook;
     end;
 
     { Generic storage volume }
@@ -317,6 +327,7 @@ type
         filesystem   : PFilesystem;
         isBootDrive  : boolean;
         lifecycleFlags : uint32;
+        labelText    : TVolumeLabel;
         fsPrivate    : pointer;      { FS-driver private data (e.g. PFATCache for FAT32) }
     end;
 

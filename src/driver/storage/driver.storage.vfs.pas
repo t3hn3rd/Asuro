@@ -134,6 +134,7 @@ procedure UnwatchDirectory(WatchID : uint32);
 { Volume invalidation — must be called before freeing a volume.
   Closes all open FDs referencing the volume across all processes,
   evicts directory cache entries, and removes VFS mount points. }
+function VolumeHasOpenHandles(vol : PStorage_Volume) : boolean;
 function InvalidateVolume(vol : PStorage_Volume) : boolean;
 
 { VFS Functions }
@@ -509,7 +510,7 @@ end;
 function GetObjectFromPath(path : pchar) : PVFSObject; forward;
 function GetObjectFromPathEx(path : pchar; var volRelPath : pchar) : PVFSObject; forward;
 
-function volumeHasAsyncHandles(vol : PStorage_Volume) : boolean;
+function volumeHasHandles(vol : PStorage_Volume; asyncOnly : boolean) : boolean;
 var
     pCount  : uint32;
     pi      : uint32;
@@ -517,7 +518,7 @@ var
     pCtx    : proc.types.PProcessContext;
     tbl     : PFDTable;
 begin
-    volumeHasAsyncHandles := false;
+    volumeHasHandles := false;
     if vol = nil then exit;
 
     pCount := proc.mgr.processCount();
@@ -530,13 +531,16 @@ begin
         if tbl = nil then continue;
         for fi := 0 to MAX_FDS - 1 do begin
             if tbl^.Entries[fi].InUse and (tbl^.Entries[fi].Volume = vol)
-               and (tbl^.Entries[fi].AsyncRefs > 0) then begin
-                volumeHasAsyncHandles := true;
+               and ((not asyncOnly) or (tbl^.Entries[fi].AsyncRefs > 0)) then begin
+                volumeHasHandles := true;
                 exit;
             end;
         end;
     end;
 end;
+
+function VolumeHasOpenHandles(vol : PStorage_Volume) : boolean;
+begin VolumeHasOpenHandles := volumeHasHandles(vol,false); end;
 
 function InvalidateVolume(vol : PStorage_Volume) : boolean;
 var
@@ -554,7 +558,7 @@ begin
     debug.tracer.push_trace('driver.storage.vfs.InvalidateVolume.enter');
     InvalidateVolume := false;
     if vol = nil then exit;
-    if volumeHasAsyncHandles(vol) then begin
+    if volumeHasHandles(vol,true) then begin
         debug.tracer.push_trace('driver.storage.vfs.InvalidateVolume.busy');
         exit;
     end;
@@ -986,6 +990,7 @@ begin
     volumeGetDirectories := nil;
 
     if vol = nil then exit;
+    if (vol^.device = nil) or vol^.device^.metadataBusy or driver.storage.vol.mgr.volume_is_busy(vol) then exit;
     if vol^.filesystem = nil then exit;
     if vol^.filesystem^.readDirCallback = nil then exit;
 
@@ -1153,6 +1158,15 @@ begin
         exit;
     end;
 
+    mountObj := PVFSObject(core.ds.hashmap.get(ht, mountName));
+    if mountObj <> nil then begin
+        if (mountObj^.ObjectType = otDRIVE) and (mountObj^.Reference = void(volume)) then begin
+            mountVolume := pvRegistered;
+            driver.storage.vol.mgr.volume_set_mounted(volume, true);
+        end;
+        kfree(void(parentPath)); STRLL_Free(splitPath); exit;
+    end;
+
     { Create the mount object storing the volume pointer }
     mountObj := PVFSObject(kalloc(sizeof(TVFSObject)));
 
@@ -1219,6 +1233,12 @@ begin
     end;
 
     volOut^ := PStorage_Volume(Obj^.Reference);
+    if (volOut^ = nil) or (volOut^^.device = nil) then begin
+        if volRel <> nil then kfree(void(volRel)); exit;
+    end;
+    if volOut^^.device^.metadataBusy or driver.storage.vol.mgr.volume_is_busy(volOut^) then begin
+        if volRel <> nil then kfree(void(volRel)); volOut^ := nil; exit;
+    end;
 
     { volRel is the path within the volume, e.g. '/mydir/myfile.txt' }
     if (volRel = nil) or StringEquals(volRel, '/') then begin

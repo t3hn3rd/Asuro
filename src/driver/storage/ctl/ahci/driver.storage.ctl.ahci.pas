@@ -46,7 +46,7 @@ var
 procedure init();
 function load(ptr : void) : boolean;
 procedure check_ports(controller : PAHCI_Controller);
-procedure identify_device(controller : PAHCI_Controller; portIndex : uint32; isATAPI : boolean);
+function identify_device(controller : PAHCI_Controller; portIndex : uint32; isATAPI : boolean) : boolean;
 procedure ahci_isr();
 function find_cmd_slot(device : PAHCI_Device) : uint32;
 
@@ -95,121 +95,63 @@ begin
     //TODO check driver.storage.ctl.ide devices in driver.storage.ctl.ide for sata devices
 end;
 
-procedure stop_port(port : PHBA_Port);
-var
-    timeout : uint32;
+{ Poll MMIO through a pointer on every iteration. The PIT runs at ~8 kHz;
+  16 psleep ticks give a conservative ~2 ms poll interval, not a CPU-speed loop. }
+function wait_register(reg : puint32; mask, expected, attempts : uint32) : boolean;
+var n : uint32;
 begin
-    // Clear ST (bit 0) first
-    port^.cmd := port^.cmd and not $1;
-
-    // Wait for CR (bit 15) to clear
-    timeout := 0;
-    while (port^.cmd and $8000) <> 0 do begin
-        timeout := timeout + 1;
-        if timeout > 100000 then break;
-    end;
-
-    // Clear FRE (bit 4)
-    port^.cmd := port^.cmd and not $10;
-
-    // Wait for FR (bit 14) to clear
-    timeout := 0;
-    while (port^.cmd and $4000) <> 0 do begin
-        timeout := timeout + 1;
-        if timeout > 100000 then break;
-    end;
+    n := 0;
+    repeat
+        if (reg^ and mask) = expected then begin wait_register := true; exit; end;
+        if n >= attempts then break;
+        psleep(16); Inc(n);
+    until false;
+    wait_register := false;
 end;
 
-procedure start_port(port : PHBA_Port);
+function stop_port(port : PHBA_Port) : boolean;
 begin
-    // Wait for CR (bit 15) to clear before starting
-    while (port^.cmd and $8000) <> 0 do begin
-    end;
+    port^.cmd := port^.cmd and not $1;
+    stop_port := wait_register(@port^.cmd,$8000,0,250);
+    if not stop_port then exit;
+    port^.cmd := port^.cmd and not $10;
+    stop_port := wait_register(@port^.cmd,$4000,0,250);
+end;
 
-    // Enable FRE (bit 4) first so port can receive FIS
+function start_port(port : PHBA_Port) : boolean;
+begin
+    start_port := wait_register(@port^.cmd,$8000,0,250);
+    if not start_port then exit;
     port^.cmd := port^.cmd or $10;
-
-    // Then enable ST (bit 0) to allow command processing
     port^.cmd := port^.cmd or $1;
 end;
 
-procedure reset_port(port : PHBA_Port);
-var
-  timeout : uint32;
+{ DMA addresses must already be installed before enabling FIS reception. }
+function reset_port(port : PHBA_Port) : boolean;
 begin
-    // io.syslog.writestringln('driver.storage.ctl.ahci: Performing a full port reset.');
-
-    // Stop the port: clear ST (bit 0)
+    reset_port := false;
     port^.cmd := port^.cmd and not $1;
-
-    // Wait until CR (bit 15) is cleared.
-    timeout := 0;
-    while (port^.cmd and $8000) <> 0 do begin
-        timeout := timeout + 1;
-        if timeout > 100000 then begin
-            io.syslog.writestringln('driver.storage.ctl.ahci: Port reset timeout (CR not clearing).');
-            break;
-        end;
-    end;
-
-    // Initiate COMRESET: set DET=1 in PxSCTL (bits 3:0)
+    if not wait_register(@port^.cmd,$8000,0,250) then exit;
+    port^.int_enable := 0;
+    port^.cmd := port^.cmd or $16; { FRE, power-on and spin-up }
     port^.sata_ctrl := (port^.sata_ctrl and $FFFFFFF0) or $1;
-
-    // Wait for COMRESET to propagate (spec says >= 1ms)
-    psleep(2);
-
-    // Clear COMRESET: set DET=0
+    psleep(16); { >= 1 ms COMRESET assertion at the ~8 kHz PIT rate }
     port^.sata_ctrl := port^.sata_ctrl and $FFFFFFF0;
-
-    // Wait for device detection (DET field in SStatus = 3)
-    timeout := 0;
-    while (port^.sata_status and $F) <> 3 do begin
-        timeout := timeout + 1;
-        if timeout > 100000 then begin
-            io.syslog.writestringln('driver.storage.ctl.ahci: Port reset timeout (waiting for device ready).');
-            break;
-        end;
-    end;
-
-    // Clear the SERR register by writing 1s to it.
+    if not wait_register(@port^.sata_status,$F,3,500) then exit;
+    if not wait_register(@port^.tfd,$88,0,2500) then exit;
     port^.sata_error := $FFFFFFFF;
-
-    start_port(port);
+    port^.int_status := $FFFFFFFF;
+    reset_port := start_port(port);
 end;
 
-// procedure reset_port(port : PHBA_Port);
-// var
-//   ssts, serr, timeout : uint32;
-// begin
-//   io.syslog.writestringln('driver.storage.ctl.ahci: Performing a full port reset.');
-
-//     port^.cmd := port^.cmd and not $1;
-
-//     // Wait until CR (bit 15) is cleared.
-//     timeout := 0;
-//     while (port^.cmd and $8000) <> 0 do begin
-//         timeout := timeout + 1;
-//         if timeout > 1000000 then begin
-//             io.syslog.writestringln('driver.storage.ctl.ahci: Port reset timeout.');
-//             break;
-//         end;
-//     end;
-
-//     port^.sata_ctrl := port^.sata_ctrl and $FFFF0000;
-//     port^.sata_ctrl := port^.sata_ctrl or $1;
-//     psleep(10);
-//     port^.sata_ctrl := port^.sata_ctrl and $FFFF0000;
-
-//     while (port^.sata_status and $F) <> $3 do begin
-//         //wait for the port to be ready
-//     end;
-
-//     // Clear the SERR register by writing 1s to it.
-//     port^.sata_error := $FFFFFFFF;
-
-//     // start_port(port);
-// end;
-
+procedure log_port_failure(portIndex : uint32; port : PHBA_Port; reason : pchar);
+begin
+    io.syslog.log('AHCI','Port '); io.syslog.writeint(portIndex);
+    io.syslog.writestring(': '); io.syslog.writestring(reason);
+    io.syslog.writestring(' SSTS='); io.syslog.writehex(port^.sata_status);
+    io.syslog.writestring(' SIG='); io.syslog.writehex(port^.signature);
+    io.syslog.writestring(' TFD='); io.syslog.writehexln(port^.tfd);
+end;
 
 {
     Check the ports on the controller and setup the command list, FIS, and command table
@@ -217,7 +159,9 @@ end;
 procedure check_ports(controller : PAHCI_Controller);
 var
     i : uint32;
-    ii : uint32;
+    ii, attempt, signatureWait : uint32;
+    registered : boolean;
+    listAlloc, fisAlloc, tableAlloc : puint32;
     port : PHBA_Port;
     device : PAHCI_Device;
     cmd_list_base : puint32;
@@ -232,29 +176,18 @@ begin
             device := PAHCI_Device(@controller^.devices[i]);
             device^.port := port;
 
-            //NEEED TO STOP the port before doing anything
-            stop_port(port);
-            reset_port(port);
-
-            { Read device signature AFTER reset so the device has re-sent
-              its D2H Register FIS with the correct signature. }
-            case port^.signature of
-                SATA_SIG_ATA: begin
-                    device^.device_type := SATA;
-                end;
-                SATA_SIG_ATAPI: begin
-                    device^.device_type := ATAPI;
-                end;
-                SATA_SIG_SEMB: begin
-                    device^.device_type := SEMB;
-                end;
-                SATA_SIG_PM: begin
-                    device^.device_type := PM;
-                end;
+            port^.int_enable := 0;
+            if not stop_port(port) then begin log_port_failure(i,port,'cannot stop engine'); continue; end;
+            { Bring up power before checking for an attached device. }
+            port^.cmd := port^.cmd or $6;
+            if not wait_register(@port^.sata_status,$F,3,100) then begin
+                if (port^.sata_status and $F) = 0 then continue;
+                { Present but not yet communicating: COMRESET below may recover it. }
             end;
             //allocate memory for the command list and ensure it is aligned to 1024 bytes
             // Need 32 command headers. Allocate extra (alignment-1) bytes for alignment.
-            cmd_list_base := kalloc(sizeof(THBA_CMD_HEADER) * 32 + 1023);
+            listAlloc := kalloc(sizeof(THBA_CMD_HEADER) * 32 + 1023);
+            cmd_list_base := listAlloc;
             cmd_list_base := puint32((uint32(cmd_list_base) + 1023) and $FFFFFC00);
             memset(uint32(cmd_list_base), 0, sizeof(THBA_CMD_HEADER) * 32);
 
@@ -265,7 +198,8 @@ begin
             device^.command_list := PHBA_CMD_HEADER(cmd_list_base);
 
             //allocate memory for the FIS and ensure it is aligned to 256 bytes
-            fis_base := kalloc(sizeof(THBA_FIS) + 255);
+            fisAlloc := kalloc(sizeof(THBA_FIS) + 255);
+            fis_base := fisAlloc;
             fis_base := puint32((uint32(fis_base) + 255) and $FFFFFF00);
 
             //set the FIS base address
@@ -279,7 +213,8 @@ begin
 
             //allocate memory for the command table and ensure it is aligned to 128 bytes
             // Need 32 command tables. Allocate extra (alignment-1) bytes for alignment.
-            cmd_table_base := kalloc(sizeof(THBA_CMD_TABLE) * 32 + 127);
+            tableAlloc := kalloc(sizeof(THBA_CMD_TABLE) * 32 + 127);
+            cmd_table_base := tableAlloc;
             cmd_table_base := puint32((uint32(cmd_table_base) + 127) and $FFFFFF80);
             memset(uint32(cmd_table_base), 0, sizeof(THBA_CMD_TABLE) * 32);
 
@@ -294,14 +229,30 @@ begin
                 command_header^.cmd_table_baseu := 0;
             end;
 
-            //reset the port
-            reset_port(port);
-            if (device^.device_type = SATA) then begin
-                identify_device(controller, i, false);
-            end else if (device^.device_type = ATAPI) then begin
-                identify_device(controller, i, true);
-            end else begin
-                io.syslog.writestringln('driver.storage.ctl.ahci: Unsupported device type');
+            registered := false;
+            for attempt := 1 to 2 do begin
+                if not reset_port(port) then begin log_port_failure(i,port,'reset/readiness timeout'); continue; end;
+                signatureWait := 0;
+                while (puint32(@port^.signature)^ = 0) or (puint32(@port^.signature)^ = $FFFFFFFF) do begin
+                    if signatureWait >= 500 then break;
+                    psleep(16); Inc(signatureWait);
+                end;
+                case puint32(@port^.signature)^ of
+                    SATA_SIG_ATA: begin device^.device_type := SATA; registered := identify_device(controller,i,false); end;
+                    SATA_SIG_ATAPI: begin device^.device_type := ATAPI; registered := identify_device(controller,i,true); end;
+                else log_port_failure(i,port,'unsupported or missing signature');
+                end;
+                if registered then break;
+                log_port_failure(i,port,'IDENTIFY failed; retrying detection');
+            end;
+            if not registered then begin
+                port^.int_enable := 0;
+                if stop_port(port) then begin
+                    port^.cmdl_basel := 0; port^.fis_basel := 0;
+                    kfree(listAlloc); kfree(fisAlloc); kfree(tableAlloc);
+                    device^.command_list := nil; device^.fis := nil; device^.command_table := nil;
+                end;
+                log_port_failure(i,port,'device unavailable after bounded retries');
             end;
 
             controller^.mio^.int_status := $FFFFFFFF;
@@ -309,7 +260,7 @@ begin
     end;
 end;
 
-procedure identify_device(controller : PAHCI_Controller; portIndex : uint32; isATAPI : boolean);
+function identify_device(controller : PAHCI_Controller; portIndex : uint32; isATAPI : boolean) : boolean;
 var
     fis         : PHBA_FIS_REG_H2D;
     cmd_header  : PHBA_CMD_HEADER;
@@ -327,6 +278,7 @@ var
     slotCount   : uint32;
     ncqSupported : boolean;
 begin
+    identify_device := false;
     device := PAHCI_Device(@controller^.devices[portIndex]);
     slotCount := ((controller^.mio^.capabilites shr 8) and $1F) + 1;
     device^.slotCount := slotCount;
@@ -347,9 +299,7 @@ begin
     cmd_header^.wrt := 0;
     cmd_header^.prdtl := 1;
     cmd_header^.clear_busy := 1;
-    if isATAPI then begin
-        cmd_header^.atapi := 1;
-    end;
+    cmd_header^.atapi := 0; { IDENTIFY PACKET is ATA $A1, not an ATAPI PACKET $A0 command }
 
 
     // Setup the command table (using slot 0)
@@ -375,56 +325,19 @@ begin
     end;
     fis^.device   := $40; 
 
-    //waut for the port to be ready, bit 7 in the TFD register and bit 3 tfd
-    while (device^.port^.tfd and $88) <> 0 do begin
-        // io.syslog.writestring('driver.storage.ctl.ahci: tfd: ');
-        // io.syslog.writehexln(device^.port^.tfd);
+    if not wait_register(@device^.port^.tfd,$88,0,2500) then begin
+        log_port_failure(portIndex,device^.port,'busy before IDENTIFY'); kfree(buffer); exit;
     end;
-
-    // Issue the command by setting bit 0 in the port's Command Issue register.
-    cmd := device^.port^.cmd_issue;
-    cmd := cmd or $1;
-    device^.port^.cmd_issue := cmd;
-
-    // io.syslog.writestringln('driver.storage.ctl.ahci: Sent identify command');
-
-
-    // Wait for command completion with a timeout.
-    timeout := 0;
-    repeat
-      tfd := device^.port^.tfd;
-
-      if device^.port^.int_status <> 0 then begin
-          device^.port^.int_status := device^.port^.int_status;
-      end;
-
-      timeout := timeout + 1;
-      if timeout > 100 then begin
-          io.syslog.writestringln('driver.storage.ctl.ahci: IDENTIFY command timeout');
-          break;
-      end;
-      if (tfd and $1) <> 0 then break;  // ERR bit set
-      psleep(1);
-    until ((device^.port^.cmd_issue and $1) = 0);  // Wait until slot 0 is cleared
-
-    // io.syslog.writestringln('driver.storage.ctl.ahci: Command complete');
-
-    // Check if the command slot is still set (command didn't complete)
-    if (device^.port^.cmd_issue and $1) <> 0 then begin
-        io.syslog.writestringln('driver.storage.ctl.ahci: Error sending identify command');
-        io.syslog.writestring('driver.storage.ctl.ahci: Error sata register: ');
-        io.syslog.writehexln(device^.port^.sata_error);
-
-        { Cancel the pending command by stopping/starting the port so
-          no DMA fires after we free the buffer. }
-        stop_port(device^.port);
-        start_port(device^.port);
-
-        { Re-enable port interrupts and bail — device is non-functional. }
-        device^.port^.int_enable := $4000000B;
-        kfree(buffer);
+    device^.port^.cmd_issue := 1;
+    if (not wait_register(@device^.port^.cmd_issue,1,0,2500)) or
+       ((device^.port^.tfd and $1) <> 0) or ((device^.port^.int_status and $40000000) <> 0) then begin
+        log_port_failure(portIndex,device^.port,'IDENTIFY timeout or task-file error');
+        { Free DMA memory only once both engines have stopped. If hardware cannot
+          stop, retaining this one buffer is safer than a late DMA into freed memory. }
+        if stop_port(device^.port) then kfree(buffer);
         exit;
     end;
+    device^.port^.int_status := $FFFFFFFF;
 
     { Re-enable port interrupts now that IDENTIFY polling is done.
       $4000000B = bit 0 (D2H Register FIS) | bit 1 (PIO Setup FIS) | bit 3 (Set Device Bits / NCQ) | bit 30 (Task File Error)
@@ -488,12 +401,14 @@ begin
         end;
 
         driver.storage.mgr.register_device(storageDev);
+        kfree(void(storageDev)); { manager owns a copy }
+        identify_device := true;
 
         io.syslog.writestring('driver.storage.ctl.ahci: Registered device on port ');
         io.syslog.writeint(portIndex);
         if sec_count > 0 then begin
             io.syslog.writestring(' with storage manager (');
-            io.syslog.writeint((sec_count * storageDev_sectorSize) div 1024 div 1024);
+            io.syslog.writeint((uint64(sec_count) * storageDev_sectorSize) div 1024 div 1024);
             io.syslog.writestringln(' MB)');
         end else begin
             io.syslog.writestringln(' with storage manager (no media)');
