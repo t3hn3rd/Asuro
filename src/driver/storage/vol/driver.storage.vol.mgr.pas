@@ -166,42 +166,10 @@ begin
 end;
 
 function auto_mount_volume(volume : PStorage_Volume) : TError;
-var
-    volIdx    : sint32;
-    volNumStr : pchar;
-    volName   : pchar;
-    prefix    : pchar;
-    mountPath : pchar;
 begin
-    auto_mount_volume := eDeviceNotReady;
-    if volume = nil then exit;
-    if volume^.filesystem = nil then exit;
-
-    volIdx := find_volume_index(volume);
-    if volIdx < 0 then exit;
-
-    volNumStr := intToString(volume^.id);
-    volName := stringConcat('vol', volNumStr);
-    kfree(void(volNumStr));
-    prefix := stringNew(6);
-    prefix[0] := '/';
-    prefix[1] := 'd';
-    prefix[2] := 'i';
-    prefix[3] := 's';
-    prefix[4] := 'k';
-    prefix[5] := '/';
-    mountPath := stringConcat(prefix, volName);
-
-    if driver.storage.vfs.mountVolume(mountPath, volume) = pvRegistered then begin
-        auto_mount_volume := eNone;
-        if volume^.isBootDrive then
-            if driver.storage.vfs.mountVolume('/boot', volume) <> pvRegistered then
-                auto_mount_volume := eDeviceNotReady;
-    end;
-
-    kfree(void(volName));
-    kfree(void(prefix));
-    kfree(void(mountPath));
+    auto_mount_volume := eVolumeNotFound;
+    if find_volume_index(volume) < 0 then exit;
+    auto_mount_volume := driver.storage.vfs.mountDefaultVolume(volume);
 end;
 
 function find_partition_slot_by_start(mbr : PMaster_Boot_Record; sectorStart : uint32) : sint32;

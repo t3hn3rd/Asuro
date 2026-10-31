@@ -143,6 +143,7 @@ procedure RemoveVirtualTree(Path : pchar);
 
 { Volume Mount Functions }
 function mountVolume(mountPath : pchar; volume : PStorage_Volume) : TRegError;
+function mountDefaultVolume(volume : PStorage_Volume) : TError;
 procedure auto_mount_volumes();
 procedure UnitTest;
 
@@ -1183,6 +1184,60 @@ begin
     kfree(void(parentPath));
     STRLL_Free(splitPath);
     debug.tracer.push_trace('driver.storage.vfs.mountVolume.exit');
+end;
+
+{ Caller owns the returned name. Keep labels as one path component. }
+function defaultVolumeName(volume : PStorage_Volume) : pchar;
+var name : array[0..32] of char; n : uint32; number : pchar;
+begin
+    n := 0;
+    while (n < 32) and (volume^.labelText[n] <> #0) do begin
+        name[n] := volume^.labelText[n];
+        if (ord(name[n]) < 32) or (name[n] = '/') or (name[n] = '\') then name[n] := '_';
+        Inc(n);
+    end;
+    while (n > 0) and (name[n-1] = ' ') do Dec(n);
+    name[n] := #0;
+    if (n = 0) or stringEquals(@name[0],'.') or stringEquals(@name[0],'..') then begin
+        number := intToString(volume^.id);
+        defaultVolumeName := stringConcat('vol',number); kfree(void(number));
+    end else defaultVolumeName := stringCopy(@name[0]);
+end;
+
+function mountDefaultVolume(volume : PStorage_Volume) : TError;
+var base, name, path, number, suffix, tmp : pchar; obj : PVFSObject; attempt : uint32;
+begin
+    mountDefaultVolume := eInvalidArgument;
+    if volume = nil then exit;
+    if volume^.filesystem = nil then begin mountDefaultVolume := eUnsupportedFilesystem; exit; end;
+    base := defaultVolumeName(volume);
+    number := intToString(volume^.id); suffix := stringConcat('-vol',number); kfree(void(number));
+    mountDefaultVolume := eAlreadyExists;
+    for attempt := 0 to 1023 do begin
+        if attempt = 0 then name := stringCopy(base)
+        else begin
+            name := stringConcat(base,suffix);
+            if attempt > 1 then begin
+                number := intToString(attempt); tmp := stringConcat(name,'-'); kfree(void(name));
+                name := stringConcat(tmp,number); kfree(void(tmp)); kfree(void(number));
+            end;
+        end;
+        path := stringConcat('/disk/',name); kfree(void(name));
+        obj := GetObjectFromPath(path);
+        if (obj = nil) or ((obj^.ObjectType = otDRIVE) and (obj^.Reference = void(volume))) then begin
+            mountDefaultVolume := eDeviceNotReady;
+            if mountVolume(path,volume) = pvRegistered then begin
+                mountDefaultVolume := eNone;
+                io.syslog.writestring('VFS: Mounted '); io.syslog.writestring(volume^.filesystem^.sName);
+                io.syslog.writestring(' volume at '); io.syslog.writestringln(path);
+                if volume^.isBootDrive then
+                    if mountVolume('/boot',volume) <> pvRegistered then mountDefaultVolume := eDeviceNotReady;
+            end;
+            kfree(void(path)); break;
+        end;
+        kfree(void(path));
+    end;
+    kfree(void(base)); kfree(void(suffix));
 end;
 
 { Filesystem Functions }
@@ -3402,9 +3457,6 @@ var
     i         : uint32;
     vol       : PStorage_Volume;
     volName   : pchar;
-    volNumStr : pchar;
-    mountPath : pchar;
-    prefix    : pchar;
     readErr   : uint32;
     mntPath   : pchar;
     mntLen    : uint32;
@@ -3436,40 +3488,13 @@ begin
         if vol^.filesystem = nil then continue;
 
 
-        { Build mount name: e.g. 'vol0', 'vol1' }
-        volNumStr := intToString(i);
-        volName := stringConcat('vol', volNumStr);
-        kfree(void(volNumStr));
-        prefix := stringNew(6);
-        prefix[0] := '/';
-        prefix[1] := 'd';
-        prefix[2] := 'i';
-        prefix[3] := 's';
-        prefix[4] := 'k';
-        prefix[5] := '/';
-        mountPath := stringConcat(prefix, volName);
-
-        mountVolume(mountPath, vol);
-
-        io.syslog.writestring('VFS: Mounted ');
-        io.syslog.writestring(vol^.filesystem^.sName);
-        io.syslog.writestring(' volume at ');
-        io.syslog.writestringln(mountPath);
-
-        { Auto-mount the boot drive at /boot }
-        if vol^.isBootDrive then begin
-            mountVolume('/boot', vol);
-            io.syslog.writestringln('VFS: Mounted boot volume at /boot');
-        end;
-
-        kfree(void(volName));
-        kfree(void(prefix));
-        kfree(void(mountPath));
+        if mountDefaultVolume(vol) <> eNone then
+            io.syslog.logln('VFS','Could not allocate a default mount name for volume.');
     end;
 
     { Process mount.asr from the boot volume.
       Each line has the form:  mnt {device}<source> <target>
-      {device} is replaced with the boot volume's /disk/volN path.
+      {device} uses the stable /boot alias, including when labels contain spaces.
       A symlink is created: target -> expanded_source. }
     for i := 0 to volCount - 1 do begin
         vol := driver.storage.vol.mgr.get_volume(i);
@@ -3479,10 +3504,8 @@ begin
         if vol^.filesystem^.fileSizeCallback = nil then continue;
         if vol^.filesystem^.readOffsetCallback = nil then continue;
 
-        { Build the boot device path: /disk/vol<i> }
-        volNumStr := intToString(i);
-        volName := stringConcat('/disk/vol', volNumStr);
-        kfree(void(volNumStr));
+        { Stable across label changes; safe in the space-delimited mount script. }
+        volName := stringCopy('/boot');
 
         mntLen := vol^.filesystem^.fileSizeCallback(vol, '', 'MOUNT.ASR');
 
@@ -3645,6 +3668,8 @@ end;
 
 procedure UnitTest;
 var
+    mountVolA, mountVolB : PStorage_Volume;
+    mountFS : PFilesystem;
     passed, failed : uint32;
     result         : TIsPathValid;
     errCode        : TError;
@@ -3699,6 +3724,45 @@ var
 begin
     passed := 0;
     failed := 0;
+    { Synthetic mount objects only: no filesystem callback performs disk I/O. }
+    mountVolA := PStorage_Volume(kalloc(sizeof(TStorage_Volume)));
+    mountVolB := PStorage_Volume(kalloc(sizeof(TStorage_Volume)));
+    mountFS := PFilesystem(kalloc(sizeof(TFilesystem)));
+    mountFS^.sName := 'MOUNTTEST';
+    mountVolA^.filesystem := mountFS; mountVolB^.filesystem := mountFS;
+    mountVolA^.id := $FFFFFFFE; mountVolB^.id := $FFFFFFFD;
+    tmpKey := defaultVolumeName(mountVolA);
+    Assert(stringEquals(tmpKey,'vol4294967294'),'unlabelled default mount name'); kfree(void(tmpKey));
+    memcpy(uint32(pchar('MY DATA')),uint32(@mountVolA^.labelText[0]),8);
+    tmpKey := defaultVolumeName(mountVolA);
+    Assert(stringEquals(tmpKey,'MY DATA'),'label spaces preserved'); kfree(void(tmpKey));
+    memset(uint32(@mountVolA^.labelText[0]),0,sizeof(mountVolA^.labelText));
+    memcpy(uint32(pchar('A/B')),uint32(@mountVolA^.labelText[0]),4);
+    tmpKey := defaultVolumeName(mountVolA);
+    Assert(stringEquals(tmpKey,'A_B'),'label cannot create nested mount paths'); kfree(void(tmpKey));
+    memset(uint32(@mountVolA^.labelText[0]),0,sizeof(mountVolA^.labelText));
+    memcpy(uint32(pchar('..')),uint32(@mountVolA^.labelText[0]),3);
+    tmpKey := defaultVolumeName(mountVolA);
+    Assert(stringEquals(tmpKey,'vol4294967294'),'dot-dot label falls back safely'); kfree(void(tmpKey));
+    memcpy(uint32(pchar('__MOUNT_TEST__')),uint32(@mountVolA^.labelText[0]),15);
+    mountVolB^.labelText := mountVolA^.labelText;
+    Assert(mountDefaultVolume(mountVolA) = eNone,'label mount succeeds');
+    obj := GetObjectFromPath('/disk/__MOUNT_TEST__');
+    Assert((obj <> nil) and (obj^.Reference = void(mountVolA)),'label mount points to correct volume');
+    Assert(mountDefaultVolume(mountVolB) = eNone,'duplicate labels both mount');
+    obj := GetObjectFromPath('/disk/__MOUNT_TEST__-vol4294967293');
+    Assert((obj <> nil) and (obj^.Reference = void(mountVolB)),'duplicate label gets ID suffix');
+    Assert(mountDefaultVolume(mountVolB) = eNone,'duplicate mount is idempotent');
+    Assert(InvalidateVolume(mountVolA),'remove old label mount');
+    memset(uint32(@mountVolA^.labelText[0]),0,sizeof(mountVolA^.labelText));
+    memcpy(uint32(pchar('__RENAMED_TEST__')),uint32(@mountVolA^.labelText[0]),17);
+    Assert(mountDefaultVolume(mountVolA) = eNone,'renamed volume remounts');
+    Assert(GetObjectFromPath('/disk/__MOUNT_TEST__') = nil,'old label mount removed');
+    obj := GetObjectFromPath('/disk/__RENAMED_TEST__');
+    Assert((obj <> nil) and (obj^.Reference = void(mountVolA)),'renamed mount points to same volume');
+    InvalidateVolume(mountVolA); InvalidateVolume(mountVolB);
+    kfree(void(mountVolA)); kfree(void(mountVolB)); kfree(void(mountFS));
+
     watchFired := 0;
     io.syslog.logln('VFS', 'Unit tests starting...');
 
