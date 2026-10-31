@@ -150,6 +150,7 @@ var
     device   : PStorage_Device;
     volCount : uint32;
     freeSec  : uint32;
+    stats : TStorageStats;
 begin
     if paramCount(params) < 2 then begin
         println('Usage: DISK info <disk>');
@@ -191,6 +192,16 @@ begin
     else
         volCount := 0;
     print('Partitions:      '); printint(volCount); println('');
+    storage_get_stats(device,stats);
+    print('I/O submitted/completed/failed: '); printint(stats.Submitted); print(' / '); printint(stats.Completed); print(' / '); printint(stats.Failed); println('');
+    print('Commands / merged requests: '); printint(stats.Commands); print(' / '); printint(stats.Merged); println('');
+    print('Queue peak / active peak / queue full: '); printint(stats.QueuePeak); print(' / '); printint(stats.ActivePeak); print(' / '); printint(stats.QueueFull); println('');
+    print('Read / written sectors: '); printint(stats.ReadSectors); print(' / '); printint(stats.WriteSectors); println('');
+    print('Requests <=8 / <=256 / >256 sectors: '); printint(stats.SmallRequests); print(' / '); printint(stats.MediumRequests); print(' / '); printint(stats.LargeRequests); println('');
+    print('Queue ticks total / max: '); printint(stats.QueueTicks); print(' / '); printint(stats.MaxQueueTicks); println('');
+    print('Service ticks total / max: '); printint(stats.ServiceTicks); print(' / '); printint(stats.MaxServiceTicks); println('');
+    print('FAT cache hits / misses: '); printint(stats.FatCacheHits); print(' / '); printint(stats.FatCacheMisses); println('');
+
 end;
 
 { ---------- DISK WIPE ---------- }

@@ -39,8 +39,8 @@ function  ioreq_alloc(reqType  : TIORequestType;
 procedure ioreq_free(req : PIORequest);
 
 { Copy an existing TIORequest into a new pooled allocation (deep copy of the
-  record, NOT the buffer it points to). Used by dispatch_next to create an
-  ISR-safe copy from the CFIFO value-element. }
+  record, NOT the buffer it points to). Used by submit_io before enqueueing
+  the owned pointer. Manager-only merge/timing fields are initialised here. }
 function  ioreq_copy(src : PIORequest) : PIORequest;
 
 implementation
@@ -132,6 +132,9 @@ begin
         ioreq_alloc := nil;
         exit;
     end;
+    req^.MergeNext := nil;
+    req^.OriginalSectors := sectors;
+    req^.QueuedTick := 0; req^.DispatchTick := 0;
     req^.RequestType := reqType;
     req^.State       := iosPending;
     req^.Device      := device;
@@ -161,6 +164,9 @@ begin
         ioreq_copy := nil;
         exit;
     end;
+    dst^.MergeNext := nil;
+    dst^.OriginalSectors := src^.SectorCount;
+    dst^.QueuedTick := 0; dst^.DispatchTick := 0;
     dst^.RequestType := src^.RequestType;
     dst^.State       := src^.State;
     dst^.Device      := src^.Device;

@@ -252,10 +252,21 @@ type
         UserData     : pointer;         { points back to caller's stack-local request (blocking path) }
         Callback     : TIOCallback;     { async completion callback (nil for blocking path) }
         CallbackData : pointer;         { opaque data passed to Callback }
+        { Manager-owned fields; callers need not initialise these. }
+        MergeNext : PIORequest;
+        OriginalSectors, QueuedTick, DispatchTick : uint32;
     end;
 
     byteArray8  = array[0..7] of char;
     PByteArray8 = ^byteArray8;
+
+    TStorageStats = record
+        Submitted, Completed, Failed, Commands, Merged, QueueFull : uint32;
+        ReadSectors, WriteSectors, QueuePeak, ActivePeak : uint32;
+        QueueTicks, ServiceTicks, MaxQueueTicks, MaxServiceTicks : uint32;
+        SmallRequests, MediumRequests, LargeRequests : uint32;
+        FatCacheHits, FatCacheMisses : uint32;
+    end;
 
     { Generic storage device }
     TStorage_Device = record
@@ -272,6 +283,7 @@ type
         requestQueue     : PCFIFOQueue;       { per-device I/O request CFIFO }
         dispatching      : boolean; { prevents recursive synchronous-error queue draining }
         activeCount      : uint32;            { number of commands currently dispatched to HW }
+        mergeMaxSectors  : uint32; { zero disables merging; driver sets safe command limit }
         maxActive        : uint32;            { max concurrent commands (NCQ depth) }
 
         maxSectorCount   : uint32;
@@ -281,6 +293,7 @@ type
         mbrWriteBusy     : boolean; { serializes staged sector-zero writes }
         cachedMBR        : pointer;           { cached mbr data, nil if not yet read }
         isBootDevice     : boolean;           { true if this is the device GRUB booted from }
+        Stats            : TStorageStats; { cold tail: wrapping counters, timer ticks }
     end;
 
     { Filesystem driver descriptor }

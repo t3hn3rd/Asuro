@@ -58,6 +58,25 @@ var
     sioc_allocVol  : PStorage_Volume = nil;
     fatCtxListHead : PFATVolumeCtxNode = nil;
 
+{ Bounded set operations; honour FAT_CACHE_WAYS rather than assuming two ways. }
+procedure cacheTouch(cache : PFATCache; base, slot : uint32);
+var w : uint32;
+begin
+    for w := 0 to FAT_CACHE_WAYS-1 do
+        if cache^.Lines[base+w].LRU < FAT_CACHE_WAYS-1 then Inc(cache^.Lines[base+w].LRU);
+    cache^.Lines[slot].LRU := 0;
+end;
+function cacheVictim(cache : PFATCache; base : uint32) : uint32;
+var w, victim : uint32;
+begin
+    victim := base;
+    for w := 0 to FAT_CACHE_WAYS-1 do begin
+        if not cache^.Lines[base+w].Valid then begin cacheVictim := base+w; exit; end;
+        if cache^.Lines[base+w].LRU > cache^.Lines[victim].LRU then victim := base+w;
+    end;
+    cacheVictim := victim;
+end;
+
 function readFat(volume : PStorage_Volume; cluster : uint32; bootRecord : PBootRecord) : uint32; forward;
 procedure writeFat(volume : PStorage_Volume; cluster : uint32; value : uint32; bootRecord : PBootRecord); forward;
 procedure fatFreeClusterChain(volume : PStorage_Volume; info : PFATVolumeInfo; startCluster : uint32); forward;
@@ -771,6 +790,7 @@ begin
     while true do begin
         asm pushf; cli end;
         if not cache^.Busy then begin
+            Inc(cache^.Device^.Stats.FatCacheMisses);
             cache^.Busy := true;
             asm popf end;
             break;
@@ -846,10 +866,10 @@ begin
     asm pushf; cli end;
     for w := 0 to FAT_CACHE_WAYS - 1 do
         if cache^.Lines[baseSlot + w].Valid and (cache^.Lines[baseSlot + w].SectorIdx = fatSecIdx) then begin
+            Inc(cache^.Device^.Stats.FatCacheHits);
             dataPtr := puint32(uint32(cache^.Data) + ((baseSlot + w) * 512));
             readFat := dataPtr[entryOff] and $0FFFFFFF;
-            cache^.Lines[baseSlot + w].LRU := 0;
-            cache^.Lines[baseSlot + (1 - w)].LRU := 1;
+            cacheTouch(cache,baseSlot,baseSlot+w);
             asm popf end;
             exit;
         end;
@@ -860,23 +880,16 @@ begin
         if not cache^.Busy then begin
             for w := 0 to FAT_CACHE_WAYS - 1 do
                 if cache^.Lines[baseSlot + w].Valid and (cache^.Lines[baseSlot + w].SectorIdx = fatSecIdx) then begin
+                    Inc(cache^.Device^.Stats.FatCacheHits);
                     dataPtr := puint32(uint32(cache^.Data) + ((baseSlot + w) * 512));
                     readFat := dataPtr[entryOff] and $0FFFFFFF;
-                    cache^.Lines[baseSlot + w].LRU := 0;
-                    cache^.Lines[baseSlot + (1 - w)].LRU := 1;
+                    cacheTouch(cache,baseSlot,baseSlot+w);
                     asm popf end;
                     exit;
                 end;
+            Inc(cache^.Device^.Stats.FatCacheMisses);
             cache^.Busy := true;
-            victim := baseSlot;
-            if not cache^.Lines[baseSlot].Valid then
-                victim := baseSlot
-            else if not cache^.Lines[baseSlot + 1].Valid then
-                victim := baseSlot + 1
-            else if cache^.Lines[baseSlot + 1].LRU >= cache^.Lines[baseSlot].LRU then
-                victim := baseSlot + 1
-            else
-                victim := baseSlot;
+            victim := cacheVictim(cache,baseSlot);
             dataPtr := puint32(uint32(cache^.Data) + (victim * 512));
             doEvict := cache^.Lines[victim].Valid and cache^.Lines[victim].Dirty;
             if doEvict then begin
@@ -900,11 +913,7 @@ begin
     cache^.Lines[victim].SectorIdx := fatSecIdx;
     cache^.Lines[victim].Valid := true;
     cache^.Lines[victim].Dirty := false;
-    cache^.Lines[victim].LRU := 0;
-    if victim = baseSlot then
-        cache^.Lines[baseSlot + 1].LRU := 1
-    else
-        cache^.Lines[baseSlot].LRU := 1;
+    cacheTouch(cache,baseSlot,victim);
     readFat := dataPtr[entryOff] and $0FFFFFFF;
     cache^.Busy := false;
     asm popf end;
@@ -936,14 +945,14 @@ begin
     asm pushf; cli end;
     for w := 0 to FAT_CACHE_WAYS - 1 do
         if cache^.Lines[baseSlot + w].Valid and (cache^.Lines[baseSlot + w].SectorIdx = fatSecIdx) then begin
+            Inc(cache^.Device^.Stats.FatCacheHits);
             dataPtr := puint32(uint32(cache^.Data) + ((baseSlot + w) * 512));
             if value = 0 then
                 dataPtr[entryOff] := 0
             else
                 dataPtr[entryOff] := (dataPtr[entryOff] and $F0000000) or (value and $0FFFFFFF);
             cache^.Lines[baseSlot + w].Dirty := true;
-            cache^.Lines[baseSlot + w].LRU := 0;
-            cache^.Lines[baseSlot + (1 - w)].LRU := 1;
+            cacheTouch(cache,baseSlot,baseSlot+w);
             asm popf end;
             exit;
         end;
@@ -954,27 +963,20 @@ begin
         if not cache^.Busy then begin
             for w := 0 to FAT_CACHE_WAYS - 1 do
                 if cache^.Lines[baseSlot + w].Valid and (cache^.Lines[baseSlot + w].SectorIdx = fatSecIdx) then begin
+                    Inc(cache^.Device^.Stats.FatCacheHits);
                     dataPtr := puint32(uint32(cache^.Data) + ((baseSlot + w) * 512));
                     if value = 0 then
                         dataPtr[entryOff] := 0
                     else
                         dataPtr[entryOff] := (dataPtr[entryOff] and $F0000000) or (value and $0FFFFFFF);
                     cache^.Lines[baseSlot + w].Dirty := true;
-                    cache^.Lines[baseSlot + w].LRU := 0;
-                    cache^.Lines[baseSlot + (1 - w)].LRU := 1;
+                    cacheTouch(cache,baseSlot,baseSlot+w);
                     asm popf end;
                     exit;
                 end;
+            Inc(cache^.Device^.Stats.FatCacheMisses);
             cache^.Busy := true;
-            victim := baseSlot;
-            if not cache^.Lines[baseSlot].Valid then
-                victim := baseSlot
-            else if not cache^.Lines[baseSlot + 1].Valid then
-                victim := baseSlot + 1
-            else if cache^.Lines[baseSlot + 1].LRU >= cache^.Lines[baseSlot].LRU then
-                victim := baseSlot + 1
-            else
-                victim := baseSlot;
+            victim := cacheVictim(cache,baseSlot);
             dataPtr := puint32(uint32(cache^.Data) + (victim * 512));
             doEvict := cache^.Lines[victim].Valid and cache^.Lines[victim].Dirty;
             if doEvict then begin
@@ -1003,11 +1005,7 @@ begin
     else
         dataPtr[entryOff] := (dataPtr[entryOff] and $F0000000) or (value and $0FFFFFFF);
     cache^.Lines[victim].Dirty := true;
-    cache^.Lines[victim].LRU := 0;
-    if victim = baseSlot then
-        cache^.Lines[baseSlot + 1].LRU := 1
-    else
-        cache^.Lines[baseSlot].LRU := 1;
+    cacheTouch(cache,baseSlot,victim);
     cache^.Busy := false;
     asm popf end;
 end;
@@ -1064,6 +1062,7 @@ begin
         end;
     end;
     if not runMapEnsureCapacity(runMap, runMap.Count + 1) then exit;
+    runMap.Runs[runMap.Count].FileClusterStart := runMap.TotalClusters;
     runMap.Runs[runMap.Count].StartCluster := startCluster;
     runMap.Runs[runMap.Count].ClusterCount := clusterCount;
     runMap.Count := runMap.Count + 1;
@@ -1609,44 +1608,43 @@ function FAT32FindRunForOffset(ofi : PFATOpenFile; fileOffset : uint32;
     var outRunIdx : uint32; var outRunFileCluster : uint32;
     var outStartCluster : uint32; var outClusterOffset : uint32;
     var outAvailableBytes : uint32) : boolean;
-var
-    targetCluster   : uint32;
-    clusterBase     : uint32;
-    i               : uint32;
-    bytesPerCluster : uint32;
-    byteOffsetInCl  : uint32;
+var target, i, lo, hi, mid, base, bpc, flags : uint32;
 begin
     FAT32FindRunForOffset := false;
-    if (ofi = nil) or (ofi^.VolumeInfo = nil) or (ofi^.RunMap.Count = 0) then
-        exit;
-
-    bytesPerCluster := ofi^.VolumeInfo^.BytesPerCluster;
-    if bytesPerCluster = 0 then exit;
-
-    targetCluster := fileOffset div bytesPerCluster;
-    byteOffsetInCl := fileOffset mod bytesPerCluster;
-
-    if hintValid and (hintRunIdx < ofi^.RunMap.Count) and (hintFileCluster <= targetCluster) then begin
-        i := hintRunIdx;
-        clusterBase := hintFileCluster;
-    end else begin
-        i := 0;
-        clusterBase := 0;
-    end;
-
-    while i < ofi^.RunMap.Count do begin
-        if targetCluster < (clusterBase + ofi^.RunMap.Runs[i].ClusterCount) then begin
-            outRunIdx := i;
-            outRunFileCluster := clusterBase;
-            outClusterOffset := targetCluster - clusterBase;
-            outStartCluster := ofi^.RunMap.Runs[i].StartCluster + outClusterOffset;
-            outAvailableBytes := ((ofi^.RunMap.Runs[i].ClusterCount - outClusterOffset) * bytesPerCluster) - byteOffsetInCl;
-            FAT32FindRunForOffset := true;
-            exit;
+    if (ofi = nil) or (ofi^.VolumeInfo = nil) or (ofi^.RunMap.Count = 0) then exit;
+    bpc := ofi^.VolumeInfo^.BytesPerCluster;
+    if bpc = 0 then exit;
+    target := fileOffset div bpc;
+    if target >= ofi^.RunMap.TotalClusters then exit;
+    { Only the index is shared: derive the base from the current run map. }
+    i := ofi^.Cursor.RunIdx;
+    if hintValid then i := hintRunIdx;
+    if i >= ofi^.RunMap.Count then i := 0;
+    base := ofi^.RunMap.Runs[i].FileClusterStart;
+    if (target < base) or (target-base >= ofi^.RunMap.Runs[i].ClusterCount) then begin
+        { Sequential boundary crossing stays O(1); random seeks are O(log runs). }
+        if (i+1 < ofi^.RunMap.Count) and
+           (target = ofi^.RunMap.Runs[i+1].FileClusterStart) then Inc(i)
+        else begin
+            lo := 0; hi := ofi^.RunMap.Count;
+            while lo < hi do begin
+                mid := lo + (hi-lo) div 2;
+                if ofi^.RunMap.Runs[mid].FileClusterStart <= target then lo := mid+1
+                else hi := mid;
+            end;
+            if lo = 0 then exit;
+            i := lo-1;
         end;
-        clusterBase := clusterBase + ofi^.RunMap.Runs[i].ClusterCount;
-        i := i + 1;
+        base := ofi^.RunMap.Runs[i].FileClusterStart;
     end;
+    outRunIdx := i; outRunFileCluster := base;
+    outClusterOffset := target-base;
+    outStartCluster := ofi^.RunMap.Runs[i].StartCluster + outClusterOffset;
+    outAvailableBytes := (ofi^.RunMap.Runs[i].ClusterCount-outClusterOffset)*bpc - (fileOffset mod bpc);
+    asm pushfd; cli; pop flags end;
+    ofi^.Cursor.RunIdx := i; ofi^.Cursor.FileClusterStart := base; ofi^.Cursor.Valid := true;
+    if (flags and $200) <> 0 then asm sti end;
+    FAT32FindRunForOffset := true;
 end;
 
 function FAT32EnsureCapacityForWrite(ofi : PFATOpenFile; offset : uint32; byteCount : uint32) : TError;
