@@ -37,6 +37,7 @@ uses
     driver.storage.metatest,
     driver.storage.perftest,
     driver.storage.ctl.ahci,
+    driver.storage.ctl.usb,
     core.enc.fnv1a,
     core.enc.djb2,
     core.ds.bloom,
@@ -76,6 +77,7 @@ begin
     driver.storage.metatest.UnitTest;
     driver.storage.perftest.UnitTest;
     driver.storage.ctl.ahci.UnitTest;
+    driver.storage.ctl.usb.UnitTest;
     core.enc.fnv1a.UnitTest;
     core.enc.djb2.UnitTest;
     core.ds.bloom.UnitTest;
