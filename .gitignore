@@ -15,6 +15,7 @@ localenv.json
 dockerout.txt
 AGENTS.md
 lessons_learnt.md
+/plan.md
 *.log
 wasuro
 src/core/core.version.pas
