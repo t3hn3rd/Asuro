@@ -152,6 +152,7 @@ implementation
 uses
     driver.storage.fs.mgr,
     driver.storage.fs.fat32,
+    driver.storage.fs.ext2,
     proc.mgr,
     proc.types,
     io.stdio,
@@ -618,6 +619,8 @@ begin
 
     if (vol^.filesystem <> nil) and (stringCompare(vol^.filesystem^.sName, 'FAT32') = 0) then
         FAT32ReleaseVolumeState(vol);
+    if (vol^.filesystem <> nil) and (stringCompare(vol^.filesystem^.sName, 'EXT2') = 0) then
+        driver.storage.fs.ext2.ReleaseVolume(vol);
 
     InvalidateVolume := true;
     debug.tracer.push_trace('driver.storage.vfs.InvalidateVolume.exit');
@@ -1427,8 +1430,12 @@ begin
     fd^.FSCloseHook := nil;
 
     { Cache per-file metadata and populate DataSize via FS open hook }
-    if (vol^.filesystem <> nil) and (vol^.filesystem^.openFileCallback <> nil) then begin
-        fd^.FSPrivate := vol^.filesystem^.openFileCallback(vol, dir, fname, fd^.DataSize);
+    if (vol^.filesystem <> nil) and ((vol^.filesystem^.openFileCallback <> nil) or
+       (vol^.filesystem^.openFileModeCallback <> nil)) then begin
+        if vol^.filesystem^.openFileModeCallback <> nil then
+            fd^.FSPrivate := vol^.filesystem^.openFileModeCallback(vol, dir, fname,
+                (OpenMode = omCreate) or (OpenMode = omWrite), fd^.DataSize)
+        else fd^.FSPrivate := vol^.filesystem^.openFileCallback(vol, dir, fname, fd^.DataSize);
         if fd^.FSPrivate = nil then begin
             if Error <> nil then begin
                 if (OpenMode = omCreate) or (OpenMode = omWrite) then
@@ -1724,8 +1731,12 @@ begin
     fd^.FSCloseHook := nil;
     OutHandle := slot;
 
-    if (vol^.filesystem <> nil) and (vol^.filesystem^.openFileCallback <> nil) then begin
-        fd^.FSPrivate := vol^.filesystem^.openFileCallback(vol, dir, fname, fd^.DataSize);
+    if (vol^.filesystem <> nil) and ((vol^.filesystem^.openFileCallback <> nil) or
+       (vol^.filesystem^.openFileModeCallback <> nil)) then begin
+        if vol^.filesystem^.openFileModeCallback <> nil then
+            fd^.FSPrivate := vol^.filesystem^.openFileModeCallback(vol, dir, fname,
+                (OpenMode = omCreate) or (OpenMode = omWrite), fd^.DataSize)
+        else fd^.FSPrivate := vol^.filesystem^.openFileCallback(vol, dir, fname, fd^.DataSize);
         if fd^.FSPrivate = nil then begin
             if Error <> nil then begin
                 if (OpenMode = omCreate) or (OpenMode = omWrite) then

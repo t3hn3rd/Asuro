@@ -222,6 +222,8 @@ type
       to read/write hooks.  Also returns the current file size through the
       var parameter.  Returning nil is legal (disables per-call fast-path). }
     PPOpenFileHook = function(volume : PStorage_Volume; directory : pchar; fileName : pchar; var fileSize : uint32) : pointer;
+    { Mode-aware open avoids creating a missing file during a read-only open. }
+    PPOpenFileModeHook = function(volume : PStorage_Volume; directory : pchar; fileName : pchar; allowCreate : boolean; var fileSize : uint32) : pointer;
     { Per-file close hook: frees the context allocated by openFileCallback. }
     PPCloseFileHook = procedure(ctx : pointer);
 
@@ -324,6 +326,7 @@ type
         renameFileCallback      : PPRenameFileHook;
         { Per-file open/close — nil if FS does not cache per-file metadata }
         openFileCallback        : PPOpenFileHook;
+        openFileModeCallback    : PPOpenFileModeHook;
         closeFileCallback       : PPCloseFileHook;
         formatParamFlags        : uint32;
         validateLabelCallback   : PPValidateLabelHook;
