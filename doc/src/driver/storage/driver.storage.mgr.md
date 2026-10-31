@@ -14,7 +14,7 @@ The I/O model operates as follows:
 - `storage_read` / `storage_write` are convenience wrappers that build a stack-local `TIORequest` and call `submit_io_wait`.
 - `storage_read_async` / `storage_write_async` build and submit a request with a caller-supplied callback, returning immediately.
 
-Legacy `storage_read_legacy` / `storage_write_legacy` procedure wrappers are retained for callers not yet migrated to the function-returning API.
+Blocking callers use `storage_read` / `storage_write` and check the returned `TError`.
 
 ## Dependencies
 
@@ -204,15 +204,6 @@ function storage_write_async(device : PStorage_Device; addr : uint32; sectors : 
 ```
 
 Non-blocking write. Analogous to `storage_read_async`.
-
-### storage_read_legacy / storage_write_legacy
-
-```pascal
-procedure storage_read_legacy(device : PStorage_Device; addr : uint32; sectors : uint32; buffer : puint32);
-procedure storage_write_legacy(device : PStorage_Device; addr : uint32; sectors : uint32; buffer : puint32);
-```
-
-Drop-in procedure replacements for callers using the old void-returning API. Forward to `storage_read` / `storage_write` and discard the error code. Marked for removal once all callers are migrated.
 
 ## Notes
 

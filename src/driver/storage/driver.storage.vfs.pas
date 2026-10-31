@@ -1479,62 +1479,37 @@ begin
     debug.tracer.push_trace('driver.storage.vfs.OpenFile.exit');
 end;
 
-function WriteFile(FileHandle : TFileHandle; Position : uint32; Buffer : puint8; Length : uint32) : uint32;
-var
-    wait     : TVFSSyncWaitCtx;
+{ One blocking bridge for both directions. The async callback owns completion;
+  check Done with interrupts masked before parking to avoid a lost wakeup. }
+function TransferFileSync(FileHandle : TFileHandle; Position : uint32;
+                          Buffer : puint8; Length : uint32; Writing : boolean) : uint32;
+var wait : TVFSSyncWaitCtx;
 begin
-    debug.tracer.push_trace('driver.storage.vfs.WriteFile.enter');
-    WriteFile := 0;
-
-    memset(uint32(@wait), 0, sizeof(TVFSSyncWaitCtx));
+    TransferFileSync := 0;
+    memset(uint32(@wait), 0, sizeof(wait));
     wait.Error := eUnknown;
     wait.Process := CurrentProcess;
-
-    WriteFileAsync(FileHandle, Position, Buffer, Length, @wait.BytesDone, @vfs_sync_complete, @wait);
+    if Writing then
+        WriteFileAsync(FileHandle, Position, Buffer, Length, @wait.BytesDone, @vfs_sync_complete, @wait)
+    else
+        ReadFileAsync(FileHandle, Position, Buffer, Length, @wait.BytesDone, @vfs_sync_complete, @wait);
 
     asm pushf; cli end;
-    if puint32(@wait.Done)^ = 0 then begin
-        if CurrentProcess <> nil then
-            CurrentProcess^.State := psAwaiting;
-    end;
+    if puint32(@wait.Done)^ = 0 then
+        if wait.Process <> nil then wait.Process^.State := psAwaiting;
     asm popf end;
+    while puint32(@wait.Done)^ = 0 do asm hlt end;
+    if wait.Error = eNone then TransferFileSync := wait.BytesDone;
+end;
 
-    while puint32(@wait.Done)^ = 0 do
-        asm hlt end;
-
-    if wait.Error = eNone then
-        WriteFile := wait.BytesDone;
-
-    debug.tracer.push_trace('driver.storage.vfs.WriteFile.exit');
+function WriteFile(FileHandle : TFileHandle; Position : uint32; Buffer : puint8; Length : uint32) : uint32;
+begin
+    WriteFile := TransferFileSync(FileHandle, Position, Buffer, Length, true);
 end;
 
 function ReadFile(FileHandle : TFileHandle; Position : uint32; Buffer : puint8; Length : uint32) : uint32;
-var
-    wait : TVFSSyncWaitCtx;
 begin
-    debug.tracer.push_trace('driver.storage.vfs.ReadFile.enter');
-    ReadFile := 0;
-
-    memset(uint32(@wait), 0, sizeof(TVFSSyncWaitCtx));
-    wait.Error := eUnknown;
-    wait.Process := CurrentProcess;
-
-    ReadFileAsync(FileHandle, Position, Buffer, Length, @wait.BytesDone, @vfs_sync_complete, @wait);
-
-    asm pushf; cli end;
-    if puint32(@wait.Done)^ = 0 then begin
-        if CurrentProcess <> nil then
-            CurrentProcess^.State := psAwaiting;
-    end;
-    asm popf end;
-
-    while puint32(@wait.Done)^ = 0 do
-        asm hlt end;
-
-    if wait.Error = eNone then
-        ReadFile := wait.BytesDone;
-
-    debug.tracer.push_trace('driver.storage.vfs.ReadFile.exit');
+    ReadFile := TransferFileSync(FileHandle, Position, Buffer, Length, false);
 end;
 
 function CloseFile(Filehandle : TFileHandle) : TError;
@@ -2217,138 +2192,57 @@ end;
 
 { ===================== Public File/Directory Management API ================ }
 
-function DeleteFile(Path : pchar; Error : PError) : TError;
+{ Synchronous filesystem hooks consume the local status before returning.
+  This helper owns both resolved path strings and the joined relative path. }
+function DeletePath(Path : pchar; IsDirectory : boolean) : TError;
 var
-    vol      : PStorage_Volume;
-    dir      : pchar;
-    fname    : pchar;
-    fullPath : pchar;
-    tmpPath  : pchar;
-    status   : puint32;
-    errCode  : TError;
+    vol : PStorage_Volume;
+    dir, name, fullPath, prefix : pchar;
+    status : uint32;
+    supported : boolean;
 begin
-    debug.tracer.push_trace('driver.storage.vfs.DeleteFile.enter');
-    DeleteFile := eUnknown;
-    if Error <> nil then Error^ := eUnknown;
+    DeletePath := eInvalidArgument;
+    if Path = nil then exit;
+    DeletePath := eInvalidPath;
+    if not ResolveFilePath(Path, PPStorage_Volume(@vol), PPChar(@dir), PPChar(@name)) then exit;
 
-    if Path = nil then begin
-        DeleteFile := eInvalidArgument;
-        if Error <> nil then Error^ := eInvalidArgument;
-        debug.tracer.push_trace('driver.storage.vfs.DeleteFile.exit');
-        exit;
+    supported := false;
+    if vol^.filesystem <> nil then begin
+        if IsDirectory then supported := vol^.filesystem^.deleteDirCallback <> nil
+        else supported := vol^.filesystem^.deleteFileCallback <> nil;
     end;
-
-    if not ResolveFilePath(Path, PPStorage_Volume(@vol), PPChar(@dir), PPChar(@fname)) then begin
-        DeleteFile := eInvalidPath;
-        if Error <> nil then Error^ := eInvalidPath;
-        debug.tracer.push_trace('driver.storage.vfs.DeleteFile.exit');
-        exit;
+    DeletePath := eNotSupported;
+    if supported then begin
+        if (dir <> nil) and (stringSize(dir) > 0) then begin
+            prefix := stringConcat(dir, '/');
+            fullPath := stringConcat(prefix, name);
+            kfree(void(prefix));
+        end else fullPath := stringCopy(name);
+        DeletePath := eOutOfMemory;
+        if fullPath <> nil then begin
+            status := 0;
+            if IsDirectory then vol^.filesystem^.deleteDirCallback(vol, fullPath, @status)
+            else vol^.filesystem^.deleteFileCallback(vol, fullPath, @status);
+            DeletePath := TError(status);
+            if TError(status) = eNone then
+                VFS_OnMutation(weDeleted, Path, Path, vol, fullPath);
+            kfree(void(fullPath));
+        end;
     end;
+    kfree(void(dir));
+    kfree(void(name));
+end;
 
-    if (vol^.filesystem = nil) or (vol^.filesystem^.deleteFileCallback = nil) then begin
-        DeleteFile := eNotSupported;
-        if Error <> nil then Error^ := eNotSupported;
-        kfree(void(dir));
-        kfree(void(fname));
-        debug.tracer.push_trace('driver.storage.vfs.DeleteFile.exit');
-        exit;
-    end;
-
-    status := puint32(kalloc(4));
-    status^ := 0;
-
-    { Build the full relative path within the volume: dir/fname }
-    if (dir <> nil) and (stringSize(dir) > 0) then begin
-        tmpPath := stringConcat(dir, '/');
-        fullPath := stringConcat(tmpPath, fname);
-        kfree(void(tmpPath));
-        kfree(void(dir));
-        dir := nil;
-    end else begin
-        if dir <> nil then kfree(void(dir));
-        fullPath := stringCopy(fname);
-    end;
-
-    vol^.filesystem^.deleteFileCallback(vol, fullPath, status);
-    errCode := TError(status^);
-
-    DeleteFile := errCode;
-    if Error <> nil then Error^ := errCode;
-
-    if errCode = eNone then
-        VFS_OnMutation(weDeleted, Path, Path, vol, fullPath);
-
-    kfree(puint32(status));
-    kfree(void(fullPath));
-    kfree(void(fname));
-    debug.tracer.push_trace('driver.storage.vfs.DeleteFile.exit');
+function DeleteFile(Path : pchar; Error : PError) : TError;
+begin
+    DeleteFile := DeletePath(Path, false);
+    if Error <> nil then Error^ := DeleteFile;
 end;
 
 function DeleteDirectory(Path : pchar; Error : PError) : TError;
-var
-    vol      : PStorage_Volume;
-    dir      : pchar;
-    dirName  : pchar;
-    fullPath : pchar;
-    tmpPath  : pchar;
-    status   : puint32;
-    errCode  : TError;
 begin
-    debug.tracer.push_trace('driver.storage.vfs.DeleteDirectory.enter');
-    DeleteDirectory := eUnknown;
-    if Error <> nil then Error^ := eUnknown;
-
-    if Path = nil then begin
-        DeleteDirectory := eInvalidArgument;
-        if Error <> nil then Error^ := eInvalidArgument;
-        debug.tracer.push_trace('driver.storage.vfs.DeleteDirectory.exit');
-        exit;
-    end;
-
-    if not ResolveFilePath(Path, PPStorage_Volume(@vol), PPChar(@dir), PPChar(@dirName)) then begin
-        DeleteDirectory := eInvalidPath;
-        if Error <> nil then Error^ := eInvalidPath;
-        debug.tracer.push_trace('driver.storage.vfs.DeleteDirectory.exit');
-        exit;
-    end;
-
-    if (vol^.filesystem = nil) or (vol^.filesystem^.deleteDirCallback = nil) then begin
-        DeleteDirectory := eNotSupported;
-        if Error <> nil then Error^ := eNotSupported;
-        kfree(void(dir));
-        kfree(void(dirName));
-        debug.tracer.push_trace('driver.storage.vfs.DeleteDirectory.exit');
-        exit;
-    end;
-
-    status := puint32(kalloc(4));
-    status^ := 0;
-
-    { Build full relative path for the directory }
-    if (dir <> nil) and (stringSize(dir) > 0) then begin
-        tmpPath := stringConcat(dir, '/');
-        fullPath := stringConcat(tmpPath, dirName);
-        kfree(void(tmpPath));
-        kfree(void(dir));
-        dir := nil;
-    end else begin
-        if dir <> nil then kfree(void(dir));
-        fullPath := stringCopy(dirName);
-    end;
-
-    vol^.filesystem^.deleteDirCallback(vol, fullPath, status);
-    errCode := TError(status^);
-
-    DeleteDirectory := errCode;
-    if Error <> nil then Error^ := errCode;
-
-    if errCode = eNone then
-        VFS_OnMutation(weDeleted, Path, Path, vol, fullPath);
-
-    kfree(puint32(status));
-    kfree(void(fullPath));
-    kfree(void(dirName));
-    debug.tracer.push_trace('driver.storage.vfs.DeleteDirectory.exit');
+    DeleteDirectory := DeletePath(Path, true);
+    if Error <> nil then Error^ := DeleteDirectory;
 end;
 
 function CreateDirectory(Path : pchar; Error : PError) : TError;
@@ -2519,94 +2413,59 @@ end;
 
 { ===================== Async Delete ======================================== }
 
-procedure DeleteFileAsync(Path : pchar; Error : PError; Callback : TIOCallback; CallbackData : pointer);
+procedure CompletePathOperation(Error : PError; ResultCode : TError;
+                                Callback : TIOCallback; CallbackData : pointer);
+begin
+    if Error <> nil then Error^ := ResultCode;
+    if Callback <> nil then Callback(ResultCode, CallbackData);
+end;
+
+procedure DeletePathAsync(Path : pchar; IsDirectory : boolean; Error : PError;
+                          Callback : TIOCallback; CallbackData : pointer);
 var
     ctx : PVFSPathAsyncCtx;
     worker : proc.types.PProcessContext;
+    workerName : pchar;
 begin
-    debug.tracer.push_trace('driver.storage.vfs.DeleteFileAsync.enter');
     if Error <> nil then Error^ := eUnknown;
-
     if Path = nil then begin
-        if Error <> nil then Error^ := eInvalidArgument;
-        if Callback <> nil then Callback(eInvalidArgument, CallbackData);
+        CompletePathOperation(Error, eInvalidArgument, Callback, CallbackData);
         exit;
     end;
-
     ctx := PVFSPathAsyncCtx(kalloc(sizeof(TVFSPathAsyncCtx)));
     if ctx = nil then begin
-        if Error <> nil then Error^ := eOutOfMemory;
-        if Callback <> nil then Callback(eOutOfMemory, CallbackData);
+        CompletePathOperation(Error, eOutOfMemory, Callback, CallbackData);
         exit;
     end;
     memset(uint32(ctx), 0, sizeof(TVFSPathAsyncCtx));
     ctx^.Path := stringCopy(Path);
     if ctx^.Path = nil then begin
         kfree(void(ctx));
-        if Error <> nil then Error^ := eOutOfMemory;
-        if Callback <> nil then Callback(eOutOfMemory, CallbackData);
+        CompletePathOperation(Error, eOutOfMemory, Callback, CallbackData);
         exit;
     end;
     ctx^.ErrorPtr := Error;
-    ctx^.IsDirectory := false;
+    ctx^.IsDirectory := IsDirectory;
     ctx^.UserCallback := Callback;
     ctx^.UserData := CallbackData;
-    worker := proc.mgr.create('vfs.delf', @vfs_pathop_worker, void(ctx), 1);
+    if IsDirectory then workerName := 'vfs.deld' else workerName := 'vfs.delf';
+    worker := proc.mgr.create(workerName, @vfs_pathop_worker, void(ctx), 1);
+    { A published worker owns ctx and may already have freed it. }
     if worker = nil then begin
-        if ctx^.Path <> nil then
-            kfree(void(ctx^.Path));
+        kfree(void(ctx^.Path));
         kfree(void(ctx));
-        if Error <> nil then Error^ := eOutOfMemory;
-        if Callback <> nil then Callback(eOutOfMemory, CallbackData);
-        exit;
+        CompletePathOperation(Error, eOutOfMemory, Callback, CallbackData);
     end;
+end;
 
-    debug.tracer.push_trace('driver.storage.vfs.DeleteFileAsync.exit');
+procedure DeleteFileAsync(Path : pchar; Error : PError; Callback : TIOCallback; CallbackData : pointer);
+begin
+    DeletePathAsync(Path, false, Error, Callback, CallbackData);
 end;
 
 procedure DeleteDirectoryAsync(Path : pchar; Error : PError; Callback : TIOCallback; CallbackData : pointer);
-var
-    ctx : PVFSPathAsyncCtx;
-    worker : proc.types.PProcessContext;
 begin
-    debug.tracer.push_trace('driver.storage.vfs.DeleteDirectoryAsync.enter');
-    if Error <> nil then Error^ := eUnknown;
-
-    if Path = nil then begin
-        if Error <> nil then Error^ := eInvalidArgument;
-        if Callback <> nil then Callback(eInvalidArgument, CallbackData);
-        exit;
-    end;
-
-    ctx := PVFSPathAsyncCtx(kalloc(sizeof(TVFSPathAsyncCtx)));
-    if ctx = nil then begin
-        if Error <> nil then Error^ := eOutOfMemory;
-        if Callback <> nil then Callback(eOutOfMemory, CallbackData);
-        exit;
-    end;
-    memset(uint32(ctx), 0, sizeof(TVFSPathAsyncCtx));
-    ctx^.Path := stringCopy(Path);
-    if ctx^.Path = nil then begin
-        kfree(void(ctx));
-        if Error <> nil then Error^ := eOutOfMemory;
-        if Callback <> nil then Callback(eOutOfMemory, CallbackData);
-        exit;
-    end;
-    ctx^.ErrorPtr := Error;
-    ctx^.IsDirectory := true;
-    ctx^.UserCallback := Callback;
-    ctx^.UserData := CallbackData;
-    worker := proc.mgr.create('vfs.deld', @vfs_pathop_worker, void(ctx), 1);
-    if worker = nil then begin
-        if ctx^.Path <> nil then
-            kfree(void(ctx^.Path));
-        kfree(void(ctx));
-        if Error <> nil then Error^ := eOutOfMemory;
-        if Callback <> nil then Callback(eOutOfMemory, CallbackData);
-        exit;
-    end;
-
-    debug.tracer.push_trace('driver.storage.vfs.DeleteDirectoryAsync.exit');
+    DeletePathAsync(Path, true, Error, Callback, CallbackData);
 end;
 
 { ===================== Async Directory Listing ============================= }
@@ -3065,39 +2924,6 @@ begin
     end else begin
         io.stdio.bufWriteStrLn(stdout_buf, 'No working directory in the stack!');
     end;
-end;
-
-{ Free a directory listing map that was freshly allocated by volumeGetDirectories.
-  Only call this when the map is caller-owned (i.e. the current directory is a DRIVE). }
-procedure freeOwnedDirListing(Map : PHashMap);
-var
-    i        : uint32;
-    Item     : PHashItem;
-    nextItem : PHashItem;
-    vfsObj   : PVFSObject;
-begin
-    if Map = nil then exit;
-    for i := 0 to Map^.Size - 1 do begin
-        Item := Map^.Table[i];
-        while Item <> nil do begin
-            nextItem := Item^.Next;
-            { Free the PVFSObject and its ObjectName string that we allocated }
-            if Item^.Data <> nil then begin
-                vfsObj := PVFSObject(Item^.Data);
-                if vfsObj^.ObjectName <> nil then
-                    kfree(void(vfsObj^.ObjectName));
-                kfree(Item^.Data);
-            end;
-            { Free the key string that was stringCopy'd by volumeGetDirectories }
-            if Item^.Key <> nil then
-                kfree(void(Item^.Key));
-            { Free the PHashItem node itself }
-            kfree(void(Item));
-            Item := nextItem;
-        end;
-        Map^.Table[i] := nil;
-    end;
-    kfree(void(Map));
 end;
 
 procedure VFS_COMMAND_LS(params : PParamList; stdin_buf, stdout_buf, stderr_buf: POutBuf);
@@ -3677,10 +3503,43 @@ begin
         inc(puint32(userdata)^);
 end;
 
+type
+    PDeleteTest = ^TDeleteTest;
+    TDeleteTest = record
+        Files, Directories, Completions : uint32;
+        ExpectedPath : pchar;
+        ResultCode, CompletedError : TError;
+        PathMatches : boolean;
+    end;
+
+procedure UTestDeleteFile(vol : PStorage_Volume; path : pchar; status : puint32);
+var state : PDeleteTest;
+begin
+    state := PDeleteTest(vol^.fsPrivate);
+    inc(state^.Files);
+    state^.PathMatches := stringEquals(path, state^.ExpectedPath);
+    status^ := uint32(state^.ResultCode);
+end;
+
+procedure UTestDeleteDirectory(vol : PStorage_Volume; path : pchar; status : puint32);
+begin
+    UTestDeleteFile(vol, path, status);
+    dec(PDeleteTest(vol^.fsPrivate)^.Files);
+    inc(PDeleteTest(vol^.fsPrivate)^.Directories);
+end;
+
+procedure UTestDeleteComplete(error : TError; userdata : pointer);
+begin
+    inc(PDeleteTest(userdata)^.Completions);
+    PDeleteTest(userdata)^.CompletedError := error;
+end;
+
 procedure UnitTest;
 var
     mountVolA, mountVolB : PStorage_Volume;
     mountFS : PFilesystem;
+    mountDevice : PStorage_Device;
+    deleteState : TDeleteTest;
     passed, failed : uint32;
     result         : TIsPathValid;
     errCode        : TError;
@@ -3760,6 +3619,32 @@ begin
     Assert(mountDefaultVolume(mountVolA) = eNone,'label mount succeeds');
     obj := GetObjectFromPath('/disk/__MOUNT_TEST__');
     Assert((obj <> nil) and (obj^.Reference = void(mountVolA)),'label mount points to correct volume');
+    { Exercise shared deletion against a memory-only filesystem. }
+    mountDevice := PStorage_Device(kalloc(sizeof(TStorage_Device)));
+    memset(uint32(mountDevice), 0, sizeof(TStorage_Device));
+    memset(uint32(@deleteState), 0, sizeof(deleteState));
+    mountVolA^.device := mountDevice;
+    mountVolA^.fsPrivate := @deleteState;
+    Assert(DeleteFile(nil, @errCode)=eInvalidArgument, 'delete nil path');
+    Assert(errCode=eInvalidArgument, 'delete error output matches result');
+    Assert(DeleteDirectory('/disk/__MOUNT_TEST__/entry', nil)=eNotSupported, 'delete missing directory hook');
+    mountFS^.deleteFileCallback := @UTestDeleteFile;
+    mountFS^.deleteDirCallback := @UTestDeleteDirectory;
+    deleteState.ExpectedPath := 'entry';
+    deleteState.ResultCode := eNone;
+    Assert(DeleteFile('/disk/__MOUNT_TEST__/entry', @errCode)=eNone, 'delete root file succeeds');
+    Assert((deleteState.Files=1) and (deleteState.Directories=0) and deleteState.PathMatches, 'delete routes file hook with relative path');
+    deleteState.ExpectedPath := 'nested/entry';
+    deleteState.ResultCode := eReadOnly;
+    Assert(DeleteDirectory('/disk/__MOUNT_TEST__/nested/entry', @errCode)=eReadOnly, 'delete directory propagates filesystem failure');
+    Assert((errCode=eReadOnly) and (deleteState.Directories=1) and deleteState.PathMatches, 'delete directory hook receives nested path');
+    DeleteFileAsync(nil, @errCode, @UTestDeleteComplete, @deleteState);
+    Assert((deleteState.Completions=1) and (deleteState.CompletedError=eInvalidArgument) and (errCode=eInvalidArgument), 'async file rejection completes exactly once');
+    DeleteDirectoryAsync(nil, nil, @UTestDeleteComplete, @deleteState);
+    Assert((deleteState.Completions=2) and (deleteState.CompletedError=eInvalidArgument), 'async directory rejection supports nil error output');
+    mountVolA^.fsPrivate := nil;
+    mountVolA^.device := nil;
+    kfree(void(mountDevice));
     Assert(mountDefaultVolume(mountVolB) = eNone,'duplicate labels both mount');
     obj := GetObjectFromPath('/disk/__MOUNT_TEST__-vol4294967293');
     Assert((obj <> nil) and (obj^.Reference = void(mountVolB)),'duplicate label gets ID suffix');
