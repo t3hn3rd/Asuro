@@ -1200,7 +1200,8 @@ begin
     vol := findVolumeForPartition(device, part.LBA_start);
     if vol <> nil then begin
         freeB := uint64(vol^.freeSectors) * vol^.sectorSize;
-        freeStr := uiConcat(formatSizeStr(freeB), ' free');
+        if (vol^.lifecycleFlags and STORAGE_VOLUME_FLAG_FREE_UNKNOWN) <> 0 then freeStr := 'Free: unknown'
+        else freeStr := uiConcat(formatSizeStr(freeB), ' free');
         lbl := lv_label_create(row);
         lv_label_set_text(lbl, freeStr);
         lv_obj_set_style_text_color(lbl, lv_color_make(100, 180, 130), 0);
@@ -1240,7 +1241,6 @@ var
     dw          : sint32;
     i           : uint32;
     totalBytes  : uint64;
-    usedSectors : uint64;
     freeBytes   : uint64;
     volCnt      : uint32;
     devVolCnt   : uint32;
@@ -1274,22 +1274,18 @@ begin
     totalBytes := uint64(device^.maxSectorCount) * device^.sectorSize;
     addInfoRow(detail, dw, 'Total Size', formatSizePrecise(totalBytes));
 
-    { Compute free space from in-memory volume data (no I/O) }
-    usedSectors := 0;
+    { Use the same cached partition geometry as Add Partition. Volumes may
+      still be undergoing filesystem probing after the device is published. }
     devVolCnt := 0;
     volCnt := driver.storage.vol.mgr.get_volume_count();
     if volCnt > 0 then for i := 0 to volCnt - 1 do begin
         vol := driver.storage.vol.mgr.get_volume(i);
         if (vol <> nil) and (vol^.device = device) then begin
             devVolCnt := devVolCnt + 1;
-            usedSectors := usedSectors + vol^.sectorCount;
         end;
     end;
-    if device^.maxSectorCount > usedSectors then
-        freeBytes := uint64(device^.maxSectorCount - usedSectors) * device^.sectorSize
-    else
-        freeBytes := 0;
-    addInfoRow(detail, dw, 'Free Space', formatSizePrecise(freeBytes));
+    freeBytes := uint64(driver.storage.vol.mgr.get_free_sector_count(device)) * device^.sectorSize;
+    addInfoRow(detail, dw, 'Unallocated Space', formatSizePrecise(freeBytes));
     addInfoRow(detail, dw, 'Volumes', uiInt(devVolCnt));
 
     { Usage bar }
@@ -1352,7 +1348,8 @@ begin
 
             { Free space }
             freeB := uint64(vol^.freeSectors) * vol^.sectorSize;
-            freeStr := uiConcat(formatSizeStr(freeB), ' free');
+            if (vol^.lifecycleFlags and STORAGE_VOLUME_FLAG_FREE_UNKNOWN) <> 0 then freeStr := 'Free: unknown'
+            else freeStr := uiConcat(formatSizeStr(freeB), ' free');
             lbl := lv_label_create(row);
             lv_label_set_text(lbl, freeStr);
             lv_obj_set_style_text_color(lbl, lv_color_make(100, 180, 130), 0);
@@ -1494,6 +1491,10 @@ begin
     usedBytes := totalBytes - freeBytes;
 
     addInfoRow(detail, dw, 'Total Size', formatSizePrecise(totalBytes));
+    if (vol^.lifecycleFlags and STORAGE_VOLUME_FLAG_FREE_UNKNOWN) <> 0 then begin
+        addInfoRow(detail, dw, 'Free Space', 'Unknown');
+        addInfoRow(detail, dw, 'Used Space', 'Unknown');
+    end else begin
     addInfoRow(detail, dw, 'Free Space', formatSizePrecise(freeBytes));
     addInfoRow(detail, dw, 'Used Space', formatSizePrecise(usedBytes));
 
@@ -1501,6 +1502,7 @@ begin
         pctUsed := (usedBytes * 100) div totalBytes;
         addInfoRow(detail, dw, 'Usage', uiConcat(uiInt(pctUsed), '%'));
         addUsageBar(detail, dw, usedBytes, totalBytes);
+    end;
     end;
 
     addInfoRow(detail, dw, 'Boot Drive', boolStr(vol^.isBootDrive));

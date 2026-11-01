@@ -66,6 +66,7 @@ type
         Request : PIORequest;
         Tag : uint32;
         Offline, Ready, InFlight, Attaching, VolumesDetached : boolean;
+        SyncUnsupported : boolean;
     end;
 
 var
@@ -276,6 +277,9 @@ begin
     if transport(c, actual) <> 0 then exit;
     if actual < 14 then exit;
     if (puint8(c^.Buffer)[0] and $7E) <> $70 then exit;
+    io.syslog.log('USBMSC', 'SCSI sense key='); io.syslog.writeint(puint8(c^.Buffer)[2] and $0F);
+    io.syslog.writestring(' ASC='); io.syslog.writeint(puint8(c^.Buffer)[12]);
+    io.syslog.writestring(' ASCQ='); io.syslog.writeintln(puint8(c^.Buffer)[13]);
     case puint8(c^.Buffer)[2] and $0F of
         2: sense := eDeviceNotReady;
         3: sense := eBadSector;
@@ -286,14 +290,36 @@ begin
 end;
 
 function execute(c : PMSDevice; required : uint32) : TError;
-var actual : uint32; resultCode : uint8;
+var actual : uint32; resultCode, opcode : uint8;
 begin
+    opcode := c^.CBW.Command[0];
     resultCode := transport(c, actual);
     execute := eIOError;
     if resultCode = 1 then execute := sense(c)
     else if (resultCode = 0) and (actual = required) then execute := eNone;
     if c^.Offline then execute := eIOTimeout;
     if c^.Original = nil then execute := eDeviceRemoved;
+    if execute <> eNone then begin
+        io.syslog.log('USBMSC', 'Command failed: opcode='); io.syslog.writeint(opcode);
+        io.syslog.writestring(' error='); io.syslog.writeintln(ord(execute));
+    end;
+end;
+
+function sync_cache(c : PMSDevice) : TError;
+begin
+    sync_cache := eNone;
+    if c^.SyncUnsupported then exit;
+    command(c, $35, 10, 0, false);
+    sync_cache := execute(c, 0);
+    { Some removable flash devices reject SYNCHRONIZE CACHE with ILLEGAL
+      REQUEST despite accepting WRITE(10). This optional command must not turn
+      an acknowledged data write into a zero-byte failure. Other errors remain
+      failures; do not retry or suppress an unsuccessful WRITE(10). }
+    if sync_cache = eNotSupported then begin
+        c^.SyncUnsupported := true;
+        io.syslog.logln('USBMSC', 'SYNCHRONIZE CACHE unsupported; using device write completion.');
+        sync_cache := eNone;
+    end;
 end;
 
 function probe(c : PMSDevice; var sectors, sectorSize : uint32) : boolean;
@@ -393,10 +419,10 @@ begin
             inc(doneBlocks, blocks); inc(offset, bytes);
         end;
     end;
-    { Complete writes only after the device has committed its cache. }
+    { Flush devices which support it; unsupported removable media use the
+      WRITE command completion contract. }
     if (error = eNone) and (r^.RequestType = ioWrite) then begin
-        command(c, $35, 10, 0, false);
-        error := execute(c, 0);
+        error := sync_cache(c);
     end;
     if error = eReadOnly then c^.Disk^.writable := false;
     r^.ByteCount := offset;
@@ -597,6 +623,7 @@ type
         Request : TIORequest;
         C : TMSDevice;
         Stage, Fault, Controls, DataBytes : uint32;
+        SenseKey : uint8;
         GoodWrite, GoodRecovery : boolean;
     end;
 
@@ -629,7 +656,8 @@ begin
                 case m^.C.CBW.Command[0] of
                     $12: puint8(t^.Buffer)[0] := 0;
                     $25: begin put32(puint8(t^.Buffer), 8191); put32(puint8(uint32(t^.Buffer)+4), 512); end;
-                    $03: begin memset(uint32(t^.Buffer),0,t^.BufferLen); puint8(t^.Buffer)[0]:=$70; puint8(t^.Buffer)[2]:=7; end;
+                    $03: begin memset(uint32(t^.Buffer),0,t^.BufferLen); puint8(t^.Buffer)[0]:=$70;
+                        if m^.SenseKey = 0 then puint8(t^.Buffer)[2]:=7 else puint8(t^.Buffer)[2]:=m^.SenseKey; end;
                 end;
             end else begin
                 m^.GoodWrite := true;
@@ -726,6 +754,16 @@ begin
             Assert(transport(@m^.C,actual) = 2, 'short CSW rejected');
             m^.Fault := 0; command(@m^.C, $35, 10, 0, false);
             Assert(execute(@m^.C,0) = eNone, 'cache synchronization without data stage');
+            m^.Fault := 3; m^.SenseKey := 3;
+            Assert(sync_cache(@m^.C) = eBadSector, 'flush media errors propagate');
+            Assert(not m^.C.SyncUnsupported, 'media error does not disable flush');
+            m^.Fault := 3; m^.SenseKey := 5;
+            Assert(sync_cache(@m^.C) = eNone, 'unsupported flush accepts completed write');
+            sectors := m^.C.Tag;
+            Assert((sync_cache(@m^.C) = eNone) and (m^.C.Tag = sectors), 'unsupported flush is not repeatedly submitted');
+            m^.Fault := 3; command(@m^.C, $2A, 10, 512, false);
+            Assert(execute(@m^.C,512) = eNotSupported, 'unsupported data write remains a failure');
+            m^.Fault := 0; m^.SenseKey := 0;
             m^.Disk.sectorSize := 512; m^.Disk.maxSectorCount := 8192;
             m^.Request.Buffer := m^.C.Buffer; m^.Request.LBA := 8191; m^.Request.SectorCount := 1;
             Assert(valid_request(@m^.Disk,@m^.Request), 'last sector valid');

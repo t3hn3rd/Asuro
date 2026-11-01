@@ -1501,6 +1501,10 @@ begin
     asm popf end;
     while puint32(@wait.Done)^ = 0 do asm hlt end;
     if wait.Error = eNone then TransferFileSync := wait.BytesDone;
+    if Writing and (wait.Error <> eNone) then begin
+        io.syslog.log('VFS', 'Write failed: error='); io.syslog.writeint(ord(wait.Error));
+        io.syslog.writestring(' bytes='); io.syslog.writeintln(wait.BytesDone);
+    end;
 end;
 
 function WriteFile(FileHandle : TFileHandle; Position : uint32; Buffer : puint8; Length : uint32) : uint32;
@@ -3288,6 +3292,22 @@ begin
     debug.tracer.push_trace('driver.storage.vfs.VFS_COMMAND_UMOUNT.exit');
 end;
 
+{ Installed at the boot mount phase, after the VFS is ready. Registration
+  happens in the discovery task (usb.attach for USB), not an IRQ or UI callback.
+  Mounting only creates VFS objects; filesystem probing has already completed. }
+var autoMountWatch : uint32 = 0;
+
+procedure mount_added_volume(event : TStorageLifecycleEvent; device : PStorage_Device;
+                             volume : PStorage_Volume; error : TError; userdata : pointer);
+begin
+    if (event <> sleVolumeAdded) or (error <> eNone) then exit;
+    if (device = nil) or (volume = nil) then exit;
+    if device^.removed or (volume^.filesystem = nil) then exit;
+    if driver.storage.vol.mgr.volume_is_busy(volume) then exit;
+    if mountDefaultVolume(volume) <> eNone then
+        io.syslog.logln('VFS','Could not automatically mount newly discovered volume.');
+end;
+
 { Auto-mount all discovered volumes into /disk/ and honour persistent mounts }
 
 procedure auto_mount_volumes();
@@ -3311,6 +3331,11 @@ var
     tgtPath   : pchar;
 begin
     debug.tracer.push_trace('driver.storage.vfs.auto_mount_volumes.enter');
+
+    { Subscribe even when no disks were present at boot. Avoid duplicate watches
+      if the boot mount pass is invoked again. }
+    if autoMountWatch = 0 then
+        autoMountWatch := driver.storage.vol.mgr.watch_lifecycle(@mount_added_volume, nil);
 
     volCount := driver.storage.vol.mgr.get_volume_count();
     if volCount = 0 then begin
@@ -3658,7 +3683,25 @@ begin
     obj := GetObjectFromPath('/disk/__RENAMED_TEST__');
     Assert((obj <> nil) and (obj^.Reference = void(mountVolA)),'renamed mount points to same volume');
     InvalidateVolume(mountVolA); InvalidateVolume(mountVolB);
-    kfree(void(mountVolA)); kfree(void(mountVolB)); kfree(void(mountFS));
+    { Exercise real registration notifications after the boot mount pass. }
+    mountDevice := PStorage_Device(kalloc(sizeof(TStorage_Device)));
+    memset(uint32(mountDevice),0,sizeof(TStorage_Device));
+    mountDevice^.writable := true;
+    mountVolA^.device := mountDevice; mountVolB^.device := mountDevice;
+    memcpy(uint32(pchar('__HOTPLUG_TEST__')),uint32(@mountVolA^.labelText[0]),17);
+    mountVolB^.labelText := mountVolA^.labelText;
+    mountVolA^.filesystem := nil;
+    driver.storage.vol.mgr.register_volume(mountDevice,mountVolA);
+    Assert(GetObjectFromPath('/disk/__HOTPLUG_TEST__') = nil,'unrecognized hotplug volume is not mounted');
+    mountVolB^.filesystem := mountFS;
+    driver.storage.vol.mgr.register_volume(mountDevice,mountVolB);
+    obj := GetObjectFromPath('/disk/__HOTPLUG_TEST__');
+    Assert((obj <> nil) and (obj^.Reference = void(mountVolB)),'registration automatically mounts recognized volume');
+    Assert((mountVolB^.lifecycleFlags and STORAGE_VOLUME_FLAG_MOUNTED) <> 0,'hotplug mount publishes mounted state');
+    driver.storage.vol.mgr.delete_volume(mountVolA);
+    driver.storage.vol.mgr.delete_volume(mountVolB);
+    Assert(GetObjectFromPath('/disk/__HOTPLUG_TEST__') = nil,'hotplug removal clears mount');
+    kfree(void(mountDevice)); kfree(void(mountFS));
 
     watchFired := 0;
     io.syslog.logln('VFS', 'Unit tests starting...');
