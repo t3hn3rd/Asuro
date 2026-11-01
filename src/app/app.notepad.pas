@@ -355,8 +355,10 @@ begin
         proc.mgr.kill(state^.pid);
         state^.pid := 0;
     end;
-    freeState(state);
+    if state^.ta <> nil then lv_group_remove_obj(state^.ta);
+    state^.ta := nil;
     driver.video.windows.destroyWindow(wid);
+    freeState(state);
 end;
 
 { ============================================================
@@ -440,7 +442,7 @@ begin
     written := driver.storage.vfs.WriteFile(fHandle, 0, puint8(buf), len);
     driver.storage.vfs.CloseFile(fHandle);
     kfree(void(buf));
-    if written = 0 then begin
+    if written <> len then begin
         io.syslog.logln('NOTEPAD', 'saveFile: WriteFile returned 0');
         showErrorMsgbox('Save Failed', 'File write failed. Check filesystem.');
         updateStatusBar(state);

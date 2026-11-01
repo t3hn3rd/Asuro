@@ -15,6 +15,7 @@ type
     TMock = record
         Data : puint8;
         Writes, FailWrite, Callbacks, Depth, MaxDepth : uint32;
+        MaxReadSectors, FailReadLBA : uint32;
         Error : TError;
         OutOfBounds, FailRead : boolean;
     end;
@@ -27,7 +28,10 @@ begin
        (request^.SectorCount > device^.maxSectorCount-request^.LBA) then begin
         m^.OutOfBounds := true; complete_io(request, false, eInvalidArgument); exit;
     end;
-    if (request^.RequestType <> ioWrite) and m^.FailRead then begin
+    if request^.RequestType <> ioWrite then
+        if request^.SectorCount > m^.MaxReadSectors then m^.MaxReadSectors := request^.SectorCount;
+    if (request^.RequestType <> ioWrite) and (m^.FailRead or
+       ((m^.FailReadLBA <> 0) and (request^.LBA = m^.FailReadLBA))) then begin
         Inc(m^.Depth); if m^.Depth > m^.MaxDepth then m^.MaxDepth := m^.Depth;
         complete_io(request,false,eIOError); Dec(m^.Depth); exit;
     end;
@@ -197,6 +201,53 @@ begin
     mock^.FailWrite := 0;
     Assert(remove_partition(device,0) = eNone,'delete commits');
     Assert(get_volume_count() = oldCount,'delete detaches volume after write');
+    { More than eight FAT sectors, with a partial final batch and FAT padding. }
+    kfree(void(mock^.Data));
+    mock^.Data := puint8(kalloc(4096*512));
+    if mock^.Data <> nil then begin
+        memset(uint32(mock^.Data),0,1500*512);
+        device^.maxSectorCount := 1500;
+        volume^.sectorStart := 0; volume^.sectorCount := 1500;
+        Assert(create_volume(volume,1500,0,@params) = eNone,'format multi-batch FAT fixture');
+        mock^.MaxReadSectors := 0;
+        Assert(identify_volume(volume),'identify multi-batch FAT');
+        Assert(volume^.freeSectors = 1454,'batched count excludes padding and allocated clusters');
+        Assert(mock^.MaxReadSectors = 8,'FAT scan batches eight sectors');
+        mock^.FailReadLBA := 40;
+        Assert(not identify_volume(volume),'failure in final FAT batch rejects probe');
+        mock^.FailReadLBA := 0;
+        Assert(not mock^.OutOfBounds,'batched scan stays within device');
+        device^.maxSectorCount := 4096; volume^.sectorCount := 4096;
+        Assert(create_volume(volume,4096,0,@params) = eNone,'format large FAT fixture');
+        mock^.FailReadLBA := 32; mock^.MaxReadSectors := 0;
+        Assert(identify_volume(volume),'large FAT mounts without reading allocation table');
+        Assert((volume^.lifecycleFlags and STORAGE_VOLUME_FLAG_FREE_UNKNOWN) <> 0,'missing FSInfo reports unknown free space');
+        Assert(mock^.MaxReadSectors = 1,'large volume discovery uses only metadata sector reads');
+        PBootRecord(mock^.Data)^.FSInfoCluster := 1;
+        puint32(uint32(mock^.Data)+512)^ := $41615252;
+        puint32(uint32(mock^.Data)+512+484)^ := $61417272;
+        puint32(uint32(mock^.Data)+512+488)^ := 100;
+        puint32(uint32(mock^.Data)+512+508)^ := $AA550000;
+        Assert(identify_volume(volume),'valid FSInfo avoids FAT scan');
+        Assert((volume^.freeSectors = 100) and
+               ((volume^.lifecycleFlags and STORAGE_VOLUME_FLAG_FREE_UNKNOWN) = 0),'FSInfo count displayed');
+        puint32(uint32(mock^.Data)+512+488)^ := $FFFFFFFF;
+        Assert(identify_volume(volume),'unknown FSInfo count does not prevent mount');
+        Assert((volume^.lifecycleFlags and STORAGE_VOLUME_FLAG_FREE_UNKNOWN) <> 0,'unknown FSInfo count stays unknown');
+        puint32(uint32(mock^.Data)+512+488)^ := 4096;
+        Assert(identify_volume(volume),'out-of-range FSInfo count does not prevent mount');
+        Assert((volume^.lifecycleFlags and STORAGE_VOLUME_FLAG_FREE_UNKNOWN) <> 0,'out-of-range FSInfo count rejected');
+        puint32(uint32(mock^.Data)+512+488)^ := 0;
+        Assert(identify_volume(volume),'full volume FSInfo accepted');
+        Assert((volume^.freeSectors = 0) and
+               ((volume^.lifecycleFlags and STORAGE_VOLUME_FLAG_FREE_UNKNOWN) = 0),'known zero differs from unknown');
+        puint32(uint32(mock^.Data)+512+508)^ := 0;
+        Assert(identify_volume(volume),'invalid FSInfo signature does not prevent mount');
+        Assert((volume^.lifecycleFlags and STORAGE_VOLUME_FLAG_FREE_UNKNOWN) <> 0,'invalid FSInfo signature rejected');
+        mock^.FailReadLBA := 1;
+        Assert(identify_volume(volume),'optional FSInfo read failure does not prevent mount');
+        mock^.FailReadLBA := 0;
+    end else Assert(false,'allocate multi-batch FAT fixture');
     kfree(device^.cachedMBR); CFIFO_Free(device^.requestQueue);
     kfree(void(mock^.Data)); kfree(void(mock)); kfree(void(volume)); kfree(void(device)); kfree(void(br));
     io.syslog.log('STORMETA','Passed: '); io.syslog.writeint(passed);

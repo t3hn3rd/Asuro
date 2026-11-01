@@ -179,7 +179,9 @@ begin
 
     print('Size:           '); printsize(vol^.sectorCount * vol^.sectorSize); println('');
 
-    print('Free:           '); printsize(vol^.freeSectors * vol^.sectorSize); println('');
+    print('Free:           ');
+    if (vol^.lifecycleFlags and STORAGE_VOLUME_FLAG_FREE_UNKNOWN) <> 0 then println('Unknown')
+    else begin printsize(vol^.freeSectors * vol^.sectorSize); println(''); end;
     print('Boot Drive:     ');
     if vol^.isBootDrive then println('yes') else println('no');
 

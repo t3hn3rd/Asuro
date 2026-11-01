@@ -62,24 +62,47 @@ begin
 end;
 
 function countFreeFATClusters(volume : PStorage_Volume; br : PBootRecord) : uint32;
-var limit, sectorIdx, entryIdx, clusterNum, count : uint32; buffer : puint32;
+var limit, sectorIdx, entryIdx, clusterNum, count, sectors, batch : uint32; buffer : puint32;
 begin
     countFreeFATClusters := $FFFFFFFF;
     limit := FAT32ClusterLimit(br);
     if limit <= 2 then exit;
-    buffer := puint32(kalloc(512));
+    volume^.lifecycleFlags := volume^.lifecycleFlags and (not STORAGE_VOLUME_FLAG_FREE_UNKNOWN);
+    { Match the USB storage transfer buffer: eight sectors per command instead
+      of a CBW/data/CSW round trip for every 512 bytes of a large FAT. }
+    buffer := puint32(kalloc(4096));
     if buffer = nil then exit;
+    { FSInfo is optional, and its count is advisory. Validate every signature,
+      the reserved-sector location, and the count before displaying it. }
+    if (br^.FSInfoCluster > 0) and (br^.FSInfoCluster < br^.rsvSectors) then begin
+        if storage_read(volume^.device, volume^.sectorStart + br^.FSInfoCluster, 1, buffer) = eNone then
+            if (buffer[0] = $41615252) and (buffer[121] = $61417272) and
+               (buffer[127] = $AA550000) and (buffer[122] <= limit - 2) then begin
+                countFreeFATClusters := buffer[122]; kfree(buffer); exit;
+            end;
+    end;
     count := 0; sectorIdx := 0;
-    while sectorIdx * 128 < limit do begin
-        if storage_read(volume^.device, volume^.sectorStart + br^.rsvSectors + sectorIdx, 1, buffer) <> eNone then begin
+    sectors := (limit + 127) div 128;
+    { Mounting must not wait for an O(disk-size) allocation scan. Small FATs
+      remain cheap to count; larger volumes without FSInfo mount with unknown
+      free space. Allocation always consults the actual FAT, never this hint. }
+    if sectors > 16 then begin
+        volume^.lifecycleFlags := volume^.lifecycleFlags or STORAGE_VOLUME_FLAG_FREE_UNKNOWN;
+        countFreeFATClusters := 0;
+        kfree(buffer); exit;
+    end;
+    while sectorIdx < sectors do begin
+        batch := sectors - sectorIdx;
+        if batch > 8 then batch := 8;
+        if storage_read(volume^.device, volume^.sectorStart + br^.rsvSectors + sectorIdx, batch, buffer) <> eNone then begin
             kfree(buffer); exit;
         end;
-        for entryIdx := 0 to 127 do begin
+        for entryIdx := 0 to batch * 128 - 1 do begin
             clusterNum := sectorIdx * 128 + entryIdx;
             if clusterNum >= limit then break;
             if (clusterNum >= 2) and ((buffer[entryIdx] and $0FFFFFFF) = 0) then Inc(count);
         end;
-        Inc(sectorIdx);
+        Inc(sectorIdx, batch);
     end;
     kfree(buffer);
     countFreeFATClusters := count;
