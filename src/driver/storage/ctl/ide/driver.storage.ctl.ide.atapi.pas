@@ -24,6 +24,8 @@
 
 unit driver.storage.ctl.ide.atapi;
 
+{$DEFINE NOT_DANGLING} { Nonfunctional legacy ATAPI driver. }
+
 interface
 
 uses

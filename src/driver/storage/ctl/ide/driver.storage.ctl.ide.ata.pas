@@ -19,6 +19,8 @@
 }
 unit driver.storage.ctl.ide.ata;
 
+{$DEFINE NOT_DANGLING} { Part of the unfinished legacy IDE stack. }
+
 interface
 
 uses

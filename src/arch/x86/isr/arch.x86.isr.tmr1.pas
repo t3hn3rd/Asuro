@@ -19,6 +19,8 @@
 }
 unit arch.x86.isr.tmr1;
 
+{$DEFINE NOT_DANGLING} { Unused legacy timer ISR; not part of the kernel boot sequence. }
+
 interface
 
 uses

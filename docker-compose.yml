@@ -1,5 +1,8 @@
 services:
   builder:
+    image: t3hn3rd/asuro-build:latest
     build: .
+    environment:
+      ASURO_ARCH: ${ASURO_ARCH:-x86}
     volumes:
       - .:/code
