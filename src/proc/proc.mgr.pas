@@ -1,4 +1,5 @@
 //  Copyright 2026 Kieron Morris
+//  Copyright 2026 Aaron Hance
 //
 //  Licensed under the Apache License, Version 2.0 (the "License");
 //  you may not use this file except in compliance with the License.
@@ -27,18 +28,10 @@ unit proc.mgr;
 interface
 
 uses
-    boot.mgr,
-    arch.x86.bda,
-    driver.storage.fdtable,
-    core.ds.lists,
-    memory.heap,
-    proc.types,
-    core.rand,
-    io.stdio,
-    core.strings,
-    io.syslog,
-    debug.tracer,
-    core.util, arch.x86.util;
+    core.ds.dynamic, memory.heap, memory.raw, proc.types, proc.scheduler,
+    io.types, driver.storage.fdtable, arch.common.interrupts, arch.common.legacyirq,
+    arch.platform.process, arch.platform.diagnostics, arch.platform.cpu,
+    io.stdio, core.strings;
 
 { Core API }
 function  create(name : pchar;
@@ -46,6 +39,8 @@ function  create(name : pchar;
                  localData : void;
                  priority : uint8) : PProcessContext;
 
+function createSuspended(name: pchar; entry: TProcessEntryPoint;
+    localData: void; priority: uint8): PProcessContext;
 function  findByID(pid : uint32) : PProcessContext;
 function  findByName(name : pchar) : PProcessContext;
 procedure sendMessage(pid : uint32; msg : TProcessSysMsg; data : void);
@@ -102,6 +97,67 @@ var
 
 implementation
 
+type PProcessSlot = ^PtrUInt;
+     PProcessState = ^TProcessState;
+
+procedure log(message: pchar);
+begin arch.platform.diagnostics.log('PROCMGR', message); end;
+procedure releaseFileTable(ctx: PProcessContext);
+begin
+    if ctx^.FDTable <> nil then fd_table_free(PFDTable(ctx^.FDTable));
+    ctx^.FDTable := nil;
+end;
+function rootDirectory: pchar;
+begin
+    rootDirectory := pchar(kalloc(2));
+    if rootDirectory <> nil then begin rootDirectory[0] := '/'; rootDirectory[1] := #0; end;
+end;
+function nameEquals(left, right: pchar): boolean;
+var i: uint32;
+begin
+    nameEquals := false;
+    if (left = nil) or (right = nil) then exit;
+    i := 0;
+    while i < 32 do begin
+        if left[i] <> right[i] then exit;
+        if left[i] = #0 then begin nameEquals := true; exit; end;
+        inc(i);
+    end;
+end;
+var nextProcessID: uint32;
+    reaperProcess: PProcessContext;
+    reapPending: boolean;
+procedure requestReap;
+begin
+    { Called with IRQs excluded. Coalesces completed tasks into one worker wake. }
+    reapPending := true;
+    if (reaperProcess <> nil) and (reaperProcess^.State = psAwaiting) then
+        reaperProcess^.State := psReady;
+end;
+procedure reaperEntry(ctx: PProcessContext);
+var flags: PtrUInt;
+begin
+    while true do begin
+        flags := arch.common.interrupts.lock;
+        reapPending := false;
+        arch.common.interrupts.unlock(flags);
+        reapFinished;
+        flags := arch.common.interrupts.lock;
+        if not reapPending then ctx^.State := psAwaiting;
+        arch.common.interrupts.unlock(flags);
+        proc_await;
+    end;
+end;
+function newProcessID: uint32;
+var flags: PtrUInt;
+begin
+    flags := arch.common.interrupts.lock;
+    { IDs are never recycled; reject exhaustion rather than aliasing live IDs. }
+    newProcessID := nextProcessID;
+    if nextProcessID <> 0 then inc(nextProcessID);
+    arch.common.interrupts.unlock(flags);
+end;
+
 { ---- Internal helpers ---- }
 
 procedure copyName(dest : pchar; src : pchar; maxLen : uint32);
@@ -127,27 +183,29 @@ function createInternal(name : pchar;
                 priority : uint8; runnable : boolean) : PProcessContext;
 var
     ctx      : PProcessContext;
-    slotPtr  : ^uint32;
+    slotPtr  : PProcessSlot;
     stack    : void;
-    sp       : uint32;
     prio     : uint8;
+    savedFlags: PtrUInt;
 begin
     push_trace('proc.mgr.create');
     createInternal := nil;
 
+    if (entry = nil) or (name = nil) or (Processes = nil) then begin pop_trace; exit; end;
     if priority = 0 then prio := 1 else prio := priority;
 
     { Allocate process context }
     ctx := PProcessContext(kalloc(SizeOf(TProcessContext)));
     if ctx = nil then begin
-        io.syslog.logln('PROCMGR', 'Failed to allocate process context.');
+        log('Failed to allocate process context.');
         pop_trace;
         exit;
     end;
-    memset(uint32(ctx), 0, SizeOf(TProcessContext));
+    memory.raw.fill(pointer(ctx), 0, SizeOf(TProcessContext));
 
     { Identity }
-    ctx^.ProcessID := rand32;
+    ctx^.ProcessID := newProcessID;
+    if ctx^.ProcessID = 0 then begin kfree(void(ctx)); pop_trace; exit; end;
     copyName(@ctx^.Name[0], name, 32);
     ctx^.ParentID := 0;
     if CurrentProcess <> nil then
@@ -175,7 +233,7 @@ begin
     { Resources }
     ctx^.Resources := void(DL_New(SizeOf(TResourceBinding)));
     if ctx^.Resources = nil then begin
-        io.syslog.logln('PROCMGR', 'Failed to allocate resource list.');
+        log('Failed to allocate resource list.');
         kfree(void(ctx));
         pop_trace;
         exit;
@@ -184,7 +242,7 @@ begin
     { Per-process file descriptor table }
     ctx^.FDTable := void(fd_table_new);
     if ctx^.FDTable = nil then begin
-        io.syslog.logln('PROCMGR', 'Failed to allocate FD table.');
+        log('Failed to allocate FD table.');
         DL_Free(PDList(ctx^.Resources));
         kfree(void(ctx));
         pop_trace;
@@ -192,10 +250,10 @@ begin
     end;
 
     { Per-process working directory }
-    ctx^.Cwd := stringCopy('/');
+    ctx^.Cwd := rootDirectory;
     if ctx^.Cwd = nil then begin
-        io.syslog.logln('PROCMGR', 'Failed to allocate working directory.');
-        fd_table_free(PFDTable(ctx^.FDTable));
+        log('Failed to allocate working directory.');
+        releaseFileTable(ctx);
         DL_Free(PDList(ctx^.Resources));
         kfree(void(ctx));
         pop_trace;
@@ -205,89 +263,46 @@ begin
     { Allocate per-process core.version stack }
     stack := kalloc(PROCESS_STACK_SIZE);
     if stack = nil then begin
-        io.syslog.logln('PROCMGR', 'Failed to allocate process stack.');
+        log('Failed to allocate process stack.');
         kfree(void(ctx^.Cwd));
-        fd_table_free(PFDTable(ctx^.FDTable));
+        releaseFileTable(ctx);
         DL_Free(PDList(ctx^.Resources));
         kfree(void(ctx));
         pop_trace;
         exit;
     end;
     ctx^.StackBase := stack;
-    ctx^.StackTop := uint32(stack) + PROCESS_STACK_SIZE;
+    ctx^.StackTop := PtrUInt(stack) + PROCESS_STACK_SIZE;
 
-    { Build fake interrupt frame on the stack so the first context switch
-      IRET's into process_trampoline.
-
-      Stack layout (growing downward):
-        [StackTop - 4]   EFLAGS  ($0202 = IF set)
-        [StackTop - 8]   CS      ($08 = core.version code)
-        [StackTop - 12]  EIP     (-> process_trampoline)
-        [StackTop - 16]  EAX     (0)
-        [StackTop - 20]  ECX     (0)
-        [StackTop - 24]  EDX     (0)
-        [StackTop - 28]  EBX     (0)
-        [StackTop - 32]  ESP     (ignored by POPAD)
-        [StackTop - 36]  EBP     (0)
-        [StackTop - 40]  ESI     (0)
-        [StackTop - 44]  EDI     (0)
-        [StackTop - 48]  DS      ($10 = core.version data, padded to 32-bit)
-        [StackTop - 52]  ES      ($10)
-        [StackTop - 56]  FS      ($10)
-        [StackTop - 60]  GS      ($10)
-      SavedESP = StackTop - 60
-    }
-    sp := ctx^.StackTop;
-
-    { IRET frame }
-    sp := sp - 4; PuInt32(sp)^ := $0202;                       { EFLAGS: IF=1 }
-    sp := sp - 4; PuInt32(sp)^ := $08;                         { CS }
-    sp := sp - 4; PuInt32(sp)^ := uint32(@process_trampoline); { EIP }
-
-    { POPAD frame (8 registers) }
-    sp := sp - 4; PuInt32(sp)^ := 0;  { EAX }
-    sp := sp - 4; PuInt32(sp)^ := 0;  { ECX }
-    sp := sp - 4; PuInt32(sp)^ := 0;  { EDX }
-    sp := sp - 4; PuInt32(sp)^ := 0;  { EBX }
-    sp := sp - 4; PuInt32(sp)^ := 0;  { ESP (ignored by POPAD) }
-    sp := sp - 4; PuInt32(sp)^ := 0;  { EBP }
-    sp := sp - 4; PuInt32(sp)^ := 0;  { ESI }
-    sp := sp - 4; PuInt32(sp)^ := 0;  { EDI }
-
-    { Segment registers (pushed as 32-bit values) }
-    sp := sp - 4; PuInt32(sp)^ := $10; { DS }
-    sp := sp - 4; PuInt32(sp)^ := $10; { ES }
-    sp := sp - 4; PuInt32(sp)^ := $10; { FS }
-    sp := sp - 4; PuInt32(sp)^ := $10; { GS }
-
-    ctx^.SavedESP := sp;
+    ctx^.SavedStack := arch.platform.process.prepare(pointer(stack), PROCESS_STACK_SIZE,
+        @process_trampoline);
 
     { Add to process table }
-    asm pushf; cli end;
-    slotPtr := DL_Add(Processes);
+    savedFlags := arch.common.interrupts.lock;
+    slotPtr := PProcessSlot(DL_Add(Processes));
     if slotPtr = nil then begin
-        asm popf end;
-        io.syslog.logln('PROCMGR', 'Failed to allocate process table slot.');
+        arch.common.interrupts.unlock(savedFlags);
+        log('Failed to allocate process table slot.');
         if ctx^.StackBase <> nil then
             kfree(ctx^.StackBase);
         if ctx^.Cwd <> nil then
             kfree(void(ctx^.Cwd));
-        if ctx^.FDTable <> nil then
-            fd_table_free(PFDTable(ctx^.FDTable));
+        if ctx^.FDTable <> nil then begin
+            releaseFileTable(ctx);
+        end;
         if ctx^.Resources <> nil then
             DL_Free(PDList(ctx^.Resources));
         kfree(void(ctx));
         pop_trace;
         exit;
     end;
-    slotPtr^ := uint32(ctx);
+    slotPtr^ := PtrUInt(ctx);
 
     { Mark as ready for scheduling }
     if runnable then ctx^.State := psReady;
-    asm popf end;
+    arch.common.interrupts.unlock(savedFlags);
 
-    io.syslog.log('PROCMGR', 'Created process: ');
-    io.syslog.writestringln(name);
+    log(name);
 
     pop_trace;
     createInternal := ctx;
@@ -299,6 +314,12 @@ function create(name : pchar; entry : TProcessEntryPoint;
                 localData : void; priority : uint8) : PProcessContext;
 begin
     create := createInternal(name, entry, localData, priority, true);
+end;
+
+function createSuspended(name: pchar; entry: TProcessEntryPoint;
+    localData: void; priority: uint8): PProcessContext;
+begin
+    createSuspended := createInternal(name, entry, localData, priority, false);
 end;
 
 { ---- Process trampoline ---- }
@@ -315,9 +336,7 @@ begin
     end;
     { Wait for the scheduler to reap us }
     while true do begin
-        asm
-            hlt
-        end;
+        arch.platform.cpu.idle;
     end;
 end;
 
@@ -326,13 +345,13 @@ end;
 function findByID(pid : uint32) : PProcessContext;
 var
     i      : uint32;
-    slotPtr : ^uint32;
+    slotPtr : PProcessSlot;
     ctx    : PProcessContext;
 begin
     findByID := nil;
-    if Processes = nil then exit;
+    if DL_Size(Processes) = 0 then exit;
     for i := 0 to DL_Size(Processes) - 1 do begin
-        slotPtr := DL_Get(Processes, i);
+        slotPtr := PProcessSlot(DL_Get(Processes, i));
         if slotPtr <> nil then begin
             ctx := PProcessContext(slotPtr^);
             if ctx^.ProcessID = pid then begin
@@ -346,16 +365,16 @@ end;
 function findByName(name : pchar) : PProcessContext;
 var
     i      : uint32;
-    slotPtr : ^uint32;
+    slotPtr : PProcessSlot;
     ctx    : PProcessContext;
 begin
     findByName := nil;
-    if Processes = nil then exit;
+    if DL_Size(Processes) = 0 then exit;
     for i := 0 to DL_Size(Processes) - 1 do begin
-        slotPtr := DL_Get(Processes, i);
+        slotPtr := PProcessSlot(DL_Get(Processes, i));
         if slotPtr <> nil then begin
             ctx := PProcessContext(slotPtr^);
-            if stringEquals(@ctx^.Name[0], name) then begin
+            if nameEquals(@ctx^.Name[0], name) then begin
                 findByName := ctx;
                 exit;
             end;
@@ -365,74 +384,69 @@ end;
 
 { ---- Messaging ---- }
 
-procedure sendMessage(pid : uint32; msg : TProcessSysMsg; data : void);
-var
-    ctx : PProcessContext;
+procedure sendMessage(pid: uint32; msg: TProcessSysMsg; data: void);
+var ctx: PProcessContext; savedFlags: PtrUInt;
 begin
+    savedFlags := arch.common.interrupts.lock;
     ctx := findByID(pid);
     if ctx <> nil then begin
-        ctx^.PendingMsg := msg;
         ctx^.MsgData := data;
-        { If the process is awaiting, wake it up on any message }
-        if ctx^.State = psAwaiting then
-            ctx^.State := psReady;
-        { If suspended and receiving smResume, wake it }
-        if (ctx^.State = psSuspended) and (msg = smResume) then
-            ctx^.State := psReady;
+        ctx^.PendingMsg := msg;
+        if (ctx^.State = psAwaiting) or
+           ((ctx^.State = psSuspended) and (msg = smResume)) then ctx^.State := psReady;
     end;
+    arch.common.interrupts.unlock(savedFlags);
 end;
 
 procedure terminate(pid : uint32);
 begin
     if pid = 0 then exit;  { Cannot terminate idle }
+    if (reaperProcess <> nil) and (pid = reaperProcess^.ProcessID) then exit;
     sendMessage(pid, smTerminate, nil);
 end;
 
-procedure kill(pid : uint32);
-var
-    ctx : PProcessContext;
+procedure kill(pid: uint32);
+var ctx: PProcessContext; savedFlags: PtrUInt;
 begin
-    if pid = 0 then exit;  { Cannot kill idle }
+    if pid = 0 then exit;
+    savedFlags := arch.common.interrupts.lock;
     ctx := findByID(pid);
-    if ctx <> nil then begin
-        asm pushf; cli end;
-        ctx^.State := psFinished;
-        ctx^.ExitCode := $FFFFFFFF;
-        asm popf end;
+    if (ctx <> nil) and (ctx <> reaperProcess) then begin
+        ctx^.State := psFinished; ctx^.ExitCode := High(uint32); requestReap;
     end;
+    arch.common.interrupts.unlock(savedFlags);
 end;
 
 { ---- Process self-management ---- }
 
 procedure proc_yield;
+var savedFlags: PtrUInt;
 begin
     if CurrentProcess <> nil then begin
-        asm pushf; cli end;
+        savedFlags := arch.common.interrupts.lock;
         CurrentProcess^.TicksUsed := CurrentProcess^.Quantum;
-        asm popf end;
+        arch.common.interrupts.unlock(savedFlags);
         { Next timer tick will preempt us }
-        asm
-            hlt
-        end;
+        arch.platform.cpu.idle;
     end;
 end;
 
-procedure proc_sleep_ms(ms : uint32);
-var
-    ticks : uint32;
-    start, now, elapsed : uint32;
+procedure proc_sleep_ms(ms: uint32);
+var remaining: uint64;
+    previous, now, delta: uint32;
 begin
-    ticks := (ms * 1024) div 1000;
-    if ticks = 0 then ticks := 1;
-    start := Counters.c32;
+    remaining := (uint64(ms) * PIT_INPUT_HZ + uint64(PIT_DIVISOR) * 1000 - 1) div (PIT_DIVISOR * 1000);
+    if remaining = 0 then remaining := 1;
+    previous := arch.platform.process.timerTicks;
     repeat
         proc_yield;
-        now := Counters.c32;
-        if now >= start then
-            elapsed := now - start
-        else
-            elapsed := ($FFFFFFFF - start) + now + 1;
-    until elapsed >= ticks;
+        now := arch.platform.process.timerTicks;
+        if now >= previous then delta := now - previous
+        else delta := (High(uint32) - previous) + now + 1;
+        previous := now;
+        if remaining <= delta then exit;
+        remaining := remaining - delta;
+    until false;
 end;
 
 procedure proc_await;
@@ -441,20 +455,19 @@ begin
       This procedure just spin-waits until an ISR sets the state back
       to something other than psAwaiting. }
     if CurrentProcess <> nil then begin
-        while CurrentProcess^.State = psAwaiting do
-            asm hlt end;
+        while PProcessState(@CurrentProcess^.State)^ = psAwaiting do
+            arch.platform.cpu.idle;
     end;
 end;
 
 procedure proc_suspend;
+var savedFlags: PtrUInt;
 begin
     if CurrentProcess <> nil then begin
-        asm pushf; cli end;
+        savedFlags := arch.common.interrupts.lock;
         CurrentProcess^.State := psSuspended;
-        asm popf end;
-        asm
-            hlt
-        end;
+        arch.common.interrupts.unlock(savedFlags);
+        arch.platform.cpu.idle;
     end;
 end;
 
@@ -464,65 +477,58 @@ begin
         CurrentProcess^.ExitCode := exitCode;
         CurrentProcess^.State := psFinished;
         while true do begin
-            asm
-                hlt
-            end;
+            arch.platform.cpu.idle;
         end;
     end;
 end;
 
 { ---- Resource binding ---- }
 
-procedure bindResource(ctx : PProcessContext; kind : TResourceKind; handle : void; cleanup : TResourceCleanup);
-var
-    resList : PDList;
-    binding : PResourceBinding;
+procedure bindResource(ctx: PProcessContext; kind: TResourceKind; handle: void; cleanup: TResourceCleanup);
+var binding: PResourceBinding; savedFlags: PtrUInt;
 begin
     if ctx = nil then exit;
-    resList := PDList(ctx^.Resources);
-    if resList = nil then exit;
-    binding := PResourceBinding(DL_Add(resList));
-    binding^.Kind := kind;
-    binding^.Handle := handle;
-    binding^.Cleanup := cleanup;
-end;
-
-procedure unbindResource(ctx : PProcessContext; handle : void);
-var
-    resList : PDList;
-    binding : PResourceBinding;
-    i       : uint32;
-begin
-    if ctx = nil then exit;
-    resList := PDList(ctx^.Resources);
-    if resList = nil then exit;
-    for i := 0 to DL_Size(resList) - 1 do begin
-        binding := PResourceBinding(DL_Get(resList, i));
-        if binding^.Handle = handle then begin
-            if binding^.Cleanup <> nil then
-                binding^.Cleanup(binding^.Handle);
-            DL_Delete(resList, i);
-            exit;
+    savedFlags := arch.common.interrupts.lock;
+    if ctx^.Resources <> nil then begin
+        binding := PResourceBinding(DL_Add(PDList(ctx^.Resources)));
+        if binding <> nil then begin
+            binding^.Kind := kind; binding^.Handle := handle; binding^.Cleanup := cleanup;
         end;
     end;
+    arch.common.interrupts.unlock(savedFlags);
 end;
 
-procedure unbindResourceNoCleanup(ctx : PProcessContext; handle : void);
-var
-    resList : PDList;
-    binding : PResourceBinding;
-    i       : uint32;
+procedure unbindResource(ctx: PProcessContext; handle: void);
+var resList: PDList; binding: PResourceBinding; i: uint32;
+    cleanup: TResourceCleanup; savedFlags: PtrUInt;
 begin
     if ctx = nil then exit;
+    savedFlags := arch.common.interrupts.lock;
     resList := PDList(ctx^.Resources);
-    if resList = nil then exit;
-    for i := 0 to DL_Size(resList) - 1 do begin
+    cleanup := nil;
+    if DL_Size(resList) > 0 then for i := 0 to DL_Size(resList) - 1 do begin
         binding := PResourceBinding(DL_Get(resList, i));
         if binding^.Handle = handle then begin
+            cleanup := binding^.Cleanup;
             DL_Delete(resList, i);
-            exit;
+            break;
         end;
     end;
+    arch.common.interrupts.unlock(savedFlags);
+    if assigned(cleanup) then cleanup(handle);
+end;
+
+procedure unbindResourceNoCleanup(ctx: PProcessContext; handle: void);
+var resList: PDList; binding: PResourceBinding; i: uint32; savedFlags: PtrUInt;
+begin
+    if ctx = nil then exit;
+    savedFlags := arch.common.interrupts.lock;
+    resList := PDList(ctx^.Resources);
+    if DL_Size(resList) > 0 then for i := 0 to DL_Size(resList) - 1 do begin
+        binding := PResourceBinding(DL_Get(resList, i));
+        if binding^.Handle = handle then begin DL_Delete(resList, i); break; end;
+    end;
+    arch.common.interrupts.unlock(savedFlags);
 end;
 
 procedure unbindAllResources(ctx : PProcessContext);
@@ -530,12 +536,15 @@ var
     resList : PDList;
     binding : PResourceBinding;
     i       : sint32;
+    savedFlags: PtrUInt;
 begin
     if ctx = nil then exit;
+    savedFlags := arch.common.interrupts.lock;
     resList := PDList(ctx^.Resources);
-    if resList = nil then exit;
+    if resList = nil then begin arch.common.interrupts.unlock(savedFlags); exit; end;
     { Detach early so cleanup callbacks that re-enter find nothing }
     ctx^.Resources := nil;
+    arch.common.interrupts.unlock(savedFlags);
     for i := sint32(DL_Size(resList)) - 1 downto 0 do begin
         binding := PResourceBinding(DL_Get(resList, uint32(i)));
         if binding <> nil then begin
@@ -564,6 +573,7 @@ function runCommand(name : pchar; method : TCommandMethod; params : PParamList;
                     stdin_buf, stdout_buf, stderr_buf : POutBuf) : PProcessContext;
 var
     ctx : PProcessContext;
+    savedFlags: PtrUInt;
 begin
     ctx := createInternal(name, @legacy_entry, void(method), 1, false);
     if ctx <> nil then begin
@@ -573,9 +583,9 @@ begin
         ctx^.StdErr := stderr_buf;
         { Publish only after all fields read by legacy_entry are initialized.
           psCreated is also runnable, so creation must use psSuspended. }
-        asm pushf; cli end;
+        savedFlags := arch.common.interrupts.lock;
         ctx^.State := psReady;
-        asm popf end;
+        arch.common.interrupts.unlock(savedFlags);
     end;
     runCommand := ctx;
 end;
@@ -592,12 +602,12 @@ end;
 
 function getProcessByIndex(idx : uint32) : PProcessContext;
 var
-    slotPtr : ^uint32;
+    slotPtr : PProcessSlot;
 begin
     getProcessByIndex := nil;
     if Processes = nil then exit;
     if idx >= DL_Size(Processes) then exit;
-    slotPtr := DL_Get(Processes, idx);
+    slotPtr := PProcessSlot(DL_Get(Processes, idx));
     if slotPtr <> nil then
         getProcessByIndex := PProcessContext(slotPtr^);
 end;
@@ -606,101 +616,44 @@ end;
 
 procedure reapFinished;
 var
-    i       : sint32;
-    slotPtr : ^uint32;
-    ctx     : PProcessContext;
-    parent  : PProcessContext;
+    i: sint32;
+    ctx: PProcessContext;
+    savedFlags: PtrUInt;
 begin
-    if Processes = nil then exit;
-    { Iterate in reverse so index shifting from DL_Delete is safe }
-    for i := sint32(DL_Size(Processes)) - 1 downto 0 do begin
-        slotPtr := DL_Get(Processes, uint32(i));
-        if slotPtr = nil then continue;
-        ctx := PProcessContext(slotPtr^);
-        if (ctx^.State = psFinished) or (ctx^.State = psError) then begin
-            { Don't reap the currently running process }
-            if ctx = CurrentProcess then continue;
-            { Never reap the idle process }
-            if ctx^.ProcessID = 0 then continue;
-            { Notify parent (if it exists) that a child has exited }
-            if ctx^.ParentID <> 0 then begin
-                parent := findByID(ctx^.ParentID);
-                if parent <> nil then
-                    sendMessage(parent^.ProcessID, smChildExited, void(ctx^.ProcessID));
+    { The reaper calls this in process context, never from the timer ISR.
+      Detach under IRQ exclusion before callbacks can re-enter the registry. }
+    i := sint32(DL_Size(Processes)) - 1;
+    while i >= 0 do begin
+        savedFlags := arch.common.interrupts.lock;
+        ctx := getProcessByIndex(uint32(i));
+        if (ctx <> nil) and (ctx <> CurrentProcess) and (ctx^.ProcessID <> 0) and
+           ((ctx^.State = psFinished) or (ctx^.State = psError)) then
+            if not fd_table_begin_close(PFDTable(ctx^.FDTable)) then begin
+                ctx := nil; { final FD completion wakes the reaper }
             end;
-            { Clean up file descriptors }
-            if ctx^.FDTable <> nil then begin
-                fd_table_free(PFDTable(ctx^.FDTable));
-                ctx^.FDTable := nil;
-            end;
-            { Free per-process CWD }
-            if ctx^.Cwd <> nil then begin
-                kfree(void(ctx^.Cwd));
-                ctx^.Cwd := nil;
-            end;
-            { Clean up resources }
-            unbindAllResources(ctx);
-            { Free stack }
-            if ctx^.StackBase <> nil then
-                kfree(ctx^.StackBase);
-            { Remove from table }
+        if (ctx <> nil) and (ctx <> CurrentProcess) and (ctx^.ProcessID <> 0) and
+           ((ctx^.State = psFinished) or (ctx^.State = psError)) then begin
             DL_Delete(Processes, uint32(i));
-            { Free context }
+            arch.common.interrupts.unlock(savedFlags);
+            releaseFileTable(ctx);
+            if ctx^.Cwd <> nil then kfree(void(ctx^.Cwd));
+            unbindAllResources(ctx);
+            if ctx^.StackBase <> nil then kfree(ctx^.StackBase);
+            if ctx^.ParentID <> 0 then
+                sendMessage(ctx^.ParentID, smChildExited, void(PtrUInt(ctx^.ProcessID)));
             kfree(void(ctx));
-        end;
+        end else arch.common.interrupts.unlock(savedFlags);
+        dec(i);
     end;
 end;
 
 { ---- Scheduler ---- }
 
 function scheduler_pick_next : PProcessContext;
-var
-    count   : uint32;
-    i       : uint32;
-    idx     : uint32;
-    slotPtr : ^uint32;
-    ctx     : PProcessContext;
 begin
-    { Reap dead processes first }
-    reapFinished;
-
-    count := DL_Size(Processes);
-
-    { Check if current process still has quantum left }
-    if CurrentProcess^.State = psRunning then begin
-        CurrentProcess^.TicksUsed := CurrentProcess^.TicksUsed + 1;
-        if CurrentProcess^.TicksUsed < CurrentProcess^.Quantum then begin
-            scheduler_pick_next := CurrentProcess;
-            exit;
-        end;
-        { Quantum expired, move to ready }
-        CurrentProcess^.State := psReady;
-        CurrentProcess^.TicksUsed := 0;
-    end;
-
-    { Round-robin: scan from SchedulerIndex, skipping idle }
-    if SchedulerIndex >= count then
-        SchedulerIndex := 0;
-
-    for i := 0 to count - 1 do begin
-        idx := (SchedulerIndex + i) mod count;
-        slotPtr := DL_Get(Processes, idx);
-        if slotPtr = nil then continue;
-        ctx := PProcessContext(slotPtr^);
-        if ctx^.ProcessID = 0 then continue;  { Skip idle in round-robin }
-        if (ctx^.State = psReady) or (ctx^.State = psCreated) then begin
-            ctx^.State := psRunning;
-            ctx^.TicksUsed := 0;
-            SchedulerIndex := (idx + 1) mod count;
-            scheduler_pick_next := ctx;
-            exit;
-        end;
-    end;
-
-    { No runnable process found — fall back to idle }
-    IdleProcess^.State := psRunning;
-    IdleProcess^.TicksUsed := 0;
-    scheduler_pick_next := IdleProcess;
+    if (CurrentProcess^.State = psFinished) or (CurrentProcess^.State = psError) then requestReap;
+    scheduler_pick_next := proc.scheduler.pickNext(CurrentProcess, IdleProcess,
+        DL_Size(Processes), SchedulerIndex, @getProcessByIndex);
 end;
 
 { ---- Terminal commands ---- }
@@ -720,7 +673,7 @@ end;
 procedure terminal_command_ps(params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
 var
     i       : uint32;
-    slotPtr : ^uint32;
+    slotPtr : PProcessSlot;
     ctx     : PProcessContext;
     stStr   : pchar;
 begin
@@ -729,9 +682,9 @@ begin
     bufWriteStrLn(stdout_buf, 'PID        NAME                      STATE       PRI');
     bufWriteStrLn(stdout_buf, '---------- ------------------------- ----------- ---');
 
-    if Processes <> nil then begin
+    if (Processes <> nil) and (DL_Size(Processes) > 0) then begin
         for i := 0 to DL_Size(Processes) - 1 do begin
-            slotPtr := DL_Get(Processes, i);
+            slotPtr := PProcessSlot(DL_Get(Processes, i));
             if slotPtr = nil then continue;
             ctx := PProcessContext(slotPtr^);
 
@@ -820,22 +773,25 @@ begin
     pop_trace;
 end;
 
+
 { ---- Init ---- }
 
 procedure init;
 var
-    slotPtr : ^uint32;
+    slotPtr : PProcessSlot;
 begin
     push_trace('proc.mgr.init');
-    io.syslog.logln('PROCMGR', 'INIT BEGIN.');
+    log('INIT BEGIN.');
 
+    nextProcessID := 1;
+    fd_set_idle_hook(@requestReap);
     { Create process table }
-    Processes := DL_New(SizeOf(uint32));
+    Processes := DL_New(SizeOf(PtrUInt));
     SchedulerIndex := 0;
 
     { Create idle process — PID 0, unkillable, uses core.version main stack }
     IdleProcess := PProcessContext(kalloc(SizeOf(TProcessContext)));
-    memset(uint32(IdleProcess), 0, SizeOf(TProcessContext));
+    memory.raw.fill(pointer(IdleProcess), 0, SizeOf(TProcessContext));
     IdleProcess^.ProcessID := 0;
     copyName(@IdleProcess^.Name[0], 'Idle', 32);
     IdleProcess^.State := psRunning;
@@ -844,19 +800,21 @@ begin
     IdleProcess^.PendingMsg := smNone;
     IdleProcess^.Resources := void(DL_New(SizeOf(TResourceBinding)));
     IdleProcess^.FDTable := void(fd_table_new);
-    IdleProcess^.Cwd := stringCopy('/');
+    IdleProcess^.Cwd := rootDirectory;
     { No stack allocation — idle runs on the core.version's original stack }
-    slotPtr := DL_Add(Processes);
-    slotPtr^ := uint32(IdleProcess);
+    slotPtr := PProcessSlot(DL_Add(Processes));
+    slotPtr^ := PtrUInt(IdleProcess);
     CurrentProcess := IdleProcess;
+    reapPending := false;
+    reaperProcess := createInternal('reaper', @reaperEntry, nil, 1, false);
+    if reaperProcess <> nil then reaperProcess^.State := psAwaiting;
 
-    io.syslog.logln('PROCMGR', 'Idle process created (PID 0).');
+    log('Idle process created (PID 0).');
 
-    io.syslog.logln('PROCMGR', 'INIT END.');
+    log('INIT END.');
     pop_trace;
 end;
 
-initialization
-    boot.mgr.registerBoot('proc.mgr', @Init, 'Process Manager', 'driver.storage.fs*');
+
 
 end.

@@ -1,5 +1,8 @@
 services:
   builder:
     build: .
+    environment:
+      ASURO_ARCH: ${ASURO_ARCH:-x86}
+      ASURO_BOOT_TEST: ${ASURO_BOOT_TEST:-none}
     volumes:
       - .:/code

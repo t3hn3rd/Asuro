@@ -295,6 +295,7 @@ nav:
 
   - Planning:
     - Architecture: planning/architecture.md
+    - x86-64 Migration: planning/x86_64.md
     - USB: planning/USB.md
     - XHCI: planning/XHCI.md
     - FlatFS: planning/flatfs.md

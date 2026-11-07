@@ -1,6 +1,8 @@
 /lib/*.ppu
 /lib/*.a
 /lib/*.o
+/lib/x86_64/
+/bin/x86_64/
 /release/*.svg
 /release/*.iso
 /bin/*.bin

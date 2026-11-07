@@ -1,4 +1,5 @@
 //  Copyright 2021 Kieron Morris
+//  Copyright 2026 Aaron Hance
 //
 //  Licensed under the Apache License, Version 2.0 (the "License");
 //  you may not use this file except in compliance with the License.
@@ -33,8 +34,8 @@ function switchendian32(b : uint32) : uint32;
 function getWord(i : uint32; hi : boolean) : uint16;
 function getByte(i : uint32; index : uint8) : uint8;
 
-procedure memset(location : uint32; value : uint8; size : uint32);
-procedure memcpy(source : uint32; dest : uint32; size : uint32);
+procedure memset(location : PtrUInt; value : uint8; size : SizeUInt);
+procedure memcpy(source : PtrUInt; dest : PtrUInt; size : SizeUInt);
 
 function BCDToUint8(bcd : uint8) : uint8;
 function HexCharToDecimal(hex : char) : uint8;
@@ -42,26 +43,7 @@ function HexCharToDecimal(hex : char) : uint8;
 function abs(x : sint32) : uint32;
 
 implementation
-{$ifdef CPU386}
-uses
-    arch.x86.util;
-
-const
-    MEMCPY_X86_SMALL_COPY_THRESHOLD = 16;
-{$endif}
-
-procedure scalar_memcpy(source : uint32; dest : uint32; size : uint32);
-var
-    src, dst : puint8;
-    i : uint32;
-begin
-    if size = 0 then exit;
-    for i := 0 to size - 1 do begin
-        src := puint8(source + i);
-        dst := puint8(dest + i);
-        dst^ := src^;
-    end;
-end;
+uses memory.raw, arch.platform.cpu;
 
 function abs(x : sint32) : uint32;
 var
@@ -129,30 +111,15 @@ begin
      switchendian:= (lo(b) SHL 4) OR hi(b);
 end;
 
-procedure memset(location : uint32; value : uint8; size : uint32);
-var
-    loc : puint8;
-    i   : uint32;
-
+procedure memset(location : PtrUInt; value : uint8; size : SizeUInt);
 begin
-    if size = 0 then exit;
-    for i:=0 to size-1 do begin
-        loc:= puint8(location + i);
-        loc^:= value;
-    end;
+    memory.raw.fill(pointer(location), value, size);
 end;
 
-procedure memcpy(source : uint32; dest : uint32; size : uint32);
+procedure memcpy(source : PtrUInt; dest : PtrUInt; size : SizeUInt);
 begin
     if size = 0 then exit;
-{$ifdef CPU386}
-    if size < MEMCPY_X86_SMALL_COPY_THRESHOLD then
-        scalar_memcpy(source, dest, size)
-    else
-        arch.x86.util.__REP_MOVSB_memcpy(source, dest, size);
-{$else}
-    scalar_memcpy(source, dest, size);
-{$endif}
+    arch.platform.cpu.copyBytes(source, dest, size);
 end;
 
 function getWord(i : uint32; hi : boolean) : uint16;

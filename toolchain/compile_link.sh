@@ -1,11 +1,20 @@
 #!/usr/bin/env bash
+# Multi-architecture build updates: Copyright 2026 Aaron Hance.
+set -e
+source "$(dirname "${BASH_SOURCE[0]}")/target.sh"
 echo " "
 echo "======================="
 echo " "
 echo "Linking..."
 echo " "
+if [ "$ASURO_ARCH" = x86_64 ]; then
+    ld -m "$LD_FORMAT" --gc-sections --no-warn-execstack \
+        -T"$LINKER_SCRIPT" -o "$BIN_DIR/kernel.bin" "$OBJ_DIR/"*.o
+    grub-file --is-x86-multiboot "$BIN_DIR/kernel.bin"
+    exit
+fi
 objstring=""; 
-for object in `find lib/ -name "*.o"`; do
+for object in `find lib/ -maxdepth 1 -name "*.o"`; do
 	if [ "$object" != "lib/stub.o" ]
 	then
 		objstring=$objstring$object" ";

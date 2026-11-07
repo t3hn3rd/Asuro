@@ -1,4 +1,5 @@
 //  Copyright 2024 Aaron Hance
+//  Copyright 2026 Aaron Hance
 //
 //  Licensed under the Apache License, Version 2.0 (the "License");
 //  you may not use this file except in compliance with the License.
@@ -22,6 +23,38 @@ unit core.ds.types;
 interface
 
 type
+  PLinkedList = ^TLinkedList;
+
+  {**
+    @abstract Managed linked list node record.
+    @field Previous Pointer to the previous node.
+    @field Data     Pointer to the stored data.
+    @field Next     Pointer to the next node.
+  **}
+  TLinkedList = record
+    Previous : PLinkedList;
+    Data     : void;
+    Next     : PLinkedList;
+  end;
+
+  {**
+    @abstract Pointer to the base of a managed linked list.
+  **}
+  PLinkedListBase = ^TLinkedListBase;
+
+  {**
+    @abstract Base record for a managed linked list.
+    @field Count       Number of elements in the list.
+    @field Head        Pointer to the first node.
+    @field ElementSize Size (in bytes) of each element.
+  **}
+  TLinkedListBase = record
+    Count       : uint32;
+    Head        : PLinkedList;
+    ElementSize : uint32;
+  end;
+
+
   { ------ Shared node for FIFO & LIFO ------ }
 
   {**
