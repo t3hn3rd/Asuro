@@ -602,6 +602,14 @@ end;
 
 { ========================= Port Reset ========================= }
 
+function ohci_port_speed(hc : PUSBHCDriver; port : uint8) : uint8;
+begin
+    if (ohci_port_status(hc, port) AND OHCI_PORT_LSDA) <> 0 then
+        ohci_port_speed := USB_SPEED_LOW
+    else
+        ohci_port_speed := USB_SPEED_FULL;
+end;
+
 function ohci_port_reset(hc : PUSBHCDriver; port : uint8) : boolean;
 var
     priv   : POHCI_PrivData;
@@ -1257,6 +1265,7 @@ begin
         hc.fnPoll       := TUSBHCPoll(@ohci_poll);
         hc.fnPortReset  := TUSBHCPortReset(@ohci_port_reset);
         hc.fnPortStatus := TUSBHCPortStatus(@ohci_port_status);
+        hc.fnPortSpeed := TUSBHCPortSpeed(@ohci_port_speed);
 
         { Reset the controller }
         if not ohci_reset(@hc) then begin

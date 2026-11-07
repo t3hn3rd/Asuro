@@ -261,6 +261,8 @@ type
     TUSBHCPoll       = procedure(hc : PUSBHCDriver);
     TUSBHCPortReset  = function(hc : PUSBHCDriver; port : uint8) : boolean;
     TUSBHCPortStatus = function(hc : PUSBHCDriver; port : uint8) : uint32;
+    { Return USB_SPEED_* after root-port reset has completed. }
+    TUSBHCPortSpeed  = function(hc : PUSBHCDriver; port : uint8) : uint8;
 
     { ---- HC Driver Record ---- }
 
@@ -283,6 +285,7 @@ type
         fnPoll       : TUSBHCPoll;
         fnPortReset  : TUSBHCPortReset;
         fnPortStatus : TUSBHCPortStatus;
+        fnPortSpeed  : TUSBHCPortSpeed;
     end;
 
 { ========================= Utility Functions ========================= }
@@ -429,6 +432,7 @@ begin
         hc^.fnPoll      := nil;
         hc^.fnPortReset := nil;
         hc^.fnPortStatus := nil;
+        hc^.fnPortSpeed := nil;
     end;
     pop_trace;
 end;
