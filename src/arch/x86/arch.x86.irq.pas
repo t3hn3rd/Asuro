@@ -1,4 +1,5 @@
 //  Copyright 2021 Kieron Morris
+//  Copyright 2026 Aaron Hance
 //
 //  Licensed under the Apache License, Version 2.0 (the "License");
 //  you may not use this file except in compliance with the License.
@@ -22,7 +23,7 @@ unit arch.x86.irq;
 interface
 
 uses
-    boot.mgr,
+    boot.mgr, arch.common.legacyirq,
     core.util, arch.x86.util, io.syslog;
 
 procedure init();
@@ -32,26 +33,7 @@ implementation
 procedure init();
 begin
     io.syslog.logln('IRQ','INIT START.');
-    outb($20, $11);
-    io_wait;
-    outb($A0, $11);
-    io_wait;
-    outb($21, $20);
-    io_wait;
-    outb($A1, $28);
-    io_wait;
-    outb($21, $04);
-    io_wait;
-    outb($A1, $02);
-    io_wait;
-    outb($21, $01);
-    io_wait;
-    outb($A1, $01);
-    io_wait;
-    outb($21, $00);
-    io_wait;
-    outb($A1, $00);
-    io_wait;
+    arch.common.legacyirq.remap(0, 0);
     io.syslog.logln('IRQ','INIT END.');
 end;
 

@@ -2,6 +2,7 @@
 //  core.ds.lists.pas
 //
 //  Copyright 2021 Kieron Morris
+//  Copyright 2026 Aaron Hance
 //
 //  Licensed under the Apache License, Version 2.0 (the "License");
 //  you may not use this file except in compliance with the License.
@@ -22,6 +23,7 @@ unit core.ds.lists;
 interface
 
 uses
+    core.ds.types, core.ds.dynamic,
     io.syslog,
     memory.heap,
     debug.tracer,
@@ -31,56 +33,17 @@ type
   {**
     @abstract Pointer to a managed linked list node.
   **}
-  PLinkedList = ^TLinkedList;
-
-  {**
-    @abstract Managed linked list node record.
-    @field Previous Pointer to the previous node.
-    @field Data     Pointer to the stored data.
-    @field Next     Pointer to the next node.
-  **}
-  TLinkedList = record
-    Previous : PLinkedList;
-    Data     : void;
-    Next     : PLinkedList;
-  end;
-
-  {**
-    @abstract Pointer to the base of a managed linked list.
-  **}
-  PLinkedListBase = ^TLinkedListBase;
-
-  {**
-    @abstract Base record for a managed linked list.
-    @field Count       Number of elements in the list.
-    @field Head        Pointer to the first node.
-    @field ElementSize Size (in bytes) of each element.
-  **}
-  TLinkedListBase = record
-    Count       : uint32;
-    Head        : PLinkedList;
-    ElementSize : uint32;
-  end;
+  PLinkedList = core.ds.types.PLinkedList;
+  TLinkedList = core.ds.types.TLinkedList;
+  PLinkedListBase = core.ds.types.PLinkedListBase;
+  TLinkedListBase = core.ds.types.TLinkedListBase;
 
   {**
     @abstract Pointer to a dynamic list.
   **}
-  PDList = ^TDList;
+  PDList = core.ds.dynamic.PDList;
+  TDList = core.ds.dynamic.TDList;
 
-  {**
-    @abstract Record for a dynamic list.
-    @field Count       Number of elements in use.
-    @field Data        Pointer to the underlying buffer.
-    @field ElementSize Size (in bytes) of each element.
-    @field DataSize    Total allocated bytes for Data.
-  **}
-  TDList = record
-    Count       : uint32;  // number of elements in use
-    Data        : void;    // pointer to the underlying buffer
-    ElementSize : uint32;  // size of each element in bytes
-    DataSize    : uint32;  // total allocated bytes for Data
-  end;
-  
   { Function/Procedure definitions }
 
   // ******************* String Linked List Routines *******************
@@ -727,384 +690,78 @@ end;
   @returns Pointer to the newly allocated dynamic list.
 **}
 function DL_New(ElementSize : uint32) : PDList;
-var
-  DL : PDList;
-  initialBytes : uint32;
 begin
-  DL := PDList(kalloc(sizeof(TDList)));
-  DL^.ElementSize := ElementSize;
-  DL^.Count := 0;
-
-  // Pick an initial capacity based on the element size
-  if ElementSize > 128 then
-    initialBytes := ElementSize * 4
-  else if ElementSize > 64 then
-    initialBytes := ElementSize * 8
-  else if ElementSize > 32 then
-    initialBytes := ElementSize * 16
-  else if ElementSize > 16 then
-    initialBytes := ElementSize * 32
-  else
-    initialBytes := ElementSize * 64;
-
-  DL^.Data := kalloc(initialBytes);
-  DL^.DataSize := initialBytes;
-
-  DL_New := DL;
+    DL_New := core.ds.dynamic.DL_New(ElementSize);
 end;
 
-{**
-  @abstract Adds a new element to the dynamic list.
-  @param DList Pointer to the dynamic list.
-  @returns Pointer to the newly allocated slot.
-  @discussion Resizes the underlying buffer (doubling its size) if necessary.
-**}
 function DL_Add(DList : PDList) : Void;
-var
-  newElem : pointer;
-  oldData : pointer;
-  oldSize : uint32;
 begin
-  // Check if we need to resize
-  if ((DList^.Count + 1) * DList^.ElementSize) > DList^.DataSize then
-  begin
-    push_trace('core.ds.lists.DL_Add: Resizing');
-    oldData := DList^.Data;
-    oldSize := DList^.DataSize;
-
-    DList^.DataSize := DList^.DataSize * 2;
-    DList^.Data := kalloc(DList^.DataSize);
-    memset(uint32(DList^.Data), 0, DList^.DataSize);
-
-    // Copy old data into the new buffer
-    memcpy(uint32(oldData), uint32(DList^.Data), oldSize);
-
-    kfree(oldData);
-  end;
-
-  // Address of the new element
-  newElem := pointer(uint32(DList^.Data) + (DList^.Count * DList^.ElementSize));
-  // Zero out the newly added slot
-  memset(uint32(newElem), 0, DList^.ElementSize);
-
-  DList^.Count := DList^.Count + 1;
-  DL_Add := newElem;
+    DL_Add := core.ds.dynamic.DL_Add(DList);
 end;
 
-{**
-  @abstract Deletes the element at the specified index from the dynamic list.
-  @param DList Pointer to the dynamic list.
-  @param idx   Zero-based index of the element to delete.
-  @returns True if deletion was successful, false otherwise.
-  @discussion Shifts subsequent elements left and shrinks the buffer if underutilized.
-**}
 function DL_Delete(DList : PDList; idx : uint32) : boolean;
-var
-  sourcePtr, destPtr : pointer;
-  shiftSize          : uint32;
-  oldData            : pointer;
-  oldSize            : uint32;
 begin
-  if (idx >= DList^.Count) then
-  begin
-    DL_Delete := false;
-    exit;
-  end;
-
-  // If not removing the last element, shift the tail left by one element.
-  if idx < (DList^.Count - 1) then
-  begin
-    sourcePtr := pointer(uint32(DList^.Data) + ((idx + 1) * DList^.ElementSize));
-    destPtr   := pointer(uint32(DList^.Data) + (idx * DList^.ElementSize));
-    shiftSize := (DList^.Count - idx - 1) * DList^.ElementSize;
-    memcpy(uint32(sourcePtr), uint32(destPtr), shiftSize);
-  end;
-
-  // Decrement element count
-  DList^.Count := DList^.Count - 1;
-
-  // Possibly shrink the buffer if usage is very low
-  if (DList^.Count > 0) and ((DList^.Count * DList^.ElementSize) < (DList^.DataSize div 2)) then
-  begin
-    oldData := DList^.Data;
-    oldSize := DList^.DataSize;
-
-    DList^.DataSize := DList^.DataSize div 2;
-    if DList^.DataSize < (DList^.Count * DList^.ElementSize) then
-      DList^.DataSize := (DList^.Count * DList^.ElementSize);
-
-    DList^.Data := kalloc(DList^.DataSize);
-    memset(uint32(DList^.Data), 0, DList^.DataSize);
-
-    memcpy(uint32(oldData), uint32(DList^.Data), (DList^.Count * DList^.ElementSize));
-    kfree(oldData);
-  end;
-
-  DL_Delete := true;
+    DL_Delete := core.ds.dynamic.DL_Delete(DList, idx);
 end;
 
-{**
-  @abstract Retrieves the element data at the specified index in the dynamic list.
-  @param DList Pointer to the dynamic list.
-  @param idx   Zero-based index of the desired element.
-  @returns Pointer to the element data, or nil if index is out of range.
-**}
 function DL_Get(DList : PDList; idx : uint32) : Void;
 begin
-  if (idx >= DList^.Count) then
-  begin
-    DL_Get := nil;
-    exit;
-  end;
-
-  DL_Get := pointer(uint32(DList^.Data) + (idx * DList^.ElementSize));
+    DL_Get := core.ds.dynamic.DL_Get(DList, idx);
 end;
 
-{**
-  @abstract Sets the element at the specified index by copying data from the provided pointer.
-  @param DList Pointer to the dynamic list.
-  @param idx   Zero-based index of the element to set.
-  @param elm   Pointer to the source data.
-  @returns True if the operation was successful, false otherwise.
-**}
 function DL_Set(DList : PDList; idx : uint32; elm : puint32) : boolean;
-var
-  targetPtr : pointer;
 begin
-  if (idx >= DList^.Count) then
-  begin
-    DL_Set := false;
-    exit;
-  end;
-
-  // Copy the data from elm into the dynamic list
-  targetPtr := pointer(uint32(DList^.Data) + (idx * DList^.ElementSize));
-  memcpy(uint32(elm), uint32(targetPtr), DList^.ElementSize);
-
-  DL_Set := true;
+    DL_Set := core.ds.dynamic.DL_Set(DList, idx, elm);
 end;
 
-{**
-  @abstract Returns the number of elements currently in the dynamic list.
-  @param DList Pointer to the dynamic list.
-  @returns The element count.
-**}
 function DL_Size(DList : PDList) : uint32;
 begin
-  DL_Size := DList^.Count;
+    DL_Size := core.ds.dynamic.DL_Size(DList);
 end;
 
-{**
-  @abstract Frees the entire dynamic list and its underlying buffer.
-  @param DList Pointer to the dynamic list.
-**}
 procedure DL_Free(DList : PDList);
 begin
-  if DList = nil then exit;
-  if DList^.Data <> nil then
-    kfree(DList^.Data);
-  kfree(void(DList));
+    core.ds.dynamic.DL_Free(DList);
 end;
 
-{**
-  @abstract Searches for an element in the dynamic list.
-  @param DList Pointer to the dynamic list.
-  @param elm   Pointer to the element to find.
-  @returns The zero-based index of the element if found; otherwise, returns -1.
-  @discussion The search is based on pointer equality.
-**}
 function DL_IndexOf(DList : PDList; elm : puint32) : uint32;
-var
-  i     : uint32;
-  temp  : puint32;
 begin
-  for i := 0 to DList^.Count - 1 do
-  begin
-    temp := puint32(uint32(DList^.Data) + (i * DList^.ElementSize));
-    if (temp = elm) then
-    begin
-      DL_IndexOf := i;
-      exit;
-    end;
-  end;
-  DL_IndexOf := uint32(-1);
+    DL_IndexOf := core.ds.dynamic.DL_IndexOf(DList, elm);
 end;
 
-{**
-  @abstract Determines whether the dynamic list contains the specified element.
-  @param DList Pointer to the dynamic list.
-  @param elm   Pointer to the element to search for.
-  @returns True if the element is present, false otherwise.
-**}
 function DL_Contains(DList : PDList; elm : puint32) : boolean;
 begin
-  DL_Contains := (DL_IndexOf(DList, elm) <> uint32(-1));
+    DL_Contains := core.ds.dynamic.DL_Contains(DList, elm);
 end;
 
-{**
-  @abstract Concatenates two dynamic lists.
-  @param DList1 Pointer to the destination dynamic list.
-  @param DList2 Pointer to the source dynamic list.
-  @returns Pointer to the concatenated dynamic list (DList1), or nil if element sizes differ.
-**}
 function DL_Concat(DList1 : PDList; DList2 : PDList) : PDList;
-var
-  i   : uint32;
-  ptr : pointer;
 begin
-  if DList1^.ElementSize <> DList2^.ElementSize then
-  begin
-    DL_Concat := nil;
-    exit;
-  end;
-
-  for i := 0 to DList2^.Count - 1 do
-  begin
-    ptr := DL_Add(DList1);
-    memcpy(uint32(DL_Get(DList2, i)), uint32(ptr), DList1^.ElementSize);
-  end;
-
-  DL_Concat := DList1;
+    DL_Concat := core.ds.dynamic.DL_Concat(DList1, DList2);
 end;
 
-{**
-  @abstract Clears the dynamic list by resetting the count to zero.
-  @param DList Pointer to the dynamic list.
-  @discussion The underlying buffer is retained for fast reuse.
-**}
 procedure DL_Clear(DList : PDList);
 begin
-  if (DList = nil) then exit;
-  DList^.Count := 0;
-  // To clear memory, uncomment the following line:
-  // memset(uint32(DList^.Data), 0, DList^.DataSize);
+    core.ds.dynamic.DL_Clear(DList);
 end;
 
-{**
-  @abstract Inserts a new element at the specified index in the dynamic list.
-  @param DList Pointer to the dynamic list.
-  @param idx   Zero-based index where the element should be inserted.
-  @returns Pointer to the newly allocated slot, or nil if idx is out of range.
-  @discussion Subsequent elements are shifted right. The buffer is resized if needed.
-**}
 function DL_Insert(DList : PDList; idx : uint32) : Void;
-var
-  newElem   : pointer;
-  oldData   : pointer;
-  oldSize   : uint32;
-  shiftSrc  : pointer;
-  shiftDest : pointer;
-  shiftSize : uint32;
 begin
-  DL_Insert := nil;
-  if (DList = nil) then exit;
-  if (idx > DList^.Count) then
-    exit;  // cannot insert beyond the current count
-
-  // Ensure there's space for one more element
-  if ((DList^.Count + 1) * DList^.ElementSize) > DList^.DataSize then
-  begin
-    oldData := DList^.Data;
-    oldSize := DList^.DataSize;
-
-    DList^.DataSize := DList^.DataSize * 2;
-    DList^.Data := kalloc(DList^.DataSize);
-    memset(uint32(DList^.Data), 0, DList^.DataSize);
-
-    memcpy(uint32(oldData), uint32(DList^.Data), oldSize);
-    kfree(oldData);
-  end;
-
-  // Shift elements to the right if inserting in the middle
-  if (idx < DList^.Count) then
-  begin
-    shiftSrc  := pointer(uint32(DList^.Data) + (idx * DList^.ElementSize));
-    shiftDest := pointer(uint32(DList^.Data) + ((idx + 1) * DList^.ElementSize));
-    shiftSize := (DList^.Count - idx) * DList^.ElementSize;
-    // Shift overlapping regions; if memcpy doesn't handle overlap, use memmove.
-    memcpy(uint32(shiftSrc), uint32(shiftDest), shiftSize);
-  end;
-
-  // Allocate the new element slot
-  newElem := pointer(uint32(DList^.Data) + (idx * DList^.ElementSize));
-  memset(uint32(newElem), 0, DList^.ElementSize);
-
-  DList^.Count := DList^.Count + 1;
-  DL_Insert := newElem;
+    DL_Insert := core.ds.dynamic.DL_Insert(DList, idx);
 end;
 
-{**
-  @abstract Returns the current capacity (number of elements) that the dynamic list can hold.
-  @param DList Pointer to the dynamic list.
-  @returns The capacity based on the allocated buffer size.
-**}
 function DL_Capacity(DList : PDList) : uint32;
 begin
-  if DList = nil then
-    DL_Capacity := 0
-  else
-    DL_Capacity := (DList^.DataSize div DList^.ElementSize);
+    DL_Capacity := core.ds.dynamic.DL_Capacity(DList);
 end;
 
-{**
-  @abstract Ensures the dynamic list has enough space for at least NewCapacity elements.
-  @param DList       Pointer to the dynamic list.
-  @param NewCapacity Desired capacity (in number of elements).
-  @discussion Reallocates the buffer if necessary.
-**}
 procedure DL_Reserve(DList : PDList; NewCapacity : uint32);
-var
-  neededBytes : uint32;
-  oldData     : pointer;
-  oldSize     : uint32;
 begin
-  if (DList = nil) then exit;
-
-  neededBytes := NewCapacity * DList^.ElementSize;
-  if (neededBytes <= DList^.DataSize) then
-    exit; // Already sufficient
-
-  oldData := DList^.Data;
-  oldSize := DList^.DataSize;
-
-  DList^.DataSize := neededBytes;
-  DList^.Data := kalloc(DList^.DataSize);
-
-  memset(uint32(DList^.Data), 0, DList^.DataSize);
-  memcpy(uint32(oldData), uint32(DList^.Data), oldSize);
-
-  kfree(oldData);
+    core.ds.dynamic.DL_Reserve(DList, NewCapacity);
 end;
 
-{**
-  @abstract Shrinks the dynamic list's allocated memory to fit its current count.
-  @param DList Pointer to the dynamic list.
-  @discussion If the list is empty, the buffer is freed.
-**}
 procedure DL_ShrinkToFit(DList : PDList);
-var
-  exactBytes : uint32;
-  oldData    : pointer;
 begin
-  if (DList = nil) then exit;
-  exactBytes := DList^.Count * DList^.ElementSize;
-  if (exactBytes = 0) then
-  begin
-    // For an empty list, free the buffer and reset values.
-    kfree(DList^.Data);
-    DList^.Data := nil;
-    DList^.DataSize := 0;
-    exit;
-  end;
-
-  if exactBytes >= DList^.DataSize then exit; // Already optimal
-
-  oldData := DList^.Data;
-  DList^.Data := kalloc(exactBytes);
-
-  memcpy(uint32(oldData), uint32(DList^.Data), exactBytes);
-  kfree(oldData);
-  DList^.DataSize := exactBytes;
+    core.ds.dynamic.DL_ShrinkToFit(DList);
 end;
 
 procedure TestAllLists;

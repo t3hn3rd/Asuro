@@ -1,4 +1,5 @@
 //  Copyright 2021 Aaron Hance
+//  Copyright 2026 Aaron Hance
 //
 //  Licensed under the Apache License, Version 2.0 (the "License");
 //  you may not use this file except in compliance with the License.
@@ -23,7 +24,7 @@ interface
 
 uses
     core.ds.types,
-    core.ds.lists;
+    core.ds.dynamic;
 
 type
 
