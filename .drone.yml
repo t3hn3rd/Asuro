@@ -17,6 +17,7 @@ steps:
 
   - name: compile
     image: t3hn3rd/asuro-build:latest
+    pull: always
     depends_on:
       - build-image
     commands:

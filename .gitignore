@@ -20,3 +20,7 @@ wasuro
 src/core/core.version.pas
 site/*
 !site/.gitkeep
+/src/boot/dangling_units.inc
+/lib/dangling/
+.moderne
+CLAUDE.md

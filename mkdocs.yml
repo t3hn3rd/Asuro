@@ -283,6 +283,7 @@ nav:
     - Version Generation: toolchain/compile_vergen.md
     - LVGL Compilation: toolchain/compile_lvgl.md
     - Wasuro Pull: toolchain/compile_wasuro.md
+    - Automatic Boot Units: toolchain/dangling_units.md
     - Source List: toolchain/compile_sourcelist.md
     - Source Compilation: toolchain/compile_sources.md
     - Checksum: toolchain/compile_checksum.md

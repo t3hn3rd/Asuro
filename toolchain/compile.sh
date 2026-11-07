@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+TOOLCHAIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$TOOLCHAIN_DIR/architecture.sh" || exit 1
 ERRCOUNT=0
 echo " "
 echo "======================="
@@ -20,14 +22,13 @@ runOrFail() {
 	fi
 }
 
-TOOLCHAIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
 declare -a run_steps=(
 	"compile_stub.sh" "Failed to compile stub!"
 	"compile_vergen.sh" "Versions failed to compile"
 	"compile_lvgl.sh" "Failed to compile LVGL!"
 	"compile_icons.sh" "Failed to generate icons!"
 	"compile_wasuro.sh" "Failed to pull Wasuro!"
+	"compile_dangling.sh" "Failed to generate dangling unit list!"
 	"compile_sources.sh" "Failed to compile FPC Sources!"
 	"compile_initcalls.sh" "Failed to generate INITFINAL table!"
 	"compile_link.sh" "Failed linking!"

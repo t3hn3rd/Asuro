@@ -19,6 +19,8 @@
 
 unit driver.storage.vol.table;
 
+{$DEFINE NOT_DANGLING} { Unimplemented legacy partition-table API; requires removed storagemanagement. }
+
 interface
 
 uses

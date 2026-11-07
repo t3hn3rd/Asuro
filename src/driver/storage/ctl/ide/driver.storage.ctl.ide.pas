@@ -21,6 +21,8 @@
 }
 unit driver.storage.ctl.ide;
 
+{$DEFINE NOT_DANGLING} { Unfinished legacy IDE stack; requires removed console/terminal units. }
+
 interface
 
 uses

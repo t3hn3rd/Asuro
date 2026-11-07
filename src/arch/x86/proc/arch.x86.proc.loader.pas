@@ -19,6 +19,8 @@
 }
 unit arch.x86.proc.loader;
 
+{$DEFINE NOT_DANGLING} { Unimplemented process-loader stub. }
+
 interface
 
 implementation;

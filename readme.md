@@ -28,7 +28,8 @@ We welcome everyone to give building/breaking/fixing/shooting Asuro a go, feel f
 4. Install Git for Windows.
 5. Install VSCode & the listed plugins.
 6. Install VirtualBox (v7+).
-7. Clone this repository.
+7. Clone this repository. The builder inherits the published Moderne/Pascal
+   tooling image; see [boot-unit generation](doc/toolchain/dangling_units.md).
 8. Run the following command in the root of the repo to build the docker image:
     ```powershell
     docker compose build builder

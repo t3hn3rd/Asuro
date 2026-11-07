@@ -19,6 +19,8 @@
 }
 unit driver.storage.fs.asfs;
 
+{$DEFINE NOT_DANGLING} { Incomplete legacy filesystem; requires removed storagemanagement API. }
+
 interface
 
 uses
@@ -122,3 +124,5 @@ end;
 
 procedure detect_volumes(disk : PStorage_Device) begin
 end;
+
+end.
