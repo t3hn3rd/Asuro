@@ -3,17 +3,19 @@
 # Clone & compile in /tmp (fast container-local fs).
 # Cache liblvgl.a on host mount (/code/lvgl/) to skip rebuild.
 set -e
+# Target configuration updates: Copyright 2026 Aaron Hance.
+source "$(dirname "${BASH_SOURCE[0]}")/target.sh"
 
 LVGL_VERSION="v9.2.2"
 LVGL_REPO="https://github.com/lvgl/lvgl.git"
 LVGL_DIR="/tmp/lvgl"
-OBJ_DIR="/tmp/lvgl_obj"
+LVGL_OBJ_DIR="/tmp/lvgl_obj_$ASURO_ARCH"
 CONF_DIR="$(pwd)/lvglh"
-OUT_DIR="$(pwd)/lib"
+OUT_DIR="$(pwd)/$OBJ_DIR"
 CACHE_DIR="/code/lvgl"
 
-CC="gcc"
-CFLAGS="-m32 -march=i686 -ffreestanding \
+CC="$C_COMPILER"
+CFLAGS="-ffreestanding \
     -fno-builtin -fno-stack-protector -fno-pic -fno-pie \
     -O2 -Wall -Wno-unused-function -Wno-unused-variable \
     -I${CONF_DIR} \
@@ -28,9 +30,9 @@ echo "Compiling LVGL..."
 echo " "
 
 # If cached liblvgl.a exists on host mount, just copy it and skip everything
-if [ -f "${CACHE_DIR}/liblvgl.a" ]; then
+if [ -f "${CACHE_DIR}/${LVGL_CACHE_NAME}" ]; then
     echo "Found cached liblvgl.a in ${CACHE_DIR}, copying to ${OUT_DIR}..."
-    cp "${CACHE_DIR}/liblvgl.a" "${OUT_DIR}/liblvgl.a"
+    cp "${CACHE_DIR}/${LVGL_CACHE_NAME}" "${OUT_DIR}/liblvgl.a"
     echo "(Delete lvgl/liblvgl.a to force a full rebuild.)"
     echo " "
     echo "LVGL compilation complete (cached)."
@@ -50,18 +52,18 @@ TOTAL=$(echo "$SOURCES" | wc -l)
 echo "Found ${TOTAL} LVGL source files."
 
 # Compile each .c file to .o (container-local)
-rm -rf "$OBJ_DIR"
-mkdir -p "$OBJ_DIR"
+rm -rf "$LVGL_OBJ_DIR"
+mkdir -p "$LVGL_OBJ_DIR"
 
 COUNT=0
 ERRORS=0
 for src in $SOURCES; do
     COUNT=$((COUNT + 1))
     rel="${src#${LVGL_DIR}/src/}"
-    obj_path="${OBJ_DIR}/${rel%.c}.o"
+    obj_path="${LVGL_OBJ_DIR}/${rel%.c}.o"
     mkdir -p "$(dirname "$obj_path")"
 
-    if ! $CC $CFLAGS -c "$src" -o "$obj_path" 2>&1; then
+    if ! "$CC" "${C_TARGET_OPTIONS[@]}" $CFLAGS -c "$src" -o "$obj_path" 2>&1; then
         echo "FAILED: $rel"
         ERRORS=$((ERRORS + 1))
     fi
@@ -79,7 +81,7 @@ if [ "$ERRORS" -ne 0 ]; then
 fi
 
 # Archive into static library
-OBJECTS=$(find "$OBJ_DIR" -name '*.o')
+OBJECTS=$(find "$LVGL_OBJ_DIR" -name '*.o')
 ar rcs "${OUT_DIR}/liblvgl.a" $OBJECTS
 echo "Created ${OUT_DIR}/liblvgl.a"
 
@@ -99,7 +101,7 @@ if [ -n "$LVGLH_SOURCES" ]; then
         obj_path="${LVGLH_OBJ_DIR}/${rel%.c}.o"
         mkdir -p "$(dirname "$obj_path")"
         echo "  [lvglh] $rel"
-        if ! $CC $CFLAGS -c "$src" -o "$obj_path" 2>&1; then
+        if ! "$CC" "${C_TARGET_OPTIONS[@]}" $CFLAGS -c "$src" -o "$obj_path" 2>&1; then
             echo "  FAILED: $rel"
             HERRORS=$((HERRORS + 1))
         fi
@@ -121,10 +123,10 @@ fi
 echo "Caching LVGL to host mount..."
 mkdir -p "$CACHE_DIR"
 rm -rf ${CACHE_DIR}/* ${CACHE_DIR}/.[!.]* ${CACHE_DIR}/..?* 2>/dev/null || true
-cp "${OUT_DIR}/liblvgl.a" "${CACHE_DIR}/liblvgl.a"
+cp "${OUT_DIR}/liblvgl.a" "${CACHE_DIR}/${LVGL_CACHE_NAME}"
 cp -a "$LVGL_DIR/src" "${CACHE_DIR}/src"
 cp -a "$LVGL_DIR"/*.h "${CACHE_DIR}/" 2>/dev/null || true
-cp -a "$OBJ_DIR" "${CACHE_DIR}/obj"
+cp -a "$LVGL_OBJ_DIR" "${CACHE_DIR}/obj"
 echo "Done."
 
 echo " "

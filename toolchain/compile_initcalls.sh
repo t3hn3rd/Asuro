@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Target configuration updates: Copyright 2026 Aaron Hance.
+set -e
+source "$(dirname "${BASH_SOURCE[0]}")/target.sh"
 echo " "
 echo "======================="
 echo " "
@@ -18,11 +21,9 @@ echo " "
 
 INIT_SYMBOLS=()
 
-for obj in lib/*.o; do
-    # Skip non-FPC objects that will never contain Pascal init sections
-    case "$(basename "$obj")" in
-        stub.o|splash_tga.o|initcalls.o) continue ;;
-    esac
+for obj in "$OBJ_DIR/"*.o; do
+    [ -f "$obj" ] || continue
+    [ "$obj" = "$OBJ_DIR/initcalls.o" ] && continue
 
     # nm --defined-only: only symbols defined in this object (not extern refs)
     # grep ' T INIT\$_\$': global text symbols matching FPC's naming convention
@@ -35,7 +36,7 @@ done
 COUNT=${#INIT_SYMBOLS[@]}
 echo "Found $COUNT unit initialization section(s)."
 
-CFILE="/tmp/initcalls.c"
+CFILE="$BIN_DIR/initcalls.c"
 
 # ---- Generate the C source file ----
 
@@ -99,6 +100,6 @@ cat "$CFILE"
 echo "--- End of generated C source ---"
 echo " "
 
-# Compile to a 32-bit ELF object file
-gcc -m32 -c -fno-pic -ffreestanding -o lib/initcalls.o "$CFILE"
-echo "Compiled lib/initcalls.o"
+# Compile for the selected target
+"$C_COMPILER" "${C_TARGET_OPTIONS[@]}" -c -fno-pic -ffreestanding -o "$OBJ_DIR/initcalls.o" "$CFILE"
+echo "Compiled $OBJ_DIR/initcalls.o"

@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 set -e
+# Target configuration updates: Copyright 2026 Aaron Hance.
+source "$(dirname "${BASH_SOURCE[0]}")/target.sh"
 TOOLCHAIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 echo " "
 echo "======================="
@@ -12,8 +14,8 @@ outfile="src/core/core.version.pas"
 file="toolchain/version"
 {
 	# this script requires semver tool
-	wget -q https://raw.githubusercontent.com/fsaintjacques/semver-tool/master/src/semver -O bin/semver && chmod +x bin/semver
-	export PATH="$(pwd)/bin:$PATH"
+	wget -q https://raw.githubusercontent.com/fsaintjacques/semver-tool/master/src/semver -O "$BIN_DIR/semver" && chmod +x "$BIN_DIR/semver"
+	export PATH="$(pwd)/$BIN_DIR:$PATH"
 }
 tagref=$(git describe --tags)
 revision=$(git rev-parse --short=8 HEAD)
@@ -26,7 +28,7 @@ build=$(semver get build $tagref)
 linecount=$("${TOOLCHAIN_DIR}/loc.sh" | awk '{print $1}')
 sourcecount=$(find src -type f | wc -l)
 drivercount=$(find src/driver -type f | wc -l)
-fpcversion=$(fpc -h | grep -m 1 version | awk '{print $5}')
+fpcversion=$("$PASCAL_COMPILER" -h | grep -m 1 version | awk '{print $5}')
 makeversion=$(make -v | grep GNU | awk '{print $3}' | grep -v GNU)
 nasmversion=$(nasm -v | awk '{print $3'})
 compiledate=$(date +"%d/%m/%y")

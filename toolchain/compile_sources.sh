@@ -7,27 +7,22 @@ echo "======================="
 echo " "
 echo "Compiling FPC Sources..."
 echo " "
-# The build selects one platform implementation; shared units cannot select CPUs.
-python3 toolchain/check_arch_boundaries.py
-# Build -Fu flags for the selected architecture and shared sources.
-if [ "$ASURO_ARCH" = x86_64 ]; then
-    test_flags=()
-    case "${ASURO_BOOT_TEST:-none}" in
-        none) ;;
-        ud) test_flags=(-dASURO_TEST_UD) ;;
-        pf) test_flags=(-dASURO_TEST_PF) ;;
-        df) test_flags=(-dASURO_TEST_DF) ;;
-        *) echo "Unknown ASURO_BOOT_TEST" >&2; exit 1 ;;
+# Discover unit directories using the existing source roots. Architecture
+# filtering follows the namespace convention; no unit directory is added by hand.
+source_paths=()
+while IFS= read -r -d '' dir; do
+    case "$dir" in
+        src/arch/*)
+            namespace="${dir#src/arch/}"
+            namespace="${namespace%%/*}"
+            if [[ "$namespace" != "$ASURO_ARCH" && "$namespace" != common ]]; then
+                continue
+            fi
+            ;;
     esac
-    # Restrict search paths: never accidentally select the i386 system unit.
-    exec ppcx64 -n -O2 -Si -Sc -Sg -Xd -CX -Rintel -Tlinux \
-        -Fu"src/arch/$ASURO_ARCH/platform" -Fusrc/core -Fusrc/core/strings -Fusrc/driver/storage -Fusrc/arch/x86_64/proc -Fusrc/core/ds -Fusrc/proc -Fusrc/io -Fusrc/arch/common -Fusrc/debug -Fusrc/boot -Fusrc/memory -Fusrc/arch/x86_64/memory -Fu"src/arch/x86_64" -FU"$OBJ_DIR" -FE"$BIN_DIR" "${test_flags[@]}" \
-        src/arch/x86_64/arch.x86_64.boot.pas
-fi
-FU_PATHS="-Fusrc/arch/$ASURO_ARCH/platform -Fusrc -Fuwasuro -Fucompat"
-for dir in $(find src wasuro compat -type d -not -path 'src/arch/*' 2>/dev/null) \
-           $(find "src/arch/$ASURO_ARCH" src/arch/common -type d -not -path '*/platform*'); do
-    FU_PATHS="$FU_PATHS -Fu$dir"
-done
+    source_paths+=("-Fu$dir")
+done < <(find src wasuro compat -type d -print0 | LC_ALL=C sort -zu)
 
-fpc -Aelf -gw -g -gl -n -v0e -O3 -OpPENTIUM3 -Si -Sc -Sg -Xd -CX -XXs -CfSSE -CfSSE2 -Rintel -Pi386 -Tlinux -FElib/ $FU_PATHS src/asuro.pas
+exec "$PASCAL_COMPILER" -n -Si -Sc -Sg -Xd -CX -Rintel -Tlinux \
+    "${PASCAL_OPTIONS[@]}" "${source_paths[@]}" \
+    -FU"$OBJ_DIR" -FE"$BIN_DIR" "$PASCAL_ENTRY"

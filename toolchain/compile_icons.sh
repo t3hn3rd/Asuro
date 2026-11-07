@@ -3,10 +3,12 @@
 # Runs gen_file_icons.py to produce asuro_icons_{32,64,128}.c in lvglh/,
 # then compiles each into a .o in lib/ for linking.
 set -e
+# Target configuration updates: Copyright 2026 Aaron Hance.
+source "$(dirname "${BASH_SOURCE[0]}")/target.sh"
 
 TOOLCHAIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONF_DIR="$(pwd)/lvglh"
-OUT_DIR="$(pwd)/lib"
+OUT_DIR="$(pwd)/$OBJ_DIR"
 FONT_CACHE="$(pwd)/img"
 LVGL_DIR="/tmp/lvgl"
 CACHE_DIR="/code/lvgl"
@@ -20,8 +22,8 @@ else
     LVGL_INC="${CACHE_DIR}"
 fi
 
-CC="gcc"
-CFLAGS="-m32 -march=i686 -ffreestanding \
+CC="$C_COMPILER"
+CFLAGS="-ffreestanding \
     -fno-builtin -fno-stack-protector -fno-pic -fno-pie \
     -O2 -Wall -Wno-unused-function -Wno-unused-variable \
     -I${CONF_DIR} \
@@ -44,7 +46,7 @@ for src in "${CONF_DIR}"/asuro_icons_*.c; do
     [ -f "$src" ] || continue
     base="$(basename "${src%.c}")"
     echo "  Compiling ${base}.c ..."
-    if ! $CC $CFLAGS -c "$src" -o "${OUT_DIR}/${base}.o" 2>&1; then
+    if ! "$CC" "${C_TARGET_OPTIONS[@]}" $CFLAGS -c "$src" -o "${OUT_DIR}/${base}.o" 2>&1; then
         echo "  FAILED: ${base}.c"
         ERRORS=$((ERRORS + 1))
     fi
