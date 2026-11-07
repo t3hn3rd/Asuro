@@ -27,7 +27,7 @@ uses
     io.syslog,
     core.panic,
     arch.x86.multiboot,
-    arch.x86.proc.sched;
+    arch.x86.proc.sched, arch.x86.startup;
  
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
  

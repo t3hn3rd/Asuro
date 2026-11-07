@@ -1,4 +1,5 @@
 //  Copyright 2021 Kieron Morris
+//  Copyright 2026 Aaron Hance
 //
 //  Licensed under the Apache License, Version 2.0 (the "License");
 //  you may not use this file except in compliance with the License.
@@ -22,14 +23,14 @@ unit arch.x86.isr.tmr0;
 interface
 
 uses
-    core.util, arch.x86.util,
+    core.util, arch.x86.util, arch.common.legacyirq,
     arch.x86.isr.types,
     arch.x86.isr.mgr,
     arch.x86.idt;
 
 const
-    PIT_INPUT_HZ = 1193182;
-    PIT_DIVISOR = 149;
+    PIT_INPUT_HZ = arch.common.legacyirq.PIT_INPUT_HZ;
+    PIT_DIVISOR = arch.common.legacyirq.PIT_DIVISOR;
 
 procedure register();
 procedure hook(hook_method : uint32);

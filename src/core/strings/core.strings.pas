@@ -1,4 +1,5 @@
 //  Copyright 2021 Kieron Morris
+//  Copyright 2026 Aaron Hance
 //
 //  Licensed under the Apache License, Version 2.0 (the "License");
 //  you may not use this file except in compliance with the License.
@@ -23,9 +24,7 @@ unit core.strings;
 interface
 
 uses 
-    core.util, arch.x86.util, 
-    memory.heap,
-    core.ds.lists;
+    core.util, memory.heap;
 
 function charToLower(c : char) : char;
 function charToUpper(c : char) : char;
@@ -161,7 +160,8 @@ var
 begin
     size:= stringSize(str);
     result:= stringNew(size);
-    memcpy(uint32(str), uint32(result), size);
+    if result = nil then begin stringCopy:= nil; exit; end;
+    memcpy(PtrUInt(str), PtrUInt(result), size);
     stringCopy:= result;    
 end;
 
@@ -171,9 +171,12 @@ var
     newSize : uint32;
 
 begin
+    stringNew:= nil;
+    if size = high(uint32) then exit;
     newSize:= size + 1;
     result:= pchar(kalloc(newSize));
-    memset(uint32(result), 0, newSize);
+    if result = nil then exit;
+    memset(PtrUInt(result), 0, newSize);
     stringNew:= result;
 end;
 
@@ -201,9 +204,11 @@ var
 begin
     size1:= stringSize(str1);
     size2:= stringSize(str2);
+    if size2 >= high(uint32) - size1 then begin stringConcat:= nil; exit; end;
     result:= stringNew(size1 + size2);
-    memcpy(uint32(str1), uint32(result), size1);
-    memcpy(uint32(str2), uint32(result + size1), size2);
+    if result = nil then begin stringConcat:= nil; exit; end;
+    memcpy(PtrUInt(str1), PtrUInt(result), size1);
+    memcpy(PtrUInt(str2), PtrUInt(result + size1), size2);
     stringConcat:= result;
 end;
 
@@ -216,7 +221,8 @@ begin
     strLen:= stringSize(str);
     if length > strLen then length:= strLen;
     result:= stringNew(length);
-    memcpy(uint32(str), uint32(result), length);
+    if result = nil then begin stringTrim:= nil; exit; end;
+    memcpy(PtrUInt(str), PtrUInt(result), length);
     stringTrim:= result;
 end;
 
@@ -231,9 +237,10 @@ begin
         stringSub:= stringNew(0);
         exit;
     end;
-    if start + size > strLen then size:= strLen - start;
+    if size > strLen - start then size:= strLen - start;
     result:= stringNew(size);
-    memcpy(uint32(str)+start, uint32(result), size);
+    if result = nil then begin stringSub:= nil; exit; end;
+    memcpy(PtrUInt(str)+start, PtrUInt(result), size);
     stringSub:= result;
 end;
 
@@ -249,7 +256,8 @@ begin
         stringMatchAt:= true;
         exit;
     end;
-    if pos + findLen > strLen then exit;
+    if pos > strLen then exit;
+    if findLen > strLen - pos then exit;
     for i:= 0 to findLen - 1 do begin
         if str[pos + i] <> find[i] then exit;
     end;
@@ -280,17 +288,19 @@ begin
 
     // If we found the find string, replace it.
     if found then begin
+        if replLen >= high(uint32) - (strLen - findLen) then begin stringReplace:= nil; exit; end;
         result:= stringNew(strLen - findLen + replLen);
+        if result = nil then begin stringReplace:= nil; exit; end;
         // Copy prefix before match
         if pos > 0 then
-            memcpy(uint32(str), uint32(result), pos);
+            memcpy(PtrUInt(str), PtrUInt(result), pos);
         // Copy replacement
         if replLen > 0 then
-            memcpy(uint32(replace), uint32(result + pos), replLen);
+            memcpy(PtrUInt(replace), PtrUInt(result + pos), replLen);
         // Copy suffix after match
         suffixLen:= strLen - pos - findLen;
         if suffixLen > 0 then
-            memcpy(uint32(str) + pos + findLen, uint32(result) + pos + replLen, suffixLen);
+            memcpy(PtrUInt(str) + pos + findLen, PtrUInt(result) + pos + replLen, suffixLen);
         stringReplace:= result;
     end else begin
         stringReplace:= stringCopy(str);
@@ -556,7 +566,7 @@ end;
 function int64ToString(i : int64) : pchar;
 var
     result : pchar;
-    tmp    : int64;
+    tmp, magnitude : uint64;
     len    : uint32;
     pos    : uint32;
     neg    : boolean;
@@ -569,10 +579,11 @@ begin
         exit;
     end;
     neg:= (i < 0);
-    if neg then i:= -i;
+    if neg then magnitude:= uint64(-(i + 1)) + 1
+    else magnitude:= uint64(i);
     { Count digits }
     len:= 0;
-    tmp:= i;
+    tmp:= magnitude;
     while tmp > 0 do begin
         inc(len);
         tmp:= tmp div 10;
@@ -581,7 +592,7 @@ begin
     { Build string from right to left }
     result:= stringNew(len);
     pos:= len;
-    tmp:= i;
+    tmp:= magnitude;
     while tmp > 0 do begin
         dec(pos);
         result[pos]:= char((tmp mod 10) + 48);
@@ -757,6 +768,7 @@ begin
     test.harness.Assert(@context, stringSize(nil) = 0, 'stringSize(nil)=0');
 
     { === stringNew === }
+    Assert(stringNew(high(uint32)) = nil, 'stringNew rejects terminator overflow');
     s:= stringNew(0);
     test.harness.Assert(@context, stringSize(s) = 0, 'stringNew(0) is empty');
     kfree(void(s));
@@ -986,6 +998,15 @@ begin
     s:= int64ToString(1000000);
     test.harness.Assert(@context, stringEquals(s, '1000000'), 'int64ToString large');
     kfree(void(s));
+
+    s:= int64ToString(low(int64));
+    Assert(stringEquals(s, '-9223372036854775808'), 'int64ToString minimum');
+    kfree(void(s));
+    s:= stringSub('ABC', 1, high(uint32));
+    Assert(stringEquals(s, 'BC'), 'substring size cannot wrap');
+    kfree(void(s));
+    Assert(not stringMatchAt('ABC', high(uint32), 'BC'), 'match position cannot wrap');
+    Assert((Trunc(-3.75) = -3) and (Trunc(3.75) = 3), 'Trunc rounds toward zero');
 
     { === doubleToStr === }
     s:= doubleToStr(0.0);

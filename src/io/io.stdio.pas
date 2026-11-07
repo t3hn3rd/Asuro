@@ -1,3 +1,15 @@
+// Copyright 2026 Aaron Hance
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 {
     Stdio - Standard I/O abstraction for command-line programs.
 
@@ -15,43 +27,18 @@ unit io.stdio;
 interface
 
 uses
-    boot.mgr,
-    memory.heap, core.strings, core.util, arch.x86.util, debug.tracer;
+    io.types, memory.heap, core.strings, core.util;
 
 type
-    { Output buffer — kalloc'd, growable }
-    POutBuf = ^TOutBuf;
-    TOutBuf = record
-        buf : pchar;
-        len : uint32;
-        cap : uint32;
-    end;
-
-    { Parameter linked list }
-    PParamList = ^TParamList;
-    TParamList = record
-        Param : pchar;
-        Next  : PParamList;
-    end;
-
-    { Command buffer type }
-    TCommandBuffer = array[0..1023] of byte;
-
-    { Command method — receives params plus stdin (read), stdout (write), stderr (write) }
-    TCommandMethod = procedure(params: PParamList; stdin_buf, stdout_buf, stderr_buf: POutBuf);
-
-    { Command record }
-    PCommand = ^TCommand;
-    TCommand = record
-        registered  : boolean;
-        hidden      : boolean;
-        command     : pchar;
-        method      : TCommandMethod;
-        description : pchar;
-    end;
-
-    { Halt callback }
-    THaltCallback = procedure();
+    POutBuf = io.types.POutBuf;
+    TOutBuf = io.types.TOutBuf;
+    PParamList = io.types.PParamList;
+    TParamList = io.types.TParamList;
+    TCommandBuffer = io.types.TCommandBuffer;
+    TCommandMethod = io.types.TCommandMethod;
+    PCommand = io.types.PCommand;
+    TCommand = io.types.TCommand;
+    THaltCallback = io.types.THaltCallback;
 
 { Output buffer management }
 function  createOutBuf(initial_cap: uint32): POutBuf;
@@ -92,9 +79,7 @@ procedure freeParams(params: PParamList);
 function  paramCount(params: PParamList): uint32;
 function  getParam(index: uint32; params: PParamList): pchar;
 
-{ Working directory }
-function  getWorkingDirectory: pchar;
-procedure setWorkingDirectory(str: pchar);
+{ Working-directory helpers live in io.directory, which requires VFS. }
 
 { Halt mechanism for async commands }
 function  halt(id: uint32; cb: THaltCallback): boolean;
@@ -107,11 +92,12 @@ var
 
 { Initialization }
 procedure init;
+procedure UnitTest;
 
 implementation
 
 uses
-    core.version, driver.timer.rtc, driver.io.serial, driver.storage.vfs, io.syslog;
+    arch.platform.diagnostics, arch.common.interrupts;
 
 const
     INITIAL_CMD_CAP = 64;
@@ -130,10 +116,13 @@ var
 begin
     if initial_cap = 0 then cap := 1 else cap := initial_cap;
     ob := POutBuf(kalloc(SizeOf(TOutBuf)));
+    createOutBuf := nil;
+    if ob = nil then exit;
     ob^.buf := pchar(kalloc(cap));
+    if ob^.buf = nil then begin kfree(void(ob)); exit; end;
     ob^.len := 0;
     ob^.cap := cap;
-    memset(uint32(ob^.buf), 0, cap);
+    memset(PtrUInt(ob^.buf), 0, cap);
     createOutBuf := ob;
 end;
 
@@ -152,44 +141,53 @@ begin
         buf^.buf[0] := #0;
 end;
 
-procedure bufGrow(buf: POutBuf; needed: uint32);
-var
-    newCap: uint32;
-    newBuf: pchar;
+function bufGrow(buf: POutBuf; needed: uint32): boolean;
+var newCap, required: uint32; newBuf: pchar;
 begin
-    if buf^.len + needed < buf^.cap then exit;
+    bufGrow := false;
+    if needed >= high(uint32) - buf^.len then exit;
+    required := buf^.len + needed + 1;
+    if required <= buf^.cap then begin bufGrow := true; exit; end;
     newCap := buf^.cap;
     if newCap = 0 then newCap := 64;
-    while newCap <= buf^.len + needed do
+    while newCap < required do begin
+        if newCap > high(uint32) div 2 then begin newCap := required; break; end;
         newCap := newCap * 2;
+    end;
     newBuf := pchar(kalloc(newCap));
-    memset(uint32(newBuf), 0, newCap);
-    if buf^.len > 0 then
-        memcpy(uint32(buf^.buf), uint32(newBuf), buf^.len);
+    if newBuf = nil then exit;
+    memcpy(PtrUInt(buf^.buf), PtrUInt(newBuf), buf^.len);
+    newBuf[buf^.len] := #0;
     kfree(void(buf^.buf));
     buf^.buf := newBuf;
     buf^.cap := newCap;
+    bufGrow := true;
 end;
 
 procedure bufWriteChar(buf: POutBuf; c: char);
 begin
     if buf = nil then exit;
-    bufGrow(buf, 2);
+    if not bufGrow(buf, 1) then exit;
     buf^.buf[buf^.len] := c;
     Inc(buf^.len);
     buf^.buf[buf^.len] := #0;
 end;
 
 procedure bufWriteStr(buf: POutBuf; s: pchar);
-var
-    i: uint32;
+var len, offset: uint32; aliases: boolean;
 begin
     if (buf = nil) or (s = nil) then exit;
-    i := 0;
-    while s[i] <> #0 do begin
-        bufWriteChar(buf, s[i]);
-        Inc(i);
-    end;
+    len := stringSize(s);
+    { A source inside the buffer must follow it if growth relocates storage. }
+    aliases := (PtrUInt(s) >= PtrUInt(buf^.buf)) and
+               (PtrUInt(s) - PtrUInt(buf^.buf) < buf^.cap);
+    offset := 0;
+    if aliases then offset := PtrUInt(s) - PtrUInt(buf^.buf);
+    if not bufGrow(buf, len) then exit;
+    if aliases then s := buf^.buf + offset;
+    memcpy(PtrUInt(s), PtrUInt(buf^.buf + buf^.len), len);
+    inc(buf^.len, len);
+    buf^.buf[buf^.len] := #0;
 end;
 
 procedure bufWriteStrLn(buf: POutBuf; s: pchar);
@@ -333,28 +331,24 @@ end;
 
 { ---- Dynamic command registry ---- }
 
-procedure growCommands;
-var
-    newCap: uint32;
-    newArr: PCommand;
-    i: uint32;
+function growCommands: boolean;
+var newCap: uint32; newArr: PCommand;
 begin
-    newCap := CmdCap * 2;
-    newArr := PCommand(kalloc(newCap * SizeOf(TCommand)));
-    memset(uint32(newArr), 0, newCap * SizeOf(TCommand));
-    { Copy existing }
-    for i := 0 to CmdCap - 1 do begin
-        PCommand(uint32(newArr) + i * SizeOf(TCommand))^ :=
-            PCommand(uint32(Commands) + i * SizeOf(TCommand))^;
-    end;
+    growCommands := false;
+    if CmdCap > high(uint32) div sizeof(TCommand) div 2 then exit;
+    if CmdCap = 0 then newCap := INITIAL_CMD_CAP else newCap := CmdCap * 2;
+    newArr := PCommand(kalloc(newCap * sizeof(TCommand)));
+    if newArr = nil then exit;
+    memcpy(PtrUInt(Commands), PtrUInt(newArr), CmdCount * sizeof(TCommand));
     kfree(void(Commands));
     Commands := newArr;
     CmdCap := newCap;
+    growCommands := true;
 end;
 
 function getCmdPtr(index: uint32): PCommand; inline;
 begin
-    getCmdPtr := PCommand(uint32(Commands) + index * SizeOf(TCommand));
+    getCmdPtr := PCommand(PtrUInt(Commands) + index * SizeOf(TCommand));
 end;
 
 procedure registerCommand(command: pchar; method: TCommandMethod; description: pchar);
@@ -366,7 +360,8 @@ procedure registerCommandEx(command: pchar; method: TCommandMethod; description:
 var
     cmd: PCommand;
 begin
-    if CmdCount >= CmdCap then growCommands;
+    if (command = nil) or (method = nil) then exit;
+    if CmdCount >= CmdCap then if not growCommands then exit;
     cmd := getCmdPtr(CmdCount);
     cmd^.registered := true;
     cmd^.hidden := hide;
@@ -390,61 +385,49 @@ begin
 end;
 
 function findCommand(name: pchar): PCommand;
-var
-    i: uint32;
-    cmd: PCommand;
-    ua, ub: pchar;
+var i: uint32; cmd: PCommand;
 begin
     findCommand := nil;
-    ua := stringToUpper(name);
+    if (name = nil) or (CmdCount = 0) then exit;
     for i := 0 to CmdCount - 1 do begin
         cmd := getCmdPtr(i);
-        if cmd^.registered then begin
-            ub := stringToUpper(cmd^.command);
-            if stringEquals(ua, ub) then begin
-                kfree(void(ub));
-                kfree(void(ua));
-                findCommand := cmd;
-                exit;
-            end;
-            kfree(void(ub));
+        if cmd^.registered and stringEqualsCI(name, cmd^.command) then begin
+            findCommand := cmd;
+            exit;
         end;
     end;
-    kfree(void(ua));
 end;
 
 { ---- Parameter parsing ---- }
 
 function getParams(var buf: TCommandBuffer): PParamList;
 var
-    start, finish: uint32;
-    size: uint32;
-    ptr: uint32;
-    root: PParamList;
-    current: PParamList;
+    start, finish, size: uint32;
+    root, current: PParamList;
 begin
+    getParams := nil;
     root := PParamList(kalloc(SizeOf(TParamList)));
+    if root = nil then exit;
     current := root;
     current^.next := nil;
     current^.Param := nil;
-    start := 0;
     finish := 0;
-    while buf[start] <> 0 do begin
-        while (char(buf[finish]) <> ' ') and (buf[finish] <> 0) do
-            Inc(finish);
+    while finish < sizeof(buf) do begin
+        while (finish < sizeof(buf)) and (buf[finish] = ord(' ')) do inc(finish);
+        if finish = sizeof(buf) then break;
+        if buf[finish] = 0 then break;
+        start := finish;
+        while (finish < sizeof(buf)) and (buf[finish] <> ord(' ')) and
+              (buf[finish] <> 0) do inc(finish);
         size := finish - start;
-        if size > 0 then begin
-            ptr := uint32(@buf[start]);
-            current^.Param := pchar(kalloc(size + 2));
-            memset(uint32(current^.Param), 0, size + 2);
-            memcpy(uint32(ptr), uint32(current^.Param), size);
-            current^.next := PParamList(kalloc(SizeOf(TParamList)));
-            current := current^.next;
-            current^.next := nil;
-            current^.Param := nil;
-        end;
-        start := finish + 1;
-        Inc(finish);
+        current^.Param := stringNew(size);
+        if current^.Param = nil then begin freeParams(root); exit; end;
+        memcpy(PtrUInt(@buf[start]), PtrUInt(current^.Param), size);
+        current^.next := PParamList(kalloc(SizeOf(TParamList)));
+        if current^.next = nil then begin freeParams(root); exit; end;
+        current := current^.next;
+        current^.next := nil;
+        current^.Param := nil;
     end;
     getParams := root;
 end;
@@ -499,78 +482,46 @@ begin
     getParam := search^.param;
 end;
 
-{ ---- Working directory ---- }
-
-function getWorkingDirectory: pchar;
-begin
-    getWorkingDirectory := driver.storage.vfs.GetWorkingDirectory;
-end;
-
-procedure setWorkingDirectory(str: pchar);
-begin
-    if str <> nil then
-        driver.storage.vfs.ChangeDirectory(str);
-end;
 
 { ---- Halt mechanism ---- }
 
 function halt(id: uint32; cb: THaltCallback): boolean;
+var flags: PtrUInt;
 begin
-    halt := false;
+    flags := arch.common.interrupts.lock;
+    halt := not Halted;
     if not Halted then begin
-        Halted := true;
-        halt := true;
         HaltID := id;
         HaltCB := cb;
+        Halted := true;
     end;
+    arch.common.interrupts.unlock(flags);
 end;
 
 function done(id: uint32): boolean;
+var flags: PtrUInt; callback: THaltCallback;
 begin
-    done := false;
-    if Halted then begin
-        if id = HaltID then begin
-            if HaltCB <> nil then HaltCB();
-            HaltCB := nil;
-            Halted := false;
-            HaltID := 0;
-            done := true;
-        end;
+    flags := arch.common.interrupts.lock;
+    done := Halted and (id = HaltID);
+    callback := nil;
+    if done then begin
+        callback := HaltCB;
+        HaltCB := nil;
+        Halted := false;
+        HaltID := 0;
     end;
+    arch.common.interrupts.unlock(flags);
+    if callback <> nil then callback();
 end;
 
 { ---- Built-in commands ---- }
 
-procedure cmd_version(params: PParamList; stdin_buf, stdout_buf, stderr_buf: POutBuf);
-begin
-    bufWriteStr(stdout_buf, '  Asuro Version: ');
-    bufWriteStrLn(stdout_buf, core.version.VERSION);
-    bufWriteStr(stdout_buf, '  Compiled on: ');
-    bufWriteStr(stdout_buf, core.version.COMPILE_DATE);
-    bufWriteStr(stdout_buf, ' ');
-    bufWriteStrLn(stdout_buf, core.version.COMPILE_TIME);
-    bufWriteStrLn(stdout_buf, '  Compiled With: ');
-    bufWriteStr(stdout_buf, '    NASM - Version: ');
-    bufWriteStrLn(stdout_buf, core.version.NASM_VERSION);
-    bufWriteStr(stdout_buf, '    FPC  - Version: ');
-    bufWriteStrLn(stdout_buf, core.version.FPC_VERSION);
-    bufWriteStr(stdout_buf, '    MAKE - Version: ');
-    bufWriteStrLn(stdout_buf, core.version.MAKE_VERSION);
-    bufWriteStr(stdout_buf, '  ');
-    bufWriteInt(stdout_buf, core.version.LINE_COUNT);
-    bufWriteStr(stdout_buf, ' lines, across ');
-    bufWriteInt(stdout_buf, core.version.FILE_COUNT);
-    bufWriteStrLn(stdout_buf, ' files.');
-    bufWriteStr(stdout_buf, '  Baked Drivers: ');
-    bufWriteIntLn(stdout_buf, core.version.DRIVER_COUNT);
-    bufWriteStr(stdout_buf, '  Checksum: ');
-    bufWriteStrLn(stdout_buf, core.version.CHECKSUM);
-end;
 
 procedure cmd_echo(params: PParamList; stdin_buf, stdout_buf, stderr_buf: POutBuf);
 var
     current: PParamList;
 begin
+    if params = nil then exit;
     current := params^.next;
     while (current <> nil) and (current^.param <> nil) do begin
         bufWriteStr(stdout_buf, current^.param);
@@ -596,6 +547,7 @@ var
     len: uint32;
     cmd: PCommand;
 begin
+    if CmdCount = 0 then exit;
     longestCommand := 0;
     for i := 0 to CmdCount - 1 do begin
         cmd := getCmdPtr(i);
@@ -619,63 +571,114 @@ begin
     end;
 end;
 
-procedure cmd_time(params: PParamList; stdin_buf, stdout_buf, stderr_buf: POutBuf);
-var
-    dt: TDateTime;
+
+var testCallbackCount: uint32;
+    testCallbackReentered: boolean;
+procedure testHaltCallback;
 begin
-    dt := getDateTime;
-    if dt.Day < 10 then bufWriteChar(stdout_buf, '0');
-    bufWriteInt(stdout_buf, dt.Day);
-    bufWriteChar(stdout_buf, '/');
-    if dt.Month < 10 then bufWriteChar(stdout_buf, '0');
-    bufWriteInt(stdout_buf, dt.Month);
-    bufWriteChar(stdout_buf, '/');
-    bufWriteInt(stdout_buf, dt.Century);
-    bufWriteInt(stdout_buf, dt.Year);
-    bufWriteChar(stdout_buf, ' ');
-    if dt.Hours < 10 then bufWriteChar(stdout_buf, '0');
-    bufWriteInt(stdout_buf, dt.Hours);
-    bufWriteChar(stdout_buf, ':');
-    if dt.Minutes < 10 then bufWriteChar(stdout_buf, '0');
-    bufWriteInt(stdout_buf, dt.Minutes);
-    bufWriteChar(stdout_buf, ':');
-    if dt.Seconds < 10 then bufWriteChar(stdout_buf, '0');
-    bufWriteIntLn(stdout_buf, dt.Seconds);
-    bufWriteStr(stdout_buf, 'Weekday: ');
-    bufWriteStrLn(stdout_buf, WeekdayToString(dt.Weekday));
+    inc(testCallbackCount);
+    testCallbackReentered := (not done(41)) and halt(42, nil);
 end;
 
-procedure cmd_reboot(params: PParamList; stdin_buf, stdout_buf, stderr_buf: POutBuf);
+{ Tests use an isolated command registry; production registrations are restored. }
+procedure UnitTest;
+type PCommandBuffer = ^TCommandBuffer;
+var
+    input: PCommandBuffer;
+    params: PParamList;
+    output: POutBuf;
+    oldCommands: PCommand;
+    oldHalted: boolean;
+    oldHaltID: uint32;
+    oldHaltCB: THaltCallback;
+    oldCount, oldCap, i, passed, failed: uint32;
+    beforeFree: SizeUInt;
+    procedure Assert(condition: boolean; name: pchar);
+    begin
+        if condition then inc(passed) else begin
+            inc(failed);
+            arch.platform.diagnostics.log('STDIO FAIL', name);
+        end;
+    end;
 begin
-    resetSystem;
+    passed := 0; failed := 0; beforeFree := lmm_total_free;
+    oldHalted := Halted; oldHaltID := HaltID; oldHaltCB := HaltCB;
+    Halted := false; HaltID := 0; HaltCB := nil;
+    testCallbackCount := 0; testCallbackReentered := false;
+    Assert(halt(41, @testHaltCallback) and not halt(42, nil), 'halt reserves one owner');
+    Assert(not done(42) and Halted, 'wrong completion preserves halt owner');
+    Assert(done(41) and (testCallbackCount = 1) and testCallbackReentered and
+           Halted and (HaltID = 42), 'completion detaches before callback reentry');
+    Assert(done(42) and not done(42), 'completion releases exactly once');
+    Halted := oldHalted; HaltID := oldHaltID; HaltCB := oldHaltCB;
+    oldCommands := Commands; oldCount := CmdCount; oldCap := CmdCap;
+    Commands := nil; CmdCount := 0; CmdCap := 0;
+    Assert(findCommand('missing') = nil, 'empty registry lookup');
+    for i := 0 to 69 do registerCommand('ECHO', @cmd_echo, 'test');
+    Assert((getCommandCount = 70) and (getCommand(69) <> nil) and
+           (getCommand(70) = nil), 'registry growth and bounds');
+    Assert(findCommand('echo') = getCommand(0), 'case-insensitive command lookup');
+    output := createOutBuf(1);
+    input := PCommandBuffer(kalloc(sizeof(TCommandBuffer)));
+    if (output <> nil) and (input <> nil) then begin
+        bufWriteStr(output, 'grow');
+        bufWriteStr(output, output^.buf);
+        Assert(stringEquals(output^.buf, 'growgrow'), 'self append across buffer relocation');
+        bufClear(output);
+        bufWriteInt(output, low(integer));
+        Assert(stringEquals(output^.buf, '-2147483648'), 'signed integer formatting');
+        bufClear(output);
+        bufWriteHex(output, $89ABCDEF);
+        Assert(stringEquals(output^.buf, '0x89ABCDEF'), 'hexadecimal formatting');
+        bufClear(output);
+        memset(PtrUInt(input), 0, sizeof(TCommandBuffer));
+        memcpy(PtrUInt(pchar('echo  one two')), PtrUInt(input), 13);
+        params := getParams(input^);
+        Assert((paramCount(params) = 2) and stringEquals(getParam(1, params), 'two') and
+               (getParam(2, params) = nil), 'parser terminates at final token');
+        findCommand('EcHo')^.method(params, nil, output, nil);
+        Assert(stringEquals(output^.buf, 'one two '#10), 'registered ECHO dispatch');
+        freeParams(params);
+        memset(PtrUInt(input), ord('x'), sizeof(TCommandBuffer));
+        params := getParams(input^);
+        Assert((params <> nil) and (stringSize(params^.param) = sizeof(TCommandBuffer)),
+               'parser bounded without terminator');
+        freeParams(params);
+        memset(PtrUInt(input), ord(' '), sizeof(TCommandBuffer));
+        input^[1023] := ord('z');
+        params := getParams(input^);
+        Assert((params <> nil) and stringEquals(params^.param, 'z'), 'parser final byte');
+        freeParams(params);
+        input^[0] := 0;
+        params := getParams(input^);
+        Assert((paramCount(params) = 0) and (getParam(0, params) = nil), 'empty parameters');
+        freeParams(params);
+        Assert(getParam(0, nil) = nil, 'nil parameter lookup');
+    end else Assert(false, 'stdio test allocation');
+    freeOutBuf(output); kfree(void(input));
+    kfree(void(Commands));
+    Commands := oldCommands; CmdCount := oldCount; CmdCap := oldCap;
+    Assert(lmm_total_free = beforeFree, 'stdio allocation ownership restored');
+    arch.platform.diagnostics.testSummary('STDIO', 'STDIO_TESTS_PASSED', 'STDIO_TESTS_FAILED', passed, failed);
 end;
 
 { ---- Initialization ---- }
 
 procedure init;
 begin
-    { Allocate initial command array }
-    CmdCap := INITIAL_CMD_CAP;
-    CmdCount := 0;
-    Commands := PCommand(kalloc(CmdCap * SizeOf(TCommand)));
-    memset(uint32(Commands), 0, CmdCap * SizeOf(TCommand));
+    if Commands <> nil then exit;
+    if not growCommands then exit;
+    UnitTest;
 
     Halted := false;
     HaltID := 0;
     HaltCB := nil;
 
     { Register built-in commands }
-    registerCommand('VERSION', @cmd_version, 'Display the running version of Asuro.');
-    registerCommand('CLEAR', @cmd_clear, 'Clear the Screen.');
+        registerCommand('CLEAR', @cmd_clear, 'Clear the Screen.');
     registerCommand('HELP', @cmd_help, 'Lists all registered commands and their description.');
     registerCommand('ECHO', @cmd_echo, 'Echo''s text to the terminal.');
-    registerCommand('TIME', @cmd_time, 'Print the current time.');
-    registerCommand('REBOOT', @cmd_reboot, 'Reboot the system.');
+    end;
 
-    io.syslog.logln('STDIO', 'Initialized.');
-end;
-
-initialization
-    boot.mgr.registerBoot('io.stdio', @init, 'Standard I/O Abstraction', BOOT_MGR_BARRIER_EARLY);
 
 end.

@@ -1,4 +1,5 @@
 //  Copyright 2021 Kieron Morris
+//  Copyright 2026 Aaron Hance
 //
 //  Licensed under the Apache License, Version 2.0 (the "License");
 //  you may not use this file except in compliance with the License.
@@ -35,7 +36,7 @@ uses
 procedure init;
 
 { No idle ESP variable needed — idle is now a formal process (PID 0)
-  with its SavedESP managed like any other process. }
+  with its SavedStack managed like any other process. }
 
 implementation
 
@@ -51,7 +52,7 @@ var
     next : PProcessContext;
 begin
     { 1. Save ESP into the current process }
-    proc.mgr.CurrentProcess^.SavedESP := saved_esp;
+    proc.mgr.CurrentProcess^.SavedStack := saved_esp;
 
     { 2. Dispatch all hooks registered on interrupt 32 (timer hooks).
          This fires TMR_0_ISR.Main which in turn fires BDA tick,
@@ -66,7 +67,7 @@ begin
     proc.mgr.CurrentProcess := next;
 
     { 5. Return the selected process ESP }
-    do_context_switch_work := next^.SavedESP;
+    do_context_switch_work := next^.SavedStack;
 end;
 
 { -----------------------------------------------------------------------
