@@ -23,7 +23,7 @@ unit driver.bus.usb.types;
 interface
 
 uses
-    core.util, arch.x86.util,
+    core.util, arch.platform.cpu, arch.platform.diagnostics,
     memory.heap,
     driver.types,
     core.ds.lists,
@@ -229,6 +229,7 @@ type
     { ---- Forward Declarations ---- }
 
     PUSBDevice   = ^TUSBDevice;
+    PPUSBDevice  = ^PUSBDevice;
     PUSBHCDriver = ^TUSBHCDriver;
     PUSBTransfer = ^TUSBTransfer;
 
@@ -289,7 +290,7 @@ type
         HCType       : uint8;       { USB_HC_UHCI / driver.bus.usb.ohci / driver.bus.usb.ehci / driver.bus.usb.xhci }
         NumPorts     : uint8;
         PCIDev       : TPCI_Device; { Owning driver.bus.pci device }
-        BaseAddr     : uint32;      { I/O base (driver.bus.usb.uhci) or MMIO base (driver.bus.usb.ohci/driver.bus.usb.ehci/driver.bus.usb.xhci) }
+        BaseAddr     : PtrUInt;      { I/O base (driver.bus.usb.uhci) or MMIO base (driver.bus.usb.ohci/driver.bus.usb.ehci/driver.bus.usb.xhci) }
         PrivData     : Pointer;     { HC-specific state }
         Devices      : PLinkedListBase; { List of PUSBDevice attached }
         NextAddress  : uint8;       { Next available driver.bus.usb address (1-127) }
@@ -350,37 +351,31 @@ uses
 { ========================= Alignment Helpers ========================= }
 
 function kalloc_aligned(size : uint32; alignment : uint32) : Pointer;
+type
+    PAllocation = ^PtrUInt;
 var
-    raw      : uint32;
-    aligned  : uint32;
-    overhead : uint32;
+    raw, aligned, overhead: PtrUInt;
 begin
-    push_trace('driver.bus.usb.types.kalloc_aligned');
-    if alignment < 4 then alignment := 4;
-    overhead := alignment + sizeof(uint32);
-    raw := uint32(kalloc(size + overhead));
-    if raw = 0 then begin
-        kalloc_aligned := nil;
-        pop_trace;
-        exit;
-    end;
-    aligned := (raw + sizeof(uint32) + alignment - 1) AND (NOT (alignment - 1));
-    { Store original raw pointer just before the aligned address }
-    PUint32(aligned - 4)^ := raw;
-    kalloc_aligned := Pointer(aligned);
-    pop_trace;
+    kalloc_aligned := nil;
+    if (size = 0) or (alignment = 0) or
+       ((alignment and (alignment - 1)) <> 0) then exit;
+    if alignment < sizeof(PtrUInt) then alignment := sizeof(PtrUInt);
+    overhead := PtrUInt(alignment) - 1 + sizeof(PtrUInt);
+    if PtrUInt(size) > High(PtrUInt) - overhead then exit;
+    raw := PtrUInt(kalloc(PtrUInt(size) + overhead));
+    if raw = 0 then exit;
+    aligned := (raw + sizeof(PtrUInt) + alignment - 1) and
+        not (PtrUInt(alignment) - 1);
+    PAllocation(aligned - sizeof(PtrUInt))^ := raw;
+    kalloc_aligned := pointer(aligned);
 end;
 
 procedure kfree_aligned(p : Pointer);
-var
-    raw : uint32;
+type
+    PAllocation = ^PtrUInt;
 begin
-    push_trace('driver.bus.usb.types.kfree_aligned');
-    if p <> nil then begin
-        raw := PUint32(uint32(p) - 4)^;
-        kfree(void(raw));
-    end;
-    pop_trace;
+    if p <> nil then
+        kfree(void(PAllocation(PtrUInt(p) - sizeof(PtrUInt))^));
 end;
 
 { ========================= Setup Packet Builder ========================= }
@@ -469,6 +464,7 @@ var
     context : TTestContext;
     p     : Pointer;
     setup : TUSBSetupPacket;
+    beforeFree: SizeUInt;
 
 begin
     test.harness.Start(@context, 'driver.bus.usb.types');
@@ -481,34 +477,40 @@ begin
     test.harness.Assert(@context, sizeof(TUSBSetupPacket) = 8, 'sizeof SetupPacket=8');
     test.harness.Assert(@context, sizeof(TUSBHubDescriptor) = 7, 'sizeof HubDescriptor=7');
 
+    beforeFree := lmm_total_free;
+    test.harness.Assert(@context, kalloc_aligned(0, 16) = nil, 'zero allocation rejected');
+    test.harness.Assert(@context, kalloc_aligned(16, 0) = nil, 'zero alignment rejected');
+    test.harness.Assert(@context, kalloc_aligned(16, 24) = nil, 'non-power-of-two alignment rejected');
     { === kalloc_aligned / kfree_aligned === }
     { 16-byte alignment }
     p := kalloc_aligned(32, 16);
     test.harness.Assert(@context, p <> nil, 'kalloc_aligned(32,16) not nil');
-    test.harness.Assert(@context, (uint32(p) AND $0F) = 0, 'kalloc_aligned(32,16) aligned to 16');
+    test.harness.Assert(@context, (PtrUInt(p) AND $0F) = 0, 'kalloc_aligned(32,16) aligned to 16');
     kfree_aligned(p);
 
     { 256-byte alignment (HCCA) }
     p := kalloc_aligned(256, 256);
     test.harness.Assert(@context, p <> nil, 'kalloc_aligned(256,256) not nil');
-    test.harness.Assert(@context, (uint32(p) AND $FF) = 0, 'kalloc_aligned(256,256) aligned to 256');
+    test.harness.Assert(@context, (PtrUInt(p) AND $FF) = 0, 'kalloc_aligned(256,256) aligned to 256');
     kfree_aligned(p);
 
     { 4096-byte alignment (frame list) }
     p := kalloc_aligned(4096, 4096);
     test.harness.Assert(@context, p <> nil, 'kalloc_aligned(4096,4096) not nil');
-    test.harness.Assert(@context, (uint32(p) AND $FFF) = 0, 'kalloc_aligned(4096,4096) aligned to 4096');
+    test.harness.Assert(@context, (PtrUInt(p) AND $FFF) = 0, 'kalloc_aligned(4096,4096) aligned to 4096');
     kfree_aligned(p);
 
     { 32-byte alignment (qTD) }
     p := kalloc_aligned(32, 32);
     test.harness.Assert(@context, p <> nil, 'kalloc_aligned(32,32) not nil');
-    test.harness.Assert(@context, (uint32(p) AND $1F) = 0, 'kalloc_aligned(32,32) aligned to 32');
+    test.harness.Assert(@context, (PtrUInt(p) AND $1F) = 0, 'kalloc_aligned(32,32) aligned to 32');
     kfree_aligned(p);
 
     { kfree_aligned(nil) should not crash }
     kfree_aligned(nil);
     test.harness.Assert(@context, true, 'kfree_aligned(nil) no crash');
+
+    test.harness.Assert(@context, lmm_total_free = beforeFree, 'aligned allocations release native base pointers');
 
     { === make_setup_packet === }
     setup := make_setup_packet($80, USB_REQ_GET_DESCRIPTOR, $0100, $0000, 18);

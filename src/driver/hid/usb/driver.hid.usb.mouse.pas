@@ -13,7 +13,6 @@ unit driver.hid.usb.mouse;
 interface
 
 uses
-    boot.mgr,
     driver.bus.usb.types,
     driver.bus.usb.core,
     driver.hid.mouse,
@@ -23,7 +22,7 @@ uses
     debug.tracer,
     io.syslog,
     core.strings,
-    core.util, arch.x86.util;
+    core.util, arch.platform.cpu, arch.platform.diagnostics;
 
 procedure init;
 procedure poll_mice;
@@ -85,7 +84,7 @@ function mouse_delta_x(report : Pointer) : sint32;
 var
     raw : uint8;
 begin
-    raw := PUint8(uint32(report) + 1)^;
+    raw := PUint8(PtrUInt(report) + 1)^;
     if raw < 128 then
         mouse_delta_x := sint32(raw)
     else
@@ -97,7 +96,7 @@ function mouse_delta_y(report : Pointer) : sint32;
 var
     raw : uint8;
 begin
-    raw := PUint8(uint32(report) + 2)^;
+    raw := PUint8(PtrUInt(report) + 2)^;
     if raw < 128 then
         mouse_delta_y := sint32(raw)
     else
@@ -111,7 +110,7 @@ var
 begin
     mouse_scroll := 0;
     if reportLen < 4 then exit;
-    raw := PUint8(uint32(report) + 3)^;
+    raw := PUint8(PtrUInt(report) + 3)^;
     if raw < 128 then
         mouse_scroll := sint32(raw)
     else
@@ -523,8 +522,5 @@ begin
 
     test.harness.Finish(@context);
 end;
-
-initialization
-    boot.mgr.registerBoot('driver.hid.usb.mouse', @Init, 'USB Mouse Driver', BOOT_MGR_BARRIER_DEVICE);
 
 end.
