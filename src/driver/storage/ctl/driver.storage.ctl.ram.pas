@@ -36,7 +36,7 @@ procedure init;
 implementation
 
 uses
-    core.strings, memory.heap, core.ds.lists, core.util, arch.x86.util;
+    core.strings, memory.heap, core.ds.lists, core.util, arch.platform.cpu;
 
 const
     MAX_RAM_FILES = 32;
@@ -53,6 +53,7 @@ var
     Files      : array[0..MAX_RAM_FILES-1] of TRAMFile;
     FileCount  : uint32;
     RAMVolume  : TStorage_Volume;
+    RAMDevice  : PStorage_Device;
     RAMFS      : TFilesystem;
 
 { ---- Internal helpers ---- }
@@ -75,7 +76,7 @@ end;
 function stripLeadingSlash(path : pchar) : pchar;
 begin
     if (path <> nil) and (path[0] = '/') then
-        stripLeadingSlash := pchar(uint32(path) + 1)
+        stripLeadingSlash := pchar(PtrUInt(path) + 1)
     else
         stripLeadingSlash := path;
 end;
@@ -103,7 +104,7 @@ begin
 
     avail := Files[idx].Size - offset;
     if byteCount < avail then copyLen := byteCount else copyLen := avail;
-    memcpy(uint32(Files[idx].Data) + offset, uint32(buffer), copyLen);
+    memcpy(PtrUInt(Files[idx].Data) + offset, PtrUInt(buffer), copyLen);
     rd_ReadOffset := copyLen;
 end;
 
@@ -193,8 +194,9 @@ begin
     if (data = nil) or (size = 0) then exit;
     buf := puint8(kalloc(size));
     if buf = nil then exit;
-    memcpy(uint32(data), uint32(buf), size);
+    memcpy(PtrUInt(data), PtrUInt(buf), size);
     storeFileCopy := storeFile(name, buf, size);
+    if not storeFileCopy then kfree(void(buf));
 end;
 
 procedure removeFile(name : pchar; freeBuf : boolean);
@@ -255,7 +257,7 @@ begin
     FileCount := 0;
 
     { Set up a minimal filesystem descriptor with our callbacks }
-    memset(uint32(@RAMFS), 0, sizeof(TFilesystem));
+    memset(PtrUInt(@RAMFS), 0, sizeof(TFilesystem));
     RAMFS.sName := 'ramfs';
     RAMFS.readDirCallback := @rd_ReadDir;
     RAMFS.readOffsetCallback := @rd_ReadOffset;
@@ -263,8 +265,14 @@ begin
     RAMFS.identifyCallback := @rd_Identify;
 
     { Set up a virtual volume backed by our filesystem }
-    memset(uint32(@RAMVolume), 0, sizeof(TStorage_Volume));
+    memset(PtrUInt(@RAMVolume), 0, sizeof(TStorage_Volume));
     RAMVolume.filesystem := @RAMFS;
+    RAMDevice := PStorage_Device(kalloc(sizeof(TStorage_Device)));
+    if RAMDevice = nil then exit;
+    RAMDevice^.controller := ControllerRAM;
+    RAMDevice^.sectorSize := 512;
+    RAMVolume.device := RAMDevice;
+    RAMVolume.sectorSize := 512;
 
     { Mount into VFS at /disk/ram }
     driver.storage.vfs.mountVolume('/disk/ram', @RAMVolume);
