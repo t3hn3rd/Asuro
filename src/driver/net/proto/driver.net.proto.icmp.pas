@@ -22,9 +22,8 @@ unit driver.net.proto.icmp;
 interface
 
 uses
-    arch.x86.bda,
     memory.heap, debug.tracer,
-    driver.net, driver.net.types, driver.net.util, driver.net.proto.ipv4, driver.net.proto.arp, core.util, arch.x86.util;
+    driver.net, driver.net.types, driver.net.util, driver.net.proto.ipv4, driver.net.proto.arp, core.util, arch.platform.cpu;
 
 type
     TARPErrorCode     = (aecFailedToResolveHost, aecNoRouteToHost, aecTimeout, aecTTLExpired);
@@ -38,12 +37,30 @@ type
     end;
 
 procedure register;
+procedure cancelRequests(userData: void);
 procedure sendICMPRequest(ip : puint8; Sequence : uint16; TTL : uint8; OnRep : TARPReplyCallback; OnErr : TARPErrorCallback; userData : void);
 
 implementation
 
 var
     Handlers : Array[0..255] of TARPHandler;
+
+procedure cancelRequests(userData: void);
+var
+    i: uint32;
+    flags: PtrUInt;
+begin
+    flags := arch.platform.cpu.lock;
+    for i := 1 to 255 do begin
+        if Handlers[i].UserData = userData then begin
+            Handlers[i].Active := false;
+            Handlers[i].UserData := nil;
+            Handlers[i].OnReply := nil;
+            Handlers[i].OnError := nil;
+        end;
+    end;
+    arch.platform.cpu.unlock(flags);
+end;
 
 function nextInactiveHandler : uint8;
 var
@@ -74,15 +91,23 @@ var
     Buffer   : void;
     CHK      : uint16;
     Size     : uint32;
+    flags    : PtrUInt;
 
 begin
     push_trace('driver.net.proto.icmp.sendICMPRequest');
     writeToLogLn('        L4/ICMP: sendICMPRequest');
+    flags := arch.platform.cpu.lock;
     handle:= nextInactiveHandler;
+    if handle = 0 then begin
+        arch.platform.cpu.unlock(flags);
+        if OnErr <> nil then OnErr(nil, aecTimeout, userData);
+        exit;
+    end;
     Handlers[handle].Active:= true;
     Handlers[handle].OnReply:= OnRep;
     Handlers[handle].OnError:= OnErr;
     Handlers[handle].UserData:= userData;
+    arch.platform.cpu.unlock(flags);
     if SameSubnetIPv4(ip, @getIPv4Config^.Address[0], @getIPv4Config^.Netmask[0]) then begin
         dest_mac:= driver.net.proto.arp.resolveIP(ip);
     end else begin
@@ -109,7 +134,7 @@ begin
         Header^.Identifier:= handle;
         Header^.Sequence:= Sequence;
 
-        memcpy(uint32(@ICMP_DATA_GENERIC[0]), uint32(Buffer) + sizeof(TICMPHeader), sizeof(ICMP_DATA_GENERIC));
+        memcpy(PtrUInt(@ICMP_DATA_GENERIC[0]), PtrUInt(Buffer) + sizeof(TICMPHeader), sizeof(ICMP_DATA_GENERIC));
 
         CHK:= calculateChecksum(puint16(Buffer), Size);
 
@@ -117,6 +142,7 @@ begin
         Header^.ICMP_CHK_Lo:= CHK SHR 8;
 
         driver.net.proto.ipv4.send(Buffer, size, context);
+        kfree(Buffer);
         
         freePacketContext(context);
     end;
@@ -135,6 +161,7 @@ var
 
 begin
     push_trace('driver.net.proto.icmp.recv');
+    if (p_data = nil) or (p_len < sizeof(TICMPHeader)) then exit;
     writeToLogLn('        L4/ICMP: recv');
     Header:= PICMPHeader(p_data);
     //writehexlnWND(Header^.ICMP_Type, getTerminalHWND); 
@@ -153,6 +180,7 @@ begin
             driver.net.proto.ipv4.send(p_data, p_len, p_context);    
         end;
         $00:begin //Reply
+            if Header^.Identifier > 255 then exit;
             Handle:= Header^.Identifier;
             if (Handle > 0) and (Handle < 256) then begin
                 If Handlers[Handle].Active then begin

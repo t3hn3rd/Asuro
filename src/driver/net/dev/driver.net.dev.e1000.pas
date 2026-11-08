@@ -22,22 +22,20 @@ unit driver.net.dev.e1000;
 interface
 
 uses
-    boot.mgr,
     debug.tracer,
     io.syslog,
     io.stdio,
     core.strings,
-    arch.x86.memory.virtual,
+    arch.platform.memory,
     memory.heap,
     driver.mgr,
     driver.types,
-    core.util, arch.x86.util,
-    arch.x86.idt,
+    core.util, arch.platform.cpu,
     driver.bus.pci,
     driver.net,
     driver.net.types,
     driver.net.util,
-    arch.x86.isr.mgr;
+    arch.platform.interrupts;
 
 const
     INTEL_VEND      = $8086;
@@ -165,7 +163,7 @@ var
     card_type : TCardType;
     bar_type : uint8;
     io_base  : uint16;
-    mem_base : uint64;
+    mem_base : PtrUInt;
     eeprom_exists : boolean;
     mac : array[0..5] of uint8;
     rx_descs : array[0..E1000_NUM_RX_DESC-1] of PE1000_rx_desc;
@@ -173,7 +171,8 @@ var
     rx_buffs : array[0..E1000_NUM_RX_DESC-1] of puint8;
     rx_curr  : uint16;
     tx_curr  : uint16;
-    mem_aloc : boolean = false;
+    dmaAllocation: void;
+    dmaBase: PtrUInt;
 
 procedure writeCommand(p_address : uint16; p_value : uint32);
 var
@@ -225,24 +224,24 @@ end;
 
 function EEPROMRead( address : uint8 ) : uint32;
 var
-    data : uint16;
-    tmp  : uint32;
+    tmp, mask, attempt: uint32;
 
 begin
-    tmp:= 0;
+    EEPROMRead := $FFFFFFFF;
     if (eeprom_exists) then begin
         writeCommand( REG_EEPROM, 1 OR (uint32(address) SHL 8) );
-        while (tmp AND (1 SHL 4)) = 0 do begin
-            tmp:= readCommand(REG_EEPROM); //Might be wrong?
-        end;
+        mask := 1 shl 4;
     end else begin
         writeCommand( REG_EEPROM, 1 OR (uint32(address) SHL 2) );
-        while (tmp AND (1 SHL 1)) = 0 do begin
-            tmp:= readCommand(REG_EEPROM); //Might be wrong?
+        mask := 1 shl 1;
+    end;
+    for attempt := 0 to 9999 do begin
+        tmp := readCommand(REG_EEPROM);
+        if tmp and mask <> 0 then begin
+            EEPROMRead := tmp shr 16;
+            exit;
         end;
     end;
-    data:= uint16( (tmp SHR 16) AND ($FFFF) );
-    EEPROMRead:= data;
 end;
 
 function readMACAddress() : boolean;
@@ -258,19 +257,31 @@ begin
     res:= true;
     if (eeprom_exists) then begin
         temp:= EEPROMRead(0);
+        if temp = $FFFFFFFF then begin
+            readMACAddress := false;
+            exit;
+        end;
         mac[0]:= temp AND $FF;
         mac[1]:= temp SHR 8;
         temp:= EEPROMRead(1);
+        if temp = $FFFFFFFF then begin
+            readMACAddress := false;
+            exit;
+        end;
         mac[2]:= temp AND $FF;
         mac[3]:= temp SHR 8;
         temp:= EEPROMRead(2);
+        if temp = $FFFFFFFF then begin
+            readMACAddress := false;
+            exit;
+        end;
         mac[4]:= temp AND $FF;
         mac[5]:= temp SHR 8;
     end else begin
         mem_base_mac_8:= puint8(mem_base + $5400);
         mem_base_mac_32:= puint32(mem_base + $5400);
         if (mem_base_mac_32[0] <> 0) then begin
-            for i:=0 to 6 do begin
+            for i:=0 to 5 do begin
                 mac[i]:= mem_base_mac_8[i];
             end; 
         end else begin
@@ -289,89 +300,59 @@ begin
     writeCommand(REG_CTRL, val OR ECTRL_SLU);
 end;
 
-procedure rxinit();
+{ Each DMA object fits within one aligned 4 KiB page. The heap allocation
+  remains owned by the loaded driver; physical pages need not be adjacent. }
+procedure rxinit;
 var
-    ptr    : puint8;
-    outptr : puint8;
-    descs  : PE1000_rx_desc;
-    i      : uint32;
-
+    physical: uint64;
+    descs: PE1000_rx_desc;
+    i: uint32;
 begin
-    ptr:= puint8(kalloc(sizeof(TE1000_rx_desc) * E1000_NUM_RX_DESC + 16));
-    descs:= PE1000_rx_desc(ptr);
-    for i:=0 to E1000_NUM_RX_DESC do begin
-        rx_descs[i]:= @descs[i];//PE1000_rx_desc(uint32(descs) + i*16);
-        rx_buffs[i]:= puint8(kalloc(8192 + 16));
-        rx_descs[i]^.address:= uint64(vtop(uint32(rx_buffs[i])));
-        rx_descs[i]^.status:= 0;
+    descs := PE1000_rx_desc(dmaBase);
+    for i := 0 to E1000_NUM_RX_DESC - 1 do begin
+        rx_descs[i] := @descs[i];
+        rx_buffs[i] := puint8(dmaBase + (2 + i) * 4096);
+        rx_descs[i]^.address := physicalAddress(PtrUInt(rx_buffs[i]));
+        rx_descs[i]^.status := 0;
     end;
-
-    outptr:= puint8(vtop(uint32(ptr)));//puint8(uint32(ptr) - KERNEL_VIRTUAL_BASE);
-
-    io.syslog.log('driver.net.dev.e1000 Driver', 'RX VMem: ');
-    io.syslog.writehexln(uint32(ptr));
-    io.syslog.log('driver.net.dev.e1000 Driver', 'RX Mem: ');
-    io.syslog.writehexln(uint32(outptr));
-
-    writeCommand(REG_TXDESCLO, uint32(uint64(outptr) SHR 32));
-    writeCommand(REG_TXDESCHI, uint32(uint64(outptr) AND $FFFFFFFF));
-
-    writeCommand(REG_RXDESCLO, uint32(outptr));
-    writeCommand(REG_RXDESCHI, 0);
-
+    physical := physicalAddress(dmaBase);
+    writeCommand(REG_RXDESCLO, uint32(physical));
+    writeCommand(REG_RXDESCHI, uint32(physical shr 32));
     writeCommand(REG_RXDESCLEN, E1000_NUM_RX_DESC * sizeof(TE1000_rx_desc));
-
     writeCommand(REG_RXDESCHEAD, 0);
-    writeCommand(REG_RXDESCTAIL, E1000_NUM_RX_DESC-1);
-    rx_curr:= 0;
-
-    writeCommand(REG_RCTRL, RCTL_EN OR RCTL_SBP OR RCTL_UPE OR RCTL_MPE OR RCTL_LBM_NONE OR RTCL_RDMTS_HALF OR RCTL_BAM OR RCTL_SECRC OR RCTL_BSIZE_2048);
+    writeCommand(REG_RXDESCTAIL, E1000_NUM_RX_DESC - 1);
+    rx_curr := 0;
+    writeCommand(REG_RCTRL, RCTL_EN or RCTL_BAM or RCTL_SECRC or RCTL_BSIZE_2048);
 end;
 
-procedure txinit();
+procedure txinit;
 var
-    ptr    : puint8;
-    outptr : puint8;
-    descs  : PE1000_tx_desc;
-    i      : uint32;
-
+    physical: uint64;
+    descs: PE1000_tx_desc;
+    i: uint32;
 begin
-    ptr:= puint8(kalloc(sizeof(TE1000_tx_desc) * (E1000_NUM_TX_DESC + 16))); 
-    descs:= PE1000_tx_desc(ptr);
-    for i:=0 to E1000_NUM_TX_DESC do begin
-        tx_descs[i]:= @descs[i];//PE1000_tx_desc(uint32(descs + i*16));
-        tx_descs[i]^.address:= 0;
-        tx_descs[i]^.cmd:= 0;
-        tx_descs[i]^.status:= TSTA_DD;
+    descs := PE1000_tx_desc(dmaBase + 4096);
+    for i := 0 to E1000_NUM_TX_DESC - 1 do begin
+        tx_descs[i] := @descs[i];
+        tx_descs[i]^.address := physicalAddress(dmaBase +
+            (2 + E1000_NUM_RX_DESC + i) * 4096);
+        tx_descs[i]^.status := TSTA_DD;
     end;
-    
-    outptr:= puint8(vtop(uint32(ptr))); //puint8(uint32(ptr) - KERNEL_VIRTUAL_BASE);
-
-    io.syslog.writehexln(uint32(ptr));
-    io.syslog.writehexln(uint32(outptr));
-
-    writeCommand(REG_TXDESCHI, 0);
-    writeCommand(REG_TXDESCLO, uint32(outptr));
-
+    physical := physicalAddress(PtrUInt(descs));
+    writeCommand(REG_TXDESCLO, uint32(physical));
+    writeCommand(REG_TXDESCHI, uint32(physical shr 32));
     writeCommand(REG_TXDESCLEN, E1000_NUM_TX_DESC * sizeof(TE1000_tx_desc));
-
-    writeCommand( REG_TXDESCHEAD, 0 );
-    writeCommand( REG_TXDESCTAIL, 0 );
-    tx_curr:= 0;
-    writeCommand(REG_TCTRL, TCTL_EN OR TCTL_PSP OR (15 SHL TCTL_CT_SHIFT) OR (64 SHL TCTL_COLD_SHIFT) OR TCTL_RTLC);
-
-    //The following is needed for I217 & 82577LM
-    if (card_type = ct82577LM) OR (card_type = ctI217) then begin
-        writeCommand(REG_TCTRL, $3003F0FA);
-        writeCommand(REG_TIPG, $0060200A);
-    end;
+    writeCommand(REG_TXDESCHEAD, 0);
+    writeCommand(REG_TXDESCTAIL, 0);
+    tx_curr := 0;
+    writeCommand(REG_TCTRL, TCTL_EN or TCTL_PSP or
+        (15 shl TCTL_CT_SHIFT) or (64 shl TCTL_COLD_SHIFT) or TCTL_RTLC);
+    writeCommand(REG_TIPG, $0060200A);
 end;
-
 procedure enableInturrupt();
 begin
-    writeCommand(REG_IMASK, $1F6DC);
-    writeCommand(REG_IMASK, $FF AND NOT(4));
     readCommand($C0);
+    writeCommand(REG_IMASK, $84);
 end;
 
 procedure handleReceive();
@@ -383,13 +364,18 @@ var
     i          : uint16;
     
 begin
-    while (rx_descs[rx_curr]^.status AND $1) > 0 do begin
+    i := 0;
+    while ((rx_descs[rx_curr]^.status and $1) <> 0) and
+          (i < E1000_NUM_RX_DESC) do begin
+        inc(i);
         got_packet:= true;
         buf:= rx_buffs[rx_curr];
         len:= rx_descs[rx_curr]^.length;
 
         //Inject Packet into Network Stack
-        driver.net.recv(void(buf), len);
+        if ((rx_descs[rx_curr]^.status and $2) <> 0) and
+           (rx_descs[rx_curr]^.errors = 0) and (len >= 14) and (len <= 2048) then
+            driver.net.recv(void(buf), len);
 
         rx_descs[rx_curr]^.status:= 0;
         old_cur:= rx_curr;
@@ -425,8 +411,7 @@ begin
     if (Status AND $80) > 0 then begin
         handleReceive();
     end; 
-    //Clear the INT on the Device First by using write-1
-    writeCommand(REG_IMASK, 1);
+    { Reading ICR above acknowledges the device interrupt. }
 end;
 
 procedure console_command_mac(params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
@@ -512,6 +497,7 @@ var
 
 begin
     push_trace('driver.net.dev.e1000.load');
+    load := false;
 
     io.syslog.logln('driver.net.dev.e1000 Driver', 'Load Start.');
 
@@ -519,12 +505,13 @@ begin
 
     PCI_Info:= PPCI_Device(ptr);
     bar_type:= PCI_Info^.address0 AND $00000001;
-    io_base:=  PCI_Info^.address0 AND $FFFFFFF0;
-    mem_base:= PCI_INFO^.address0 AND $FFFFFFFC;
-
-    { !!!!! Dirty way to alloc the pages, needs fixing !!!!! }
-    kpalloc(io_base);
-    kpalloc(mem_base);
+    io_base := PCI_Info^.address0 and $FFFFFFFC;
+    if bar_type = 0 then begin
+        mem_base := PtrUInt(mapDevice(PCI_Info^.address0 and $FFFFFFF0, $20000));
+        if mem_base = 0 then exit;
+    end;
+    if PCI_Info^.interrupt_line >= 16 then exit;
+    writeCommand($D8, $FFFFFFFF);
     
     bus:= PCI_Info^.bus;
     slot:= PCI_Info^.slot;
@@ -548,18 +535,20 @@ begin
 
         startLink();
 
-        for i:=0 to $80 do begin
+        for i:=0 to $7F do begin
             writeCommand($5200 + i*4, 0);
         end; 
 
-        driver.net.registerNetworkCard(@sendPacket, getMACAddress());
-
-        arch.x86.isr.mgr.registerISR(32 + PCI_Info^.interrupt_line, @fire);
-        enableInturrupt();
-
+        dmaAllocation := kalloc((2 + E1000_NUM_RX_DESC + E1000_NUM_TX_DESC) * 4096 + 4095);
+        if dmaAllocation = nil then exit;
+        dmaBase := (PtrUInt(dmaAllocation) + 4095) and not PtrUInt(4095);
         rxinit();
         txinit();
-
+        loaded := true;
+        driver.net.registerNetworkCard(@sendPacket, getMACAddress());
+        arch.platform.interrupts.registerIRQ(32 + PCI_Info^.interrupt_line, @fire);
+        arch.platform.interrupts.routePCI(PCI_Info^.interrupt_line, 32 + PCI_Info^.interrupt_line);
+        enableInturrupt();
         load:= true;   
 
         if load then registercommand('E1000', @terminal_command_e1000status, 'driver.net.dev.e1000 Information.');
@@ -627,26 +616,22 @@ end;
 
 function sendPacket(p_data : void; p_len : uint16) : sint32;
 var
-    old_cur : uint8;
-    timeout : uint32;
-
+    flags, buffer: PtrUInt;
 begin
-    tx_descs[tx_curr]^.address:= uint32(vtop(uint32(p_data)));
-    tx_descs[tx_curr]^.length:= p_len;
-    tx_descs[tx_curr]^.cmd:= CMD_EOP OR CMD_IFCS OR CMD_RS OR CMD_RPS;
-    tx_descs[tx_curr]^.status:= 0;
-    old_cur:= tx_curr;
-    tx_curr:= (tx_curr + 1) MOD E1000_NUM_TX_DESC;
-    writeCommand(REG_TXDESCTAIL, tx_curr);
-    timeout:= 1000000;
-    while ((tx_descs[old_cur]^.status AND $FF) = 0) and (timeout > 0) do begin
-        dec(timeout);
+    sendPacket := 1;
+    if (not loaded) or (p_data = nil) or (p_len = 0) or (p_len > 2048) then exit;
+    flags := arch.platform.cpu.lock;
+    if (tx_descs[tx_curr]^.status and TSTA_DD) <> 0 then begin
+        buffer := dmaBase + (2 + E1000_NUM_RX_DESC + tx_curr) * 4096;
+        memcpy(PtrUInt(p_data), buffer, p_len);
+        tx_descs[tx_curr]^.length := p_len;
+        tx_descs[tx_curr]^.cmd := CMD_EOP or CMD_IFCS or CMD_RS;
+        tx_descs[tx_curr]^.status := 0;
+        tx_curr := (tx_curr + 1) mod E1000_NUM_TX_DESC;
+        writeCommand(REG_TXDESCTAIL, tx_curr);
+        sendPacket := 0;
     end;
-    sendPacket:= 1;
-    if timeout > 0 then sendPacket:= 0;
+    arch.platform.cpu.unlock(flags);
 end;
-
-Initialization
-    //boot.mgr.registerBoot('driver.net.dev.e1000', @Init, 'E1000 Network Card Driver', BOOT_MGR_BARRIER_DEVICE)
 
 end.

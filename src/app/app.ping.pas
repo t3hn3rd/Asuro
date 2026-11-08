@@ -20,8 +20,8 @@ procedure init();
 implementation
 
 uses
-    arch.x86.bda, driver.net.types, driver.net.proto.icmp, driver.net.util, core.strings,
-    proc.mgr, core.util, arch.x86.util, memory.heap;
+    proc.types, driver.net.types, driver.net.proto.icmp, driver.net.util, core.strings,
+    proc.mgr, core.util, arch.platform.cpu, memory.heap;
 
 const
     PING_TIMEOUT_MS = 5000;  { 5-second timeout per app.ping }
@@ -31,22 +31,34 @@ type
     PPingState  = ^TPingState;
     TPingState  = record
         Result      : TPingResult;
-        ReplyTimeMS : uint64;
+        ReplyTimeMS : uint32;
         ErrorReason : TARPErrorCode;
-        SendTime    : uint64;
+        SendTime    : uint32;
+        Address     : puint8;
     end;
+
+procedure cleanup(handle: void);
+var
+    st: PPingState;
+begin
+    st := PPingState(handle);
+    if st = nil then exit;
+    driver.net.proto.icmp.cancelRequests(handle);
+    kfree(void(st^.Address));
+    kfree(handle);
+end;
 
 { ---- ICMP callbacks (called from network recv context) ---- }
 
 procedure on_reply(hdr : PICMPHeader; userData : void);
 var
     st : PPingState;
-    t2 : uint64;
+    t2 : uint32;
 begin
     st := PPingState(userData);
     if st = nil then exit;
-    t2 := Counters.c64;
-    st^.ReplyTimeMS := t2 - st^.SendTime;
+    t2 := networkTicks;
+    st^.ReplyTimeMS := (uint64(uint32(t2 - st^.SendTime)) * 1000) div 1024;
     st^.Result := prGotReply;
 end;
 
@@ -87,24 +99,31 @@ begin
 
     { Allocate per-invocation state so concurrent pings are safe }
     st := PPingState(kalloc(sizeof(TPingState)));
+    if st = nil then begin
+        kfree(void(ip));
+        exit;
+    end;
+    st^.Address := ip;
+    proc.mgr.bindResource(proc.mgr.CurrentProcess, rkCustom, void(st), @cleanup);
     timeoutTicks := (PING_TIMEOUT_MS * 1024) div 1000;
 
     for i := 0 to 9 do begin
         { Send ICMP echo request }
         st^.Result := prWaiting;
-        st^.SendTime := Counters.c64;
+        st^.SendTime := networkTicks;
         driver.net.proto.icmp.sendICMPRequest(ip, i, 128, @on_reply, @on_error, void(st));
 
         { Spin-yield until callback fires or timeout }
-        tStart := Counters.c32;
+        tStart := networkTicks;
         while st^.Result = prWaiting do begin
             proc.mgr.proc_yield;
-            tNow := Counters.c32;
+            tNow := networkTicks;
             if tNow >= tStart then
                 elapsed := tNow - tStart
             else
                 elapsed := ($FFFFFFFF - tStart) + tNow + 1;
             if elapsed >= timeoutTicks then begin
+                driver.net.proto.icmp.cancelRequests(void(st));
                 st^.Result := prGotError;
                 st^.ErrorReason := aecTimeout;
                 break;
@@ -132,8 +151,7 @@ begin
     end;
 
     { Clean up }
-    kfree(void(st));
-    kfree(void(ip));
+    proc.mgr.unbindResource(proc.mgr.CurrentProcess, void(st));
 end;
 
 procedure init();

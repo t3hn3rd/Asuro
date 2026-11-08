@@ -24,7 +24,7 @@ interface
 uses
     memory.heap, io.syslog,
     driver.net.types, driver.net.util, driver.net.proto.udp, driver.net,
-    core.util, arch.x86.util, core.rand, core.ds.lists, debug.tracer, driver.net.proto.ipv4, driver.net.proto.arp;
+    core.util, arch.platform.cpu, core.rand, core.ds.lists, debug.tracer, driver.net.proto.ipv4, driver.net.proto.arp;
 
 type
     TDHCPOptions = PLinkedListBase;
@@ -95,10 +95,10 @@ begin
     CopyIPv4(@NULL_IP[0], @result^.Relay_Agent_IP[0]);
     MAC:= getMAC;
     CopyMAC(MAC, @result^.Client_MAC[0]);
-    memset(uint32(@result^.Padding[0]), 0, 10);
-    memset(uint32(@result^.Server_Hostname[0]), 0, 64);
-    memset(uint32(@result^.Boot_File[0]), 0, 128);
-    memcpy(uint32(@DHCP_MAGIC[0]), uint32(@result^.Magic_Cookie[0]), 4);
+    memset(PtrUInt(@result^.Padding[0]), 0, 10);
+    memset(PtrUInt(@result^.Server_Hostname[0]), 0, 64);
+    memset(PtrUInt(@result^.Boot_File[0]), 0, 128);
+    memcpy(PtrUInt(@DHCP_MAGIC[0]), PtrUInt(@result^.Magic_Cookie[0]), 4);
     createHeader:= result;
 end;
 
@@ -115,7 +115,7 @@ begin
     Option^.Reverse_Endian:= SwapEndian;
     if Length > 0 then begin
         Option^.Value:= kalloc(Length);
-        memcpy(uint32(Data), uint32(Option^.Value), Length);
+        memcpy(PtrUInt(Data), PtrUInt(Option^.Value), Length);
     end else begin
         Option^.Value:= nil;
     end;
@@ -292,7 +292,7 @@ begin
 
     { Copy the header }
     NewHeader:= PDHCPHeader(NewBuffer);
-    memcpy(uint32(Header), uint32(NewHeader), sizeof(TDHCPHeader));
+    memcpy(PtrUInt(Header), PtrUInt(NewHeader), sizeof(TDHCPHeader));
 
     { Write Options }
     buffer:= puint8(NewBuffer);
@@ -322,7 +322,7 @@ begin
                         read32^:= getEndianCorrectValue32(Option);
                     end;
                     else begin
-                        memcpy(uint32(Option^.Value), uint32(buffer), Option^.Size);
+                        memcpy(PtrUInt(Option^.Value), PtrUInt(buffer), Option^.Size);
                     end;
                 end;
                 inc(buffer, Option^.Size);
@@ -354,8 +354,8 @@ begin
 
     { Get the beginning & end of the Options buffer }
     HeaderSize:= sizeOf(TDHCPHeader);
-    bufferEnd:= puint8(uint32(p_data) + p_len);
-    bufferStart:= puint8(uint32(p_data) + headerSize);
+    bufferEnd:= puint8(PtrUInt(p_data) + p_len);
+    bufferStart:= puint8(PtrUInt(p_data) + headerSize);
     
     { Buffer is our iterator }
     buffer:= bufferStart;
@@ -363,13 +363,14 @@ begin
     HaveOp:= false;
     HaveLen:= false;
     
-    while (uint32(buffer) < uint32(bufferEnd)) do begin
+    while (PtrUInt(buffer) < PtrUInt(bufferEnd)) do begin
         { 
             If we have a length, read the value (bytes[length])
             If we have an Opcode read the length (bytes[1])
             If we have neither, read the opcode (bytes[1])
         }
         if HaveLen then begin
+            if Length > PtrUInt(bufferEnd) - PtrUInt(buffer) then exit;
             { Get a new option LinkedList 'object' and store everything inside }
             Option:= newOption(DHCPOptions, Opcode, void(buffer), Length, not FlipExclude^[ord(Opcode)]);
             if Length = 2 then begin
@@ -445,7 +446,7 @@ begin
             else begin
                 cfgopt:= kalloc(Option^.Size);
                 Configuration^.Options[ord(Option^.Opcode)]:= cfgopt;
-                memcpy(uint32(Option^.Value), uint32(cfgopt), Option^.Size);
+                memcpy(PtrUInt(Option^.Value), PtrUInt(cfgopt), Option^.Size);
             end;
         end;
     end;
@@ -566,6 +567,7 @@ var
 
 begin
     debug.tracer.push_trace('driver.net.proto.dhcp.processPacket.enter');
+    if (p_data = nil) or (p_len < sizeof(TDHCPHeader)) then exit;
     writeToLogLn('          L5/DHCP: processPacket');
     io.syslog.logln('DHCP','processPacket');
     

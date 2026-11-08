@@ -23,7 +23,7 @@ interface
 
 uses
     debug.tracer, memory.heap,
-    core.util, arch.x86.util, core.ds.lists,
+    core.util, arch.platform.cpu, core.ds.lists,
     driver.net, driver.net.types, driver.net.util,
     driver.net.proto.eth2, driver.net.proto.ipv4, io.stdio;
 
@@ -212,6 +212,7 @@ var
 
 begin
     push_trace('driver.net.proto.arp.recv');
+    if (p_data = nil) or (p_len < sizeof(TARPHeader)) then exit;
     { Get our converted Header }
     Header:= PARPHeader(p_data);
     AHeader.Hardware_Type:= (Header^.Hardware_Type_Hi SHL 8) + Header^.Hardware_Type_Lo;

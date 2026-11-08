@@ -25,7 +25,7 @@ uses
     memory.heap,
     driver.net.types, driver.net.util,
     driver.net.proto.ipv4, driver.net,
-    debug.tracer, core.util, arch.x86.util;
+    debug.tracer, core.util, arch.platform.cpu;
 
 procedure register();
 function bind(bindContext : PUDPBindContext) : TUDPError;
@@ -83,7 +83,7 @@ begin
         pseudoHeader^.UDP_Source:= pseduoSrc;
         pseudoHeader^.UDP_Destination:= udpContext^.DstPort;
         pseudoHeader^.UDP_Length:= size;
-        memcpy(uint32(p_data), uint32(pseudoBuffer) + SizeOf(TUDPPseudoHeader), p_len);
+        memcpy(PtrUInt(p_data), PtrUInt(pseudoBuffer) + SizeOf(TUDPPseudoHeader), p_len);
         if nullend then pseudoBuffer8[pseudoSize-1]:= 0;
         
         pseudoHeader^.Source_IP:= switchendian32(pseudoHeader^.Source_IP);
@@ -136,8 +136,8 @@ begin
         hdr^.Checksum:= switchendian16(checksum);
         hdr^.Length:= switchendian16(size);
  
-        memcpy(uint32(hdr), uint32(buffer), sizeof(TUDPHeader));
-        memcpy(uint32(p_data), uint32(buffer) + sizeof(TUDPHeader), p_len); 
+        memcpy(PtrUInt(hdr), PtrUInt(buffer), sizeof(TUDPHeader));
+        memcpy(PtrUInt(p_data), PtrUInt(buffer) + sizeof(TUDPHeader), p_len);
 
         udpContext^.context^.Protocol.L4:= $11;       
 
@@ -208,7 +208,10 @@ var
 
 begin
     push_trace('driver.net.proto.udp.ProcessPacket');
+    if (p_data = nil) or (p_len < sizeof(TUDPHeader)) then exit;
     header:= PUDPHeader(p_data);
+    size := switchendian16(header^.Length);
+    if (size < sizeof(TUDPHeader)) or (size > p_len) then exit;
     if Ports[switchendian16(header^.DstPort)] <> nil then begin
         context:= PUDPPacketContext(kalloc(sizeof(TUDPPacketContext)));
         context^.PacketContext:= p_context;

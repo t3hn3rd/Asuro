@@ -22,7 +22,7 @@ unit driver.net.proto.eth2;
 interface
 
 uses
-    memory.heap, core.util, arch.x86.util,
+    memory.heap, core.util, arch.platform.cpu,
     debug.tracer,
     driver.net.types, driver.net.util,
     driver.net,
@@ -79,9 +79,9 @@ begin
         copyMAC(@p_context^.MAC.Destination[0], @hdr.dst[0]);
         hdr.EthTypeHi:= eth_type SHR 8;
         hdr.EthTypeLo:= eth_type AND $FF;
-        memcpy(uint32(@hdr), uint32(buffer), sizeof(TEthernetHeader));
-        memcpy(uint32(p_data), uint32(buffer)+sizeof(TEthernetHeader), p_len);
-        //FCS:= puint32((uint32(buffer) + size) - 4);
+        memcpy(PtrUInt(@hdr), PtrUInt(buffer), sizeof(TEthernetHeader));
+        memcpy(PtrUInt(p_data), PtrUInt(buffer)+sizeof(TEthernetHeader), p_len);
+        //FCS:= puint32((PtrUInt(buffer) + size) - 4);
         //FCS^:= crc32(puint8(buffer), size - 4);
         driver.net.send(buffer, size);
         kfree(buffer);
@@ -96,6 +96,7 @@ var
 
 begin
     push_trace('driver.net.proto.eth2.recv');
+    if (p_data = nil) or (p_len < sizeof(TEthernetHeader)) then exit;
     buf:= puint8(p_data);
     
     Header:= PEthernetHeader(buf);
