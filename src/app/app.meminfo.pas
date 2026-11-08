@@ -22,7 +22,7 @@ unit app.meminfo;
 interface
 
 uses
-    io.stdio, arch.x86.multiboot, arch.x86.memory.physical, memory.heap, debug.tracer;
+    io.stdio, arch.platform.memory, memory.heap, debug.tracer;
 
 procedure init();
 
@@ -30,50 +30,30 @@ implementation
 
 procedure run(Params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
 var
-    pmm_total, pmm_free, pmm_used : uint32;
-    lmm_pages, lmm_free           : uint32;
+    total, available: uint64;
+    heapPages: uint32;
 begin
-    { Multiboot memory info }
-    io.stdio.bufWriteStrLn(stdout_buf, '--- Multiboot ---');
-    io.stdio.bufWriteStr(stdout_buf, 'Lower Memory  : ');
-    io.stdio.bufWriteInt(stdout_buf, multibootinfo^.mem_lower);
-    io.stdio.bufWriteStrLn(stdout_buf, ' KB');
-    io.stdio.bufWriteStr(stdout_buf, 'Upper Memory  : ');
-    io.stdio.bufWriteInt(stdout_buf, multibootinfo^.mem_upper);
-    io.stdio.bufWriteStrLn(stdout_buf, ' KB');
-    io.stdio.bufWriteStr(stdout_buf, 'Total Memory  : ');
-    io.stdio.bufWriteInt(stdout_buf, ((multibootinfo^.mem_upper + 1000) div 1024) + 1);
-    io.stdio.bufWriteStrLn(stdout_buf, ' MB');
-
-    { PMM stats }
-    io.stdio.bufWriteStrLn(stdout_buf, '--- PMM (4 MB blocks) ---');
-    pmm_total := arch.x86.memory.physical.pmm_total_blocks;
-    pmm_free  := arch.x86.memory.physical.pmm_free_blocks;
-    pmm_used  := pmm_total - pmm_free;
-    io.stdio.bufWriteStr(stdout_buf, 'Total Blocks  : ');
-    io.stdio.bufWriteIntLn(stdout_buf, pmm_total);
-    io.stdio.bufWriteStr(stdout_buf, 'Free Blocks   : ');
-    io.stdio.bufWriteIntLn(stdout_buf, pmm_free);
-    io.stdio.bufWriteStr(stdout_buf, 'Used Blocks   : ');
-    io.stdio.bufWriteIntLn(stdout_buf, pmm_used);
-    io.stdio.bufWriteStr(stdout_buf, 'Free Physical : ');
-    io.stdio.bufWriteInt(stdout_buf, pmm_free * 4);
-    io.stdio.bufWriteStrLn(stdout_buf, ' MB');
-
-    { LMM heap stats }
-    io.stdio.bufWriteStrLn(stdout_buf, '--- LMM (Heap) ---');
-    lmm_pages := memory.heap.lmm_page_count;
-    lmm_free  := memory.heap.lmm_total_free;
-    io.stdio.bufWriteStr(stdout_buf, 'Heap Pages    : ');
-    io.stdio.bufWriteIntLn(stdout_buf, lmm_pages);
-    io.stdio.bufWriteStr(stdout_buf, 'Heap Size     : ');
-    io.stdio.bufWriteInt(stdout_buf, lmm_pages * 4);
-    io.stdio.bufWriteStrLn(stdout_buf, ' MB');
-    io.stdio.bufWriteStr(stdout_buf, 'Heap Free     : ');
-    io.stdio.bufWriteInt(stdout_buf, lmm_free div 1024);
-    io.stdio.bufWriteStrLn(stdout_buf, ' KB');
+    total := arch.platform.memory.totalPhysicalBytes;
+    available := arch.platform.memory.freePhysicalBytes;
+    io.stdio.bufWriteStr(stdout_buf, 'Usable Physical: ');
+    io.stdio.bufWriteInt(stdout_buf, total div 1024);
+    io.stdio.bufWriteStrLn(stdout_buf, ' KiB');
+    io.stdio.bufWriteStr(stdout_buf, 'Free Physical  : ');
+    io.stdio.bufWriteInt(stdout_buf, available div 1024);
+    io.stdio.bufWriteStrLn(stdout_buf, ' KiB');
+    io.stdio.bufWriteStr(stdout_buf, 'Used Physical  : ');
+    io.stdio.bufWriteInt(stdout_buf, (total - available) div 1024);
+    io.stdio.bufWriteStrLn(stdout_buf, ' KiB');
+    heapPages := memory.heap.lmm_page_count;
+    io.stdio.bufWriteStr(stdout_buf, 'Heap Regions   : ');
+    io.stdio.bufWriteIntLn(stdout_buf, heapPages);
+    io.stdio.bufWriteStr(stdout_buf, 'Heap Size      : ');
+    io.stdio.bufWriteInt(stdout_buf, uint64(heapPages) * PAGE_SIZE_LMM div 1024);
+    io.stdio.bufWriteStrLn(stdout_buf, ' KiB');
+    io.stdio.bufWriteStr(stdout_buf, 'Heap Free      : ');
+    io.stdio.bufWriteInt(stdout_buf, memory.heap.lmm_total_free div 1024);
+    io.stdio.bufWriteStrLn(stdout_buf, ' KiB');
 end;
-
 procedure init();
 begin
     debug.tracer.push_trace('meminfo.init');

@@ -13,7 +13,7 @@ interface
 
 uses
     driver.video, driver.video.types, core.gfx.color, driver.io.serial, debug.tracer, memory.heap,
-    driver.hid.mouse, driver.hid.keyboard, arch.x86.isr.tmr0, core.util, arch.x86.util, io.syslog, driver.video.gpu;
+    driver.hid.mouse, driver.hid.keyboard, arch.platform.interrupts, core.util, arch.platform.cpu, io.syslog, driver.video.gpu;
 
 { ============================================================
   Opaque LVGL pointer core.types (internal C structs)
@@ -46,16 +46,29 @@ type
 { ============================================================
   Stack-allocatable core.types with known sizes
   ============================================================ }
-    { lv_style_t — ~12 bytes on 32-bit, padded to 16 for safety }
-    lv_style_t = packed array[0..15] of uint8;
+    { C-aligned LVGL 9.2.2 layout. }
+    lv_style_t = record
+        values_and_props: pointer;
+        has_group: uint32;
+        prop_count: uint8;
+    end;
     Plv_style  = ^lv_style_t;
 
-    { lv_anim_t — ~80-100 bytes on 32-bit, padded to 128 }
-    lv_anim_t = packed array[0..127] of uint8;
+    { C-aligned LVGL 9.2.2 layout. }
+    lv_anim_t = record
+        callbacks_and_data: array[0..8] of pointer;
+        values_and_timing: array[0..8] of sint32;
+        bezier: array[0..3] of sint32;
+        last_timer_run: uint32;
+        flags: uint8;
+    end;
     Plv_anim  = ^lv_anim_t;
 
-    { lv_style_transition_dsc_t — ~20 bytes, padded to 24 }
-    lv_style_transition_dsc_t = packed array[0..23] of uint8;
+    { C-aligned LVGL 9.2.2 layout. }
+    lv_style_transition_dsc_t = record
+        properties, user_data, path_callback: pointer;
+        duration, delay: uint32;
+    end;
     Plv_style_transition_dsc  = ^lv_style_transition_dsc_t;
 
 { ============================================================
@@ -97,7 +110,7 @@ type
     end;
 
     { lv_style_value_t — C union: int32/pointer/color, all 4 bytes on 32-bit }
-    lv_style_value_t = packed record
+    lv_style_value_t = record
         case byte of
             0: (num: sint32);
             1: (ptr: pointer);
@@ -1669,6 +1682,8 @@ function  lv_animimg_get_repeat_count(img: Plv_obj): uint32; cdecl; external;
 { ============================================================
   High-level API for core.version
   ============================================================ }
+procedure lv_event_stop_processing(e: Plv_event); cdecl; external;
+
 procedure lvgl_init(screen_w, screen_h: uint32);
 function  lvgl_handler: uint32;
 function  lvgl_get_display: Plv_display;
@@ -1683,6 +1698,8 @@ procedure lvgl_update_resolution(screen_w, screen_h: uint32);
 procedure lvgl_lock;
 procedure lvgl_unlock;
 
+var onDebugToggle: procedure = nil;
+
 { Color helper (Pascal wrapper for inline C function) }
 function lv_color_make(r, g, b: uint8): lv_color_t;
 
@@ -1692,7 +1709,7 @@ function lv_color_make(r, g, b: uint8): lv_color_t;
 implementation
 
 uses
-    app.uidebug, proc.types, proc.mgr;
+    proc.types, proc.mgr, arch.common.legacyirq;
 
 { ============================================================
   Wrappers for LVGL inline/macro functions
@@ -1729,9 +1746,10 @@ var
 
     { Tick counter — incremented by 1024Hz timer ISR }
     tick_accumulator : uint32;
+    tick_fraction : uint64;
 
     { Keyboard ring buffer for LVGL }
-    kb_buf      : array[0..15] of uint32;
+    kb_buf      : array[0..63] of uint32;
     kb_head     : uint32;  { next write slot (hook side) }
     kb_tail     : uint32;  { next read slot (LVGL poll side) }
     kb_current_key : uint32;   { key currently reported as pressed to LVGL, 0 = none }
@@ -1739,7 +1757,7 @@ var
     kb_held_code   : uint32;   { the LVGL key code of the held key }
 
 const
-    KB_BUF_SIZE = 16;
+    KB_BUF_SIZE = 64;
     { LVGL render buffer: 1/10th of screen }
     LV_BUF_LINES = 120;
 
@@ -1759,7 +1777,7 @@ begin
 end;
 
 { ============================================================
-  LVGL Mutex — blocking, recursive, SMP-safe
+  LVGL Mutex — recursive, FIFO handoff on the single active CPU
   ============================================================ }
 const
     LVGL_MTX_MAX_WAITERS = 16;
@@ -1768,84 +1786,85 @@ var
     lvgl_mtx_locked  : uint32 = 0;
     lvgl_mtx_owner   : pointer = nil;
     lvgl_mtx_depth   : uint32 = 0;
-    lvgl_mtx_waiters : array[0..LVGL_MTX_MAX_WAITERS-1] of pointer;
+    lvgl_mtx_waiters : array[0..LVGL_MTX_MAX_WAITERS-1] of uint32;
+    lvgl_mtx_head: uint32 = 0;
     lvgl_mtx_nwait   : uint32 = 0;
 
 procedure lvgl_lock;
 var
-    old : uint32;
-    cur : pointer;
+    irqFlags: PtrUInt;
+    cur: PProcessContext;
+    parked: boolean;
 begin
-    cur := pointer(proc.mgr.CurrentProcess);
-
-    { Recursive lock — same owner, just bump depth }
-    if (lvgl_mtx_locked <> 0) and (lvgl_mtx_owner = cur) then begin
-        lvgl_mtx_depth := lvgl_mtx_depth + 1;
+    cur := proc.mgr.CurrentProcess;
+    irqFlags := arch.platform.cpu.lock;
+    if (lvgl_mtx_locked <> 0) and (lvgl_mtx_owner = pointer(cur)) then begin
+        inc(lvgl_mtx_depth);
+        arch.platform.cpu.unlock(irqFlags);
         exit;
     end;
+    arch.platform.cpu.unlock(irqFlags);
 
     while true do begin
-        { CLI to prevent scheduler preemption during lock check + park }
-        asm pushfd; cli end;
-
-        { Atomic test-and-set (SMP-safe via LOCK prefix) }
-        old := 1;
-        asm
-            mov eax, 1
-            lock xchg dword ptr [lvgl_mtx_locked], eax
-            mov old, eax
-        end;
-
-        if old = 0 then begin
-            { Acquired }
-            lvgl_mtx_owner := cur;
+        irqFlags := arch.platform.cpu.lock;
+        if lvgl_mtx_locked = 0 then begin
+            lvgl_mtx_locked := 1;
+            lvgl_mtx_owner := pointer(cur);
             lvgl_mtx_depth := 1;
-            asm popfd end;
+        end;
+        { Unlock hands ownership directly to the oldest waiting process. }
+        if lvgl_mtx_owner = pointer(cur) then begin
+            arch.platform.cpu.unlock(irqFlags);
             exit;
         end;
-
-        { Failed — park ourselves so the scheduler skips us.
-          The lock holder will wake us on unlock. }
-        if lvgl_mtx_nwait < LVGL_MTX_MAX_WAITERS then begin
-            lvgl_mtx_waiters[lvgl_mtx_nwait] := cur;
-            lvgl_mtx_nwait := lvgl_mtx_nwait + 1;
+        parked := lvgl_mtx_nwait < LVGL_MTX_MAX_WAITERS;
+        if parked then begin
+            lvgl_mtx_waiters[(lvgl_mtx_head + lvgl_mtx_nwait) mod LVGL_MTX_MAX_WAITERS] := cur^.ProcessID;
+            inc(lvgl_mtx_nwait);
+            cur^.State := psAwaiting;
         end;
-        PProcessContext(cur)^.State := psAwaiting;
-        asm popfd end;
-
-        { Yield — scheduler will skip us (psAwaiting).
-          Resume here when the lock holder wakes us (sets psReady). }
-        asm hlt end;
+        arch.platform.cpu.unlock(irqFlags);
+        if parked then
+            proc.mgr.proc_await
+        else
+            proc.mgr.proc_yield;
     end;
 end;
 
 procedure lvgl_unlock;
 var
-    i : uint32;
+    irqFlags: PtrUInt;
+    next: PProcessContext;
+    pid: uint32;
 begin
-    { Recursive unlock — just decrement depth }
-    if lvgl_mtx_depth > 1 then begin
-        lvgl_mtx_depth := lvgl_mtx_depth - 1;
+    irqFlags := arch.platform.cpu.lock;
+    if lvgl_mtx_owner <> pointer(proc.mgr.CurrentProcess) then begin
+        arch.platform.cpu.unlock(irqFlags);
         exit;
     end;
-
-    asm pushfd; cli end;
-
+    if lvgl_mtx_depth > 1 then begin
+        dec(lvgl_mtx_depth);
+        arch.platform.cpu.unlock(irqFlags);
+        exit;
+    end;
+    while lvgl_mtx_nwait <> 0 do begin
+        pid := lvgl_mtx_waiters[lvgl_mtx_head];
+        lvgl_mtx_head := (lvgl_mtx_head + 1) mod LVGL_MTX_MAX_WAITERS;
+        dec(lvgl_mtx_nwait);
+        next := proc.mgr.findByID(pid);
+        if (next <> nil) and (next^.State = psAwaiting) then begin
+            lvgl_mtx_owner := pointer(next);
+            lvgl_mtx_depth := 1;
+            next^.State := psReady;
+            arch.platform.cpu.unlock(irqFlags);
+            exit;
+        end;
+    end;
     lvgl_mtx_locked := 0;
     lvgl_mtx_owner := nil;
     lvgl_mtx_depth := 0;
-
-    { Wake all waiters — they will compete for the lock }
-    if lvgl_mtx_nwait > 0 then begin
-        for i := 0 to lvgl_mtx_nwait - 1 do
-            if lvgl_mtx_waiters[i] <> nil then
-                PProcessContext(lvgl_mtx_waiters[i])^.State := psReady;
-        lvgl_mtx_nwait := 0;
-    end;
-
-    asm popfd end;
+    arch.platform.cpu.unlock(irqFlags);
 end;
-
 { ============================================================
   Flush callback — copies LVGL render buffer to driver.video back buffer
   Handles 32bpp (direct copy) and 16bpp (ARGB8888 -> RGB565).
@@ -1873,7 +1892,7 @@ begin
             for x := 0 to area_w - 1 do begin
                 dst32[x] := src[x];
             end;
-            src := puint32(uint32(src) + uint32(area_w * 4));
+            src := puint32(PtrUInt(src) + uint32(area_w * 4));
         end;
     end else if bpp = 16 then begin
         { 16bpp: convert ARGB8888 -> RGB565, 2 bytes per pixel }
@@ -1886,7 +1905,7 @@ begin
                 r := (pixel shr 16) and $FF;
                 dst16[x] := uint16(((uint16(r) shr 3) shl 11) or ((uint16(g) shr 2) shl 5) or (uint16(b) shr 3));
             end;
-            src := puint32(uint32(src) + uint32(area_w * 4));
+            src := puint32(PtrUInt(src) + uint32(area_w * 4));
         end;
     end;
 
@@ -1934,7 +1953,7 @@ begin
         kb_tail := (kb_tail + 1) mod KB_BUF_SIZE;
         data^.key   := kb_current_key;
         data^.state := LV_INDEV_STATE_PRESSED;
-        data^.continue_reading := false; { one press per timer cycle for proper long-press timing }
+        data^.continue_reading := (kb_tail <> kb_head);
     end else if (kb_current_key <> 0) and kb_key_held then begin
         { Key still physically held — keep reporting pressed for LVGL long-press repeat }
         data^.key   := kb_current_key;
@@ -1958,7 +1977,7 @@ var
 begin
     { Ctrl+D toggles debug overlay (press only) }
     if key_info.is_down_code and key_info.CTRL_DOWN and (key_info.key_code = ord('d')) then begin
-        app.uidebug.toggle;
+        if onDebugToggle <> nil then onDebugToggle;
         exit;
     end;
 
@@ -2002,7 +2021,7 @@ begin
 end;
 
 { ============================================================
-  1024Hz timer tick — called from arch.x86.isr.tmr0 (~1ms per tick)
+  PIT timer tick — called from arch.platform.interrupts
   ============================================================ }
 procedure lvgl_timer_tick(data: void);
 begin
@@ -2025,6 +2044,7 @@ begin
     debug.tracer.push_trace('driver.video.lvgl.init.enter');
 
     tick_accumulator := 0;
+    tick_fraction := 0;
     kb_head := 0;
     kb_tail := 0;
     kb_current_key := 0;
@@ -2068,7 +2088,7 @@ begin
     driver.hid.keyboard.hook(@lvgl_keyboard_hook);
 
     { Hook 1024Hz timer for accurate LVGL tick }
-    arch.x86.isr.tmr0.hook(uint32(@lvgl_timer_tick));
+    arch.platform.interrupts.registerTimer(@lvgl_timer_tick);
 
     { Register for GPU mode-change notifications so LVGL resolution updates automatically }
     driver.video.gpu.registerModeChangeCallback(@lvglModeChanged);
@@ -2112,16 +2132,21 @@ end;
 function lvgl_handler: uint32;
 var
     elapsed: uint32;
+    irqFlags: PtrUInt;
     scroll_delta: sint32;
     mx, my: sint32;
     pt: lv_point_t;
     target, walk: Plv_obj;
 begin
     { Feed accumulated ticks to LVGL }
+    irqFlags := arch.platform.cpu.lock;
     elapsed := tick_accumulator;
     tick_accumulator := 0;
-    if elapsed > 0 then
-        lv_tick_inc(elapsed);
+    arch.platform.cpu.unlock(irqFlags);
+    tick_fraction := tick_fraction + uint64(elapsed) * PIT_DIVISOR * 1000;
+    elapsed := tick_fraction div PIT_INPUT_HZ;
+    tick_fraction := tick_fraction mod PIT_INPUT_HZ;
+    if elapsed > 0 then lv_tick_inc(elapsed);
 
     { Process scroll wheel }
     scroll_delta := driver.hid.mouse.getMouseScroll;

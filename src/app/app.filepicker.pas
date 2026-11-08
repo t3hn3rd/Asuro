@@ -64,7 +64,7 @@ uses
     core.strings.helpers,
     io.syslog,
     debug.tracer,
-    core.util, arch.x86.util,
+    core.util, arch.platform.cpu,
     driver.storage.vfs;
 
 const
@@ -325,9 +325,9 @@ begin
     dir_names  := PNameBuf(kalloc(sizeof(TNameBuf)));
     file_names := PNameBuf(kalloc(sizeof(TNameBuf)));
     file_sizes := PSizeBuf(kalloc(sizeof(TSizeBuf)));
-    memset(uint32(dir_names),  0, sizeof(TNameBuf));
-    memset(uint32(file_names), 0, sizeof(TNameBuf));
-    memset(uint32(file_sizes), 0, sizeof(TSizeBuf));
+    memset(PtrUInt(dir_names),  0, sizeof(TNameBuf));
+    memset(PtrUInt(file_names), 0, sizeof(TNameBuf));
+    memset(PtrUInt(file_sizes), 0, sizeof(TSizeBuf));
 
     { Sync path bar }
     if p^.path_bar <> nil then
@@ -898,7 +898,7 @@ begin
     io.syslog.logln('FPCIK', 'make_picker: enter');
 
     p := PPicker(kalloc(sizeof(TPicker)));
-    memset(uint32(p), 0, sizeof(TPicker));
+    memset(PtrUInt(p), 0, sizeof(TPicker));
     p^.cb         := cb;
     p^.userdata   := userdata;
     p^.is_save    := is_save;

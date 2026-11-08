@@ -26,7 +26,7 @@ uses
 
 type
     //Arbitrary pointer to a raw driver.video buffer in memory
-    VideoBuffer = uint32;
+    VideoBuffer = PtrUInt;
 
     //Struct representing a Memory Mapped Video Buffer
     TVideoBuffer = record
@@ -40,6 +40,7 @@ type
         Width           : uint32;
         //Height of the buffer.
         Height          : uint32;
+        Pitch           : uint32;
     end;
     //Pointer to a driver.video buffer
     PVideoBuffer = ^TVideoBuffer;

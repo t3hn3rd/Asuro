@@ -22,17 +22,26 @@ unit driver.video.doublebuffer;
 interface
 
 uses
-    memory.heap, debug.tracer, driver.video.types, driver.io.serial, core.util, arch.x86.util;
+    memory.heap, debug.tracer, driver.video.types, driver.io.serial, core.util, arch.platform.cpu;
 
 //Init the driver, and register with the driver.video interface in a state ready for execution.
 procedure init(Register : FRegisterDriver);
 
 implementation
 
-function allocateBackBuffer(Width : uint32; Height : uint32; BitsPerPixel : uint8) : uint64;
+function allocateBackBuffer(Width : uint32; Height : uint32; BitsPerPixel : uint8) : PtrUInt;
+var
+    bytes: uint64;
 begin
+    allocateBackBuffer := 0;
+    if (Width = 0) or (Height = 0) or (BitsPerPixel = 0) or
+       (BitsPerPixel mod 8 <> 0) then exit;
+    bytes := uint64(Width) * (BitsPerPixel div 8);
+    if bytes > High(uint32) then exit;
+    bytes := bytes * Height;
+    if bytes > High(SizeUInt) then exit;
     debug.tracer.push_trace('driver.video.doublebuffer.allocateBackBuffer.enter');
-    allocateBackBuffer:= uint64(klalloc((Width * Height * BitsPerPixel) div 8));
+    allocateBackBuffer := PtrUInt(klalloc(SizeUInt(bytes)));
     debug.tracer.push_trace('driver.video.doublebuffer.allocateBackBuffer.exit');
 end;
 
@@ -44,6 +53,7 @@ begin
         if (VInterface^.BackBuffer.Location <> 0) then begin
             VInterface^.BackBuffer.Width:= Width;
             VInterface^.BackBuffer.Height:= Height;
+            VInterface^.BackBuffer.Pitch := Width * (BitsPerPixel div 8);
             VInterface^.BackBuffer.BitsPerPixel:= BitsPerPixel;
             VInterface^.BackBuffer.Initialized:= True;
         end;
@@ -53,27 +63,18 @@ end;
 
 procedure Flush(FrontBuffer : PVideoBuffer; BackBuffer : PVideoBuffer);
 var
-    idx : uint32;
-    Back,Front : uint32;
-    BufferSize : uint32;
-
-const
-    //COPY_WIDTH = 64; //Use this for 64bit copies
-    COPY_WIDTH = 128; //Use this for SSE copies
-
+    row, bytes : uint32;
 begin
-    //debug.tracer.push_trace('driver.video.doublebuffer.Flush.enter');
-    if not(BackBuffer^.Initialized) then exit;
-    if ((FrontBuffer^.Width > BackBuffer^.Width) or (FrontBuffer^.Height > BackBuffer^.Height)) then exit;
-    Back:= BackBuffer^.Location;
-    Front:= FrontBuffer^.Location;
-    BufferSize:= ( ( BackBuffer^.Width * BackBuffer^.Height * BackBuffer^.BitsPerPixel) div COPY_WIDTH ) - 1;
-    for idx:=0 to BufferSize do begin
-        //Front[idx]:= Back[idx];
-        // -- TODO: Get SSE working here for 128bit copies --
-        __SSE_128_memcpy(Back + (idx * 16), Front + (idx * 16));  
-    end;
-    //debug.tracer.push_trace('driver.video.doublebuffer.Flush.exit');
+    if not (FrontBuffer^.Initialized and BackBuffer^.Initialized) then exit;
+    if (BackBuffer^.Width > FrontBuffer^.Width) or
+       (BackBuffer^.Height > FrontBuffer^.Height) or
+       (BackBuffer^.BitsPerPixel <> FrontBuffer^.BitsPerPixel) then exit;
+    bytes := BackBuffer^.Pitch;
+    if (bytes = 0) or (bytes > FrontBuffer^.Pitch) or
+       (BackBuffer^.Height = 0) then exit;
+    for row := 0 to BackBuffer^.Height - 1 do
+        memcpy(BackBuffer^.Location + SizeUInt(row) * bytes,
+            FrontBuffer^.Location + SizeUInt(row) * FrontBuffer^.Pitch, bytes);
 end;
 
 function enable(VideoInterface : PVideoInterface) : boolean;

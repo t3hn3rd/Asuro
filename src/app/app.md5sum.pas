@@ -22,7 +22,7 @@ unit app.md5sum;
 interface
 
 uses
-    io.stdio, core.util, arch.x86.util, core.strings, debug.tracer, core.enc.md5;
+    memory.heap, io.stdio, core.util, arch.platform.cpu, core.strings, debug.tracer, core.enc.md5;
 
 procedure init();
 
@@ -36,6 +36,10 @@ var
     i           : uint32;
 
 begin
+    if paramCount(Params) = 0 then begin
+        io.stdio.bufWriteStrLn(stderr_buf, 'Usage: MD5SUM <word>');
+        exit;
+    end;
     md5word:= getParam(0, Params);
     wordlen:= stringSize(md5word);
     MD5_Hash := MD5Buffer(puint8(md5word), wordlen);
@@ -43,6 +47,7 @@ begin
         io.stdio.bufWriteHexPair(stdout_buf, MD5_Hash^[i]);
     end;
     io.stdio.bufWriteStrLn(stdout_buf, ' ');
+    memory.heap.kfree(void(MD5_Hash));
 end;
 
 procedure init();

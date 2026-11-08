@@ -22,8 +22,8 @@ unit driver.video;
 interface
 
 uses
-    boot.mgr, io.syslog,
-    memory.heap, debug.tracer, core.gfx.color, driver.video.types, core.ds.hashmap, core.util, arch.x86.util, core.gfx.texture, driver.video.gpu, core.gfx.fonts;
+    io.syslog,
+    memory.heap, debug.tracer, core.gfx.color, driver.video.types, core.ds.hashmap, core.util, arch.platform.cpu, core.gfx.texture, driver.video.gpu, core.gfx.fonts;
 
 procedure init();
 procedure DrawPixel(X : uint32; Y : uint32; Pixel : TRGB32);
@@ -31,7 +31,7 @@ procedure DrawLine(x1,y1,x2,y2 : uint32; thickness : uint32; Color : TRGB32);
 procedure DrawRect(x1,y1,x2,y2 : uint32; line_thickness : uint32; Color : TRGB32);
 procedure FillRect(x1,y1,x2,y2 : uint32; line_thickness : uint32; Line_Color : TRGB32; Fill_Color : TRGB32);
 procedure Flush();
-procedure reinit(fb_addr, width, height, pitch : uint32; bpp : uint8);
+procedure reinit(fb_addr : PtrUInt; width, height, pitch : uint32; bpp : uint8);
 
 function register(DriverIdentifier : pchar; EnableCallback : FEnableDriver) : boolean;
 function enable(DriverIdentifier : pchar) : boolean;
@@ -42,12 +42,12 @@ function frontBufferBpp : uint8;
 function backBufferWidth : uint32;
 function backBufferHeight : uint32;
 function backBufferBpp : uint8;
-function backBufferLocation : uint32;
-function frontBufferLocation : uint32;
+function backBufferLocation : PtrUInt;
+function frontBufferLocation : PtrUInt;
 
 Procedure basicFDrawTexture(Buffer : PVideoBuffer; X : uint32; Y : uint32; Texture : PTexture);
 
-{ Text drawing â€” renders 8x16 bitmap font glyphs directly to the
+{ Text drawing — renders 8x16 bitmap font glyphs directly to the
   framebuffer via DrawPixel.  Useful for panic screens and other
   contexts where LVGL is unavailable. }
 function DrawChar(X, Y : uint32; C : char; Color : TRGB32) : uint32;
@@ -58,8 +58,9 @@ function DrawInt(X, Y : uint32; Value : uint32; Color : TRGB32) : uint32;
 implementation
 
 uses
+    driver.hid.mouse,
     driver.video.vesa8, driver.video.vesa16, driver.video.vesa24, driver.video.vesa32, 
-    driver.video.lvgl, driver.video.doublebuffer, driver.video.vesa;
+    driver.video.doublebuffer;
 
 Procedure dummyFDrawPixel(Buffer : PVideoBuffer; X : uint32; Y : uint32; Pixel : TRGB32);
 begin
@@ -206,7 +207,7 @@ var
     DriverMap      : PHashMap;
 
 { ============================================================
-  GPU mode-change callback â€” reinits front/back buffers
+  GPU mode-change callback — reinits front/back buffers
   ============================================================ }
 procedure videoModeChanged(const info : TGPUModeInfo);
 begin
@@ -221,6 +222,7 @@ var
 begin
     debug.tracer.push_trace('driver.video.init.enter');
     io.syslog.logln('VIDEO', 'Initializing Base Video Driver.');
+    driver.hid.mouse.setBounds(0, 0);
     //Ensure the frontbuffer is empty & nil, ready for initialization by a driver.
     VideoInterface.FrontBuffer.Initialized:= false;
     VideoInterface.FrontBuffer.Width:= 0;
@@ -255,23 +257,6 @@ begin
     debug.tracer.push_trace('driver.video.init.exit');
 end;
 
-procedure lateInit();
-begin
-    driver.video.vesa.init(@driver.video.register);
-    driver.video.doublebuffer.init(@driver.video.register);
-
-    io.syslog.logln('VIDEO', 'VESA Enable.');
-    driver.video.enable('VESA');
-
-    io.syslog.logln('VIDEO', 'Double Buffer Enable.');
-    driver.video.enable('BASIC_DOUBLE_BUFFER');
-
-    { Initialize LVGL early so the boot.splash screen can use it }
-    io.syslog.logln('VIDEO', 'LVGL: INIT BEGIN.');
-    lvgl_init(driver.video.frontBufferWidth, driver.video.frontBufferHeight);
-    io.syslog.logln('VIDEO', 'LVGL: INIT END.');
-end;
-
 function register(DriverIdentifier : pchar; EnableCallback : FEnableDriver) : boolean;
 var
     Value : Void;
@@ -297,6 +282,7 @@ begin
     Value:= core.ds.hashmap.get(DriverMap, DriverIdentifier);
     if (Value <> nil) then begin
         enable:= FEnableDriver(Value)(@VideoInterface);
+        driver.hid.mouse.setBounds(frontBufferWidth, frontBufferHeight);
     end;
     debug.tracer.push_trace('driver.video.enable.exit');
 end;
@@ -304,7 +290,9 @@ end;
 procedure DrawPixel(X : uint32; Y : uint32; Pixel : TRGB32);
 begin
     //debug.tracer.push_trace('driver.video.DrawPixel.enter');
-    VideoInterface.DrawRoutines.DrawPixel(VideoInterface.DefaultBuffer, X, Y, Pixel);
+    if (X < VideoInterface.DefaultBuffer^.Width) and
+       (Y < VideoInterface.DefaultBuffer^.Height) then
+        VideoInterface.DrawRoutines.DrawPixel(VideoInterface.DefaultBuffer, X, Y, Pixel);
     //debug.tracer.push_trace('driver.video.DrawPixel.exit');
 end;
 
@@ -360,18 +348,18 @@ begin
     backBufferBpp:= VideoInterface.BackBuffer.BitsPerPixel;
 end;
 
-function backBufferLocation : uint32;
+function backBufferLocation : PtrUInt;
 begin
     backBufferLocation:= VideoInterface.BackBuffer.Location;
 end;
 
-function frontBufferLocation : uint32;
+function frontBufferLocation : PtrUInt;
 begin
     frontBufferLocation:= VideoInterface.FrontBuffer.Location;
 end;
 
 { ============================================================
-  Text drawing â€” 8x16 bitmap font via Std_Font
+  Text drawing — 8x16 bitmap font via Std_Font
   ============================================================ }
 
 const
@@ -445,7 +433,7 @@ begin
     DrawInt := DrawString(X, Y, @buf[0], Color);
 end;
 
-procedure reinit(fb_addr, width, height, pitch : uint32; bpp : uint8);
+procedure reinit(fb_addr : PtrUInt; width, height, pitch : uint32; bpp : uint8);
 begin
     debug.tracer.push_trace('driver.video.reinit.enter');
     { Free old back buffer if allocated }
@@ -468,8 +456,10 @@ begin
 
     { Set front buffer directly from GPU mode info }
     VideoInterface.FrontBuffer.Location := fb_addr;
+    VideoInterface.FrontBuffer.Pitch := pitch;
     VideoInterface.FrontBuffer.Width := width;
     VideoInterface.FrontBuffer.Height := height;
+    driver.hid.mouse.setBounds(width, height);
     VideoInterface.FrontBuffer.BitsPerPixel := bpp;
     if fb_addr <> 0 then
         VideoInterface.FrontBuffer.Initialized := true;
@@ -487,9 +477,5 @@ begin
 
     debug.tracer.push_trace('driver.video.reinit.exit');
 end;
-
-initialization
-    boot.mgr.registerBoot('driver.video', @init, 'Video Driver Initialization', 'driver.video.gpu');
-    boot.mgr.registerBoot('driver.video_late', @lateInit, 'Video Driver Late Initialization', 'driver.video.*');
 
 end.

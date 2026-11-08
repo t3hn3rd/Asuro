@@ -12,9 +12,6 @@ unit driver.hid.mouse;
 
 interface
 
-uses
-    driver.video;
-
 type
     TMouseEventType = (
         MOUSE_MOVE,
@@ -36,6 +33,7 @@ function getMouseRMB: boolean;
 function getMouseScroll: sint32;
 
 { Setters - called by driver.hid.mouse drivers (PS/2, driver.bus.usb) }
+procedure setBounds(width, height: uint32);
 procedure setMousePos(x, y: sint32);
 procedure setMouseLMB(down: boolean);
 procedure setMouseRMB(down: boolean);
@@ -53,6 +51,7 @@ const
     MAX_MOUSE_HOOKS = 8;
 
 var
+    maxW, maxH  : sint32;
     MouseX      : sint32 = 0;
     MouseY      : sint32 = 0;
     MouseLMB    : boolean = false;
@@ -87,12 +86,17 @@ begin
     ScrollAccum := 0;
 end;
 
-procedure setMousePos(x, y: sint32);
-var
-    maxW, maxH : sint32;
+procedure setBounds(width, height: uint32);
 begin
-    maxW := sint32(driver.video.frontBufferWidth);
-    maxH := sint32(driver.video.frontBufferHeight);
+    if width > $7FFFFFFF then width := $7FFFFFFF;
+    if height > $7FFFFFFF then height := $7FFFFFFF;
+    maxW := sint32(width);
+    maxH := sint32(height);
+    setMousePos(MouseX, MouseY);
+end;
+
+procedure setMousePos(x, y: sint32);
+begin
     if x < 0 then x := 0;
     if y < 0 then y := 0;
     if (maxW > 0) and (x >= maxW) then x := maxW - 1;
