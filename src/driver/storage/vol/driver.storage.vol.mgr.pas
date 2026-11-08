@@ -26,7 +26,6 @@ unit driver.storage.vol.mgr;
 interface
 
 uses
-    boot.mgr,
     io.syslog,
     driver.storage.fs.mgr,
     core.ds.lists,
@@ -38,7 +37,7 @@ uses
     core.strings,
     io.stdio,
     debug.tracer,
-    core.util, arch.x86.util;
+    core.util, arch.platform.cpu;
 
 var
     volumes : PDList;
@@ -96,6 +95,7 @@ uses
     proc.types;
 
 type
+    PVolumeSlot = ^PStorage_Volume;
     PLabelWork = ^TLabelWork;
     TLabelWork = record
         Volume : PStorage_Volume;
@@ -187,15 +187,17 @@ begin
 end;
 
 function claim_metadata(device : PStorage_Device) : boolean;
-var flags : uint32;
+var
+    irqFlags: PtrUInt;
+    flags : uint32;
 begin
     claim_metadata := false;
     if (device = nil) or device^.removed or (not device^.writable) then exit;
-    asm pushfd; cli; pop flags end;
+    irqFlags := arch.platform.cpu.lock;
     if not device^.metadataBusy then begin
         device^.metadataBusy := true; claim_metadata := true;
     end;
-    if (flags and $200) <> 0 then asm sti end;
+    arch.platform.cpu.unlock(irqFlags);
 end;
 
 function update_partition_system_id(device : PStorage_Device; sectorStart : uint32; systemId : uint8) : TError;
@@ -210,7 +212,7 @@ begin
     if src^.partition[slot].system_id = systemId then exit;
     copyMbr := PMaster_Boot_Record(kalloc(sizeof(TMaster_Boot_Record)));
     if copyMbr = nil then begin update_partition_system_id := eOutOfMemory; exit; end;
-    memcpy(uint32(src), uint32(copyMbr), sizeof(TMaster_Boot_Record));
+    memcpy(PtrUInt(src), PtrUInt(copyMbr), sizeof(TMaster_Boot_Record));
     copyMbr^.partition[slot].system_id := systemId;
     update_partition_system_id := write_mbr(device, copyMbr);
     kfree(void(copyMbr));
@@ -222,7 +224,7 @@ begin
     perform_format := eFileInUse;
     if not driver.storage.vfs.InvalidateVolume(vol) then exit;
     vol^.filesystem := fs;
-    memset(uint32(@vol^.labelText[0]),0,sizeof(vol^.labelText));
+    memset(PtrUInt(@vol^.labelText[0]),0,sizeof(vol^.labelText));
     err := fs^.createCallback(vol, vol^.sectorCount, vol^.sectorStart, config);
     { Do not identify/remount a partially formatted volume after an error. }
     vol^.filesystem := nil;
@@ -306,7 +308,7 @@ procedure init();
 begin
     push_trace('driver.storage.vol.mgr.init');
     volumes := DL_New(sizeof(Pointer));
-    memset(uint32(@LifecycleWatches[0]), 0, sizeof(LifecycleWatches));
+    memset(PtrUInt(@LifecycleWatches[0]), 0, sizeof(LifecycleWatches));
     NextLifecycleWatchID := 1;
     NextVolumeID := 0;
 end;
@@ -417,7 +419,7 @@ begin
     push_trace('driver.storage.vol.mgr.get_volume.enter');
     if index < DL_Size(volumes) then begin
         slot := DL_Get(volumes, index);
-        get_volume := PStorage_Volume(slot^);
+        get_volume := PVolumeSlot(slot)^;
     end else
         get_volume := nil;
     push_trace('driver.storage.vol.mgr.get_volume.exit');
@@ -430,7 +432,7 @@ var
     mbr : PMaster_Boot_Record;
 begin
     push_trace('driver.storage.vol.mgr.get_partition');
-    memset(uint32(@get_partition), 0, sizeof(TPartition_table));
+    memset(PtrUInt(@get_partition), 0, sizeof(TPartition_table));
     if (device = nil) or (index > 3) then exit;
     mbr := driver.storage.mgr.get_cached_mbr(device);
     if mbr = nil then exit;
@@ -475,7 +477,7 @@ begin
         end;
         newVol := PStorage_Volume(kalloc(sizeof(TStorage_Volume)));
         if newVol = nil then begin partition_operation := eOutOfMemory; exit; end;
-        memset(uint32(newVol), 0, sizeof(TStorage_Volume));
+        memset(PtrUInt(newVol), 0, sizeof(TStorage_Volume));
         newVol^.device := device; newVol^.sectorStart := part.LBA_start;
         newVol^.sectorCount := part.sector_count; newVol^.sectorSize := device^.sectorSize;
     end;
@@ -484,9 +486,9 @@ begin
         if newVol <> nil then kfree(void(newVol));
         partition_operation := eOutOfMemory; exit;
     end;
-    memcpy(uint32(src), uint32(mbr), sizeof(TMaster_Boot_Record));
+    memcpy(PtrUInt(src), PtrUInt(mbr), sizeof(TMaster_Boot_Record));
     if (kind = 2) or (mbr^.boot_sector <> $AA55) then begin
-        memset(uint32(mbr), 0, sizeof(TMaster_Boot_Record)); mbr^.boot_sector := $AA55;
+        memset(PtrUInt(mbr), 0, sizeof(TMaster_Boot_Record)); mbr^.boot_sector := $AA55;
     end;
     err := eNone;
     if kind = 0 then mbr^.partition[slot] := part
@@ -505,7 +507,7 @@ begin
             Inc(i);
         end;
         if (kind = 1) and (err = eNone) then
-            memset(uint32(@mbr^.partition[slot]), 0, sizeof(TPartition_table));
+            memset(PtrUInt(@mbr^.partition[slot]), 0, sizeof(TPartition_table));
     end;
     if err = eNone then err := write_mbr(device, mbr);
     kfree(void(mbr));
@@ -546,7 +548,7 @@ var part : TPartition_table;
 begin
     remove_partition := eFileInUse;
     if not claim_metadata(device) then exit;
-    memset(uint32(@part), 0, sizeof(part));
+    memset(PtrUInt(@part), 0, sizeof(part));
     remove_partition := partition_operation(device, 1, slot, part);
     device^.metadataBusy := false;
 end;
@@ -556,7 +558,7 @@ var part : TPartition_table;
 begin
     init_disk := eFileInUse;
     if not claim_metadata(device) then exit;
-    memset(uint32(@part), 0, sizeof(part));
+    memset(PtrUInt(@part), 0, sizeof(part));
     init_disk := partition_operation(device, 2, 0, part);
     device^.metadataBusy := false;
 end;
@@ -626,7 +628,7 @@ begin
             if gptEntries <> nil then begin
                 { Iterate partition entries }
                 for i := 0 to gptHeader^.NumPartEntries - 1 do begin
-                    entry := PGPTPartitionEntry(uint32(gptEntries) + i * gptHeader^.PartEntrySize);
+                    entry := PGPTPartitionEntry(PtrUInt(gptEntries) + i * gptHeader^.PartEntrySize);
                     if gpt_guid_is_zero(entry^.TypeGUID) then continue;  { empty slot }
                     if entry^.StartLBA_Hi <> 0 then continue;  { LBA beyond 32-bit range }
                     if entry^.EndLBA_Hi <> 0 then continue;
@@ -808,14 +810,14 @@ procedure remove_partition_async(device : PStorage_Device; slot : uint32;
                                  callback : TIOCallback; callbackData : pointer);
 var part : TPartition_table;
 begin
-    memset(uint32(@part), 0, sizeof(part));
+    memset(PtrUInt(@part), 0, sizeof(part));
     submit_partition(device, 1, slot, part, callback, callbackData);
 end;
 
 procedure init_disk_async(device : PStorage_Device; callback : TIOCallback; callbackData : pointer);
 var part : TPartition_table;
 begin
-    memset(uint32(@part), 0, sizeof(part));
+    memset(PtrUInt(@part), 0, sizeof(part));
     submit_partition(device, 2, 0, part, callback, callbackData);
 end;
 
@@ -866,7 +868,7 @@ begin
         ctx^.Config := nil;
         if config <> nil then begin
             ctx^.Config := PFSFormatParams(kalloc(sizeof(TFSFormatParams)));
-            if ctx^.Config <> nil then memcpy(uint32(config), uint32(ctx^.Config), sizeof(TFSFormatParams));
+            if ctx^.Config <> nil then memcpy(PtrUInt(config), PtrUInt(ctx^.Config), sizeof(TFSFormatParams));
         end;
         if (config = nil) or (ctx^.Config <> nil) then begin
             notify_lifecycle(sleVolumeFormatStarted, device, vol, eNone);
@@ -940,8 +942,5 @@ begin
         if driver.storage.vfs.InvalidateVolume(volume) then detach_volume(volume);
     device^.metadataBusy := false;
 end;
-
-initialization
-    boot.mgr.registerBoot('driver.storage.vol.mgr', @init, 'Volume Manager', 'driver.storage.mgr*');
 
 end.

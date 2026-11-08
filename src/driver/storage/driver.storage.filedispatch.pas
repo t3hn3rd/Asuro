@@ -62,7 +62,7 @@ implementation
 
 uses
     driver.storage.vfs, driver.storage.types, memory.heap, core.strings,
-    core.strings.helpers, debug.tracer, io.syslog, core.util, arch.x86.util;
+    core.strings.helpers, debug.tracer, io.syslog, core.util, arch.platform.cpu;
 
 type
     THandlerEntry = record
@@ -124,7 +124,7 @@ begin
             Handlers[i].Used := true;
             Handlers[i].Kind := hkMagic;
             Handlers[i].MagicLen := magicLen;
-            memcpy(uint32(magic), uint32(@Handlers[i].Magic[0]), magicLen);
+            memcpy(PtrUInt(magic), PtrUInt(@Handlers[i].Magic[0]), magicLen);
             copyName(@Handlers[i].Name[0], name, 16);
             Handlers[i].Handler := handler;
             inc(HandlerCount);
@@ -149,7 +149,7 @@ begin
         if not Handlers[i].Used then begin
             Handlers[i].Used := true;
             Handlers[i].Kind := hkExtension;
-            memcpy(uint32(extList), uint32(@Handlers[i].ExtList[0]), len);
+            memcpy(PtrUInt(extList), PtrUInt(@Handlers[i].ExtList[0]), len);
             Handlers[i].ExtList[len] := #0;
             copyName(@Handlers[i].Name[0], name, 16);
             Handlers[i].Handler := handler;
@@ -224,7 +224,7 @@ begin
     fh := driver.storage.vfs.OpenFile(absPath, omRead, @err);
     if fh = 0 then exit;
 
-    memset(uint32(@headerBuf[0]), 0, MAX_MAGIC_LEN);
+    memset(PtrUInt(@headerBuf[0]), 0, MAX_MAGIC_LEN);
     bytesRead := driver.storage.vfs.ReadFile(fh, 0, @headerBuf[0], MAX_MAGIC_LEN);
     driver.storage.vfs.CloseFile(fh);
 

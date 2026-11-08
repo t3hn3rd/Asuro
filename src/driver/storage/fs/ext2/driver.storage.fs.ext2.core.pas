@@ -1,7 +1,7 @@
 unit driver.storage.fs.ext2.core;
 
 interface
-uses driver.storage.types, driver.storage.fs.ext2.types, core.ds.lists;
+uses arch.platform.cpu, driver.storage.types, driver.storage.fs.ext2.types, core.ds.lists;
 
 function Get16(p : pointer; offset : uint32) : uint16;
 function Get32(p : pointer; offset : uint32) : uint32;
@@ -39,13 +39,13 @@ implementation
 uses memory.heap, core.util, core.strings, driver.storage.mgr;
 
 function Get16(p : pointer; offset : uint32) : uint16;
-begin Get16 := puint16(uint32(p)+offset)^; end;
+begin Get16 := puint16(PtrUInt(p)+offset)^; end;
 function Get32(p : pointer; offset : uint32) : uint32;
-begin Get32 := puint32(uint32(p)+offset)^; end;
+begin Get32 := puint32(PtrUInt(p)+offset)^; end;
 procedure Put16(p : pointer; offset : uint32; value : uint16);
-begin puint16(uint32(p)+offset)^ := value; end;
+begin puint16(PtrUInt(p)+offset)^ := value; end;
 procedure Put32(p : pointer; offset, value : uint32);
-begin puint32(uint32(p)+offset)^ := value; end;
+begin puint32(PtrUInt(p)+offset)^ := value; end;
 
 function PowerOf(value, base : uint32) : boolean;
 begin
@@ -60,7 +60,7 @@ begin
 end;
 
 function GroupDesc(v : PExt2Volume; group : uint32) : PExt2Group;
-begin GroupDesc := PExt2Group(uint32(v^.Groups)+group*32); end;
+begin GroupDesc := PExt2Group(PtrUInt(v^.Groups)+group*32); end;
 
 function GroupBlocks(v : PExt2Volume; group : uint32) : uint32;
 var first, count : uint32;
@@ -117,7 +117,9 @@ begin
 end;
 
 function BeginOp(volume : PStorage_Volume) : PExt2Op;
-var op : PExt2Op; v : PExt2Volume;
+var
+    savedIRQ: PtrUInt;
+    op : PExt2Op; v : PExt2Volume;
 begin
     BeginOp := nil;
     if volume = nil then exit;
@@ -125,20 +127,20 @@ begin
     if v = nil then exit;
     op := PExt2Op(kalloc(sizeof(TExt2Op)));
     if op = nil then exit;
-    memset(uint32(op),0,sizeof(TExt2Op));
+    memset(PtrUInt(op),0,sizeof(TExt2Op));
     op^.V := v;
     op^.Scratch := puint8(kalloc(v^.BlockSize*2));
     if op^.Scratch = nil then begin kfree(void(op)); exit; end;
-    op^.Data := puint8(uint32(op^.Scratch)+v^.BlockSize);
+    op^.Data := puint8(PtrUInt(op^.Scratch)+v^.BlockSize);
     while true do begin
-        asm pushf; cli end;
+        savedIRQ := arch.platform.cpu.lock;
         if not v^.Busy then begin
             v^.Busy := true;
-            asm popf end;
+            arch.platform.cpu.unlock(savedIRQ);
             break;
         end;
-        asm popf end;
-        asm hlt end;
+        arch.platform.cpu.unlock(savedIRQ);
+        arch.platform.cpu.idle;
     end;
     BeginOp := op;
 end;
@@ -195,7 +197,7 @@ begin
     ReadInode := false;
     if not InodeLocation(op,number,block,offset) then exit;
     if not ReadBlock(op,block,op^.Scratch) then exit;
-    memcpy(uint32(op^.Scratch)+offset,uint32(@inode),128);
+    memcpy(PtrUInt(op^.Scratch)+offset,PtrUInt(@inode),128);
     if (inode.Links = 0) or (inode.DTime <> 0) then begin op^.Error := eCorruptFilesystem; exit; end;
     { Compression, extents and inline data are not ext2 block maps. }
     if (inode.Flags and ($4 or $200 or $800 or $80000 or $10000000)) <> 0 then begin op^.Error := eNotSupported; exit; end;
@@ -209,7 +211,7 @@ begin
     WriteInode := false;
     if not InodeLocation(op,number,block,offset) then exit;
     if not ReadBlock(op,block,op^.Scratch) then exit;
-    memcpy(uint32(@inode),uint32(op^.Scratch)+offset,128);
+    memcpy(PtrUInt(@inode),PtrUInt(op^.Scratch)+offset,128);
     WriteInode := WriteBlock(op,block,op^.Scratch);
 end;
 
@@ -252,9 +254,9 @@ begin
     if v^.GDTBlocks >= v^.BlockCount-v^.FirstBlock then exit;
     v^.Groups := puint8(kalloc(v^.GDTBlocks*v^.BlockSize));
     if v^.Groups = nil then exit;
-    memset(uint32(@op),0,sizeof(op)); op.V := v;
+    memset(PtrUInt(@op),0,sizeof(op)); op.V := v;
     for i := 0 to v^.GDTBlocks-1 do
-        if not ReadBlock(@op,v^.FirstBlock+1+i,pointer(uint32(v^.Groups)+i*v^.BlockSize)) then exit;
+        if not ReadBlock(@op,v^.FirstBlock+1+i,pointer(PtrUInt(v^.Groups)+i*v^.BlockSize)) then exit;
     tables := v^.InodesPerGroup div (v^.BlockSize div v^.InodeSize);
     for g := 0 to v^.GroupCount-1 do begin
         d := GroupDesc(v,g); first := v^.FirstBlock+g*v^.BlocksPerGroup; count := GroupBlocks(v,g);
@@ -290,14 +292,14 @@ begin
     if volume^.fsPrivate <> nil then exit;
     v := PExt2Volume(kalloc(sizeof(TExt2Volume)));
     if v = nil then exit;
-    memset(uint32(v),0,sizeof(TExt2Volume)); v^.Volume := volume;
+    memset(PtrUInt(v),0,sizeof(TExt2Volume)); v^.Volume := volume;
     v^.Super := puint8(kalloc(1024));
     if v^.Super = nil then begin FreeVolume(v); exit; end;
     if storage_read(volume^.device,volume^.sectorStart+2,2,puint32(v^.Super)) <> eNone then begin FreeVolume(v); exit; end;
     if not LoadVolume(v) then begin FreeVolume(v); exit; end;
     volume^.fsPrivate := v; volume^.sectorSize := 512;
     volume^.freeSectors := Get32(v^.Super,12)*v^.SectorsPerBlock;
-    memset(uint32(@volume^.labelText),0,sizeof(volume^.labelText));
+    memset(PtrUInt(@volume^.labelText),0,sizeof(volume^.labelText));
     for i := 0 to 15 do volume^.labelText[i] := char(v^.Super[120+i]);
     Identify := true;
 end;
@@ -316,7 +318,7 @@ var block : uint32;
 begin
     block := group div (op^.V^.BlockSize div 32);
     SaveGroup := WriteBlock(op,op^.V^.FirstBlock+1+block,
-                            pointer(uint32(op^.V^.Groups)+block*op^.V^.BlockSize));
+                            pointer(PtrUInt(op^.V^.Groups)+block*op^.V^.BlockSize));
 end;
 
 function Allocate(op : PExt2Op; inodeBit : boolean; var number : uint32) : boolean;
@@ -357,7 +359,7 @@ begin
                 if not SaveGroup(op,g) then exit;
                 v^.AllocGroup := g; number := absolute;
                 if not inodeBit then begin
-                    memset(uint32(op^.Scratch),0,v^.BlockSize);
+                    memset(PtrUInt(op^.Scratch),0,v^.BlockSize);
                     if not WriteBlock(op,number,op^.Scratch) then exit;
                 end;
                 Allocate := true; exit;
@@ -436,7 +438,7 @@ var i, length : uint32;
 begin
     DirRecord := false;
     if limit-offset < 8 then begin op^.Error:=eCorruptFilesystem; exit; end;
-    d := PExt2Dirent(uint32(op^.Data)+offset);
+    d := PExt2Dirent(PtrUInt(op^.Data)+offset);
     length := d^.NameLength;
     if not op^.V^.FileTypes and (d^.FileType <> 0) then begin op^.Error:=eCorruptFilesystem; exit; end;
     if (d^.Length < 8) or (d^.Length mod 4 <> 0) or (d^.Length > limit-offset) or
@@ -475,7 +477,7 @@ begin
         while offset<op^.V^.BlockSize do begin
             if not DirRecord(op,offset,op^.V^.BlockSize,d) then exit;
             if (d^.Inode<>0) and (d^.NameLength=length) then
-                if SameName(pchar(uint32(d)+8),name,length) then begin number:=d^.Inode; Lookup:=true; exit; end;
+                if SameName(pchar(PtrUInt(d)+8),name,length) then begin number:=d^.Inode; Lookup:=true; exit; end;
             Inc(offset,d^.Length);
         end;
     end;
@@ -495,7 +497,7 @@ begin
         start:=pos;
         while (path[pos]<>char(0)) and (path[pos]<>'/') and (pos-start<=255) do Inc(pos);
         if pos-start>255 then begin op^.Error:=eFilenameTooLong; exit; end;
-        if not Lookup(op,inode,pchar(uint32(path)+start),pos-start,next,block,offset) then exit;
+        if not Lookup(op,inode,pchar(PtrUInt(path)+start),pos-start,next,block,offset) then exit;
         number:=next;
         if not ReadInode(op,number,inode) then exit;
     end;
@@ -526,11 +528,11 @@ end;
 procedure SetDirent(op : PExt2Op; offset, length, number : uint32; name : pchar; nameLength : uint32; isDir : boolean);
 var d : PExt2Dirent;
 begin
-    d:=PExt2Dirent(uint32(op^.Data)+offset);
-    memset(uint32(d),0,length);
+    d:=PExt2Dirent(PtrUInt(op^.Data)+offset);
+    memset(PtrUInt(d),0,length);
     d^.Inode:=number; d^.Length:=length; d^.NameLength:=nameLength;
     if op^.V^.FileTypes then begin if isDir then d^.FileType:=2 else d^.FileType:=1; end;
-    memcpy(uint32(name),uint32(d)+8,nameLength);
+    memcpy(PtrUInt(name),PtrUInt(d)+8,nameLength);
 end;
 
 function AddEntry(op : PExt2Op; parent : uint32; var dir : TExt2Inode; name : pchar; number : uint32; isDir : boolean) : boolean;
@@ -585,9 +587,9 @@ begin
     { Clear the full inode slot, including any extended inode fields. }
     if not InodeLocation(op,number,block,offset) then exit;
     if not ReadBlock(op,block,op^.Scratch) then exit;
-    memset(uint32(op^.Scratch)+offset,0,op^.V^.InodeSize);
+    memset(PtrUInt(op^.Scratch)+offset,0,op^.V^.InodeSize);
     if not WriteBlock(op,block,op^.Scratch) then exit;
-    memset(uint32(@inode),0,sizeof(inode));
+    memset(PtrUInt(@inode),0,sizeof(inode));
     inode.Mode:=EXT2_FILE or $1A4; inode.Links:=1;
     if isDir then begin inode.Mode:=EXT2_DIR or $1ED; inode.Links:=2; end;
     if not WriteInode(op,number,inode) then exit;
@@ -617,11 +619,11 @@ begin
     if (length=0) or (length=4096) then begin op^.Error:=eInvalidPath; exit; end;
     split:=0;
     for i:=0 to length-1 do if path[i]='/' then split:=i+1;
-    name:=pchar(uint32(path)+split);
+    name:=pchar(PtrUInt(path)+split);
     if not ValidName(op,name,i) then exit;
     copyPath:=pchar(kalloc(split+1));
     if copyPath=nil then begin op^.Error:=eOutOfMemory; exit; end;
-    memcpy(uint32(path),uint32(copyPath),split); copyPath[split]:=char(0);
+    memcpy(PtrUInt(path),PtrUInt(copyPath),split); copyPath[split]:=char(0);
     ParentPath:=Resolve(op,copyPath,parent,inode);
     kfree(void(copyPath));
 end;
@@ -659,7 +661,7 @@ begin
         offset:=0;
         while offset<op^.V^.BlockSize do begin
             if not DirRecord(op,offset,op^.V^.BlockSize,d) then exit;
-            name:=pchar(uint32(d)+8);
+            name:=pchar(PtrUInt(d)+8);
             if d^.Inode<>0 then
                 if not (((d^.NameLength=1) and (name[0]='.')) or
                         ((d^.NameLength=2) and (name[0]='.') and (name[1]='.'))) then begin op^.Error:=eDirectoryNotEmpty; exit; end;
@@ -770,7 +772,7 @@ begin
         else begin
             list:=PLinkedListBase(kalloc(sizeof(TLinkedListBase)));
             if list=nil then op^.Error:=eOutOfMemory else begin
-                memset(uint32(list),0,sizeof(TLinkedListBase)); list^.ElementSize:=sizeof(TDirectory_Entry);
+                memset(PtrUInt(list),0,sizeof(TLinkedListBase)); list^.ElementSize:=sizeof(TDirectory_Entry);
                 for logical:=0 to dir.Size div op^.V^.BlockSize-1 do begin
                     if not MapBlock(op,number,dir,logical,false,block) then break;
                     if block=0 then begin op^.Error:=eCorruptFilesystem; break; end;
@@ -788,10 +790,10 @@ begin
                                     if node<>nil then kfree(void(node)); if e<>nil then kfree(void(e));
                                     op^.Error:=eOutOfMemory; break;
                                 end;
-                                memset(uint32(e),0,sizeof(TDirectory_Entry));
+                                memset(PtrUInt(e),0,sizeof(TDirectory_Entry));
                                 e^.fileName:=pchar(kalloc(uint32(d^.NameLength)+1));
                                 if e^.fileName=nil then begin kfree(void(node)); kfree(void(e)); op^.Error:=eOutOfMemory; break; end;
-                                memcpy(uint32(d)+8,uint32(e^.fileName),d^.NameLength); e^.fileName[d^.NameLength]:=char(0);
+                                memcpy(PtrUInt(d)+8,PtrUInt(e^.fileName),d^.NameLength); e^.fileName[d^.NameLength]:=char(0);
                                 e^.fileSize:=inode.Size;
                                 if (inode.Mode and $F000)=EXT2_DIR then e^.entryType:=directoryEntry else e^.entryType:=fileEntry;
                                 node^.Data:=void(e); node^.Next:=nil; node^.Previous:=tail;
@@ -874,7 +876,7 @@ begin
                     if block<>0 then
                         if ReadBlock(op,block,op^.Data) then begin
                             within:=oldSize mod op^.V^.BlockSize;
-                            memset(uint32(op^.Data)+within,0,op^.V^.BlockSize-within);
+                            memset(PtrUInt(op^.Data)+within,0,op^.V^.BlockSize-within);
                             WriteBlock(op,block,op^.Data);
                         end;
             end;
@@ -885,15 +887,15 @@ begin
             within:=(offset+done) mod op^.V^.BlockSize;
             amount:=op^.V^.BlockSize-within; if amount>limit-done then amount:=limit-done;
             if not MapBlock(op,fileCtx^.Inode,inode,(offset+done) div op^.V^.BlockSize,writing,block) then break;
-            if block=0 then memset(uint32(op^.Data),0,op^.V^.BlockSize)
+            if block=0 then memset(PtrUInt(op^.Data),0,op^.V^.BlockSize)
             else if (not writing) or (within<>0) or (amount<>op^.V^.BlockSize) then
                 if not ReadBlock(op,block,op^.Data) then break;
             if writing then begin
-                memcpy(uint32(buffer)+done,uint32(op^.Data)+within,amount);
+                memcpy(PtrUInt(buffer)+done,PtrUInt(op^.Data)+within,amount);
                 if not WriteBlock(op,block,op^.Data) then break;
                 if offset+done+amount>inode.Size then inode.Size:=offset+done+amount;
                 if not WriteInode(op,fileCtx^.Inode,inode) then break;
-            end else memcpy(uint32(op^.Data)+within,uint32(buffer)+done,amount);
+            end else memcpy(PtrUInt(op^.Data)+within,PtrUInt(buffer)+done,amount);
             Inc(done,amount);
         end;
         if writing and op^.Mutating and (op^.Error=eNone) then FinishMutation(op);

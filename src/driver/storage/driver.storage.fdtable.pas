@@ -29,7 +29,7 @@ interface
 uses
     memory.heap,
     driver.storage.types,
-    memory.raw, arch.common.interrupts;
+    memory.raw, arch.platform.cpu;
 
 const
     MAX_FDS = 64;
@@ -102,87 +102,104 @@ procedure fd_set_idle_hook(hook: TFDIdleHook);
 
 implementation
 uses debug.early;
-var idleHook: TFDIdleHook;
+var
+    idleHook: TFDIdleHook;
+
 procedure fd_set_idle_hook(hook: TFDIdleHook);
-var flags: PtrUInt;
+var
+    flags: PtrUInt;
 begin
-    flags := arch.common.interrupts.lock;
+    flags := arch.platform.cpu.lock;
     idleHook := hook;
-    arch.common.interrupts.unlock(flags);
+    arch.platform.cpu.unlock(flags);
 end;
 
 function fd_table_new : PFDTable;
-var
-    tbl : PFDTable;
 begin
-    tbl := PFDTable(kalloc(SizeOf(TFDTable)));
-    if tbl <> nil then
-        memory.raw.fill(pointer(tbl), 0, SizeOf(TFDTable));
-    fd_table_new := tbl;
+    fd_table_new := PFDTable(kalloc(SizeOf(TFDTable)));
 end;
 
 type
     TFSPrivateClose = procedure(data : pointer);
 
 procedure releaseEntry(entry: PFileDescriptor);
-var data: pointer; hook: TFSPrivateClose; flags: PtrUInt; wake: boolean;
+var
+    data: pointer;
+    hook: TFSPrivateClose;
+    flags: PtrUInt;
+    wake: boolean;
 begin
     { Entry is already claimed under IRQ exclusion. Never publish it for reuse
       while its close callback can still re-enter the descriptor API. }
-    data := entry^.FSPrivate; hook := TFSPrivateClose(entry^.FSCloseHook);
-    entry^.FSPrivate := nil; entry^.FSCloseHook := nil;
+    data := entry^.FSPrivate;
+    hook := TFSPrivateClose(entry^.FSCloseHook);
+    entry^.FSPrivate := nil;
+    entry^.FSCloseHook := nil;
     if (data <> nil) and assigned(hook) then hook(data);
     if entry^.Directory <> nil then kfree(void(entry^.Directory));
     if entry^.FileName <> nil then kfree(void(entry^.FileName));
     if entry^.VFSDir <> nil then kfree(void(entry^.VFSDir));
-    flags := arch.common.interrupts.lock;
+    flags := arch.platform.cpu.lock;
     wake := entry^.WaitClose;
     memory.raw.fill(pointer(entry), 0, sizeof(TFileDescriptor));
     if wake and assigned(idleHook) then idleHook;
-    arch.common.interrupts.unlock(flags);
+    arch.platform.cpu.unlock(flags);
 end;
+
 function fd_free_entry(entry: PFileDescriptor): boolean;
-var flags: PtrUInt;
+var
+    flags: PtrUInt;
 begin
     fd_free_entry := false;
     if entry = nil then exit;
-    flags := arch.common.interrupts.lock;
+    flags := arch.platform.cpu.lock;
     if (not entry^.InUse) or entry^.Closing or (entry^.AsyncRefs <> 0) then begin
-        arch.common.interrupts.unlock(flags); exit;
+        arch.platform.cpu.unlock(flags);
+        exit;
     end;
     entry^.Closing := true;
-    arch.common.interrupts.unlock(flags);
+    arch.platform.cpu.unlock(flags);
     releaseEntry(entry);
     fd_free_entry := true;
 end;
+
 function fd_table_begin_close(table: PFDTable): boolean;
-var flags: PtrUInt; i: uint32;
+var
+    flags: PtrUInt;
+    i: uint32;
 begin
     fd_table_begin_close := true;
     if table = nil then exit;
-    flags := arch.common.interrupts.lock;
+    flags := arch.platform.cpu.lock;
     if not table^.Closing then begin
         for i := 0 to MAX_FDS - 1 do
             if table^.Entries[i].Closing or (table^.Entries[i].AsyncRefs <> 0) then begin
                 table^.Entries[i].WaitClose := true;
                 fd_table_begin_close := false;
             end;
-        if not fd_table_begin_close then begin arch.common.interrupts.unlock(flags); exit; end;
+        if not fd_table_begin_close then begin
+            arch.platform.cpu.unlock(flags);
+            exit;
+        end;
         table^.Closing := true;
         for i := 0 to MAX_FDS - 1 do table^.Entries[i].Closing := true;
     end;
-    arch.common.interrupts.unlock(flags);
+    arch.platform.cpu.unlock(flags);
 end;
+
 procedure fd_table_free(table: PFDTable);
-var flags: PtrUInt; i: uint32;
+var
+    flags: PtrUInt;
+    i: uint32;
 begin
     if table = nil then exit;
-    flags := arch.common.interrupts.lock;
+    flags := arch.platform.cpu.lock;
     if table^.Freeing or not fd_table_begin_close(table) then begin
-        arch.common.interrupts.unlock(flags); exit;
+        arch.platform.cpu.unlock(flags);
+        exit;
     end;
     table^.Freeing := true;
-    arch.common.interrupts.unlock(flags);
+    arch.platform.cpu.unlock(flags);
     for i := 0 to MAX_FDS - 1 do
         if table^.Entries[i].InUse then releaseEntry(@table^.Entries[i]);
     kfree(void(table));
@@ -214,28 +231,30 @@ begin
 end;
 
 function fd_begin_async(entry : PFileDescriptor) : boolean;
-var flags: PtrUInt;
+var
+    flags: PtrUInt;
 begin
     fd_begin_async := false;
     if entry = nil then exit;
-    flags := arch.common.interrupts.lock;
+    flags := arch.platform.cpu.lock;
     if entry^.InUse and not entry^.Closing and (entry^.AsyncRefs < High(uint32)) then begin
         entry^.AsyncRefs := entry^.AsyncRefs + 1;
         fd_begin_async := true;
     end;
-    arch.common.interrupts.unlock(flags);
+    arch.platform.cpu.unlock(flags);
 end;
 
 procedure fd_end_async(entry : PFileDescriptor);
-var flags: PtrUInt;
+var
+    flags: PtrUInt;
 begin
     if entry = nil then exit;
-    flags := arch.common.interrupts.lock;
+    flags := arch.platform.cpu.lock;
     if entry^.AsyncRefs > 0 then begin
         dec(entry^.AsyncRefs);
         if (entry^.AsyncRefs = 0) and entry^.WaitClose and assigned(idleHook) then idleHook;
     end;
-    arch.common.interrupts.unlock(flags);
+    arch.platform.cpu.unlock(flags);
 end;
 
 function fd_has_async(entry : PFileDescriptor) : boolean;
@@ -282,12 +301,14 @@ var
     testTable: PFDTable;
     testHandle, testClosed: uint32;
     testReentry: boolean;
+
 procedure testClose(data: pointer);
 begin
     inc(testClosed);
     testReentry := not fd_close(testTable, testHandle);
     kfree(void(data));
 end;
+
 procedure UnitTest;
 var
     table: PFDTable;
@@ -295,16 +316,29 @@ var
     i, passed, failed: uint32;
     beforeFree: SizeUInt;
     slotsValid: boolean;
+
     procedure Assert(condition: boolean; name: pchar);
     begin
-        if condition then begin inc(passed); puts('PASS: '); end
-        else begin inc(failed); puts('FAIL: '); end;
-        puts(name); puts(#13#10);
+        if condition then begin
+            inc(passed);
+            puts('PASS: ');
+        end
+        else begin
+            inc(failed);
+            puts('FAIL: ');
+        end;
+        puts(name);
+        puts(#13#10);
     end;
 begin
-    passed := 0; failed := 0; beforeFree := lmm_total_free;
+    passed := 0;
+    failed := 0;
+    beforeFree := lmm_total_free;
     table := fd_table_new;
-    testTable := table; testHandle := 1; testClosed := 0; testReentry := false;
+    testTable := table;
+    testHandle := 1;
+    testClosed := 0;
+    testReentry := false;
     Assert((fd_get(table, 0) = nil) and (fd_get(table, MAX_FDS + 1) = nil), 'FD handle boundaries');
     slotsValid := true;
     for i := 0 to MAX_FDS - 1 do begin
@@ -314,8 +348,10 @@ begin
     Assert(slotsValid, 'FD bounded slot allocation');
     Assert(fd_alloc(table) = 0, 'FD full table rejects allocation');
     entry := fd_get(table, 1);
-    entry^.Directory := pchar(kalloc(3)); entry^.FileName := pchar(kalloc(5));
-    entry^.VFSDir := pchar(kalloc(7)); entry^.FSPrivate := pointer(kalloc(9));
+    entry^.Directory := pchar(kalloc(3));
+    entry^.FileName := pchar(kalloc(5));
+    entry^.VFSDir := pchar(kalloc(7));
+    entry^.FSPrivate := pointer(kalloc(9));
     entry^.FSCloseHook := @testClose;
     Assert(fd_begin_async(entry), 'FD acquires async reference');
     Assert(not fd_close(table, 1), 'FD close retains active async storage');
@@ -326,7 +362,8 @@ begin
     Assert((testClosed = 1) and testReentry, 'FD callback reentry cannot close twice');
     Assert(fd_get(table, 1) = nil, 'FD closed handle unavailable');
     Assert(fd_alloc(table) = 1, 'FD closed slot reusable');
-    entry := @table^.Entries[0]; entry^.InUse := true;
+    entry := @table^.Entries[0];
+    entry^.InUse := true;
     entry^.AsyncRefs := High(uint32);
     Assert(not fd_begin_async(entry), 'FD async reference overflow rejected');
     entry^.AsyncRefs := 0;
@@ -334,7 +371,8 @@ begin
     Assert((fd_alloc(table) = 0) and not fd_begin_async(entry), 'FD closing table rejects new users');
     fd_table_free(table);
     Assert(lmm_total_free = beforeFree, 'FD table strings and metadata released');
-    field('FD_TESTS_PASSED', passed); field('FD_TESTS_FAILED', failed);
+    field('FD_TESTS_PASSED', passed);
+    field('FD_TESTS_FAILED', failed);
 end;
 
 end.

@@ -28,8 +28,7 @@ uses
     core.ds.lists,
     memory.heap,
     driver.bus.pci,
-    core.util, arch.x86.util,
-    arch.x86.memory.virtual;
+    core.util;
 
 const
     AHCI_CONTROLLER_MODE = $80000000;
@@ -278,6 +277,7 @@ type
         device_type  : TDeviceType;
         ata_info     : TIdentResponse;
         supportsNCQ  : boolean;
+        supports64BitDMA: boolean;
         queueDepth   : uint32;       { safe active depth for this device }
         slotCount    : uint32;       { controller slot count from CAP.NCS + 1 }
         command_list : PHBA_CMD_HEADER;
