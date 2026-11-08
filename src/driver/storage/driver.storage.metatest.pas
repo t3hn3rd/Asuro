@@ -1,11 +1,12 @@
 unit driver.storage.metatest;
 
 interface
+procedure RunTests(scheduled: boolean);
 procedure UnitTest;
 procedure init;
 
 implementation
-uses boot.mgr, io.stdio, io.syslog, memory.heap, core.util, core.ds.cfifo,
+uses driver.storage.vfs, driver.storage.fs.mgr, driver.storage.fs.fat32, arch.platform.diagnostics, io.stdio, io.syslog, memory.heap, core.util, core.ds.cfifo,
      driver.storage.types, driver.storage.mgr, driver.storage.vol.mbr,
      driver.storage.vol.mgr, driver.storage.fs.fat32.types,
      driver.storage.fs.fat32.vol, driver.storage.fs.fat32.labels, core.strings;
@@ -39,8 +40,8 @@ begin
     if request^.RequestType = ioWrite then begin
         Inc(m^.Writes);
         if m^.Writes = m^.FailWrite then begin complete_io(request, false, eIOError); exit; end;
-        memcpy(uint32(request^.Buffer), uint32(m^.Data)+offset, size);
-    end else memcpy(uint32(m^.Data)+offset, uint32(request^.Buffer), size);
+        memcpy(PtrUInt(request^.Buffer), PtrUInt(m^.Data)+offset, size);
+    end else memcpy(PtrUInt(m^.Data)+offset, PtrUInt(request^.Buffer), size);
     request^.ByteCount := size;
     complete_io(request, true, eNone);
 end;
@@ -51,7 +52,7 @@ begin m := PMock(data); Inc(m^.Callbacks); m^.Error := error; end;
 
 { Only heap-backed synthetic storage is used. Never registers a hardware device,
   never accesses a host/guest disk, and every fake request completes inline. }
-procedure UnitTest;
+procedure RunTests(scheduled: boolean);
 var
     device : PStorage_Device;
     volume, added : PStorage_Volume;
@@ -67,6 +68,80 @@ var
     begin
         if ok then Inc(passed) else begin Inc(failed); io.syslog.logln('STORMETA FAIL', name); end;
     end;
+    procedure FileRoundTrip(name: pchar);
+    var
+        fs, sourceFS: PFilesystem;
+        handle: TFileHandle;
+        error: TError;
+        data: puint8;
+        j: uint32;
+        matches: boolean;
+    begin
+        sourceFS := find_filesystem_by_name(name);
+        Assert(sourceFS <> nil, 'round-trip filesystem registered');
+        if sourceFS = nil then exit;
+        fs := PFilesystem(kalloc(sizeof(TFilesystem)));
+        Assert(fs <> nil, 'round-trip filesystem descriptor');
+        if fs = nil then exit;
+        memcpy(PtrUInt(sourceFS), PtrUInt(fs), sizeof(TFilesystem));
+        { Early boot has no scheduler yet. Exercise the synchronous hooks on
+          a private descriptor; scheduled runs retain the normal async hooks. }
+        if not scheduled then begin
+            fs^.readOffsetAsyncCallback := nil;
+            fs^.writeOffsetAsyncCallback := nil;
+        end;
+        FAT32ReleaseVolumeState(volume);
+        memset(PtrUInt(volume), 0, sizeof(TStorage_Volume));
+        volume^.device := device;
+        volume^.sectorSize := 512;
+        volume^.sectorCount := 4096;
+        memset(PtrUInt(mock^.Data), 0, 4096 * 512);
+        volume^.filesystem := fs;
+        params.Flags := FS_FORMAT_PARAM_CLUSTER_SIZE;
+        params.ClusterSize := 2;
+        error := fs^.createCallback(volume, 4096, 0, @params);
+        Assert(error = eNone, 'round-trip format');
+        if error <> eNone then begin
+            kfree(void(fs));
+            exit;
+        end;
+        Assert(fs^.identifyCallback(volume), 'round-trip identify');
+        if mountVolume('/__storage_roundtrip__', volume) <> pvRegistered then begin
+            Assert(false, 'round-trip mount');
+            InvalidateVolume(volume);
+            kfree(void(fs));
+            exit;
+        end;
+        data := puint8(kalloc(8192));
+        Assert(data <> nil, 'round-trip buffer');
+        if data <> nil then begin
+            for j := 0 to 8191 do data[j] := (j * 17 + 3) and $FF;
+            handle := OpenFile('/__storage_roundtrip__/ROUND.BIN', omCreate, @error);
+            Assert(error = eNone, 'round-trip create');
+            if error = eNone then begin
+                Assert(WriteFile(handle, 0, data, 8192) = 8192, 'write across filesystem blocks');
+                Assert(CloseFile(handle) = eNone, 'close written file');
+                handle := OpenFile('/__storage_roundtrip__/ROUND.BIN', omRead, @error);
+                Assert(error = eNone, 'reopen written file');
+                if error = eNone then begin
+                    memset(PtrUInt(data), 0, 8192);
+                    Assert(ReadFile(handle, 37, data, 4096) = 4096, 'unaligned cross-block read');
+                    matches := true;
+                    for j := 0 to 4095 do
+                        if data[j] <> (((j + 37) * 17 + 3) and $FF) then matches := false;
+                    Assert(matches, 'read-back bytes match written pattern');
+                    Assert(FileSizeFromHandle(handle) = 8192, 'reopened file size persists');
+                    Assert(CloseFile(handle) = eNone, 'close read file');
+                end;
+            end;
+            kfree(void(data));
+        end;
+        Assert(InvalidateVolume(volume), 'round-trip volume released');
+        RemoveVirtualTree('/__storage_roundtrip__');
+        volume^.filesystem := nil;
+        kfree(void(fs));
+        io.syslog.logln('STORMETA round-trip', name);
+    end;
 begin
     passed := 0; failed := 0;
     device := PStorage_Device(kalloc(sizeof(TStorage_Device)));
@@ -80,12 +155,12 @@ begin
         if br <> nil then kfree(void(br));
         io.syslog.logln('STORMETA FAIL', 'test allocation'); exit;
     end;
-    memset(uint32(device),0,sizeof(TStorage_Device));
-    memset(uint32(volume),0,sizeof(TStorage_Volume));
-    memset(uint32(mock),0,sizeof(TMock)); memset(uint32(br),0,sizeof(TBootRecord));
+    memset(PtrUInt(device),0,sizeof(TStorage_Device));
+    memset(PtrUInt(volume),0,sizeof(TStorage_Volume));
+    memset(PtrUInt(mock),0,sizeof(TMock)); memset(PtrUInt(br),0,sizeof(TBootRecord));
     mock^.Data := puint8(kalloc(256*512));
-    memset(uint32(mock^.Data),$CC,256*512);
-    device^.controllerId0 := uint32(mock); device^.sectorSize := 512;
+    memset(PtrUInt(mock^.Data),$CC,256*512);
+    device^.controllerId0 := PtrUInt(mock); device^.sectorSize := 512;
     device^.maxSectorCount := 256; device^.writable := true; device^.maxActive := 1;
     device^.dispatchRead := @dispatch; device^.dispatchWrite := @dispatch;
     device^.requestQueue := CFIFO_New(sizeof(Pointer),8);
@@ -101,7 +176,7 @@ begin
     mock^.FailRead := false; mock^.Callbacks := 0;
     device^.cachedMBR := kalloc(512);
     mbr := PMaster_Boot_Record(device^.cachedMBR);
-    memset(uint32(mbr),0,512); mbr^.boot_sector := $AA55; mbr^.signature := $12345678;
+    memset(PtrUInt(mbr),0,512); mbr^.boot_sector := $AA55; mbr^.signature := $12345678;
     Assert(write_mbr(device,mbr) = eNone,'aliased MBR write succeeds');
     Assert(PMaster_Boot_Record(mock^.Data)^.signature = $12345678,'aliased MBR bytes preserved');
     before := PMaster_Boot_Record(device^.cachedMBR);
@@ -119,7 +194,7 @@ begin
     Assert(device^.cachedMBR = before,'async failure retains cache');
     mock^.FailWrite := 0;
     volume^.device := device; volume^.sectorStart := 64; volume^.sectorCount := 128; volume^.sectorSize := 512;
-    memset(uint32(@params),0,sizeof(params)); params.Version := 1;
+    memset(PtrUInt(@params),0,sizeof(params)); params.Version := 1;
     params.Flags := FS_FORMAT_PARAM_CLUSTER_SIZE; params.ClusterSize := 1;
     Assert(validate_format(volume,128,64,@params) = eNone,'valid format geometry');
     params.ClusterSize := 3;
@@ -136,7 +211,7 @@ begin
     Assert(create_volume(volume,128,64,@params) = eNone,'format completes');
     Assert(not mock^.OutOfBounds,'all writes within device');
     Assert((mock^.Data[63*512] = $CC) and (mock^.Data[192*512] = $CC),'neighbor partitions untouched');
-    memcpy(uint32(mock^.Data)+64*512,uint32(br),sizeof(TBootRecord));
+    memcpy(PtrUInt(mock^.Data)+64*512,PtrUInt(br),sizeof(TBootRecord));
     Assert(FAT32ClusterLimit(br) = 97,'cluster bound excludes FAT padding');
     Assert(identify_volume(volume),'fresh format identified');
     Assert(volume^.freeSectors = 93,'free space excludes metadata and allocated directories');
@@ -154,10 +229,10 @@ begin
     volume^.labelText[0] := #0;
     Assert(read_label(volume) = eNone,'reload label from disk');
     Assert(stringEquals(@volume^.labelText[0],'PROJECTS'),'label survives cache reset');
-    Assert(PDirectory(uint32(mock^.Data)+97*512)^.fileName[0] = 'S','rename preserves SYSTEM directory');
+    Assert(PDirectory(PtrUInt(mock^.Data)+97*512)^.fileName[0] = 'S','rename preserves SYSTEM directory');
     { Add a valid backup boot sector and verify all three metadata writes. }
-    PBootRecord(uint32(mock^.Data)+64*512)^.backupCluster := 6;
-    memcpy(uint32(mock^.Data)+64*512,uint32(mock^.Data)+70*512,512);
+    PBootRecord(PtrUInt(mock^.Data)+64*512)^.backupCluster := 6;
+    memcpy(PtrUInt(mock^.Data)+64*512,PtrUInt(mock^.Data)+70*512,512);
     for i := 1 to 3 do begin
         mock^.FailWrite := mock^.Writes+i;
         Assert(write_label(volume,'NEW NAME') = eIOError,'label write failure propagated');
@@ -166,20 +241,20 @@ begin
         Assert(stringEquals(@volume^.labelText[0],'PROJECTS'),'failed rename retains previous label');
     end;
     Assert(write_label(volume,'ABCDEFGHIJK') = eNone,'maximum length label');
-    Assert(PBootRecord(uint32(mock^.Data)+70*512)^.volumeLabel[10] = ord('K'),'backup label updated');
+    Assert(PBootRecord(PtrUInt(mock^.Data)+70*512)^.volumeLabel[10] = ord('K'),'backup label updated');
     Assert(write_label(volume,'') = eNone,'clear label');
     volume^.labelText[0] := 'X';
     Assert(read_label(volume) = eNone,'reload cleared label');
     Assert(volume^.labelText[0] = #0,'blank label persists');
     params.Flags := params.Flags or FS_FORMAT_PARAM_LABEL;
-    memcpy(uint32(pchar('MY DATA')),uint32(@params.LabelText[0]),8);
+    memcpy(PtrUInt(pchar('MY DATA')),PtrUInt(@params.LabelText[0]),8);
     Assert(create_volume(volume,128,64,@params) = eNone,'format with label');
     Assert(read_label(volume) = eNone,'read format label');
     Assert(stringEquals(@volume^.labelText[0],'MY DATA'),'format label persists');
-    Assert(PDirectory(uint32(mock^.Data)+97*512)^.attributes = $08,'format creates root volume label entry');
+    Assert(PDirectory(PtrUInt(mock^.Data)+97*512)^.attributes = $08,'format creates root volume label entry');
     Assert(not mock^.OutOfBounds,'label operations stay inside volume');
     oldCount := get_volume_count();
-    memset(uint32(@part),0,sizeof(part)); part.LBA_start := 64; part.sector_count := 128;
+    memset(PtrUInt(@part),0,sizeof(part)); part.LBA_start := 64; part.sector_count := 128;
     mock^.FailWrite := mock^.Writes+1;
     Assert(add_partition(device,0,part) = eIOError,'failed partition creation reported');
     Assert(get_volume_count() = oldCount,'failed create publishes no volume');
@@ -205,7 +280,7 @@ begin
     kfree(void(mock^.Data));
     mock^.Data := puint8(kalloc(4096*512));
     if mock^.Data <> nil then begin
-        memset(uint32(mock^.Data),0,1500*512);
+        memset(PtrUInt(mock^.Data),0,1500*512);
         device^.maxSectorCount := 1500;
         volume^.sectorStart := 0; volume^.sectorCount := 1500;
         Assert(create_volume(volume,1500,0,@params) = eNone,'format multi-batch FAT fixture');
@@ -224,34 +299,40 @@ begin
         Assert((volume^.lifecycleFlags and STORAGE_VOLUME_FLAG_FREE_UNKNOWN) <> 0,'missing FSInfo reports unknown free space');
         Assert(mock^.MaxReadSectors = 1,'large volume discovery uses only metadata sector reads');
         PBootRecord(mock^.Data)^.FSInfoCluster := 1;
-        puint32(uint32(mock^.Data)+512)^ := $41615252;
-        puint32(uint32(mock^.Data)+512+484)^ := $61417272;
-        puint32(uint32(mock^.Data)+512+488)^ := 100;
-        puint32(uint32(mock^.Data)+512+508)^ := $AA550000;
+        puint32(PtrUInt(mock^.Data)+512)^ := $41615252;
+        puint32(PtrUInt(mock^.Data)+512+484)^ := $61417272;
+        puint32(PtrUInt(mock^.Data)+512+488)^ := 100;
+        puint32(PtrUInt(mock^.Data)+512+508)^ := $AA550000;
         Assert(identify_volume(volume),'valid FSInfo avoids FAT scan');
         Assert((volume^.freeSectors = 100) and
                ((volume^.lifecycleFlags and STORAGE_VOLUME_FLAG_FREE_UNKNOWN) = 0),'FSInfo count displayed');
-        puint32(uint32(mock^.Data)+512+488)^ := $FFFFFFFF;
+        puint32(PtrUInt(mock^.Data)+512+488)^ := $FFFFFFFF;
         Assert(identify_volume(volume),'unknown FSInfo count does not prevent mount');
         Assert((volume^.lifecycleFlags and STORAGE_VOLUME_FLAG_FREE_UNKNOWN) <> 0,'unknown FSInfo count stays unknown');
-        puint32(uint32(mock^.Data)+512+488)^ := 4096;
+        puint32(PtrUInt(mock^.Data)+512+488)^ := 4096;
         Assert(identify_volume(volume),'out-of-range FSInfo count does not prevent mount');
         Assert((volume^.lifecycleFlags and STORAGE_VOLUME_FLAG_FREE_UNKNOWN) <> 0,'out-of-range FSInfo count rejected');
-        puint32(uint32(mock^.Data)+512+488)^ := 0;
+        puint32(PtrUInt(mock^.Data)+512+488)^ := 0;
         Assert(identify_volume(volume),'full volume FSInfo accepted');
         Assert((volume^.freeSectors = 0) and
                ((volume^.lifecycleFlags and STORAGE_VOLUME_FLAG_FREE_UNKNOWN) = 0),'known zero differs from unknown');
-        puint32(uint32(mock^.Data)+512+508)^ := 0;
+        puint32(PtrUInt(mock^.Data)+512+508)^ := 0;
         Assert(identify_volume(volume),'invalid FSInfo signature does not prevent mount');
         Assert((volume^.lifecycleFlags and STORAGE_VOLUME_FLAG_FREE_UNKNOWN) <> 0,'invalid FSInfo signature rejected');
         mock^.FailReadLBA := 1;
         Assert(identify_volume(volume),'optional FSInfo read failure does not prevent mount');
         mock^.FailReadLBA := 0;
+        FileRoundTrip('FAT32');
+        FileRoundTrip('EXT2');
     end else Assert(false,'allocate multi-batch FAT fixture');
     kfree(device^.cachedMBR); CFIFO_Free(device^.requestQueue);
     kfree(void(mock^.Data)); kfree(void(mock)); kfree(void(volume)); kfree(void(device)); kfree(void(br));
-    io.syslog.log('STORMETA','Passed: '); io.syslog.writeint(passed);
-    io.syslog.writestring(' Failed: '); io.syslog.writeintln(failed);
+    arch.platform.diagnostics.testSummary('STORMETA', 'STORMETA_TESTS_PASSED', 'STORMETA_TESTS_FAILED', passed, failed);
+end;
+
+procedure UnitTest;
+begin
+    RunTests(false);
 end;
 
 procedure command(params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
@@ -263,6 +344,4 @@ end;
 procedure init;
 begin io.stdio.registerCommand('STORMETA',@command,'Run memory-backed storage metadata regression tests'); end;
 
-initialization
-    boot.mgr.registerBoot('driver.storage.metatest',@init,'Storage Metadata Tests',BOOT_MGR_BARRIER_MID);
 end.

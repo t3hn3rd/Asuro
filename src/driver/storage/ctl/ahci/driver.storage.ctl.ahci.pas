@@ -13,9 +13,9 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 
-{ 
+{
 	Drivers->Storage->driver.storage.ctl.ahci->driver.storage.ctl.ahci - driver.storage.ctl.ahci Driver.
-	
+
 	@author(Aaron Hance <ah@aaronhance.me>)
 }
 unit driver.storage.ctl.ahci;
@@ -23,21 +23,19 @@ unit driver.storage.ctl.ahci;
 interface
 
 uses
-    boot.mgr,
     driver.storage.ctl.ahci.types,
     driver.mgr,
     driver.types,
     driver.storage.ctl.ide.types,
-    arch.x86.isr.ioapic,
-    arch.x86.isr.mgr,
+    arch.platform.interrupts,
     core.ds.lists,
     memory.heap,
     driver.bus.pci,
     driver.storage.mgr,
     driver.storage.types,
     io.syslog,
-    core.util, arch.x86.util,
-    arch.x86.memory.virtual;
+    core.util, arch.platform.cpu,
+    arch.platform.memory;
 
 var
     ahciControllers : PDList;
@@ -69,7 +67,10 @@ function send_read_capacity(device : PAHCI_Device; sectorCount : puint32; blockS
 
 implementation
 
-uses arch.x86.bda, arch.x86.isr.tmr0, core.panic, io.stdio, core.strings;
+uses arch.platform.process, arch.platform.diagnostics, io.stdio, core.strings;
+
+type
+    PControllerSlot = ^PAHCI_Controller;
 
 const
     AHCI_ENABLE_NCQ = true;
@@ -79,6 +80,8 @@ const
     AHCI_IRQ_MASK = $7900000B;
 
 var watchdogDivider : uint32 = 0;
+
+function build_prdt(table: PHBA_CMD_TABLE; address: PtrUInt; bytes: uint32; var entries: uint32; dma64: boolean): TError; forward;
 
 procedure cmd_ahcitest(params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf); forward;
 procedure ahci_watchdog(data : void); forward;
@@ -105,7 +108,7 @@ begin
     devID.id4:= idANY;
     devID.ex:= nil;
     driver.mgr.register_driver('ATA/PI driver.storage.ctl.ahci Driver', @devID, @load);
-    arch.x86.isr.tmr0.hook(uint32(@ahci_watchdog));
+    arch.platform.interrupts.registerTimer(@ahci_watchdog);
     io.stdio.registerCommand('AHCITEST',@cmd_ahcitest,'Run AHCI tests using simulated registers');
 end;
 
@@ -118,7 +121,7 @@ begin
     repeat
         if (reg^ and mask) = expected then begin wait_register := true; exit; end;
         if n >= attempts then break;
-        psleep(16); Inc(n);
+        core.util.waitTicks(16); Inc(n);
     until false;
     wait_register := false;
 end;
@@ -149,7 +152,7 @@ begin
     port^.int_enable := 0;
     port^.cmd := port^.cmd or $16; { FRE, power-on and spin-up }
     port^.sata_ctrl := (port^.sata_ctrl and $FFFFFFF0) or $1;
-    psleep(16); { >= 1 ms COMRESET assertion at the ~8 kHz PIT rate }
+    core.util.waitTicks(16); { >= 1 ms COMRESET assertion at the ~8 kHz PIT rate }
     port^.sata_ctrl := port^.sata_ctrl and $FFFFFFF0;
     if not wait_register(@port^.sata_status,$F,3,500) then exit;
     if not wait_register(@port^.tfd,$88,0,2500) then exit;
@@ -189,7 +192,9 @@ begin
             port := @controller^.mio^.ports[i];
 
             device := PAHCI_Device(@controller^.devices[i]);
-            device^.port := port; device^.owner := controller;
+            device^.port := port;
+            device^.owner := controller;
+            device^.supports64BitDMA := (controller^.mio^.capabilites and $80000000) <> 0;
 
             port^.int_enable := 0;
             if not stop_port(port) then begin log_port_failure(i,port,'cannot stop engine'); continue; end;
@@ -202,46 +207,80 @@ begin
             //allocate memory for the command list and ensure it is aligned to 1024 bytes
             // Need 32 command headers. Allocate extra (alignment-1) bytes for alignment.
             listAlloc := kalloc(sizeof(THBA_CMD_HEADER) * 32 + 1023);
+            if listAlloc = nil then continue;
             cmd_list_base := listAlloc;
-            cmd_list_base := puint32((uint32(cmd_list_base) + 1023) and $FFFFFC00);
-            memset(uint32(cmd_list_base), 0, sizeof(THBA_CMD_HEADER) * 32);
+            cmd_list_base := puint32((PtrUInt(cmd_list_base) + 1023) and not PtrUInt(1023));
 
             //set the command list base address
-            port^.cmdl_basel := vtop(uint32(cmd_list_base)); //todo set virtual address in device
-            port^.cmdl_baseu := 0;
+            port^.cmdl_basel := arch.platform.memory.physicalAddress(PtrUInt(cmd_list_base)); //todo set virtual address in device
+            port^.cmdl_baseu := arch.platform.memory.physicalAddress(PtrUInt(cmd_list_base)) shr 32;
 
             device^.command_list := PHBA_CMD_HEADER(cmd_list_base);
 
             //allocate memory for the FIS and ensure it is aligned to 256 bytes
             fisAlloc := kalloc(sizeof(THBA_FIS) + 255);
+            if fisAlloc = nil then begin
+                port^.cmdl_basel := 0;
+                port^.cmdl_baseu := 0;
+                kfree(listAlloc);
+                continue;
+            end;
             fis_base := fisAlloc;
-            fis_base := puint32((uint32(fis_base) + 255) and $FFFFFF00);
+            fis_base := puint32((PtrUInt(fis_base) + 255) and not PtrUInt(255));
 
             //set the FIS base address
-            port^.fis_basel := vtop(uint32(fis_base));
-            port^.fis_baseu := 0;
+            port^.fis_basel := arch.platform.memory.physicalAddress(PtrUInt(fis_base));
+            port^.fis_baseu := arch.platform.memory.physicalAddress(PtrUInt(fis_base)) shr 32;
 
-            memset(uint32(fis_base), 0, sizeof(THBA_FIS));
 
             device^.fis := PHBA_FIS(fis_base);
             //todo check how many simultaneous commands are supported
 
-            //allocate memory for the command table and ensure it is aligned to 128 bytes
-            // Need 32 command tables. Allocate extra (alignment-1) bytes for alignment.
-            tableAlloc := kalloc(sizeof(THBA_CMD_TABLE) * 32 + 127);
+            // Each command table must fit inside one physical page.
+            tableAlloc := kalloc(4096 * 32 + 4095);
+            if tableAlloc = nil then begin
+                port^.cmdl_basel := 0;
+                port^.cmdl_baseu := 0;
+                port^.fis_basel := 0;
+                port^.fis_baseu := 0;
+                kfree(listAlloc);
+                kfree(fisAlloc);
+                continue;
+            end;
             cmd_table_base := tableAlloc;
-            cmd_table_base := puint32((uint32(cmd_table_base) + 127) and $FFFFFF80);
-            memset(uint32(cmd_table_base), 0, sizeof(THBA_CMD_TABLE) * 32);
+            cmd_table_base := puint32((PtrUInt(cmd_table_base) + 4095) and not PtrUInt(4095));
 
             device^.command_table := PHBA_CMD_TABLE(cmd_table_base);
 
             //set the command table base address and setup command table
             for ii:=0 to 31 do begin
                 //set command header locations
-                command_header := PHBA_CMD_HEADER(uint32(cmd_list_base) + (ii * sizeof(THBA_CMD_HEADER)));
+                command_header := PHBA_CMD_HEADER(PtrUInt(cmd_list_base) + (ii * sizeof(THBA_CMD_HEADER)));
                 command_header^.prdtl := 32;
-                command_header^.cmd_table_base := vtop(uint32(cmd_table_base) + (ii * sizeof(THBA_CMD_TABLE)));
-                command_header^.cmd_table_baseu := 0;
+                command_header^.cmd_table_base := arch.platform.memory.physicalAddress(PtrUInt(cmd_table_base) + (ii * 4096));
+                command_header^.cmd_table_baseu := arch.platform.memory.physicalAddress(PtrUInt(cmd_table_base) + ii * 4096) shr 32;
+            end;
+
+            if not device^.supports64BitDMA then begin
+                registered := (port^.cmdl_baseu <> 0) or (port^.fis_baseu <> 0);
+                for ii := 0 to 31 do begin
+                    command_header := PHBA_CMD_HEADER(PtrUInt(cmd_list_base) + ii * sizeof(THBA_CMD_HEADER));
+                    if command_header^.cmd_table_baseu <> 0 then registered := true;
+                end;
+                if registered then begin
+                    port^.cmdl_basel := 0;
+                    port^.cmdl_baseu := 0;
+                    port^.fis_basel := 0;
+                    port^.fis_baseu := 0;
+                    device^.command_list := nil;
+                    device^.fis := nil;
+                    device^.command_table := nil;
+                    kfree(listAlloc);
+                    kfree(fisAlloc);
+                    kfree(tableAlloc);
+                    io.syslog.logln('AHCI', 'Controller cannot address allocated DMA structures.');
+                    continue;
+                end;
             end;
 
             registered := false;
@@ -251,7 +290,7 @@ begin
                 signatureWait := 0;
                 while (puint32(@port^.signature)^ = 0) or (puint32(@port^.signature)^ = $FFFFFFFF) do begin
                     if signatureWait >= 500 then break;
-                    psleep(16); Inc(signatureWait);
+                    core.util.waitTicks(16); Inc(signatureWait);
                 end;
                 case puint32(@port^.signature)^ of
                     SATA_SIG_ATA: begin device^.device_type := SATA; registered := identify_device(controller,i,false); end;
@@ -293,7 +332,7 @@ var
     storageDev  : PStorage_Device;
     storageDev_sectorSize : uint32;
     ncqDepth    : uint32;
-    slotCount   : uint32;
+    slotCount, entries : uint32;
     ncqSupported : boolean;
 begin
     identify_device := false;
@@ -306,10 +345,11 @@ begin
     //clear any pending interrupts
     device^.port^.int_status := $FFFFFFFF;
     device^.port^.int_enable := $0;   { disabled during IDENTIFY polling }
-    
+
     // Allocate a 512-byte DMA buffer for the IDENTIFY d driver.storage.ctl.ide.ata
     buffer := kalloc(512);
-    memset(uint32(buffer), 0, 512);
+    if buffer = nil then exit;
+    memset(PtrUInt(buffer), 0, 512);
 
     // Use command slot 0 for the IDENTIFY command.
     cmd_header := device^.command_list;  // Assuming slot 0 is at the beginning.
@@ -321,10 +361,12 @@ begin
 
 
     // Setup the command table (using slot 0)
-    cmd_table := device^.command_table;  
-    cmd_table^.prdt[0].dba := vtop(uint32(buffer));
-    cmd_table^.prdt[0].dbc := 511;   // 512 bytes (0-based count)
-    cmd_table^.prdt[0].int := 1;     // Interrupt on completion
+    cmd_table := device^.command_table;
+    if build_prdt(cmd_table, PtrUInt(buffer), 512, entries, device^.supports64BitDMA) <> eNone then begin
+        kfree(buffer);
+        exit;
+    end;
+    cmd_header^.prdtl := entries;
 
     // if isATAPI then begin
     // // ATAPI Identify Device command
@@ -333,7 +375,7 @@ begin
 
     // Construct the Command FIS in the command table's CFIS area
     fis := PHBA_FIS_REG_H2D(@device^.command_table^.cmd_fis);
-    memset(uint32(fis), 0, sizeof(THBA_FIS_REG_H2D));
+    memset(PtrUInt(fis), 0, sizeof(THBA_FIS_REG_H2D));
     fis^.fis_type := uint8(FIS_TYPE_REG_H2D);
     fis^.c   := $1;
     if isATAPI then begin
@@ -341,7 +383,7 @@ begin
     end else begin
         fis^.command  := ATA_CMD_IDENTIFY;
     end;
-    fis^.device   := $40; 
+    fis^.device   := $40;
 
     if not wait_register(@device^.port^.tfd,$88,0,2500) then begin
         log_port_failure(portIndex,device^.port,'busy before IDENTIFY'); kfree(buffer); exit;
@@ -362,7 +404,7 @@ begin
     device^.port^.int_enable := AHCI_IRQ_MASK;
 
     b8 := puint16(buffer);
-    memcpy(uint32(buffer), uint32(@device^.ata_info[0]), 512);
+    memcpy(PtrUInt(buffer), PtrUInt(@device^.ata_info[0]), 512);
     sec_count := (b8[61] shl 16) or b8[60];
     ncqDepth := (b8[75] and $1F) + 1;
     ncqSupported := ((b8[76] and (1 shl 8)) <> 0) and (not isATAPI) and AHCI_ENABLE_NCQ and ((controller^.mio^.capabilites and (1 shl 30)) <> 0);
@@ -387,14 +429,14 @@ begin
     end else begin
         storageDev_sectorSize := 512;
     end;
-    
+
     { Register this device with the storage manager.
       ATAPI devices (optical drives) are always registered even with 0 sectors (no media). }
     if (sec_count > 0) or isATAPI then begin
         storageDev := PStorage_Device(kalloc(sizeof(TStorage_Device)));
-        memset(uint32(storageDev), 0, sizeof(TStorage_Device));
+        memset(PtrUInt(storageDev), 0, sizeof(TStorage_Device));
 
-        storageDev^.controllerId0  := uint32(device);  { store PAHCI_Device for callback wrappers }
+        storageDev^.controllerId0  := PtrUInt(device);  { store PAHCI_Device for callback wrappers }
         storageDev^.sectorSize     := storageDev_sectorSize;
         storageDev^.maxSectorCount := sec_count;
         if not isATAPI then storageDev^.mergeMaxSectors := 65536;
@@ -465,7 +507,9 @@ end;
 // end;
 
 function load(ptr : void) : boolean;
-var 
+var
+    irqFlags: PtrUInt;
+
     device : PPCI_Device;
     controller : PAHCI_Controller;
     i : uint32;
@@ -484,7 +528,7 @@ begin
     device := PPCI_Device(ptr);
 
     driver.bus.pci.enableDevice(device^.bus, device^.slot, device^.func);
-    psleep(5);
+    core.util.waitTicks(5);
     int_no := device^.interrupt_line + 32;
 
     load := false;
@@ -492,13 +536,17 @@ begin
     if controller = nil then exit;
 
     controller^.pci_device := PPCI_Device(device);
-    
+
 //     Perform BIOS/OS handoff (if the bit in the extended capabilities is set)
 //     Reset controller
 
     //get the base address of the controller
-    page_base := kpalloc(device^.address5); // TODO MEM memory manager need to be improved
-    base := PHBA_Memory(device^.address5);
+    page_base := arch.platform.memory.mapDevice(device^.address5 and $FFFFFFF0, sizeof(THBA_Memory)); // TODO MEM memory manager need to be improved
+    base := PHBA_Memory(page_base);
+    if base = nil then begin
+        kfree(void(controller));
+        exit;
+    end;
     controller^.mio := base;
 
     if (base^.capabilites2 and 1) <> 0 then begin
@@ -515,11 +563,11 @@ begin
         kfree(void(controller)); exit;
     end;
     { Publish a stable heap pointer, never an interior pointer into a growing DList. }
-    asm pushfd; cli; pop flags end;
+    irqFlags := arch.platform.cpu.lock;
     DL_Add(ahciControllers); DL_Set(ahciControllers,DL_Size(ahciControllers)-1,puint32(@controller));
-    if (flags and $200) <> 0 then asm sti end;
+    arch.platform.cpu.unlock(irqFlags);
 
-    registerISR(int_no, @ahci_isr);
+    arch.platform.interrupts.registerIRQ(int_no, @ahci_isr);
 
     io.syslog.writestring('driver.storage.ctl.ahci: IRQ ');
     io.syslog.writeint(device^.interrupt_line);
@@ -531,8 +579,7 @@ begin
       driver.bus.pci interrupts may be routed through the IOAPIC instead of the
       legacy 8259 PIC — without programming the IOAPIC redirection
       entry the interrupt never reaches the CPU. }
-    arch.x86.isr.ioapic.init();
-    arch.x86.isr.ioapic.route_pci_irq(device^.interrupt_line, int_no);
+    arch.platform.interrupts.routePCI(device^.interrupt_line, int_no);
 
     //enable driver.storage.ctl.ahci mode
     base^.global_ctrl := base^.global_ctrl or AHCI_CONTROLLER_MODE;
@@ -548,7 +595,7 @@ begin
 end;
 
 function now_tick : uint32;
-begin now_tick := puint32(@Counters.c32)^; end;
+begin now_tick := arch.platform.process.timerTicks; end;
 
 { Only complete commands whose DMA ownership has ended. Callback re-entry may
   submit more work, so consume a fixed mask rather than rescanning new slots. }
@@ -579,7 +626,7 @@ begin
     driver.bus.pci.requestConfig(pci^.bus,pci^.slot,pci^.func,1);
     command := inl($CFC);
     if (command <> $FFFFFFFF) and ((command and 4) <> 0) then
-        core.panic.panic('AHCI DMA cannot be stopped','PCI bus mastering could not be disabled',nil);
+        arch.platform.diagnostics.fatal('AHCI DMA cannot be stopped','PCI bus mastering could not be disabled');
     controller^.mio^.global_ctrl := controller^.mio^.global_ctrl and not uint32(2);
     { Reject all new work before any callback drains a queued request. }
     for j := 0 to 31 do controller^.devices[j].offline := true;
@@ -648,7 +695,7 @@ var i,j,ctrlIS,portIS : uint32; controller : PAHCI_Controller; device : PAHCI_De
 begin
     if (ahciControllers = nil) or (DL_Size(ahciControllers) = 0) then exit;
     for i := 0 to DL_Size(ahciControllers)-1 do begin
-        controller := PAHCI_Controller(puint32(DL_Get(ahciControllers,i))^);
+        controller := PControllerSlot(DL_Get(ahciControllers,i))^;
         if controller^.offline then continue;
         ctrlIS := controller^.mio^.int_status;
         if ctrlIS = 0 then continue;
@@ -671,7 +718,7 @@ begin
     if (ahciControllers = nil) or (DL_Size(ahciControllers) = 0) then exit;
     now := now_tick;
     for i := 0 to DL_Size(ahciControllers)-1 do begin
-        controller := PAHCI_Controller(puint32(DL_Get(ahciControllers,i))^);
+        controller := PControllerSlot(DL_Get(ahciControllers,i))^;
         if controller^.offline then continue;
         for j := 0 to 31 do
             if controller^.devices[j].slotCount <> 0 then service_port(@controller^.devices[j],now,controller^.devices[j].port^.int_status);
@@ -680,11 +727,13 @@ end;
 
 { Atomic reserve: software ownership precedes descriptor construction. }
 function find_cmd_slot(device : PAHCI_Device) : uint32;
-var flags, slot, active, count : uint32;
+var
+    irqFlags: PtrUInt;
+    flags, slot, active, count : uint32;
 begin
     find_cmd_slot := $FFFFFFFF;
     if (device = nil) or (device^.port = nil) then exit;
-    asm pushfd; cli; pop flags end;
+    irqFlags := arch.platform.cpu.lock;
     if not device^.offline then begin
         active := device^.port^.cmd_issue or device^.port^.sata_active;
         count := device^.slotCount; if count > 32 then count := 32;
@@ -696,33 +745,60 @@ begin
             end;
         end;
     end;
-    if (flags and $200) <> 0 then asm sti end;
+    arch.platform.cpu.unlock(irqFlags);
 end;
 
 { Split at the kernel's 4 MiB virtual mapping boundaries. Every segment gets
   its own physical translation, including buffers with an unaligned start. }
-function build_prdt(table : PHBA_CMD_TABLE; address, bytes : uint32; var entries : uint32) : TError;
-var remaining, chunk : uint32;
+function build_prdt(table: PHBA_CMD_TABLE; address: PtrUInt; bytes: uint32; var entries: uint32; dma64: boolean): TError;
+var
+    remaining, chunk, previousBytes: uint32;
+    physical, previous: uint64;
 begin
-    build_prdt := eInvalidArgument; entries := 0;
-    if (bytes = 0) or ((address and 1) <> 0) or ((bytes and 1) <> 0) or (bytes > $FFFFFFFF-address) then exit;
+    build_prdt := eInvalidArgument;
+    entries := 0;
+    if (bytes = 0) or ((address and 1) <> 0) or ((bytes and 1) <> 0) or
+       (bytes > High(PtrUInt) - address) then exit;
     remaining := bytes;
     while remaining > 0 do begin
-        if entries = 32 then exit;
-        chunk := $400000-(address and $3FFFFF); if chunk > remaining then chunk := remaining;
-        table^.prdt[entries].dba := vtop(address); table^.prdt[entries].dbau := 0;
-        table^.prdt[entries].rsv0 := 0; table^.prdt[entries].reserved := 0;
-        table^.prdt[entries].dbc := chunk-1; table^.prdt[entries].int := 0;
-        Inc(entries); address := address+chunk; remaining := remaining-chunk;
+        physical := arch.platform.memory.physicalAddress(address);
+        if physical = 0 then exit;
+        if not dma64 and (physical > $FFFFFFFF) then exit;
+        chunk := 4096 - (address and 4095);
+        if chunk > remaining then chunk := remaining;
+        previousBytes := 0;
+        if (entries > 0) and ((address and $3FFFFF) <> 0) then begin
+            previous := uint64(table^.prdt[entries - 1].dba) or
+                (uint64(table^.prdt[entries - 1].dbau) shl 32);
+            previousBytes := table^.prdt[entries - 1].dbc + 1;
+            if (previous + previousBytes <> physical) or
+               (previousBytes + chunk > $400000) then previousBytes := 0;
+        end;
+        if previousBytes <> 0 then
+            table^.prdt[entries - 1].dbc := previousBytes + chunk - 1
+        else begin
+            if entries = 32 then exit;
+            table^.prdt[entries].dba := uint32(physical);
+            table^.prdt[entries].dbau := uint32(physical shr 32);
+            table^.prdt[entries].rsv0 := 0;
+            table^.prdt[entries].reserved := 0;
+            table^.prdt[entries].dbc := chunk - 1;
+            table^.prdt[entries].int := 0;
+            inc(entries);
+        end;
+        inc(address, chunk);
+        dec(remaining, chunk);
     end;
-    table^.prdt[entries-1].int := 1;
+    table^.prdt[entries - 1].int := 1;
     build_prdt := eNone;
 end;
 
 { mode: 0 SATA read, 1 SATA write, 2 ATAPI READ(12), 3 READ CAPACITY. }
 function submit_command(device : PAHCI_Device; lba : uint64; bytes : uint32; buffer : puint32;
                         mode : uint32; completion : TIOCompletion; userdata : puint32) : TError;
-var slot, entries, sectors, flags : uint32; header : PHBA_CMD_HEADER; table : PHBA_CMD_TABLE;
+var
+    irqFlags: PtrUInt;
+    slot, entries, sectors, flags : uint32; header : PHBA_CMD_HEADER; table : PHBA_CMD_TABLE;
     fis : PHBA_FIS_REG_H2D; err : TError;
 begin
     submit_command := eInvalidArgument;
@@ -743,14 +819,14 @@ begin
     end;
     slot := find_cmd_slot(device);
     if slot = $FFFFFFFF then begin submit_command := eNoFreeSlot; exit; end;
-    header := @device^.command_list[slot]; table := @device^.command_table[slot];
+    header := @device^.command_list[slot]; table := PHBA_CMD_TABLE(PtrUInt(device^.command_table) + slot * 4096);
     { Preserve the command-table pointer but reset every per-command header flag. }
     puint32(header)^ := 0; header^.prdbc := 0;
     header^.cmd_fis_length := sizeof(THBA_FIS_REG_H2D) div 4;
     if mode = 1 then header^.wrt := 1;
     if mode >= 2 then header^.atapi := 1;
-    memset(uint32(table),0,128);
-    err := build_prdt(table,uint32(buffer),bytes,entries);
+    memset(PtrUInt(table),0,128);
+    err := build_prdt(table,PtrUInt(buffer),bytes,entries,device^.supports64BitDMA);
     if err = eNone then begin
         header^.prdtl := entries; fis := PHBA_FIS_REG_H2D(@table^.cmd_fis);
         fis^.fis_type := uint8(FIS_TYPE_REG_H2D); fis^.c := 1;
@@ -779,7 +855,7 @@ begin
             end;
         end;
     end;
-    asm pushfd; cli; pop flags end;
+    irqFlags := arch.platform.cpu.lock;
     if err = eNone then begin
         if device^.offline then err := eDeviceNotReady
         else if (device^.port^.tfd and $88) <> 0 then err := eDeviceNotReady;
@@ -791,7 +867,7 @@ begin
         if (mode < 2) and device^.supportsNCQ then device^.port^.sata_active := uint32(1) shl slot;
         device^.port^.cmd_issue := uint32(1) shl slot;
     end else device^.pending[slot].inUse := false;
-    if (flags and $200) <> 0 then asm sti end;
+    arch.platform.cpu.unlock(irqFlags);
     submit_command := err;
 end;
 
@@ -809,16 +885,18 @@ var state : PCapacityWait;
 begin state := PCapacityWait(userdata); state^.Error := error; puint32(@state^.Done)^ := 1; end;
 
 function send_read_capacity(device : PAHCI_Device; sectorCount : puint32; blockSize : puint32) : boolean;
-var buffer : puint32; state : TCapacityWait; rawLBA, rawBlkSz : uint32; err : TError;
+var flags: PtrUInt; buffer : puint32; state : TCapacityWait; rawLBA, rawBlkSz : uint32; err : TError;
 begin
     send_read_capacity := false; sectorCount^ := 0; blockSize^ := 0;
-    if not INTE then exit; { init/task context only }
+    flags := arch.platform.cpu.lock;
+    arch.platform.cpu.unlock(flags);
+    if (flags and $200) = 0 then exit; { init/task context only }
     buffer := kalloc(512); if buffer = nil then exit;
-    memset(uint32(buffer),0,512); state.Done := 0; state.Error := eNone;
+    memset(PtrUInt(buffer),0,512); state.Done := 0; state.Error := eNone;
     err := submit_command(device,0,8,buffer,3,@capacity_done,puint32(@state));
     if err = eNone then begin
         { The watchdog ends ownership only after stopping DMA on error/timeout. }
-        while puint32(@state.Done)^ = 0 do asm hlt end;
+        while puint32(@state.Done)^ = 0 do arch.platform.cpu.idle;
         err := state.Error;
     end;
     if err = eNone then begin
@@ -924,7 +1002,7 @@ end;
 
 procedure run_ahci_tests(stdout_buf : POutBuf);
 var device : PAHCI_Device; port : PHBA_Port; table : PHBA_CMD_TABLE;
-    buffer : pointer; aligned, entries, first, second, passed, failed : uint32;
+    buffer : pointer; aligned: PtrUInt; entries, first, second, passed, failed, i, total : uint32;
     result : TError; completed : TTestCompletion; msg, number : pchar;
     procedure Assert(ok : boolean; name : pchar);
     begin
@@ -937,8 +1015,8 @@ var device : PAHCI_Device; port : PHBA_Port; table : PHBA_CMD_TABLE;
     end;
     procedure reset_fake;
     begin
-        memset(uint32(port),0,sizeof(THBA_Port));
-        memset(uint32(@device^.pending),0,sizeof(device^.pending));
+        memset(PtrUInt(port),0,sizeof(THBA_Port));
+        memset(PtrUInt(@device^.pending),0,sizeof(device^.pending));
         device^.offline := false; device^.recovering := false;
         device^.supportsNCQ := true; completed.Count := 0; completed.Error := eNone;
     end;
@@ -947,20 +1025,24 @@ begin
     device := PAHCI_Device(kalloc(sizeof(TAHCI_Device)));
     port := PHBA_Port(kalloc(sizeof(THBA_Port))); device^.port := port;
     device^.command_list := PHBA_CMD_HEADER(kalloc(32*sizeof(THBA_CMD_HEADER)));
-    device^.command_table := PHBA_CMD_TABLE(kalloc(32*sizeof(THBA_CMD_TABLE)));
+    device^.command_table := PHBA_CMD_TABLE(kalloc(32*4096));
     device^.slotCount := 32; table := device^.command_table;
-    buffer := kalloc($800000); aligned := (uint32(buffer)+$3FFFFF) and $FFC00000;
+    buffer := kalloc($800000); aligned := (PtrUInt(buffer)+$3FFFFF) and not PtrUInt($3FFFFF);
+    device^.supports64BitDMA := true;
     reset_fake;
-    Assert(build_prdt(table,aligned,$400000,entries)=eNone,'exact 4 MiB accepted');
-    Assert((entries=1) and (table^.prdt[0].dbc=$3FFFFF),'exact 4 MiB has one nonempty PRD');
-    Assert(build_prdt(table,aligned-512,1024,entries)=eNone,'cross-page transfer accepted');
+    Assert(build_prdt(table,aligned,$400000,entries,true)=eNone,'exact 4 MiB accepted');
+    total := 0;
+    if entries > 0 then
+        for i := 0 to entries - 1 do inc(total, table^.prdt[i].dbc + 1);
+    Assert((entries > 0) and (total = $400000), 'PRDs cover the complete transfer');
+    Assert(build_prdt(table,aligned-512,1024,entries,true)=eNone,'cross-page transfer accepted');
     Assert((entries=2) and (table^.prdt[0].dbc=511) and (table^.prdt[1].dbc=511),'cross-page segments bounded');
-    Assert((table^.prdt[0].dba=vtop(aligned-512)) and (table^.prdt[1].dba=vtop(aligned)),'each page translated independently');
+    Assert(((uint64(table^.prdt[0].dba) or (uint64(table^.prdt[0].dbau) shl 32))=arch.platform.memory.physicalAddress(aligned-512)) and ((uint64(table^.prdt[1].dba) or (uint64(table^.prdt[1].dbau) shl 32))=arch.platform.memory.physicalAddress(aligned)),'each page translated independently');
     Assert((table^.prdt[0].int=0) and (table^.prdt[1].int=1),'only final PRD interrupts');
-    Assert(build_prdt(table,aligned,0,entries)=eInvalidArgument,'zero length rejected');
-    Assert(build_prdt(table,aligned+1,512,entries)=eInvalidArgument,'odd address rejected');
-    Assert(build_prdt(table,aligned,513,entries)=eInvalidArgument,'odd length rejected');
-    Assert(build_prdt(table,$FFFFFF00,512,entries)=eInvalidArgument,'address wrap rejected');
+    Assert(build_prdt(table,aligned,0,entries,true)=eInvalidArgument,'zero length rejected');
+    Assert(build_prdt(table,aligned+1,512,entries,true)=eInvalidArgument,'odd address rejected');
+    Assert(build_prdt(table,aligned,513,entries,true)=eInvalidArgument,'odd length rejected');
+    Assert(build_prdt(table,High(PtrUInt)-$FF,512,entries,true)=eInvalidArgument,'address wrap rejected');
     first := find_cmd_slot(device); second := find_cmd_slot(device);
     Assert((first=0) and (second=1),'reservation excludes concurrent builder');
     service_port(device,now_tick,AHCI_FATAL_MASK);
@@ -1013,7 +1095,7 @@ begin
     number := intToString(passed); msg := stringConcat(number,' passed, '); kfree(void(number));
     number := intToString(failed); buffer := msg; msg := stringConcat(msg,number); kfree(buffer); kfree(void(number));
     buffer := msg; msg := stringConcat(msg,' failed'); kfree(buffer);
-    io.syslog.logln('AHCITEST',msg);
+    arch.platform.diagnostics.testSummary('AHCI', 'AHCI_TESTS_PASSED', 'AHCI_TESTS_FAILED', passed, failed);
     if stdout_buf <> nil then io.stdio.bufWriteStrLn(stdout_buf,msg);
     kfree(void(msg));
 end;
@@ -1022,8 +1104,5 @@ procedure UnitTest;
 begin run_ahci_tests(nil); end;
 procedure cmd_ahcitest(params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
 begin run_ahci_tests(stdout_buf); end;
-
-Initialization
-    boot.mgr.registerBoot('driver.storage.ctl.ahci', @init, 'AHCI Controller', 'driver.storage.fs.*');
 
 end.

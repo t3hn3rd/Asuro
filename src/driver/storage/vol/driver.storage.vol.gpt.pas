@@ -31,7 +31,7 @@ uses
     driver.storage.types,
     io.syslog,
     debug.tracer,
-    core.util, arch.x86.util;
+    core.util, arch.platform.cpu;
 
 const
     GPT_SIGNATURE : array[0..7] of char = ('E','F','I',' ','P','A','R','T');
@@ -184,7 +184,7 @@ begin
     read_sector := nil;
     buf := puint32(kalloc(device^.sectorSize));
     if buf = nil then exit;
-    memset(uint32(buf), 0, device^.sectorSize);
+    memset(PtrUInt(buf), 0, device^.sectorSize);
     err := driver.storage.mgr.storage_read(device, lba, 1, buf);
     if err <> eNone then begin
         kfree(buf);
@@ -211,7 +211,7 @@ begin
             { Copy to a tightly-sized allocation }
             gpt_read_header := PGPTHeader(kalloc(sizeof(TGPTHeader)));
             if gpt_read_header <> nil then
-                memcpy(uint32(header), uint32(gpt_read_header), sizeof(TGPTHeader));
+                memcpy(PtrUInt(header), PtrUInt(gpt_read_header), sizeof(TGPTHeader));
             kfree(sectorBuf);
             exit;
         end;
@@ -235,7 +235,7 @@ begin
     if gpt_validate_header(header) then begin
         gpt_read_header := PGPTHeader(kalloc(sizeof(TGPTHeader)));
         if gpt_read_header <> nil then
-            memcpy(uint32(header), uint32(gpt_read_header), sizeof(TGPTHeader));
+            memcpy(PtrUInt(header), PtrUInt(gpt_read_header), sizeof(TGPTHeader));
     end;
     kfree(sectorBuf);
 end;
@@ -258,7 +258,7 @@ begin
 
     buf := puint32(kalloc(sectorsNeeded * device^.sectorSize));
     if buf = nil then exit;
-    memset(uint32(buf), 0, sectorsNeeded * device^.sectorSize);
+    memset(PtrUInt(buf), 0, sectorsNeeded * device^.sectorSize);
 
     err := driver.storage.mgr.storage_read(device, header^.PartEntryLBA, sectorsNeeded, buf);
     if err <> eNone then begin

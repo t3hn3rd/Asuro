@@ -1,12 +1,13 @@
 unit driver.storage.fs.ext2;
 
 interface
-uses driver.storage.types;
+uses arch.platform.cpu, driver.storage.types;
+procedure StartWorker;
 procedure init;
 procedure ReleaseVolume(volume : PStorage_Volume);
 
 implementation
-uses boot.mgr, driver.storage.fs.mgr, driver.storage.vol.mgr,
+uses driver.storage.fs.mgr, driver.storage.vol.mgr,
      driver.storage.fs.ext2.types, driver.storage.fs.ext2.core,
      driver.storage.fs.ext2.format, memory.heap, core.util, core.strings,
      proc.mgr, proc.types;
@@ -62,15 +63,17 @@ begin
 end;
 
 procedure WorkLoop(pctx : PProcessContext);
-var work : PWork; done : uint32; error : TError; callback : TIOCallback; data : pointer;
+var
+    savedIRQ: PtrUInt;
+    work : PWork; done : uint32; error : TError; callback : TIOCallback; data : pointer;
 begin
     while true do begin
-        asm pushf; cli end;
+        savedIRQ := arch.platform.cpu.lock;
         work:=head;
         if work<>nil then begin
             head:=work^.Next; if head=nil then tail:=nil; Dec(queued);
         end else pctx^.State:=psAwaiting;
-        asm popf end;
+        arch.platform.cpu.unlock(savedIRQ);
         if work=nil then begin
             { Queue publication wakes the worker under the same CLI section.
               No per-I/O process, IRQ continuation, or volatile spin is needed. }
@@ -92,7 +95,9 @@ begin worker:=proc.mgr.create('ext2.io',@WorkLoop,nil,1); end;
 procedure QueueTransfer(volume : PStorage_Volume; directory, name : pchar; offset : uint32;
     buffer : puint32; count : uint32; ctx : pointer; completed : puint32;
     callback : TIOCallback; data : pointer; writing : boolean);
-var work : PWork; error : TError;
+var
+    savedIRQ: PtrUInt;
+    work : PWork; error : TError;
 begin
     if completed<>nil then completed^:=0;
     error:=eNone;
@@ -101,7 +106,7 @@ begin
     if error<>eNone then begin if callback<>nil then callback(error,data); exit; end;
     work:=PWork(kalloc(sizeof(TWork)));
     if work=nil then begin if callback<>nil then callback(eOutOfMemory,data); exit; end;
-    memset(uint32(work),0,sizeof(TWork));
+    memset(PtrUInt(work),0,sizeof(TWork));
     if ctx=nil then begin
         if (directory=nil) or (name=nil) then error:=eInvalidArgument else begin
             work^.Directory:=stringCopy(directory); work^.Name:=stringCopy(name);
@@ -112,13 +117,13 @@ begin
     work^.Volume:=volume; work^.FileCtx:=PExt2File(ctx); work^.Offset:=offset;
     work^.Buffer:=buffer; work^.Count:=count; work^.Completed:=completed;
     work^.Writing:=writing; work^.Callback:=callback; work^.CallbackData:=data;
-    asm pushf; cli end;
+    savedIRQ := arch.platform.cpu.lock;
     if queued>=64 then error:=eQueueFull else begin
         if tail=nil then head:=work else tail^.Next:=work;
         tail:=work; Inc(queued);
         if worker^.State=psAwaiting then worker^.State:=psReady;
     end;
-    asm popf end;
+    arch.platform.cpu.unlock(savedIRQ);
     if error<>eNone then begin FreeWork(work); if callback<>nil then callback(error,data); end;
 end;
 
@@ -177,7 +182,7 @@ var volume : PStorage_Volume;
 begin
     if device=nil then exit;
     volume:=PStorage_Volume(kalloc(sizeof(TStorage_Volume))); if volume=nil then exit;
-    memset(uint32(volume),0,sizeof(TStorage_Volume));
+    memset(PtrUInt(volume),0,sizeof(TStorage_Volume));
     volume^.device:=device; volume^.sectorCount:=device^.maxSectorCount; volume^.sectorSize:=device^.sectorSize;
     if Identify(volume) then begin
         volume^.filesystem:=@filesystem;
@@ -187,7 +192,7 @@ end;
 
 procedure init;
 begin
-    memset(uint32(@filesystem),0,sizeof(filesystem));
+    memset(PtrUInt(@filesystem),0,sizeof(filesystem));
     filesystem.sName:='EXT2'; filesystem.system_id:=$83;
     filesystem.identifyCallback:=@Identify; filesystem.detectCallback:=@Detect;
     filesystem.validateFormat:=@ValidateFormat; filesystem.createCallback:=@FormatVolume;
@@ -203,7 +208,4 @@ begin
     driver.storage.fs.mgr.register_filesystem(@filesystem);
 end;
 
-initialization
-    boot.mgr.registerBoot('driver.storage.fs.ext2',@init,'Ext2 Filesystem','driver.storage.fs.mgr');
-    boot.mgr.registerBoot('driver.storage.ext2.worker',@StartWorker,'Ext2 I/O Worker','proc.mgr');
 end.

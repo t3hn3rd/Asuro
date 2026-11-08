@@ -9,7 +9,7 @@ uses
     driver.storage.types,
     core.strings,
 
-    core.util, arch.x86.util,
+    core.util, arch.platform.cpu,
     debug.tracer,
     io.syslog,
     driver.storage.fs.fat32.types;
@@ -127,11 +127,13 @@ end;
 { Register ofi in the volume write-ref table (call once DirLoc is valid). }
 procedure fatRegisterWriteHandle(volCtx : PFATVolumeCtx; ofi : PFATOpenFile);
 var
+    savedIRQ: PtrUInt;
+
     i        : uint32;
     freeSlot : sint32;
 begin
     if (volCtx = nil) or (ofi = nil) or ofi^.Registered then exit;
-    asm pushf; cli end;
+    savedIRQ := arch.platform.cpu.lock;
     freeSlot := -1;
     for i := 0 to FAT_OPEN_HANDLE_SLOTS - 1 do begin
         if (volCtx^.WriteRefs[i].Count > 0) and
@@ -139,7 +141,7 @@ begin
            (volCtx^.WriteRefs[i].EntryIdx  = ofi^.DirLoc.EntryIdx) then begin
             volCtx^.WriteRefs[i].Count := volCtx^.WriteRefs[i].Count + 1;
             ofi^.Registered := true;
-            asm popf end;
+            arch.platform.cpu.unlock(savedIRQ);
             exit;
         end;
         if (freeSlot < 0) and (volCtx^.WriteRefs[i].Count = 0) then
@@ -152,17 +154,19 @@ begin
         ofi^.Registered := true;
     end;
     { If all slots are full, Registered stays false → truncation skipped for safety }
-    asm popf end;
+    arch.platform.cpu.unlock(savedIRQ);
 end;
 
 { Unregister ofi and return the count that was present before decrement. }
 function fatUnregisterWriteHandle(volCtx : PFATVolumeCtx; ofi : PFATOpenFile) : uint32;
 var
+    savedIRQ: PtrUInt;
+
     i : uint32;
 begin
     fatUnregisterWriteHandle := 0;
     if (volCtx = nil) or (ofi = nil) or not ofi^.Registered then exit;
-    asm pushf; cli end;
+    savedIRQ := arch.platform.cpu.lock;
     for i := 0 to FAT_OPEN_HANDLE_SLOTS - 1 do begin
         if (volCtx^.WriteRefs[i].Count > 0) and
            (volCtx^.WriteRefs[i].SectorLBA = ofi^.DirLoc.SectorLBA) and
@@ -170,11 +174,11 @@ begin
             fatUnregisterWriteHandle := volCtx^.WriteRefs[i].Count;
             volCtx^.WriteRefs[i].Count := volCtx^.WriteRefs[i].Count - 1;
             ofi^.Registered := false;
-            asm popf end;
+            arch.platform.cpu.unlock(savedIRQ);
             exit;
         end;
     end;
-    asm popf end;
+    arch.platform.cpu.unlock(savedIRQ);
 end;
 
 function fatPreallocClusterCount(bytesPerCluster : uint32) : uint32;
@@ -373,14 +377,14 @@ begin
     if extLen > 0 then begin
         nameBuf := pchar(kalloc(nameLen + extLen + 2));
         if nameBuf = nil then exit;
-        memcpy(uint32(@dir^.fileName[0]), uint32(nameBuf), nameLen);
+        memcpy(PtrUInt(@dir^.fileName[0]), PtrUInt(nameBuf), nameLen);
         nameBuf[nameLen] := '.';
-        memcpy(uint32(@dir^.fileExtension[0]), uint32(@nameBuf[nameLen + 1]), extLen);
+        memcpy(PtrUInt(@dir^.fileExtension[0]), PtrUInt(@nameBuf[nameLen + 1]), extLen);
         nameBuf[nameLen + extLen + 1] := char(0);
     end else begin
         nameBuf := pchar(kalloc(nameLen + 1));
         if nameBuf = nil then exit;
-        memcpy(uint32(@dir^.fileName[0]), uint32(nameBuf), nameLen);
+        memcpy(PtrUInt(@dir^.fileName[0]), PtrUInt(nameBuf), nameLen);
         nameBuf[nameLen] := char(0);
     end;
 
@@ -406,7 +410,7 @@ begin
     if bufSize < 512 then bufSize := 512;
     sectorBuf := puint32(kalloc(bufSize));
     if sectorBuf = nil then exit;
-    memset(uint32(sectorBuf), 0, bufSize);
+    memset(PtrUInt(sectorBuf), 0, bufSize);
     if driver.storage.mgr.storage_read(volume^.device, volume^.sectorStart, 1, sectorBuf) <> eNone then begin
         kfree(sectorBuf); exit;
     end;
@@ -641,7 +645,7 @@ begin
     fatCtxRegister := false;
     node := PFATVolumeCtxNode(kalloc(sizeof(TFATVolumeCtxNode)));
     if node = nil then exit;
-    memset(uint32(node), 0, sizeof(TFATVolumeCtxNode));
+    memset(PtrUInt(node), 0, sizeof(TFATVolumeCtxNode));
     node^.Volume := volume;
     node^.Ctx := ctx;
     node^.Next := fatCtxListHead;
@@ -651,12 +655,14 @@ end;
 
 function fatCtxDetach(volume : PStorage_Volume) : PFATVolumeCtx;
 var
+    savedIRQ: PtrUInt;
+
     prev : PFATVolumeCtxNode;
     node : PFATVolumeCtxNode;
 begin
     fatCtxDetach := nil;
     prev := nil;
-    asm pushf; cli end;
+    savedIRQ := arch.platform.cpu.lock;
     node := fatCtxListHead;
     while node <> nil do begin
         if node^.Volume = volume then begin
@@ -666,13 +672,13 @@ begin
             else
                 prev^.Next := node^.Next;
             kfree(void(node));
-            asm popf end;
+            arch.platform.cpu.unlock(savedIRQ);
             exit;
         end;
         prev := node;
         node := node^.Next;
     end;
-    asm popf end;
+    arch.platform.cpu.unlock(savedIRQ);
 end;
 
 procedure fatCtxFree(ctx : PFATVolumeCtx);
@@ -694,8 +700,8 @@ var
     ctx        : PFATVolumeCtx;
     i          : uint32;
     transfer   : PFATTransferCtx;
-    poolBase   : uint32;
-    scratchBase: uint32;
+    poolBase   : PtrUInt;
+    scratchBase: PtrUInt;
 begin
     FAT32GetVolumeCtx := nil;
     if volume = nil then exit;
@@ -708,7 +714,7 @@ begin
 
     ctx := PFATVolumeCtx(kalloc(sizeof(TFATVolumeCtx)));
     if ctx = nil then exit;
-    memset(uint32(ctx), 0, sizeof(TFATVolumeCtx));
+    memset(PtrUInt(ctx), 0, sizeof(TFATVolumeCtx));
 
     if not readBootRecordRaw(volume, ctx^.Info.BootRecord) then begin
         fatCtxFree(ctx);
@@ -732,8 +738,8 @@ begin
         fatCtxFree(ctx);
         exit;
     end;
-    memset(uint32(ctx^.Cache.Data), 0, FAT_CACHE_LINES * 512);
-    memset(uint32(ctx^.Cache.EvictBuf), 0, 512);
+    memset(PtrUInt(ctx^.Cache.Data), 0, FAT_CACHE_LINES * 512);
+    memset(PtrUInt(ctx^.Cache.EvictBuf), 0, 512);
     ctx^.Cache.Busy := false;
     ctx^.Cache.FatStart := volume^.sectorStart + ctx^.Info.BootRecord.rsvSectors;
     ctx^.Cache.Device := volume^.device;
@@ -746,10 +752,10 @@ begin
     ctx^.TransferPoolBuf := kalloc(FAT_TRANSFER_POOL_CAPACITY * sizeof(TFATTransferCtx));
     ctx^.TransferScratchBuf := kalloc(FAT_TRANSFER_POOL_CAPACITY * ctx^.Info.BootRecord.sectorSize);
     if (ctx^.TransferPoolBuf <> nil) and (ctx^.TransferScratchBuf <> nil) then begin
-        memset(uint32(ctx^.TransferPoolBuf), 0, FAT_TRANSFER_POOL_CAPACITY * sizeof(TFATTransferCtx));
-        memset(uint32(ctx^.TransferScratchBuf), 0, FAT_TRANSFER_POOL_CAPACITY * ctx^.Info.BootRecord.sectorSize);
-        poolBase := uint32(ctx^.TransferPoolBuf);
-        scratchBase := uint32(ctx^.TransferScratchBuf);
+        memset(PtrUInt(ctx^.TransferPoolBuf), 0, FAT_TRANSFER_POOL_CAPACITY * sizeof(TFATTransferCtx));
+        memset(PtrUInt(ctx^.TransferScratchBuf), 0, FAT_TRANSFER_POOL_CAPACITY * ctx^.Info.BootRecord.sectorSize);
+        poolBase := PtrUInt(ctx^.TransferPoolBuf);
+        scratchBase := PtrUInt(ctx^.TransferScratchBuf);
         if FAT_TRANSFER_POOL_CAPACITY > 0 then
         for i := 0 to FAT_TRANSFER_POOL_CAPACITY - 1 do begin
             transfer := PFATTransferCtx(poolBase + (i * sizeof(TFATTransferCtx)));
@@ -781,6 +787,8 @@ end;
 
 procedure fatCacheFlush(cache : PFATCache; volume : PStorage_Volume);
 var
+    savedIRQ: PtrUInt;
+
     i       : uint32;
     lba     : uint32;
     doFlush : boolean;
@@ -788,33 +796,33 @@ begin
     if cache = nil then exit;
 
     while true do begin
-        asm pushf; cli end;
+        savedIRQ := arch.platform.cpu.lock;
         if not cache^.Busy then begin
             Inc(cache^.Device^.Stats.FatCacheMisses);
             cache^.Busy := true;
-            asm popf end;
+            arch.platform.cpu.unlock(savedIRQ);
             break;
         end;
-        asm popf end;
-        asm hlt end;
+        arch.platform.cpu.unlock(savedIRQ);
+        arch.platform.cpu.idle;
     end;
 
     for i := 0 to FAT_CACHE_LINES - 1 do begin
-        asm pushf; cli end;
+        savedIRQ := arch.platform.cpu.lock;
         doFlush := cache^.Lines[i].Valid and cache^.Lines[i].Dirty;
         if doFlush then begin
             lba := cache^.FatStart + cache^.Lines[i].SectorIdx;
             cache^.Lines[i].Dirty := false;
-            memcpy(uint32(cache^.Data) + (i * 512), uint32(cache^.EvictBuf), 512);
+            memcpy(PtrUInt(cache^.Data) + (i * 512), PtrUInt(cache^.EvictBuf), 512);
         end;
-        asm popf end;
+        arch.platform.cpu.unlock(savedIRQ);
         if doFlush then
             driver.storage.mgr.storage_write(volume^.device, lba, 1, cache^.EvictBuf);
     end;
 
-    asm pushf; cli end;
+    savedIRQ := arch.platform.cpu.lock;
     cache^.Busy := false;
-    asm popf end;
+    arch.platform.cpu.unlock(savedIRQ);
 end;
 
 procedure FAT32Flush(volume : PStorage_Volume);
@@ -839,6 +847,8 @@ end;
 
 function readFat(volume : PStorage_Volume; cluster : uint32; bootRecord : PBootRecord) : uint32;
 var
+    savedIRQ: PtrUInt;
+
     ctx        : PFATVolumeCtx;
     cache      : PFATCache;
     fatSecIdx  : uint32;
@@ -863,45 +873,45 @@ begin
     baseSlot := setIdx * FAT_CACHE_WAYS;
     entryOff := cluster mod 128;
 
-    asm pushf; cli end;
+    savedIRQ := arch.platform.cpu.lock;
     for w := 0 to FAT_CACHE_WAYS - 1 do
         if cache^.Lines[baseSlot + w].Valid and (cache^.Lines[baseSlot + w].SectorIdx = fatSecIdx) then begin
             Inc(cache^.Device^.Stats.FatCacheHits);
-            dataPtr := puint32(uint32(cache^.Data) + ((baseSlot + w) * 512));
+            dataPtr := puint32(PtrUInt(cache^.Data) + ((baseSlot + w) * 512));
             readFat := dataPtr[entryOff] and $0FFFFFFF;
             cacheTouch(cache,baseSlot,baseSlot+w);
-            asm popf end;
+            arch.platform.cpu.unlock(savedIRQ);
             exit;
         end;
-    asm popf end;
+    arch.platform.cpu.unlock(savedIRQ);
 
     while true do begin
-        asm pushf; cli end;
+        savedIRQ := arch.platform.cpu.lock;
         if not cache^.Busy then begin
             for w := 0 to FAT_CACHE_WAYS - 1 do
                 if cache^.Lines[baseSlot + w].Valid and (cache^.Lines[baseSlot + w].SectorIdx = fatSecIdx) then begin
                     Inc(cache^.Device^.Stats.FatCacheHits);
-                    dataPtr := puint32(uint32(cache^.Data) + ((baseSlot + w) * 512));
+                    dataPtr := puint32(PtrUInt(cache^.Data) + ((baseSlot + w) * 512));
                     readFat := dataPtr[entryOff] and $0FFFFFFF;
                     cacheTouch(cache,baseSlot,baseSlot+w);
-                    asm popf end;
+                    arch.platform.cpu.unlock(savedIRQ);
                     exit;
                 end;
             Inc(cache^.Device^.Stats.FatCacheMisses);
             cache^.Busy := true;
             victim := cacheVictim(cache,baseSlot);
-            dataPtr := puint32(uint32(cache^.Data) + (victim * 512));
+            dataPtr := puint32(PtrUInt(cache^.Data) + (victim * 512));
             doEvict := cache^.Lines[victim].Valid and cache^.Lines[victim].Dirty;
             if doEvict then begin
                 evictLBA := cache^.FatStart + cache^.Lines[victim].SectorIdx;
-                memcpy(uint32(dataPtr), uint32(cache^.EvictBuf), 512);
+                memcpy(PtrUInt(dataPtr), PtrUInt(cache^.EvictBuf), 512);
             end;
             cache^.Lines[victim].Valid := false;
-            asm popf end;
+            arch.platform.cpu.unlock(savedIRQ);
             break;
         end;
-        asm popf end;
-        asm hlt end;
+        arch.platform.cpu.unlock(savedIRQ);
+        arch.platform.cpu.idle;
     end;
 
     if doEvict then
@@ -909,18 +919,20 @@ begin
     lba := cache^.FatStart + fatSecIdx;
     driver.storage.mgr.storage_read(cache^.Device, lba, 1, dataPtr);
 
-    asm pushf; cli end;
+    savedIRQ := arch.platform.cpu.lock;
     cache^.Lines[victim].SectorIdx := fatSecIdx;
     cache^.Lines[victim].Valid := true;
     cache^.Lines[victim].Dirty := false;
     cacheTouch(cache,baseSlot,victim);
     readFat := dataPtr[entryOff] and $0FFFFFFF;
     cache^.Busy := false;
-    asm popf end;
+    arch.platform.cpu.unlock(savedIRQ);
 end;
 
 procedure writeFat(volume : PStorage_Volume; cluster : uint32; value : uint32; bootRecord : PBootRecord);
 var
+    savedIRQ: PtrUInt;
+
     ctx        : PFATVolumeCtx;
     cache      : PFATCache;
     fatSecIdx  : uint32;
@@ -942,53 +954,53 @@ begin
     baseSlot := setIdx * FAT_CACHE_WAYS;
     entryOff := cluster mod 128;
 
-    asm pushf; cli end;
+    savedIRQ := arch.platform.cpu.lock;
     for w := 0 to FAT_CACHE_WAYS - 1 do
         if cache^.Lines[baseSlot + w].Valid and (cache^.Lines[baseSlot + w].SectorIdx = fatSecIdx) then begin
             Inc(cache^.Device^.Stats.FatCacheHits);
-            dataPtr := puint32(uint32(cache^.Data) + ((baseSlot + w) * 512));
+            dataPtr := puint32(PtrUInt(cache^.Data) + ((baseSlot + w) * 512));
             if value = 0 then
                 dataPtr[entryOff] := 0
             else
                 dataPtr[entryOff] := (dataPtr[entryOff] and $F0000000) or (value and $0FFFFFFF);
             cache^.Lines[baseSlot + w].Dirty := true;
             cacheTouch(cache,baseSlot,baseSlot+w);
-            asm popf end;
+            arch.platform.cpu.unlock(savedIRQ);
             exit;
         end;
-    asm popf end;
+    arch.platform.cpu.unlock(savedIRQ);
 
     while true do begin
-        asm pushf; cli end;
+        savedIRQ := arch.platform.cpu.lock;
         if not cache^.Busy then begin
             for w := 0 to FAT_CACHE_WAYS - 1 do
                 if cache^.Lines[baseSlot + w].Valid and (cache^.Lines[baseSlot + w].SectorIdx = fatSecIdx) then begin
                     Inc(cache^.Device^.Stats.FatCacheHits);
-                    dataPtr := puint32(uint32(cache^.Data) + ((baseSlot + w) * 512));
+                    dataPtr := puint32(PtrUInt(cache^.Data) + ((baseSlot + w) * 512));
                     if value = 0 then
                         dataPtr[entryOff] := 0
                     else
                         dataPtr[entryOff] := (dataPtr[entryOff] and $F0000000) or (value and $0FFFFFFF);
                     cache^.Lines[baseSlot + w].Dirty := true;
                     cacheTouch(cache,baseSlot,baseSlot+w);
-                    asm popf end;
+                    arch.platform.cpu.unlock(savedIRQ);
                     exit;
                 end;
             Inc(cache^.Device^.Stats.FatCacheMisses);
             cache^.Busy := true;
             victim := cacheVictim(cache,baseSlot);
-            dataPtr := puint32(uint32(cache^.Data) + (victim * 512));
+            dataPtr := puint32(PtrUInt(cache^.Data) + (victim * 512));
             doEvict := cache^.Lines[victim].Valid and cache^.Lines[victim].Dirty;
             if doEvict then begin
                 evictLBA := cache^.FatStart + cache^.Lines[victim].SectorIdx;
-                memcpy(uint32(dataPtr), uint32(cache^.EvictBuf), 512);
+                memcpy(PtrUInt(dataPtr), PtrUInt(cache^.EvictBuf), 512);
             end;
             cache^.Lines[victim].Valid := false;
-            asm popf end;
+            arch.platform.cpu.unlock(savedIRQ);
             break;
         end;
-        asm popf end;
-        asm hlt end;
+        arch.platform.cpu.unlock(savedIRQ);
+        arch.platform.cpu.idle;
     end;
 
     if doEvict then
@@ -996,7 +1008,7 @@ begin
     lba := cache^.FatStart + fatSecIdx;
     driver.storage.mgr.storage_read(cache^.Device, lba, 1, dataPtr);
 
-    asm pushf; cli end;
+    savedIRQ := arch.platform.cpu.lock;
     cache^.Lines[victim].SectorIdx := fatSecIdx;
     cache^.Lines[victim].Valid := true;
     cache^.Lines[victim].Dirty := false;
@@ -1007,7 +1019,7 @@ begin
     cache^.Lines[victim].Dirty := true;
     cacheTouch(cache,baseSlot,victim);
     cache^.Busy := false;
-    asm popf end;
+    arch.platform.cpu.unlock(savedIRQ);
 end;
 
 function runMapEnsureCapacity(var runMap : TFATRunMap; needed : uint32) : boolean;
@@ -1027,9 +1039,9 @@ begin
         runMapEnsureCapacity := false;
         exit;
     end;
-    memset(uint32(newRuns), 0, newCapacity * sizeof(TFATRun));
+    memset(PtrUInt(newRuns), 0, newCapacity * sizeof(TFATRun));
     if (runMap.Runs <> nil) and (runMap.Count > 0) then
-        memcpy(uint32(runMap.Runs), uint32(newRuns), runMap.Count * sizeof(TFATRun));
+        memcpy(PtrUInt(runMap.Runs), PtrUInt(newRuns), runMap.Count * sizeof(TFATRun));
     if runMap.Runs <> nil then
         kfree(void(runMap.Runs));
     runMap.Runs := newRuns;
@@ -1358,7 +1370,7 @@ begin
 
     if (parts <> nil) and (LL_Size(parts) > 0) then
     for i := 0 to LL_Size(parts) - 1 do begin
-        partName := pchar(puint32(LL_Get(parts, i))^);
+        partName := STRLL_Get(parts, i);
         if (partName = nil) or (partName[0] = char(0)) then
             continue;
         splitFileNameParts(partName, namePart, extPart);
@@ -1413,7 +1425,7 @@ begin
     end;
 
     rawDir := @PDirectory(sectorBuf)[ofi^.DirLoc.EntryIdx];
-    memset(uint32(rawDir), 0, sizeof(TDirectory));
+    memset(PtrUInt(rawDir), 0, sizeof(TDirectory));
     rawDir^.fileName := ofi^.CleanName;
     rawDir^.attributes := 0;
     fillFatExt(rawDir^.fileExtension, ofi^.ExtPart);
@@ -1608,7 +1620,9 @@ function FAT32FindRunForOffset(ofi : PFATOpenFile; fileOffset : uint32;
     var outRunIdx : uint32; var outRunFileCluster : uint32;
     var outStartCluster : uint32; var outClusterOffset : uint32;
     var outAvailableBytes : uint32) : boolean;
-var target, i, lo, hi, mid, base, bpc, flags : uint32;
+var
+    irqFlags: PtrUInt;
+    target, i, lo, hi, mid, base, bpc, flags : uint32;
 begin
     FAT32FindRunForOffset := false;
     if (ofi = nil) or (ofi^.VolumeInfo = nil) or (ofi^.RunMap.Count = 0) then exit;
@@ -1641,9 +1655,9 @@ begin
     outClusterOffset := target-base;
     outStartCluster := ofi^.RunMap.Runs[i].StartCluster + outClusterOffset;
     outAvailableBytes := (ofi^.RunMap.Runs[i].ClusterCount-outClusterOffset)*bpc - (fileOffset mod bpc);
-    asm pushfd; cli; pop flags end;
+    irqFlags := arch.platform.cpu.lock;
     ofi^.Cursor.RunIdx := i; ofi^.Cursor.FileClusterStart := base; ofi^.Cursor.Valid := true;
-    if (flags and $200) <> 0 then asm sti end;
+    arch.platform.cpu.unlock(irqFlags);
     FAT32FindRunForOffset := true;
 end;
 
@@ -1711,6 +1725,12 @@ begin
             ofi^.FirstCluster := firstNew;
     end else begin
         tempRuns := findFreeClusterRuns(ofi^.Volume, ofi^.VolumeInfo, extraClusters);
+        { Preallocation is optional; a small write can still fit on a nearly
+          full volume when the preferred reserve does not. }
+        if (tempRuns = nil) and (targetClusters > needClusters) then begin
+            extraClusters := needClusters - ofi^.AllocClusters;
+            tempRuns := findFreeClusterRuns(ofi^.Volume, ofi^.VolumeInfo, extraClusters);
+        end;
         if tempRuns = nil then begin
             FAT32EnsureCapacityForWrite := eDiskFull;
             exit;
@@ -1749,6 +1769,8 @@ end;
 
 function FAT32TransferAlloc(volume : PStorage_Volume) : PFATTransferCtx;
 var
+    savedIRQ: PtrUInt;
+
     volCtx : PFATVolumeCtx;
     ctx    : PFATTransferCtx;
     idx    : uint32;
@@ -1757,32 +1779,34 @@ begin
     volCtx := FAT32GetVolumeCtx(volume);
     if volCtx = nil then exit;
 
-    asm pushf; cli end;
+    savedIRQ := arch.platform.cpu.lock;
     ctx := PFATTransferCtx(volCtx^.TransferFreeList);
     if ctx <> nil then
         volCtx^.TransferFreeList := pointer(ctx^.Next);
-    asm popf end;
+    arch.platform.cpu.unlock(savedIRQ);
 
     if ctx = nil then exit;
-    idx := (uint32(ctx) - uint32(volCtx^.TransferPoolBuf)) div sizeof(TFATTransferCtx);
-    memset(uint32(ctx), 0, sizeof(TFATTransferCtx));
+    idx := (PtrUInt(ctx) - PtrUInt(volCtx^.TransferPoolBuf)) div sizeof(TFATTransferCtx);
+    memset(PtrUInt(ctx), 0, sizeof(TFATTransferCtx));
     ctx^.VolumeCtx := volCtx;
-    ctx^.ScratchSector := puint32(uint32(volCtx^.TransferScratchBuf) + (idx * volCtx^.Info.BootRecord.sectorSize));
+    ctx^.ScratchSector := puint32(PtrUInt(volCtx^.TransferScratchBuf) + (idx * volCtx^.Info.BootRecord.sectorSize));
     ctx^.ScratchSize := volCtx^.Info.BootRecord.sectorSize;
     FAT32TransferAlloc := ctx;
 end;
 
 procedure FAT32TransferFree(ctx : PFATTransferCtx);
 var
+    savedIRQ: PtrUInt;
+
     volCtx : PFATVolumeCtx;
 begin
     if ctx = nil then exit;
     volCtx := ctx^.VolumeCtx;
     if volCtx = nil then exit;
-    asm pushf; cli end;
+    savedIRQ := arch.platform.cpu.lock;
     ctx^.Next := PFATTransferCtx(volCtx^.TransferFreeList);
     volCtx^.TransferFreeList := pointer(ctx);
-    asm popf end;
+    arch.platform.cpu.unlock(savedIRQ);
 end;
 
 function FAT32OpenFile(volume : PStorage_Volume; directory : pchar; fileName : pchar; var fileSize : uint32) : pointer;
@@ -1805,14 +1829,14 @@ begin
 
     ofi := PFATOpenFile(kalloc(sizeof(TFATOpenFile)));
     if ofi = nil then exit;
-    memset(uint32(ofi), 0, sizeof(TFATOpenFile));
+    memset(PtrUInt(ofi), 0, sizeof(TFATOpenFile));
     ofi^.Volume := volume;
     ofi^.VolumeInfo := info;
     ofi^.ScratchSize := info^.BootRecord.sectorSize;
     if ofi^.ScratchSize > 0 then begin
         ofi^.ScratchSector := puint32(kalloc(ofi^.ScratchSize));
         if ofi^.ScratchSector <> nil then
-            memset(uint32(ofi^.ScratchSector), 0, ofi^.ScratchSize);
+            memset(PtrUInt(ofi^.ScratchSector), 0, ofi^.ScratchSize);
     end;
 
     splitFileNameParts(fileName, namePart, extPart);
@@ -2107,7 +2131,7 @@ begin
     clusterLBA := FAT32ClusterToLBA(info, cluster);
 
     for ds := 0 to info^.BootRecord.spc - 1 do begin
-        memset(uint32(buffer), 0, info^.BootRecord.sectorSize);
+        memset(PtrUInt(buffer), 0, info^.BootRecord.sectorSize);
         if ds = 0 then begin
             dir := @PDirectory(buffer)[0];
             dir^.fileName[0] := '.';
@@ -2217,7 +2241,7 @@ begin
                     exit;
                 end;
                 outEntry := PDirectory_Entry(slot);
-                memset(uint32(outEntry), 0, sizeof(TDirectory_Entry));
+                memset(PtrUInt(outEntry), 0, sizeof(TDirectory_Entry));
                 outEntry^.fileName := fatEntryName(rawDir);
                 if outEntry^.fileName = nil then begin
                     fatFreeGenericEntries(entries);
@@ -2336,7 +2360,7 @@ begin
     end;
 
     rawDir := @PDirectory(sectorBuf)[loc.EntryIdx];
-    memset(uint32(rawDir), 0, sizeof(TDirectory));
+    memset(PtrUInt(rawDir), 0, sizeof(TDirectory));
     rawDir^.fileName := cleanName;
     rawDir^.attributes := attributes;
     fillFatExt(rawDir^.fileExtension, extPart);

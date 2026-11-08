@@ -14,7 +14,7 @@ function normalize_label(text : pchar; var normalized : TVolumeLabel) : TError;
 var i, n, first : uint32; c : char;
 begin
     normalize_label := eInvalidArgument;
-    memset(uint32(@normalized[0]), 0, sizeof(normalized));
+    memset(PtrUInt(@normalized[0]), 0, sizeof(normalized));
     if text = nil then exit;
     n := 0;
     while (n < 12) and (text[n] <> #0) do Inc(n);
@@ -37,7 +37,7 @@ end;
 procedure unpack_label(src : pchar; var dest : TVolumeLabel);
 var n, i : uint32;
 begin
-    memset(uint32(@dest[0]), 0, sizeof(dest));
+    memset(PtrUInt(@dest[0]), 0, sizeof(dest));
     n := 11; while (n > 0) and ((src[n-1] = ' ') or (src[n-1] = #0)) do Dec(n);
     for i := 0 to 10 do if i < n then dest[i] := src[i];
 end;
@@ -62,7 +62,7 @@ begin
     br := PBootRecord(buffer); lim := FAT32ClusterLimit(br);
     if (lim <= 2) or (br^.manySectors = 0) or (br^.manySectors > volume^.sectorCount) or
        (br^.rootCluster < 2) or (br^.rootCluster >= lim) or
-       (puint16(uint32(buffer)+510)^ <> $AA55) then load_boot := eCorruptFilesystem;
+       (puint16(PtrUInt(buffer)+510)^ <> $AA55) then load_boot := eCorruptFilesystem;
 end;
 
 { Bounded walk of the root FAT chain. A label is authoritative when present.
@@ -113,12 +113,12 @@ var mem, boot, scratch : puint32; sector, offset, i : uint32; found, noName : bo
 begin
     mem := puint32(kalloc(1024));
     if mem = nil then begin read_label := eOutOfMemory; exit; end;
-    boot := mem; scratch := puint32(uint32(mem)+512);
+    boot := mem; scratch := puint32(PtrUInt(mem)+512);
     read_label := load_boot(volume,boot);
     if read_label = eNone then begin
         read_label := locate_label(volume,PBootRecord(boot),scratch,sector,offset,found);
         if read_label = eNone then begin
-            if found then unpack_label(pchar(uint32(scratch)+offset),value)
+            if found then unpack_label(pchar(PtrUInt(scratch)+offset),value)
             else begin
                 unpack_label(pchar(@PBootRecord(boot)^.volumeLabel[0]),value);
                 noName := true;
@@ -142,8 +142,8 @@ begin
     if not volume^.device^.writable then begin write_label := eReadOnly; exit; end;
     mem := puint32(kalloc(5*512));
     if mem = nil then begin write_label := eOutOfMemory; exit; end;
-    boot := mem; scratch := puint32(uint32(mem)+512); rootOld := puint32(uint32(mem)+1024);
-    backupOld := puint32(uint32(mem)+1536); bootOld := puint32(uint32(mem)+2048);
+    boot := mem; scratch := puint32(PtrUInt(mem)+512); rootOld := puint32(PtrUInt(mem)+1024);
+    backupOld := puint32(PtrUInt(mem)+1536); bootOld := puint32(PtrUInt(mem)+2048);
     bootWritten := false; backupWritten := false; rootWritten := false; backup := 0;
     repeat
         write_label := load_boot(volume,boot); if write_label <> eNone then break;
@@ -153,17 +153,17 @@ begin
         if (sector = 0) and (value[0] <> #0) then begin write_label := eDiskFull; break; end;
         if sector <> 0 then begin
             write_label := storage_read(volume^.device,sector,1,scratch); if write_label <> eNone then break;
-            memcpy(uint32(scratch),uint32(rootOld),512);
-            entry := PDirectory(uint32(scratch)+offset);
+            memcpy(PtrUInt(scratch),PtrUInt(rootOld),512);
+            entry := PDirectory(PtrUInt(scratch)+offset);
             if value[0] = #0 then begin
                 if found then entry^.fileName[0] := char($E5);
             end else begin
                 if entry^.fileName[0] = #0 then begin
                     { Retain an end marker after a newly inserted label. }
                     if offset = 480 then begin write_label := eDiskFull; break; end;
-                    puint8(uint32(entry)+32)^ := 0;
+                    puint8(PtrUInt(entry)+32)^ := 0;
                 end;
-                memset(uint32(entry),0,32); pack_label(@value[0],@entry^.fileName[0]); entry^.attributes := $08;
+                memset(PtrUInt(entry),0,32); pack_label(@value[0],@entry^.fileName[0]); entry^.attributes := $08;
             end;
         end;
         if (br^.backupCluster <> 0) and (br^.backupCluster <> $FFFF) then begin
@@ -171,7 +171,7 @@ begin
             backup := volume^.sectorStart+br^.backupCluster;
             write_label := storage_read(volume^.device,backup,1,backupOld); if write_label <> eNone then break;
         end;
-        memcpy(uint32(boot),uint32(bootOld),512);
+        memcpy(PtrUInt(boot),PtrUInt(bootOld),512);
         if value[0] = #0 then pack_label('NO NAME',pchar(@br^.volumeLabel[0]))
         else pack_label(@value[0],pchar(@br^.volumeLabel[0]));
         bootWritten := true;
@@ -180,7 +180,7 @@ begin
         bootWritten := true;
         if backup <> 0 then begin
             { Preserve backup-specific bytes; only update its label. }
-            memcpy(uint32(backupOld),uint32(boot),512);
+            memcpy(PtrUInt(backupOld),PtrUInt(boot),512);
             if value[0] = #0 then pack_label('NO NAME',pchar(@br^.volumeLabel[0]))
             else pack_label(@value[0],pchar(@br^.volumeLabel[0]));
             backupWritten := true;

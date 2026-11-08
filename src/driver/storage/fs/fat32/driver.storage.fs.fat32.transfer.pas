@@ -21,7 +21,7 @@ implementation
 uses
     proc.mgr, proc.types,
     driver.storage.mgr,
-    core.util, arch.x86.util,
+    core.util, arch.platform.cpu,
     memory.heap,
     driver.storage.fs.fat32.types,
     driver.storage.fs.fat32.core;
@@ -86,7 +86,7 @@ begin
         sectorLBA := FAT32ClusterToLBA(ofi^.VolumeInfo, startCluster) + (runByteOffset div sectorSize);
 
         if (sectorOffset <> 0) or (remaining < sectorSize) or
-           (((uint32(buffer)+bytesDone) and 1) <> 0) then begin
+           (((PtrUInt(buffer)+bytesDone) and 1) <> 0) then begin
             if (scratch = nil) or (scratchSize < sectorSize) then break;
             chunkBytes := sectorSize - sectorOffset;
             if chunkBytes > remaining then
@@ -94,9 +94,9 @@ begin
             err := driver.storage.mgr.storage_read(ofi^.Volume^.device, sectorLBA, 1, scratch);
             if err <> eNone then break;
             if mode = ftmRead then
-                memcpy(uint32(scratch) + sectorOffset, uint32(buffer) + bytesDone, chunkBytes)
+                memcpy(PtrUInt(scratch) + sectorOffset, PtrUInt(buffer) + bytesDone, chunkBytes)
             else begin
-                memcpy(uint32(buffer) + bytesDone, uint32(scratch) + sectorOffset, chunkBytes);
+                memcpy(PtrUInt(buffer) + bytesDone, PtrUInt(scratch) + sectorOffset, chunkBytes);
                 err := driver.storage.mgr.storage_write(ofi^.Volume^.device, sectorLBA, 1, scratch);
                 if err <> eNone then break;
             end;
@@ -112,10 +112,10 @@ begin
             chunkBytes := chunkSectors * sectorSize;
             if mode = ftmRead then
                 err := driver.storage.mgr.storage_read(ofi^.Volume^.device, sectorLBA, chunkSectors,
-                    puint32(uint32(buffer) + bytesDone))
+                    puint32(PtrUInt(buffer) + bytesDone))
             else
                 err := driver.storage.mgr.storage_write(ofi^.Volume^.device, sectorLBA, chunkSectors,
-                    puint32(uint32(buffer) + bytesDone));
+                    puint32(PtrUInt(buffer) + bytesDone));
         end;
 
         if err <> eNone then break;
@@ -166,13 +166,13 @@ begin
         end;
         ftpAwaitScratchRead: begin
             if ctx^.Mode = ftmRead then begin
-                memcpy(uint32(ctx^.ScratchSector) + ctx^.PendingScratchOffset,
-                    uint32(ctx^.Buffer) + ctx^.PendingBufferOffset, ctx^.PendingScratchBytes);
+                memcpy(PtrUInt(ctx^.ScratchSector) + ctx^.PendingScratchOffset,
+                    PtrUInt(ctx^.Buffer) + ctx^.PendingBufferOffset, ctx^.PendingScratchBytes);
                 ctx^.BytesDone := ctx^.BytesDone + ctx^.PendingScratchBytes;
                 asyncContinue(ctx);
             end else begin
-                memcpy(uint32(ctx^.Buffer) + ctx^.PendingBufferOffset,
-                    uint32(ctx^.ScratchSector) + ctx^.PendingScratchOffset, ctx^.PendingScratchBytes);
+                memcpy(PtrUInt(ctx^.Buffer) + ctx^.PendingBufferOffset,
+                    PtrUInt(ctx^.ScratchSector) + ctx^.PendingScratchOffset, ctx^.PendingScratchBytes);
                 ctx^.Phase := ftpAwaitScratchWrite;
                 if driver.storage.mgr.storage_write_async(
                     ctx^.Volume^.device, ctx^.PendingLBA, 1, ctx^.ScratchSector, @asyncStep, ctx) <> eNone then
@@ -237,7 +237,7 @@ begin
             ((ctx^.Offset+pos) mod ctx^.OpenFile^.VolumeInfo^.BytesPerCluster) div size;
         Inc(ctx^.ReadPending);
         err := driver.storage.mgr.storage_read_async(ctx^.Volume^.device,lba,sectors,
-            puint32(uint32(ctx^.Buffer)+pos),@readSlotDone,slot);
+            puint32(PtrUInt(ctx^.Buffer)+pos),@readSlotDone,slot);
         if err <> eNone then begin Dec(ctx^.ReadPending); slot^.Error := err; break; end;
         if slot^.Error <> eNone then break; { synchronous completion failure }
         Inc(pos,bytes);
@@ -290,7 +290,7 @@ begin
     ctx^.PendingBufferOffset := ctx^.BytesDone;
 
     if (sectorOffset <> 0) or (remaining < sectorSize) or
-       (((uint32(ctx^.Buffer)+ctx^.BytesDone) and 1) <> 0) then begin
+       (((PtrUInt(ctx^.Buffer)+ctx^.BytesDone) and 1) <> 0) then begin
         chunkBytes := sectorSize - sectorOffset;
         if chunkBytes > remaining then
             chunkBytes := remaining;
@@ -323,10 +323,10 @@ begin
 
     if ctx^.Mode = ftmRead then
         err := driver.storage.mgr.storage_read_async(ctx^.Volume^.device, ctx^.PendingLBA, chunkSectors,
-            puint32(uint32(ctx^.Buffer) + ctx^.PendingBufferOffset), @asyncStep, ctx)
+            puint32(PtrUInt(ctx^.Buffer) + ctx^.PendingBufferOffset), @asyncStep, ctx)
     else
         err := driver.storage.mgr.storage_write_async(ctx^.Volume^.device, ctx^.PendingLBA, chunkSectors,
-            puint32(uint32(ctx^.Buffer) + ctx^.PendingBufferOffset), @asyncStep, ctx);
+            puint32(PtrUInt(ctx^.Buffer) + ctx^.PendingBufferOffset), @asyncStep, ctx);
     if err <> eNone then
         asyncComplete(ctx, err);
 end;
@@ -334,9 +334,11 @@ end;
 { Serialize pump state against IRQ completion and turn inline completions
   into iteration, so fake/RAM drivers cannot recursively exhaust the stack. }
 procedure asyncContinue(ctx : PFATTransferCtx);
-var flags : uint32;
+var
+    irqFlags: PtrUInt;
+    flags : uint32;
 begin
-    asm pushfd; cli; pop flags end;
+    irqFlags := arch.platform.cpu.lock;
     if ctx^.Pumping then ctx^.Resume := true
     else begin
         ctx^.Pumping := true;
@@ -347,7 +349,7 @@ begin
         ctx^.Pumping := false;
         if ctx^.Finished then asyncComplete(ctx,ctx^.LastError);
     end;
-    if (flags and $200) <> 0 then asm sti end;
+    arch.platform.cpu.unlock(irqFlags);
 end;
 
 type
@@ -364,6 +366,8 @@ end;
 function FAT32ReadFileAtOffset(volume : PStorage_Volume; directory : pchar; fileName : pchar;
     offset : uint32; buffer : puint32; byteCount : uint32; ctx : pointer) : uint32;
 var
+    savedIRQ: PtrUInt;
+
     ofi       : PFATOpenFile;
     tempCtx   : pointer;
     fileSize  : uint32;
@@ -386,10 +390,10 @@ begin
         wait.Done := 0; wait.Bytes := 0; wait.Process := CurrentProcess;
         FAT32ReadFileAtOffsetAsync(volume,directory,fileName,offset,buffer,readLimit,ofi,
             @wait.Bytes,@readWaitDone,@wait);
-        asm pushf; cli end;
+        savedIRQ := arch.platform.cpu.lock;
         if (puint32(@wait.Done)^ = 0) and (CurrentProcess <> nil) then CurrentProcess^.State := psAwaiting;
-        asm popf end;
-        while puint32(@wait.Done)^ = 0 do asm hlt end;
+        arch.platform.cpu.unlock(savedIRQ);
+        while puint32(@wait.Done)^ = 0 do arch.platform.cpu.idle;
         FAT32ReadFileAtOffset := wait.Bytes;
     end;
 

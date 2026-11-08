@@ -1,4 +1,4 @@
-//  Copyright 2021 Aaron Hance  
+//  Copyright 2021 Aaron Hance
 //  Copyright 2026 Aaron Hance
 //
 //  Licensed under the Apache License, Version 2.0 (the "License");
@@ -36,8 +36,7 @@ unit driver.storage.mgr;
 interface
 
 uses
-    arch.x86.bda,
-    boot.mgr,
+    arch.platform.process,
     core.ds.cfifo,
     core.ds.types,
     driver.storage.iorequest,
@@ -49,7 +48,7 @@ uses
     driver.storage.types,
     io.syslog,
     debug.tracer,
-    core.util, arch.x86.util;
+    core.util, arch.platform.cpu;
 
 var
     storageDevices : PDList;
@@ -122,6 +121,8 @@ uses
 procedure dispatch_next(device : PStorage_Device); forward;
 
 type
+    PDeviceSlot = ^PStorage_Device;
+    PRequestSlot = ^PIORequest;
     { Used by submit_io_wait: callback writes result here then sets Done=1.
       Process is parked in psAwaiting while Done=0; ISR sets psReady + Done=1.
       Done is read through a pointer so FPC cannot cache it (Lesson #6). }
@@ -174,18 +175,20 @@ begin
     buf := puint32(kalloc(bufSz));
     if buf = nil then exit;
 
-    memset(uint32(buf), 0, bufSz);
-    memcpy(uint32(mbr), uint32(buf), sizeof(TMaster_Boot_Record));
+    memset(PtrUInt(buf), 0, bufSz);
+    memcpy(PtrUInt(mbr), PtrUInt(buf), sizeof(TMaster_Boot_Record));
     alloc_mbr_io_buffer := buf;
 end;
 
 function claim_mbr(device : PStorage_Device) : boolean;
-var flags : uint32;
+var
+    irqFlags: PtrUInt;
+    flags : uint32;
 begin
-    asm pushfd; cli; pop flags end;
+    irqFlags := arch.platform.cpu.lock;
     claim_mbr := not device^.mbrWriteBusy;
     if claim_mbr then device^.mbrWriteBusy := true;
-    if (flags and $200) <> 0 then asm sti end;
+    arch.platform.cpu.unlock(irqFlags);
 end;
 
 procedure publish_mbr(device : PStorage_Device; buffer : pointer);
@@ -210,17 +213,19 @@ begin
 end;
 
 procedure storage_get_stats(device : PStorage_Device; var stats : TStorageStats);
+var
+    savedIRQ: PtrUInt;
 begin
-    asm pushf; cli end;
+    savedIRQ := arch.platform.cpu.lock;
     if device <> nil then stats := device^.Stats
-    else memset(uint32(@stats),0,sizeof(stats));
-    asm popf end;
+    else memset(PtrUInt(@stats),0,sizeof(stats));
+    arch.platform.cpu.unlock(savedIRQ);
 end;
 
 procedure init();
 begin
     push_trace('driver.storage.mgr.init');
-    storageDevices := DL_New(sizeof(TStorage_Device));
+    storageDevices := DL_New(sizeof(PStorage_Device));
     nextDeviceId   := 0;
     bootDriveByte  := $FF;  { $FF = unknown/uninitialised }
     hdCount        := 0;
@@ -242,15 +247,24 @@ end;
 procedure register_device(device : PStorage_Device);
 var
     storedDev : PStorage_Device;
+    slot : PDeviceSlot;
+    irqFlags : PtrUInt;
 begin
     push_trace('driver.storage.mgr.register_device');
-    device^.id := nextDeviceId;
-    nextDeviceId := nextDeviceId + 1;
+    if device = nil then exit;
+    storedDev := PStorage_Device(kalloc(sizeof(TStorage_Device)));
+    if storedDev = nil then exit;
+    memcpy(PtrUInt(device), PtrUInt(storedDev), sizeof(TStorage_Device));
+    device := storedDev;
 
     { Initialise new Phase 2 fields }
     device^.removed := false;
     device^.requestQueue := CFIFO_New(SizeOf(PIORequest), 128);
-    memset(uint32(@device^.Stats),0,sizeof(TStorageStats));
+    if device^.requestQueue = nil then begin
+        kfree(void(device));
+        exit;
+    end;
+    memset(PtrUInt(@device^.Stats),0,sizeof(TStorageStats));
     device^.activeCount := 0;
     device^.dispatching := false;
     if device^.maxActive = 0 then device^.maxActive := 1;
@@ -261,11 +275,20 @@ begin
     { dispatchRead/dispatchWrite: left as-is — driver sets them before
       calling register_device. memset(0) guarantees nil for unmigrated drivers. }
 
-    DL_Add(storageDevices);
-    DL_Set(storageDevices, DL_Size(storageDevices) - 1, puint32(device));
-
-    { Get pointer to the DList copy so volumes reference the canonical device }
-    storedDev := PStorage_Device(DL_Get(storageDevices, DL_Size(storageDevices) - 1));
+    { Volumes and queued requests retain this address across registry growth. }
+    irqFlags := arch.platform.cpu.lock;
+    slot := PDeviceSlot(DL_Add(storageDevices));
+    if slot <> nil then begin
+        storedDev^.id := nextDeviceId;
+        inc(nextDeviceId);
+        slot^ := storedDev;
+    end;
+    arch.platform.cpu.unlock(irqFlags);
+    if slot = nil then begin
+        CFIFO_Free(device^.requestQueue);
+        kfree(void(device));
+        exit;
+    end;
 
     { Identify whether this is the boot device using the BIOS drive byte.
       BIOS numbers HDDs from $80 upward; the nth HDD is $80 + (n-1).
@@ -308,11 +331,15 @@ begin
 end;
 
 function get_device(index : uint32) : PStorage_Device;
+var
+    irqFlags : PtrUInt;
 begin
+    irqFlags := arch.platform.cpu.lock;
     if index < DL_Size(storageDevices) then
-        get_device := PStorage_Device(DL_Get(storageDevices, index))
+        get_device := PDeviceSlot(DL_Get(storageDevices, index))^
     else
         get_device := nil;
+    arch.platform.cpu.unlock(irqFlags);
 end;
 
 function controller_type_2_string(controllerType : TControllerType) : pchar;
@@ -355,7 +382,7 @@ begin
             kfree(device^.cachedMBR);
         cache := puint32(kalloc(sizeof(TMaster_Boot_Record)));
         if cache <> nil then
-            memcpy(uint32(buf), uint32(cache), sizeof(TMaster_Boot_Record));
+            memcpy(PtrUInt(buf), PtrUInt(cache), sizeof(TMaster_Boot_Record));
         device^.cachedMBR := pointer(cache);
     end;
 end;
@@ -440,7 +467,7 @@ begin
               (device^.sectorSize > 0) do begin
             peek := CFIFO_Peek(device^.requestQueue);
             if peek = nil then break;
-            nextReq := PIORequest(puint32(peek)^);
+            nextReq := PRequestSlot(peek)^;
             if nextReq = nil then break;
             if (nextReq^.Device <> device) or (nextReq^.RequestType <> heapReq^.RequestType) then break;
             if heapReq^.SectorCount > device^.mergeMaxSectors then break;
@@ -448,15 +475,15 @@ begin
             if heapReq^.SectorCount > ($FFFFFFFF div device^.sectorSize) then break;
             bytes := heapReq^.SectorCount*device^.sectorSize;
             if (heapReq^.LBA > $FFFFFFFF-heapReq^.SectorCount) or
-               (uint32(heapReq^.Buffer) > $FFFFFFFF-bytes) then break;
+               (PtrUInt(heapReq^.Buffer) > High(PtrUInt)-bytes) then break;
             if (nextReq^.LBA <> heapReq^.LBA+heapReq^.SectorCount) or
-               (uint32(nextReq^.Buffer) <> uint32(heapReq^.Buffer)+bytes) then break;
+               (PtrUInt(nextReq^.Buffer) <> PtrUInt(heapReq^.Buffer)+bytes) then break;
             if not CFIFO_Dequeue(device^.requestQueue,@nextReq) then break;
             tail^.MergeNext := nextReq; tail := nextReq;
             Inc(heapReq^.SectorCount,nextReq^.SectorCount); Inc(merged);
             Inc(device^.Stats.Merged);
         end;
-        ticks := puint32(@Counters.c32)^;
+        ticks := arch.platform.process.timerTicks;
         tail := heapReq;
         while tail <> nil do begin
             tail^.DispatchTick := ticks; tail^.State := iosDispatched;
@@ -490,6 +517,8 @@ end;
 
 function submit_io(request : PIORequest) : TError;
 var
+    irqFlags: PtrUInt;
+
     device  : PStorage_Device;
     heapReq : PIORequest;
     flags : uint32;
@@ -523,15 +552,15 @@ begin
 
     { Enqueue and attempt dispatch — must be ISR-safe and bounded.
       Reject once the fixed queue is full instead of growing with CLI held. }
-    asm pushfd; cli; pop flags end;
+    irqFlags := arch.platform.cpu.lock;
     if CFIFO_Size(device^.requestQueue) >= CFIFO_Capacity(device^.requestQueue) then begin
         Inc(device^.Stats.QueueFull);
-        if (flags and $200) <> 0 then asm sti end;
+        arch.platform.cpu.unlock(irqFlags);
         ioreq_free(heapReq);
         submit_io := eQueueFull;
         exit;
     end;
-    heapReq^.QueuedTick := puint32(@Counters.c32)^;
+    heapReq^.QueuedTick := arch.platform.process.timerTicks;
     Inc(device^.Stats.Submitted);
     if request^.SectorCount <= 8 then Inc(device^.Stats.SmallRequests)
     else if request^.SectorCount <= 256 then Inc(device^.Stats.MediumRequests)
@@ -540,7 +569,7 @@ begin
     if CFIFO_Size(device^.requestQueue) > device^.Stats.QueuePeak then
         device^.Stats.QueuePeak := CFIFO_Size(device^.requestQueue);
     dispatch_next(device);
-    if (flags and $200) <> 0 then asm sti end;
+    arch.platform.cpu.unlock(irqFlags);
 
     submit_io := eNone;
 end;
@@ -554,6 +583,8 @@ end;
   register across the hlt instruction). }
 function submit_io_wait(request : PIORequest) : TError;
 var
+    savedIRQ: PtrUInt;
+
     wait : TSyncWaitData;
     err  : TError;
 begin
@@ -576,36 +607,38 @@ begin
       psAwaiting so the callback cannot fire in the narrow window between
       the Done=0 check and the state write — which would otherwise lose
       the wake signal and leave the process parked forever. }
-    asm pushf; cli end;
+    savedIRQ := arch.platform.cpu.lock;
     if puint32(@wait.Done)^ = 0 then begin
         if CurrentProcess <> nil then
             CurrentProcess^.State := psAwaiting;
     end;
-    asm popf end;
+    arch.platform.cpu.unlock(savedIRQ);
 
     { Spin on Done via pointer — mandatory per Lesson #6.  FPC would cache
       the value in a register without the indirection, causing an infinite
       loop even after the ISR sets Done=1.  HLT yields the CPU each iteration
       so we do not burn cycles; the next interrupt (driver.storage.ctl.ahci or timer) wakes us. }
     while puint32(@wait.Done)^ = 0 do
-        asm hlt end;
+        arch.platform.cpu.idle;
 
     submit_io_wait := wait.Error;
 end;
 
 procedure complete_io(request : PIORequest; success : boolean; error : TError);
-var device : PStorage_Device; next : PIORequest; ticks, flags : uint32;
+var
+    irqFlags: PtrUInt;
+    device : PStorage_Device; next : PIORequest; ticks, flags : uint32;
     wasDispatching : boolean;
 begin
     if request = nil then exit;
     device := request^.Device;
-    asm pushfd; cli; pop flags end;
+    irqFlags := arch.platform.cpu.lock;
     wasDispatching := false;
     if device <> nil then begin
         wasDispatching := device^.dispatching;
         device^.dispatching := true; { callbacks cannot dispatch inside merged fan-out }
         if device^.activeCount > 0 then Dec(device^.activeCount);
-        ticks := puint32(@Counters.c32)^-request^.DispatchTick;
+        ticks := arch.platform.process.timerTicks-request^.DispatchTick;
         Inc(device^.Stats.ServiceTicks,ticks);
         if ticks > device^.Stats.MaxServiceTicks then device^.Stats.MaxServiceTicks := ticks;
     end;
@@ -626,7 +659,7 @@ begin
         device^.dispatching := wasDispatching;
         dispatch_next(device);
     end;
-    if (flags and $200) <> 0 then asm sti end;
+    arch.platform.cpu.unlock(irqFlags);
 end;
 
 { ========================================================================== }
@@ -738,8 +771,5 @@ begin
 
     storage_write_async := submit_io(@req);
 end;
-
-initialization
-    boot.mgr.registerBoot('driver.storage.mgr', @init, 'Storage Manager', 'driver.storage.vfs');
 
 end.

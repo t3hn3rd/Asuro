@@ -26,7 +26,6 @@ unit driver.storage.fs.iso9660;
 interface
 
 uses
-    boot.mgr,
     driver.storage.fs.mgr,
     core.ds.lists,
     memory.heap,
@@ -35,7 +34,7 @@ uses
     core.strings,
     io.syslog,
     debug.tracer,
-    core.util, arch.x86.util,
+    core.util, arch.platform.cpu,
     driver.storage.vol.mgr;
 
 type
@@ -121,6 +120,7 @@ var
     buf     : puint32;
     bytes   : uint32;
     secSize : uint32;
+    error : TError;
 begin
     readSectors := nil;
     if count = 0 then exit;
@@ -130,8 +130,14 @@ begin
     bytes := count * secSize;
     buf := puint32(kalloc(bytes));
     if buf = nil then exit;
-    memset(uint32(buf), 0, bytes);
-    driver.storage.mgr.storage_read(device, lba, count, buf);
+    memset(PtrUInt(buf), 0, bytes);
+    error := driver.storage.mgr.storage_read(device, lba, count, buf);
+    if error <> eNone then begin
+        io.syslog.log('ISO9660', 'Read failed: ');
+        io.syslog.writeintln(ord(error));
+        kfree(buf);
+        exit;
+    end;
     readSectors := buf;
 end;
 
@@ -177,24 +183,24 @@ var
     semi : sint32;
 begin
     s := stringNew(len + 1);
-    memcpy(uint32(raw), uint32(s), len);
-    puint8(uint32(s) + len)^ := 0;
+    memcpy(PtrUInt(raw), PtrUInt(s), len);
+    puint8(PtrUInt(s) + len)^ := 0;
 
     { Find and truncate at semicolon (version separator) }
     semi := -1;
     for i := 0 to len - 1 do begin
-        if puint8(uint32(s) + i)^ = ord(';') then begin
+        if puint8(PtrUInt(s) + i)^ = ord(';') then begin
             semi := i;
             break;
         end;
     end;
     if semi >= 0 then
-        puint8(uint32(s) + uint32(semi))^ := 0;
+        puint8(PtrUInt(s) + uint32(semi))^ := 0;
 
     { Strip trailing dot (ISO 9660 directories sometimes have it) }
     i := stringSize(s);
-    if (i > 0) and (puint8(uint32(s) + i - 1)^ = ord('.')) then
-        puint8(uint32(s) + i - 1)^ := 0;
+    if (i > 0) and (puint8(PtrUInt(s) + i - 1)^ = ord('.')) then
+        puint8(PtrUInt(s) + i - 1)^ := 0;
 
     cleanISOName := s;
 end;
@@ -218,8 +224,8 @@ begin
         exit;
     end;
     for i := 0 to la - 1 do begin
-        ca := puint8(uint32(a) + i)^;
-        cb := puint8(uint32(b) + i)^;
+        ca := puint8(PtrUInt(a) + i)^;
+        cb := puint8(PtrUInt(b) + i)^;
         { Convert lowercase to uppercase }
         if (ca >= ord('a')) and (ca <= ord('z')) then ca := ca - 32;
         if (cb >= ord('a')) and (cb <= ord('z')) then cb := cb - 32;
@@ -265,7 +271,7 @@ begin
     offset := 0;
 
     while offset < dirLen do begin
-        rec := PDirRecord(uint32(dirBuf) + offset);
+        rec := PDirRecord(PtrUInt(dirBuf) + offset);
 
         { A zero record length means we've hit padding — skip to next sector boundary }
         if rec^.recLen = 0 then begin
@@ -279,12 +285,12 @@ begin
 
         { Skip '.' (0x00) and '..' (0x01) entries }
         if (rec^.fileIdLen = 1) and
-           ((puint8(uint32(rec) + 33)^ = 0) or (puint8(uint32(rec) + 33)^ = 1)) then begin
+           ((puint8(PtrUInt(rec) + 33)^ = 0) or (puint8(PtrUInt(rec) + 33)^ = 1)) then begin
             offset := offset + rec^.recLen;
             continue;
         end;
 
-        entryName := cleanISOName(pchar(uint32(rec) + 33), rec^.fileIdLen);
+        entryName := cleanISOName(pchar(PtrUInt(rec) + 33), rec^.fileIdLen);
 
         if equalsIgnoreCase(entryName, name) then begin
             pOutLBA^ := rec^.extentLBA_LSB;
@@ -336,7 +342,7 @@ begin
 
     { Skip leading slash }
     i := 0;
-    if puint8(uint32(path))^ = ord('/') then i := 1;
+    if puint8(PtrUInt(path))^ = ord('/') then i := 1;
 
     foundDir := 1;
     while i <= pathLen do begin
@@ -348,7 +354,7 @@ begin
 
         { Find next slash or end of path }
         start := i;
-        while (i < pathLen) and (puint8(uint32(path) + i)^ <> ord('/')) do
+        while (i < pathLen) and (puint8(PtrUInt(path) + i)^ <> ord('/')) do
             i := i + 1;
         compLen := i - start;
         if compLen = 0 then begin
@@ -358,8 +364,8 @@ begin
 
         { Extract component }
         component := stringNew(compLen + 1);
-        memcpy(uint32(path) + start, uint32(component), compLen);
-        puint8(uint32(component) + compLen)^ := 0;
+        memcpy(PtrUInt(path) + start, PtrUInt(component), compLen);
+        puint8(PtrUInt(component) + compLen)^ := 0;
 
         { Read current directory extent }
         dirBuf := readExtent(device, curLBA, curLen);
@@ -395,7 +401,7 @@ end;
 procedure cacheVolumeLabel(volume : PStorage_Volume; pvd : PPVD);
 var n, i : uint32;
 begin
-    memset(uint32(@volume^.labelText[0]),0,sizeof(volume^.labelText));
+    memset(PtrUInt(@volume^.labelText[0]),0,sizeof(volume^.labelText));
     n := 32;
     while (n > 0) and ((pvd^.volumeId[n-1] = ' ') or (pvd^.volumeId[n-1] = #0)) do Dec(n);
     i := 0; while i < n do begin volume^.labelText[i] := pvd^.volumeId[i]; Inc(i); end;
@@ -438,7 +444,7 @@ begin
     pvd := PPVD(buf);
 
     volume := PStorage_Volume(kalloc(sizeof(TStorage_Volume)));
-    memset(uint32(volume), 0, sizeof(TStorage_Volume));
+    memset(PtrUInt(volume), 0, sizeof(TStorage_Volume));
     volume^.device      := disk;
     volume^.sectorStart := 0;
     volume^.sectorSize  := disk^.sectorSize;
@@ -524,7 +530,7 @@ begin
     offset := 0;
     iters  := 0;
     while offset < dirLen do begin
-        rec := PDirRecord(uint32(buf) + offset);
+        rec := PDirRecord(PtrUInt(buf) + offset);
 
         iters := iters + 1;
         if iters > 65536 then begin
@@ -545,12 +551,12 @@ begin
 
         { Skip '.' (0x00) and '..' (0x01) }
         if (rec^.fileIdLen = 1) and
-           ((puint8(uint32(rec) + 33)^ = 0) or (puint8(uint32(rec) + 33)^ = 1)) then begin
+           ((puint8(PtrUInt(rec) + 33)^ = 0) or (puint8(PtrUInt(rec) + 33)^ = 1)) then begin
             offset := offset + rec^.recLen;
             continue;
         end;
 
-        entryName := cleanISOName(pchar(uint32(rec) + 33), rec^.fileIdLen);
+        entryName := cleanISOName(pchar(PtrUInt(rec) + 33), rec^.fileIdLen);
 
         elm := LL_Add(entries);
         dirEntry := PDirectory_Entry(elm);
@@ -730,11 +736,14 @@ begin
     secOff  := offset mod secSize;
 
     while remaining > 0 do begin
-        driver.storage.mgr.storage_read(volume^.device, curLBA, 1, secBuf);
+        if driver.storage.mgr.storage_read(volume^.device, curLBA, 1, secBuf) <> eNone then begin
+            kfree(secBuf);
+            exit;
+        end;
 
         bytesToCopy := secSize - secOff;
         if bytesToCopy > remaining then bytesToCopy := remaining;
-        core.util.memcpy(uint32(secBuf) + secOff, uint32(buffer) + destPos, bytesToCopy);
+        core.util.memcpy(PtrUInt(secBuf) + secOff, PtrUInt(buffer) + destPos, bytesToCopy);
 
         destPos   := destPos + bytesToCopy;
         remaining := remaining - bytesToCopy;
@@ -767,8 +776,5 @@ begin
 
     driver.storage.fs.mgr.register_filesystem(@filesystem);
 end;
-
-initialization
-    boot.mgr.registerBoot('driver.storage.fs.iso9660', @Init, 'IS9660 File System', 'driver.storage.fs.mgr');
 
 end.

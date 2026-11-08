@@ -24,8 +24,9 @@ unit driver.storage.vfs;
 interface
 
 uses
-    boot.mgr,
+    arch.platform.diagnostics,
     driver.storage.fdtable,
+    driver.storage.path,
     core.ds.hashmap,
     core.ds.lists,
     memory.heap,
@@ -157,7 +158,7 @@ uses
     proc.mgr,
     proc.types,
     io.stdio,
-    core.util, arch.x86.util,
+    core.util, arch.platform.cpu,
     driver.storage.vol.mgr;
 
 { ===================== Implementation constants ============================
@@ -649,7 +650,7 @@ begin
         vfsParentDir[0] := '/';
     end else begin
         vfsParentDir := stringNew(last);
-        core.util.memcpy(uint32(abs), uint32(vfsParentDir), last);
+        core.util.memcpy(PtrUInt(abs), PtrUInt(vfsParentDir), last);
     end;
     kfree(void(abs));
 end;
@@ -732,36 +733,6 @@ begin
     debug.tracer.push_trace('driver.storage.vfs.CombineToAbsolutePath.exit');
 end;
 
-function evaluatePath(Path : pchar) : pchar;
-var
-    List : PLinkedListBase;
-    i : uint32;
-    elm : pchar;
-
-begin
-    debug.tracer.push_trace('driver.storage.vfs.evaluatePath.enter');
-    List:= STRLL_FromString(Path, '/');
-    { Forward-scan with stack semantics: safe for consecutive '..' sequences }
-    i := 0;
-    while i < STRLL_Size(List) do begin
-        elm := STRLL_Get(List, i);
-        if (elm <> nil) and StringEquals(elm, '..') then begin
-            STRLL_Delete(List, i);        { remove '..' }
-            if i > 0 then begin
-                STRLL_Delete(List, i - 1);  { remove preceding segment }
-                if i > 0 then i := i - 1;  { rewind }
-            end;
-        end else if (elm <> nil) and StringEquals(elm, '.') then begin
-            STRLL_Delete(List, i);        { remove '.' — index stays }
-        end else begin
-            i := i + 1;
-        end;
-    end;
-    evaluatePath:= CombineToAbsolutePath(List, STRLL_Size(List));
-    STRLL_Free(List);
-    debug.tracer.push_trace('driver.storage.vfs.evaluatePath.exit');
-end;
-
 function getAbsolutePath(Obj : PVFSObject) : pchar;
 var
     buf, new, old : pchar;
@@ -796,38 +767,13 @@ end;
 
 function MakeAbsolutePath(Path : PChar) : pchar;
 var
-    AbsPath : pchar;
-    TempPath : pchar;
-    cwd : pchar;
-
+    cwd: pchar;
 begin
-    debug.tracer.push_trace('driver.storage.vfs.MakeAbsolutePath.enter');
-    if (Path = nil) or (Path[0] = char(0)) then begin
-        MakeAbsolutePath := stringNew(1);
-        MakeAbsolutePath[0] := '/';
-        debug.tracer.push_trace('driver.storage.vfs.MakeAbsolutePath.exit');
-        exit;
-    end;
-    if Path[0] = '/' then AbsPath:= stringCopy(Path) else begin
-        { Get per-process working directory }
-        cwd := nil;
-        if (proc.mgr.CurrentProcess <> nil) and
-           (proc.mgr.CurrentProcess^.Cwd <> nil) then
-            cwd := proc.mgr.CurrentProcess^.Cwd;
-        if (cwd = nil) or (StringSize(cwd) = 0) then begin
-            TempPath := stringNew(1);
-            TempPath[0] := '/';
-        end else begin
-            if cwd[StringSize(cwd)-1] <> '/' then
-                TempPath:= StringConcat(cwd, '/')
-            else
-                TempPath:= stringCopy(cwd);
-        end;
-        AbsPath:= StringConcat(TempPath, Path);
-        kfree(void(TempPath));
-    end;
-    MakeAbsolutePath:= AbsPath;
-    debug.tracer.push_trace('driver.storage.vfs.MakeAbsolutePath.exit');
+    cwd := nil;
+    if proc.mgr.CurrentProcess <> nil then
+        cwd := proc.mgr.CurrentProcess^.Cwd;
+    if (Path <> nil) and (Path[0] = #0) then Path := nil;
+    MakeAbsolutePath := driver.storage.path.absolute(Path, cwd);
 end;
 
 function GetObjectFromPathEx(path : pchar; var volRelPath : pchar) : PVFSObject;
@@ -1278,7 +1224,7 @@ begin
 
     { Make absolute and evaluate . / .. }
     AbsPath := MakeAbsolutePath(FullPath);
-    EvalPath := evaluatePath(AbsPath);
+    EvalPath := driver.storage.path.normalize(AbsPath);
     kfree(void(AbsPath));
 
     { Resolve path through VFS (follows symlinks), get remaining in-volume path }
@@ -1484,10 +1430,12 @@ end;
   check Done with interrupts masked before parking to avoid a lost wakeup. }
 function TransferFileSync(FileHandle : TFileHandle; Position : uint32;
                           Buffer : puint8; Length : uint32; Writing : boolean) : uint32;
-var wait : TVFSSyncWaitCtx;
+var
+    savedIRQ: PtrUInt;
+    wait : TVFSSyncWaitCtx;
 begin
     TransferFileSync := 0;
-    memset(uint32(@wait), 0, sizeof(wait));
+    memset(PtrUInt(@wait), 0, sizeof(wait));
     wait.Error := eUnknown;
     wait.Process := CurrentProcess;
     if Writing then
@@ -1495,11 +1443,11 @@ begin
     else
         ReadFileAsync(FileHandle, Position, Buffer, Length, @wait.BytesDone, @vfs_sync_complete, @wait);
 
-    asm pushf; cli end;
+    savedIRQ := arch.platform.cpu.lock;
     if puint32(@wait.Done)^ = 0 then
         if wait.Process <> nil then wait.Process^.State := psAwaiting;
-    asm popf end;
-    while puint32(@wait.Done)^ = 0 do asm hlt end;
+    arch.platform.cpu.unlock(savedIRQ);
+    while puint32(@wait.Done)^ = 0 do arch.platform.cpu.idle;
     if wait.Error = eNone then TransferFileSync := wait.BytesDone;
     if Writing and (wait.Error <> eNone) then begin
         io.syslog.log('VFS', 'Write failed: error='); io.syslog.writeint(ord(wait.Error));
@@ -1623,7 +1571,7 @@ begin
             debug.tracer.push_trace('driver.storage.vfs.WriteFileAsync.exit');
             exit;
         end;
-        memset(uint32(ctx), 0, sizeof(TVFSWriteAsyncCtx));
+        memset(PtrUInt(ctx), 0, sizeof(TVFSWriteAsyncCtx));
         ctx^.FD              := fd;
         ctx^.Position        := Position;
         ctx^.BytesWrittenPtr := BytesWritten;
@@ -1923,7 +1871,7 @@ var
 begin
     debug.tracer.push_trace('driver.storage.vfs.ChangeDirectory.enter');
     TempPath:= MakeAbsolutePath(Path);
-    AbsPath:= evaluatePath(TempPath);
+    AbsPath:= driver.storage.path.normalize(TempPath);
     kfree(void(TempPath));
     Validity:= PathValid(AbsPath);
     if (Validity = pvDirectory) then begin
@@ -2107,21 +2055,8 @@ begin
 end;
 
 function MakeAbsolutePathFrom(Path : pchar; BaseDir : pchar) : pchar;
-var
-    AbsPath  : pchar;
-    TempPath : pchar;
 begin
-    if Path[0] = '/' then
-        AbsPath := stringCopy(Path)
-    else begin
-        if BaseDir[StringSize(BaseDir)-1] <> '/' then
-            TempPath := StringConcat(BaseDir, '/')
-        else
-            TempPath := stringCopy(BaseDir);
-        AbsPath := StringConcat(TempPath, Path);
-        kfree(void(TempPath));
-    end;
-    MakeAbsolutePathFrom := AbsPath;
+    MakeAbsolutePathFrom := driver.storage.path.absolute(Path, BaseDir);
 end;
 
 function ResolvePathFrom(Path : pchar; BaseDir : pchar) : TIsPathValid;
@@ -2130,7 +2065,7 @@ var
     AbsPath  : pchar;
 begin
     TempPath := MakeAbsolutePathFrom(Path, BaseDir);
-    AbsPath := evaluatePath(TempPath);
+    AbsPath := driver.storage.path.normalize(TempPath);
     kfree(void(TempPath));
     ResolvePathFrom := PathValid(AbsPath);
     kfree(void(AbsPath));
@@ -2142,7 +2077,7 @@ var
     AbsPath  : pchar;
 begin
     TempPath := MakeAbsolutePathFrom(Path, BaseDir);
-    AbsPath := evaluatePath(TempPath);
+    AbsPath := driver.storage.path.normalize(TempPath);
     kfree(void(TempPath));
     GetDirectoryListingFrom := GetDirectoryListing(AbsPath);
     kfree(void(AbsPath));
@@ -2183,7 +2118,7 @@ var
     Validity : TIsPathValid;
 begin
     TempPath := MakeAbsolutePathFrom(Path, BaseDir);
-    AbsPath := evaluatePath(TempPath);
+    AbsPath := driver.storage.path.normalize(TempPath);
     kfree(void(TempPath));
     Validity := PathValid(AbsPath);
     if Validity = pvDirectory then
@@ -2395,7 +2330,7 @@ begin
             if Callback <> nil then Callback(eOutOfMemory, CallbackData);
             exit;
         end;
-        memset(uint32(ctx), 0, sizeof(TVFSReadAsyncCtx));
+        memset(PtrUInt(ctx), 0, sizeof(TVFSReadAsyncCtx));
         ctx^.FD           := fd;
         ctx^.BytesReadPtr := BytesRead;
         ctx^.UserCallback := Callback;
@@ -2442,7 +2377,7 @@ begin
         CompletePathOperation(Error, eOutOfMemory, Callback, CallbackData);
         exit;
     end;
-    memset(uint32(ctx), 0, sizeof(TVFSPathAsyncCtx));
+    memset(PtrUInt(ctx), 0, sizeof(TVFSPathAsyncCtx));
     ctx^.Path := stringCopy(Path);
     if ctx^.Path = nil then begin
         kfree(void(ctx));
@@ -2550,7 +2485,7 @@ begin
         if Callback <> nil then Callback(eOutOfMemory, CallbackData);
         exit;
     end;
-    memset(uint32(ctx), 0, sizeof(TVFSDirAsyncCtx));
+    memset(PtrUInt(ctx), 0, sizeof(TVFSDirAsyncCtx));
     ctx^.Path         := absPath;
     ctx^.ResultMap    := ResultMap;
     ctx^.UserCallback := Callback;
@@ -2828,7 +2763,7 @@ end;
 function DevZero_Read(devData : pointer; offset : uint32; buffer : puint8; length : uint32) : uint32;
 begin
     if (buffer <> nil) and (length > 0) then
-        core.util.memset(uint32(buffer), 0, length);
+        core.util.memset(PtrUInt(buffer), 0, length);
     DevZero_Read := length;
 end;
 
@@ -3389,7 +3324,7 @@ begin
                 lineLen := lineEnd - lineStart;
                 if lineLen > 0 then begin
                     lineBuf := pchar(kalloc(lineLen + 1));
-                    core.util.memcpy(uint32(mntPath) + lineStart, uint32(lineBuf), lineLen);
+                    core.util.memcpy(PtrUInt(mntPath) + lineStart, PtrUInt(lineBuf), lineLen);
                     lineBuf[lineLen] := char(0);
 
                     { Check for 'mnt ' prefix }
@@ -3601,20 +3536,8 @@ var
     end;
 
     procedure PrintSummary;
-    var
-        pStr, fStr, msg, tmp : pchar;
     begin
-        pStr := intToString(passed);
-        fStr := intToString(failed);
-        msg  := stringConcat(pStr, ' passed, ');
-        tmp  := stringConcat(msg, fStr);
-        kfree(void(msg));
-        msg  := stringConcat(tmp, ' failed.');
-        kfree(void(tmp));
-        io.syslog.logln('VFS', msg);
-        kfree(void(msg));
-        kfree(void(pStr));
-        kfree(void(fStr));
+        arch.platform.diagnostics.testSummary('VFS', 'VFS_TESTS_PASSED', 'VFS_TESTS_FAILED', passed, failed);
     end;
 
 begin
@@ -3629,26 +3552,26 @@ begin
     mountVolA^.id := $FFFFFFFE; mountVolB^.id := $FFFFFFFD;
     tmpKey := defaultVolumeName(mountVolA);
     Assert(stringEquals(tmpKey,'vol4294967294'),'unlabelled default mount name'); kfree(void(tmpKey));
-    memcpy(uint32(pchar('MY DATA')),uint32(@mountVolA^.labelText[0]),8);
+    memcpy(PtrUInt(pchar('MY DATA')),PtrUInt(@mountVolA^.labelText[0]),8);
     tmpKey := defaultVolumeName(mountVolA);
     Assert(stringEquals(tmpKey,'MY DATA'),'label spaces preserved'); kfree(void(tmpKey));
-    memset(uint32(@mountVolA^.labelText[0]),0,sizeof(mountVolA^.labelText));
-    memcpy(uint32(pchar('A/B')),uint32(@mountVolA^.labelText[0]),4);
+    memset(PtrUInt(@mountVolA^.labelText[0]),0,sizeof(mountVolA^.labelText));
+    memcpy(PtrUInt(pchar('A/B')),PtrUInt(@mountVolA^.labelText[0]),4);
     tmpKey := defaultVolumeName(mountVolA);
     Assert(stringEquals(tmpKey,'A_B'),'label cannot create nested mount paths'); kfree(void(tmpKey));
-    memset(uint32(@mountVolA^.labelText[0]),0,sizeof(mountVolA^.labelText));
-    memcpy(uint32(pchar('..')),uint32(@mountVolA^.labelText[0]),3);
+    memset(PtrUInt(@mountVolA^.labelText[0]),0,sizeof(mountVolA^.labelText));
+    memcpy(PtrUInt(pchar('..')),PtrUInt(@mountVolA^.labelText[0]),3);
     tmpKey := defaultVolumeName(mountVolA);
     Assert(stringEquals(tmpKey,'vol4294967294'),'dot-dot label falls back safely'); kfree(void(tmpKey));
-    memcpy(uint32(pchar('__MOUNT_TEST__')),uint32(@mountVolA^.labelText[0]),15);
+    memcpy(PtrUInt(pchar('__MOUNT_TEST__')),PtrUInt(@mountVolA^.labelText[0]),15);
     mountVolB^.labelText := mountVolA^.labelText;
     Assert(mountDefaultVolume(mountVolA) = eNone,'label mount succeeds');
     obj := GetObjectFromPath('/disk/__MOUNT_TEST__');
     Assert((obj <> nil) and (obj^.Reference = void(mountVolA)),'label mount points to correct volume');
     { Exercise shared deletion against a memory-only filesystem. }
     mountDevice := PStorage_Device(kalloc(sizeof(TStorage_Device)));
-    memset(uint32(mountDevice), 0, sizeof(TStorage_Device));
-    memset(uint32(@deleteState), 0, sizeof(deleteState));
+    memset(PtrUInt(mountDevice), 0, sizeof(TStorage_Device));
+    memset(PtrUInt(@deleteState), 0, sizeof(deleteState));
     mountVolA^.device := mountDevice;
     mountVolA^.fsPrivate := @deleteState;
     Assert(DeleteFile(nil, @errCode)=eInvalidArgument, 'delete nil path');
@@ -3676,8 +3599,8 @@ begin
     Assert((obj <> nil) and (obj^.Reference = void(mountVolB)),'duplicate label gets ID suffix');
     Assert(mountDefaultVolume(mountVolB) = eNone,'duplicate mount is idempotent');
     Assert(InvalidateVolume(mountVolA),'remove old label mount');
-    memset(uint32(@mountVolA^.labelText[0]),0,sizeof(mountVolA^.labelText));
-    memcpy(uint32(pchar('__RENAMED_TEST__')),uint32(@mountVolA^.labelText[0]),17);
+    memset(PtrUInt(@mountVolA^.labelText[0]),0,sizeof(mountVolA^.labelText));
+    memcpy(PtrUInt(pchar('__RENAMED_TEST__')),PtrUInt(@mountVolA^.labelText[0]),17);
     Assert(mountDefaultVolume(mountVolA) = eNone,'renamed volume remounts');
     Assert(GetObjectFromPath('/disk/__MOUNT_TEST__') = nil,'old label mount removed');
     obj := GetObjectFromPath('/disk/__RENAMED_TEST__');
@@ -3685,10 +3608,10 @@ begin
     InvalidateVolume(mountVolA); InvalidateVolume(mountVolB);
     { Exercise real registration notifications after the boot mount pass. }
     mountDevice := PStorage_Device(kalloc(sizeof(TStorage_Device)));
-    memset(uint32(mountDevice),0,sizeof(TStorage_Device));
+    memset(PtrUInt(mountDevice),0,sizeof(TStorage_Device));
     mountDevice^.writable := true;
     mountVolA^.device := mountDevice; mountVolB^.device := mountDevice;
-    memcpy(uint32(pchar('__HOTPLUG_TEST__')),uint32(@mountVolA^.labelText[0]),17);
+    memcpy(PtrUInt(pchar('__HOTPLUG_TEST__')),PtrUInt(@mountVolA^.labelText[0]),17);
     mountVolB^.labelText := mountVolA^.labelText;
     mountVolA^.filesystem := nil;
     driver.storage.vol.mgr.register_volume(mountDevice,mountVolA);
@@ -4014,7 +3937,7 @@ begin
     devHandle := OpenFile('/dev/null', omRead, @devErr);
     Assert((devHandle <> 0) and (devErr = eNone), 'OpenFile /dev/null ok');
     devBuf := puint8(kalloc(64));
-    core.util.memset(uint32(devBuf), $FF, 64);
+    core.util.memset(PtrUInt(devBuf), $FF, 64);
     devRead := ReadFile(devHandle, 0, devBuf, 64);
     Assert(devRead = 0, '/dev/null read returns 0');
     Assert(FileSizeFromHandle(devHandle) = 0, '/dev/null size = 0');
@@ -4028,7 +3951,7 @@ begin
     CloseFile(devHandle);
 
     { /dev/zero — open + read fills buffer with zeroes }
-    core.util.memset(uint32(devBuf), $FF, 64);
+    core.util.memset(PtrUInt(devBuf), $FF, 64);
     devHandle := OpenFile('/dev/zero', omRead, @devErr);
     Assert((devHandle <> 0) and (devErr = eNone), 'OpenFile /dev/zero ok');
     devRead := ReadFile(devHandle, 0, devBuf, 64);
@@ -4040,7 +3963,7 @@ begin
     { /dev/zero — two reads at different offsets }
     devHandle := OpenFile('/dev/zero', omRead, @devErr);
     Assert((devHandle <> 0) and (devErr = eNone), 'OpenFile /dev/zero read2 ok');
-    core.util.memset(uint32(devBuf), $FF, 64);
+    core.util.memset(PtrUInt(devBuf), $FF, 64);
     devRead := ReadFile(devHandle, 0, devBuf, 16);
     Assert(devRead = 16, '/dev/zero read at 0 = 16');
     Assert(devBuf[0] = 0, '/dev/zero read at 0 byte 0 = 0');
@@ -4051,7 +3974,7 @@ begin
     { /dev/zero — ReadFileAsync device dispatch }
     devHandle := OpenFile('/dev/zero', omRead, @devErr);
     Assert((devHandle <> 0) and (devErr = eNone), 'OpenFile /dev/zero for async ok');
-    core.util.memset(uint32(devBuf), $FF, 64);
+    core.util.memset(PtrUInt(devBuf), $FF, 64);
     devBytesRead := 0;
     devCallbackOk := false;
     ReadFileAsync(devHandle, 0, devBuf, 32, @devBytesRead, nil, nil);
@@ -4077,7 +4000,7 @@ begin
     { /dev/null — write: accepted }
     devHandle := OpenFile('/dev/null', omWrite, @devErr);
     Assert((devHandle <> 0) and (devErr = eNone), 'OpenFile /dev/null write ok');
-    core.util.memset(uint32(devBuf), $AA, 64);
+    core.util.memset(PtrUInt(devBuf), $AA, 64);
     devRead := WriteFile(devHandle, 0, devBuf, 20);
     Assert(devRead = 20, '/dev/null write1 = 20');
     devRead := WriteFile(devHandle, 20, devBuf, 12);
@@ -4093,7 +4016,7 @@ begin
     { /dev/zero — write: accepted (discards data) }
     devHandle := OpenFile('/dev/zero', omWrite, @devErr);
     Assert((devHandle <> 0) and (devErr = eNone), 'OpenFile /dev/zero write ok');
-    core.util.memset(uint32(devBuf), $BB, 64);
+    core.util.memset(PtrUInt(devBuf), $BB, 64);
     devRead := WriteFile(devHandle, 0, devBuf, 24);
     Assert(devRead = 24, '/dev/zero write = 24');
     CloseFile(devHandle);
@@ -4105,9 +4028,5 @@ begin
 
     PrintSummary;
 end;
-
-initialization
-    boot.mgr.registerBoot('driver.storage.vfs', @init, 'Virtual File System', BOOT_MGR_BARRIER_STORAGE);
-    boot.mgr.registerBoot('driver.storage.vol.mount', @auto_mount_volumes, 'Mount Storage Volumes', BOOT_MGR_BARRIER_LATE);
 
 end.

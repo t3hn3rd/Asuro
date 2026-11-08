@@ -275,7 +275,7 @@ type
     TStorage_Device = record
         id               : uint8;
         controller       : TControllerType;
-        controllerId0    : uint32;
+        controllerId0    : PtrUInt;
         writable         : boolean;
         removed          : boolean;       { true if device was hot-unplugged }
         volumes          : PDList;
