@@ -29,6 +29,9 @@ implementation
 
 uses
     core.strings,
+    core.ds.lists,
+    core.ds.hashmap,
+    driver.storage.iorequest, driver.storage.path, driver.storage.fs.mgr,
     app.diskutil,
     driver.bus.usb.types,
     driver.bus.usb.core,
@@ -69,6 +72,11 @@ procedure runAllTests();
 begin
     { Run unit tests }
     core.strings.UnitTest;
+    core.ds.lists.TestAllLists;
+    core.ds.hashmap.UnitTest;
+    driver.storage.iorequest.UnitTest;
+    driver.storage.path.UnitTest;
+    driver.storage.fs.mgr.UnitTest;
     app.diskutil.UnitTest;
     driver.bus.usb.types.UnitTest;
     driver.bus.usb.core.UnitTest;

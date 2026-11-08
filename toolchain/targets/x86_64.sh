@@ -13,12 +13,12 @@
 PASCAL_COMPILER=ppcx64
 PASCAL_ENTRY="$ARCH_SOURCE_ROOT/arch.$ASURO_ARCH.boot.pas"
 PASCAL_OPTIONS=(-O2)
-C_TARGET_OPTIONS=(-m64)
+C_TARGET_OPTIONS=(-m64 -mno-red-zone)
 NASM_FORMAT=elf64
 LD_FORMAT=elf_x86_64
 LINKER_SCRIPT="$TARGET_TOOLCHAIN_DIR/linker.script"
-# The bootstrap does not depend on the desktop or hosted runtime.
-BUILD_STEPS=(stub sources link isogen)
+# Native desktop and runtime sources follow the selected entry unit's dependencies.
+BUILD_STEPS=(stub vergen lvgl sources initcalls link isogen)
 case "${ASURO_BOOT_TEST:-none}" in
     none) ;;
     ud|pf|df) PASCAL_OPTIONS+=("-dASURO_TEST_${ASURO_BOOT_TEST^^}") ;;
