@@ -12,18 +12,19 @@ unit driver.hid.usb.keyboard;
 interface
 
 uses
-    boot.mgr,
     driver.bus.usb.types,
     driver.bus.usb.core,
     driver.hid.keyboard,
-    driver.hid.ps2.keyboard,
     driver.mgr,
     memory.heap,
     core.ds.lists,
     debug.tracer,
     io.syslog,
     core.strings,
-    core.util, arch.x86.util;
+    core.util, arch.platform.cpu, arch.platform.diagnostics;
+
+{ Target startup may disable a legacy keyboard when USB becomes active. }
+var onAttach: procedure = nil;
 
 procedure init;
 procedure poll_keyboards;
@@ -400,7 +401,7 @@ begin
     end;
 
     { Save current report as previous for next comparison }
-    memcpy(uint32(@kb^.ReportBuf[0]), uint32(@kb^.PrevReport[0]), KB_REPORT_SIZE);
+    memcpy(PtrUInt(@kb^.ReportBuf[0]), PtrUInt(@kb^.PrevReport[0]), KB_REPORT_SIZE);
 end;
 
 { ========================= Disconnect Handler ========================= }
@@ -573,7 +574,7 @@ begin
     io.syslog.writestringln(').');
 
     { Disable PS/2 driver.hid.keyboard to prevent duplicate input from driver.bus.usb legacy emulation }
-    driver.hid.ps2.keyboard.disable;
+    if onAttach <> nil then onAttach;
 
     load := true;
     pop_trace;
@@ -632,20 +633,8 @@ var
     end;
 
     procedure PrintSummary;
-    var
-        pStr, fStr, msg, tmp : pchar;
     begin
-        pStr := intToString(passed);
-        fStr := intToString(failed);
-        msg := stringConcat(pStr, ' passed, ');
-        tmp := stringConcat(msg, fStr);
-        kfree(void(msg));
-        msg := stringConcat(tmp, ' failed.');
-        kfree(void(tmp));
-        io.syslog.logln('USBKeyboard', msg);
-        kfree(void(msg));
-        kfree(void(pStr));
-        kfree(void(fStr));
+        testSummary('USBKeyboard', 'USBKEYBOARD_TESTS_PASSED', 'USBKEYBOARD_TESTS_FAILED', passed, failed);
     end;
 
 var
@@ -753,8 +742,5 @@ begin
 
     PrintSummary;
 end;
-
-initialization
-    boot.mgr.registerBoot('driver.hid.usb.keyboard', @init, 'USB Keyboard Driver', BOOT_MGR_BARRIER_DEVICE);
 
 end.

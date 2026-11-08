@@ -24,7 +24,7 @@ interface
 
 uses
     driver.bus.usb.types,
-    core.util, arch.x86.util,
+    core.util, arch.platform.cpu, arch.platform.diagnostics,
     memory.heap,
     core.ds.lists,
     driver.types,
@@ -33,7 +33,7 @@ uses
     io.syslog,
     core.strings,
     io.stdio,
-    arch.x86.bda;
+    arch.platform.process;
 
 { ========================= HC Management ========================= }
 
@@ -41,7 +41,7 @@ uses
   Returns the stable heap-allocated pointer to the HC record (not the caller's stack copy). }
 function register_hc(hc : PUSBHCDriver) : PUSBHCDriver;
 
-{ Unregister a host controller. }
+{ Unregister an empty host controller. Remove attached devices first. }
 procedure unregister_hc(hc : PUSBHCDriver);
 
 { Get the number of registered host controllers. }
@@ -199,9 +199,14 @@ begin
     if (hc <> nil) and (HCList <> nil) then begin
         entry := PUSBHCDriver(LL_Add(HCList));
         if entry <> nil then begin
-            memcpy(uint32(hc), uint32(entry), sizeof(TUSBHCDriver));
+            memcpy(PtrUInt(hc), PtrUInt(entry), sizeof(TUSBHCDriver));
             { Initialize per-HC device list }
             entry^.Devices := LL_New(sizeof(PUSBDevice));
+            if entry^.Devices = nil then begin
+                LL_Delete(HCList, LL_Size(HCList) - 1);
+                pop_trace;
+                exit;
+            end;
             entry^.HotplugArmed := false;
             entry^.PortChangePending := false;
             io.syslog.log('driver.bus.usb Core', 'Registered HC: ');
@@ -219,15 +224,20 @@ var
 begin
     push_trace('driver.bus.usb.core.unregister_hc');
     if (hc <> nil) and (HCList <> nil) then begin
-        for i := 0 to LL_Size(HCList) - 1 do begin
-            entry := PUSBHCDriver(LL_Get(HCList, i));
-            if (entry <> nil) and (entry^.BaseAddr = hc^.BaseAddr) and (entry^.HCType = hc^.HCType) then begin
-                LL_Delete(HCList, i);
-                io.syslog.log('driver.bus.usb Core', 'Unregistered HC: ');
-                io.syslog.writestringln(hc^.Name);
-                break;
+        if LL_Size(HCList) > 0 then
+            for i := 0 to LL_Size(HCList) - 1 do begin
+                entry := PUSBHCDriver(LL_Get(HCList, i));
+                if (entry <> nil) and (entry^.BaseAddr = hc^.BaseAddr) and (entry^.HCType = hc^.HCType) then begin
+                    if entry^.Devices <> nil then begin
+                        if LL_Size(entry^.Devices) <> 0 then break;
+                        LL_Free(entry^.Devices);
+                    end;
+                    io.syslog.log('driver.bus.usb Core', 'Unregistered HC: ');
+                    io.syslog.writestringln(hc^.Name);
+                    LL_Delete(HCList, i);
+                    break;
+                end;
             end;
-        end;
     end;
     pop_trace;
 end;
@@ -363,11 +373,11 @@ begin
     end;
 
     { Poll until complete (with real-time timeout: 5 seconds at 1024 Hz) }
-    polls := arch.x86.bda.Counters.c32;
+    polls := arch.platform.process.timerTicks;
     while (transfer.Status = tsInProgress) or (transfer.Status = tsNotStarted) do begin
         if dev^.HC^.fnPoll <> nil then
             dev^.HC^.fnPoll(dev^.HC);
-        if (arch.x86.bda.Counters.c32 - polls) > 5120 then begin
+        if (arch.platform.process.timerTicks - polls) > 5120 then begin
             usb_control_msg := tsTimeout;
             pop_trace;
             exit;
@@ -522,11 +532,11 @@ begin
     ticks := timeoutMs;
     if ticks = 0 then ticks := 5120; { default 5 seconds }
 
-    startTick := arch.x86.bda.Counters.c32;
+    startTick := arch.platform.process.timerTicks;
     while (transfer^.Status = tsInProgress) or (transfer^.Status = tsNotStarted) do begin
         if dev^.HC^.fnPoll <> nil then
             dev^.HC^.fnPoll(dev^.HC);
-        if (arch.x86.bda.Counters.c32 - startTick) > ticks then begin
+        if (arch.platform.process.timerTicks - startTick) > ticks then begin
             kfree(void(transfer));
             usb_bulk_transfer_wait := tsTimeout;
             pop_trace;
@@ -560,12 +570,12 @@ begin
     offset := sizeof(TUSBConfigDescriptor);
     count := 0;
     while offset < totalLen do begin
-        bLen := PUint8(uint32(configBuf) + offset)^;
+        bLen := PUint8(PtrUInt(configBuf) + offset)^;
         if bLen = 0 then exit; { corrupt }
-        bType := PUint8(uint32(configBuf) + offset + 1)^;
+        bType := PUint8(PtrUInt(configBuf) + offset + 1)^;
         if bType = USB_DESC_INTERFACE then begin
             if count = index then begin
-                usb_find_interface_n := PUSBInterfaceDescriptor(uint32(configBuf) + offset);
+                usb_find_interface_n := PUSBInterfaceDescriptor(PtrUInt(configBuf) + offset);
                 exit;
             end;
             inc(count);
@@ -584,14 +594,14 @@ begin
     usb_count_endpoints := 0;
     if configBuf = nil then exit;
     { Skip past the interface descriptor itself }
-    bLen := PUint8(uint32(configBuf) + ifaceOffset)^;
+    bLen := PUint8(PtrUInt(configBuf) + ifaceOffset)^;
     if bLen = 0 then exit;
     offset := ifaceOffset + bLen;
     count := 0;
     while offset < totalLen do begin
-        bLen := PUint8(uint32(configBuf) + offset)^;
+        bLen := PUint8(PtrUInt(configBuf) + offset)^;
         if bLen = 0 then break;
-        bType := PUint8(uint32(configBuf) + offset + 1)^;
+        bType := PUint8(PtrUInt(configBuf) + offset + 1)^;
         { Stop at next interface descriptor }
         if bType = USB_DESC_INTERFACE then break;
         if bType = USB_DESC_ENDPOINT then
@@ -611,18 +621,18 @@ begin
     usb_find_endpoint := nil;
     if configBuf = nil then exit;
     { Skip past the interface descriptor itself }
-    bLen := PUint8(uint32(configBuf) + ifaceOffset)^;
+    bLen := PUint8(PtrUInt(configBuf) + ifaceOffset)^;
     if bLen = 0 then exit;
     offset := ifaceOffset + bLen;
     count := 0;
     while offset < totalLen do begin
-        bLen := PUint8(uint32(configBuf) + offset)^;
+        bLen := PUint8(PtrUInt(configBuf) + offset)^;
         if bLen = 0 then break;
-        bType := PUint8(uint32(configBuf) + offset + 1)^;
+        bType := PUint8(PtrUInt(configBuf) + offset + 1)^;
         if bType = USB_DESC_INTERFACE then break;
         if bType = USB_DESC_ENDPOINT then begin
             if count = index then begin
-                usb_find_endpoint := PUSBEndpointDescriptor(uint32(configBuf) + offset);
+                usb_find_endpoint := PUSBEndpointDescriptor(PtrUInt(configBuf) + offset);
                 exit;
             end;
             inc(count);
@@ -651,6 +661,7 @@ var
     addr     : uint8;
     i        : uint32;
     DevID    : PDeviceIdentifier;
+    deviceSlot: PPUSBDevice;
 begin
     push_trace('driver.bus.usb.core.enumerate_device');
     enumerate_device := nil;
@@ -771,13 +782,13 @@ begin
     dev^.NumEndpoints := 0;
     while offset + 2 <= totalLen do begin
         { Read descriptor length and type }
-        if PUint8(uint32(cfgBuf) + offset)^ < 2 then break;
-        if offset + PUint8(uint32(cfgBuf) + offset)^ > totalLen then break;
+        if PUint8(PtrUInt(cfgBuf) + offset)^ < 2 then break;
+        if offset + PUint8(PtrUInt(cfgBuf) + offset)^ > totalLen then break;
 
-        if PUint8(uint32(cfgBuf) + offset + 1)^ = USB_DESC_ENDPOINT then begin
-            if (PUint8(uint32(cfgBuf) + offset)^ >= sizeof(TUSBEndpointDescriptor)) and
+        if PUint8(PtrUInt(cfgBuf) + offset + 1)^ = USB_DESC_ENDPOINT then begin
+            if (PUint8(PtrUInt(cfgBuf) + offset)^ >= sizeof(TUSBEndpointDescriptor)) and
                (dev^.NumEndpoints < USB_MAX_ENDPOINTS) then begin
-                epDesc := PUSBEndpointDescriptor(uint32(cfgBuf) + offset);
+                epDesc := PUSBEndpointDescriptor(PtrUInt(cfgBuf) + offset);
                 dev^.Endpoints[dev^.NumEndpoints].Address   := usb_ep_number(epDesc^.bEndpointAddress);
                 dev^.Endpoints[dev^.NumEndpoints].Direction  := usb_ep_direction(epDesc^.bEndpointAddress);
                 dev^.Endpoints[dev^.NumEndpoints].PipeType   := usb_ep_pipe_type(epDesc^.bmAttributes);
@@ -789,7 +800,7 @@ begin
         end;
 
         { Advance by bLength }
-        offset := offset + PUint8(uint32(cfgBuf) + offset)^;
+        offset := offset + PUint8(PtrUInt(cfgBuf) + offset)^;
     end;
 
     { Step 8: SET_CONFIGURATION }
@@ -808,15 +819,15 @@ begin
     offset := sizeof(TUSBConfigDescriptor);
     ifDesc := nil;
     while offset + 2 <= totalLen do begin
-        if PUint8(uint32(cfgBuf) + offset)^ < 2 then break;
-        if offset + PUint8(uint32(cfgBuf) + offset)^ > totalLen then break;
-        if (PUint8(uint32(cfgBuf) + offset + 1)^ = USB_DESC_INTERFACE) and
-           (PUint8(uint32(cfgBuf) + offset)^ >= sizeof(TUSBInterfaceDescriptor)) then begin
-            ifDesc := PUSBInterfaceDescriptor(uint32(cfgBuf) + offset);
+        if PUint8(PtrUInt(cfgBuf) + offset)^ < 2 then break;
+        if offset + PUint8(PtrUInt(cfgBuf) + offset)^ > totalLen then break;
+        if (PUint8(PtrUInt(cfgBuf) + offset + 1)^ = USB_DESC_INTERFACE) and
+           (PUint8(PtrUInt(cfgBuf) + offset)^ >= sizeof(TUSBInterfaceDescriptor)) then begin
+            ifDesc := PUSBInterfaceDescriptor(PtrUInt(cfgBuf) + offset);
             dev^.InterfaceNumber := ifDesc^.bInterfaceNumber;
             break;
         end;
-        offset := offset + PUint8(uint32(cfgBuf) + offset)^;
+        offset := offset + PUint8(PtrUInt(cfgBuf) + offset)^;
     end;
 
     DevID := PDeviceIdentifier(kalloc(sizeof(TDeviceIdentifier)));
@@ -837,15 +848,21 @@ begin
     end;
     DevID^.ex := nil;
 
+    deviceSlot := nil;
+    if hc^.Devices <> nil then deviceSlot := PPUSBDevice(LL_Add(hc^.Devices));
+    if deviceSlot = nil then begin
+        kfree(void(DevID));
+        kfree(void(cfgBuf));
+        kfree(void(dev));
+        pop_trace;
+        exit;
+    end;
+    deviceSlot^ := dev;
     driver.mgr.register_device('driver.bus.usb Device', DevID, void(dev));
     kfree(void(DevID));
 
     kfree(void(cfgBuf));
 
-    { Track device in HC's device list (store pointer, not struct) }
-    if hc^.Devices <> nil then begin
-        puint32(LL_Add(hc^.Devices))^ := uint32(dev);
-    end;
 
     io.syslog.log('driver.bus.usb Core', 'Device enumerated at address ');
     io.syslog.writeintln(addr);
@@ -915,13 +932,14 @@ begin
 
     { Remove from HC's device list }
     if (hc <> nil) and (hc^.Devices <> nil) then begin
-        for i := 0 to LL_Size(hc^.Devices) - 1 do begin
-            dptr := PUSBDevice(puint32(LL_Get(hc^.Devices, i))^);
-            if dptr = dev then begin
-                LL_Delete(hc^.Devices, i);
-                break;
+        if LL_Size(hc^.Devices) > 0 then
+            for i := 0 to LL_Size(hc^.Devices) - 1 do begin
+                dptr := PPUSBDevice(LL_Get(hc^.Devices, i))^;
+                if dptr = dev then begin
+                    LL_Delete(hc^.Devices, i);
+                    break;
+                end;
             end;
-        end;
     end;
 
     io.syslog.log('driver.bus.usb Core', 'Removed device at address ');
@@ -961,13 +979,14 @@ begin
     { Check if a device is currently tracked on this port }
     found := false;
     if hc^.Devices <> nil then begin
-        for i := 0 to LL_Size(hc^.Devices) - 1 do begin
-            dev := PUSBDevice(puint32(LL_Get(hc^.Devices, i))^);
-            if (dev <> nil) and (dev^.HCPort = port) then begin
-                found := true;
-                break;
+        if LL_Size(hc^.Devices) > 0 then
+            for i := 0 to LL_Size(hc^.Devices) - 1 do begin
+                dev := PPUSBDevice(LL_Get(hc^.Devices, i))^;
+                if (dev <> nil) and (dev^.HCPort = port) then begin
+                    found := true;
+                    break;
+                end;
             end;
-        end;
     end;
 
     if (status AND $01) <> 0 then begin
@@ -1002,6 +1021,7 @@ begin
         hc := PUSBHCDriver(LL_Get(HCList, i));
         if (hc <> nil) and hc^.PortChangePending then begin
             hc^.PortChangePending := false;
+            if hc^.NumPorts > 0 then
             for port := 0 to hc^.NumPorts - 1 do
                 usb_rescan_port(hc, port);
         end;
@@ -1029,6 +1049,7 @@ begin
     io.stdio.bufWriteIntLn(stdout_buf, hcCount);
     io.stdio.bufWriteNewLine(stdout_buf);
 
+    if hcCount > 0 then
     for i := 0 to hcCount - 1 do begin
         hc := get_hc(i);
         if hc = nil then continue;
@@ -1065,7 +1086,7 @@ begin
             io.stdio.bufWriteStrLn(stdout_buf, '  (no devices)');
         end else begin
             for j := 0 to devCount - 1 do begin
-                dev := PUSBDevice(puint32(LL_Get(hc^.Devices, j))^);
+                dev := PPUSBDevice(LL_Get(hc^.Devices, j))^;
                 if dev = nil then continue;
 
                 io.stdio.bufWriteStr(stdout_buf, '  Dev ');
@@ -1165,23 +1186,17 @@ var
     end;
 
     procedure PrintSummary;
-    var
-        pStr, fStr, msg, tmp : pchar;
     begin
-        pStr := intToString(passed);
-        fStr := intToString(failed);
-        msg := stringConcat(pStr, ' passed, ');
-        tmp := stringConcat(msg, fStr);
-        kfree(void(msg));
-        msg := stringConcat(tmp, ' failed.');
-        kfree(void(tmp));
-        io.syslog.logln('USBCORE', msg);
-        kfree(void(msg));
-        kfree(void(pStr));
-        kfree(void(fStr));
+        testSummary('USBCORE', 'USBCORE_TESTS_PASSED', 'USBCORE_TESTS_FAILED', passed, failed);
     end;
 
 var
+    savedList: PLinkedListBase;
+    fixture, registered: PUSBHCDriver;
+    device: PUSBDevice;
+    slot: PPUSBDevice;
+    beforeFree: SizeUInt;
+    savedIRQ: PtrUInt;
     setup  : TUSBSetupPacket;
     cfgBuf : Pointer;
     ifDesc : PUSBInterfaceDescriptor;
@@ -1190,6 +1205,43 @@ begin
     passed := 0;
     failed := 0;
     io.syslog.logln('USBCORE', 'Unit tests starting...');
+
+    savedIRQ := arch.platform.cpu.lock;
+    savedList := HCList;
+    beforeFree := lmm_total_free;
+    HCList := LL_New(sizeof(TUSBHCDriver));
+    fixture := PUSBHCDriver(kalloc(sizeof(TUSBHCDriver)));
+    device := PUSBDevice(kalloc(sizeof(TUSBDevice)));
+    if (HCList <> nil) and (fixture <> nil) and (device <> nil) then begin
+        fixture^.Name := 'USB native-pointer fixture';
+        registered := register_hc(fixture);
+        Assert(registered <> nil, 'register heap-backed controller');
+        if registered <> nil then begin
+            Assert((registered <> fixture) and (get_hc(0) = registered), 'stable controller copy');
+            slot := PPUSBDevice(LL_Add(registered^.Devices));
+            Assert(slot <> nil, 'allocate native device slot');
+            if slot <> nil then begin
+                slot^ := device;
+                device^.HC := registered;
+                Assert(PPUSBDevice(LL_Get(registered^.Devices, 0))^ = device, 'device slot preserves native pointer');
+                usb_remove_device(device);
+                device := nil;
+                Assert(LL_Size(registered^.Devices) = 0, 'device removal detaches slot');
+            end;
+            unregister_hc(registered);
+            Assert(get_hc_count = 0, 'controller removal releases registration');
+        end;
+        unregister_hc(fixture);
+        poll_all;
+        usb_check_hotplug;
+        Assert(get_hc(0) = nil, 'empty controller list is safe');
+    end else Assert(false, 'allocate controller fixture');
+    if device <> nil then kfree(void(device));
+    if fixture <> nil then kfree(void(fixture));
+    if HCList <> nil then LL_Free(HCList);
+    HCList := savedList;
+    Assert(lmm_total_free = beforeFree, 'controller fixture releases owned memory');
+    arch.platform.cpu.unlock(savedIRQ);
 
     { === HC list management === }
     Assert(get_hc_count >= 0, 'hc_count non-negative');
@@ -1273,58 +1325,58 @@ begin
       Config(9) + Interface(9, class=$03, 2 EPs) + Endpoint(7, EP1 IN INT) + Endpoint(7, EP2 OUT BULK)
       + Interface(9, class=$08, 1 EP) + Endpoint(7, EP3 IN BULK) = 48 bytes total }
     cfgBuf := Pointer(kalloc(48));
-    memset(uint32(cfgBuf), 0, 48);
+    memset(PtrUInt(cfgBuf), 0, 48);
 
     { Config descriptor header at offset 0 }
-    PUint8(uint32(cfgBuf) + 0)^ := 9;  { bLength }
-    PUint8(uint32(cfgBuf) + 1)^ := USB_DESC_CONFIGURATION; { bDescriptorType }
-    PUint8(uint32(cfgBuf) + 2)^ := 48; { wTotalLength low }
-    PUint8(uint32(cfgBuf) + 3)^ := 0;  { wTotalLength high }
-    PUint8(uint32(cfgBuf) + 4)^ := 2;  { bNumInterfaces }
-    PUint8(uint32(cfgBuf) + 5)^ := 1;  { bConfigurationValue }
+    PUint8(PtrUInt(cfgBuf) + 0)^ := 9;  { bLength }
+    PUint8(PtrUInt(cfgBuf) + 1)^ := USB_DESC_CONFIGURATION; { bDescriptorType }
+    PUint8(PtrUInt(cfgBuf) + 2)^ := 48; { wTotalLength low }
+    PUint8(PtrUInt(cfgBuf) + 3)^ := 0;  { wTotalLength high }
+    PUint8(PtrUInt(cfgBuf) + 4)^ := 2;  { bNumInterfaces }
+    PUint8(PtrUInt(cfgBuf) + 5)^ := 1;  { bConfigurationValue }
 
     { Interface 0 at offset 9: class=$03 (HID), 2 endpoints }
-    PUint8(uint32(cfgBuf) + 9)^  := 9;  { bLength }
-    PUint8(uint32(cfgBuf) + 10)^ := USB_DESC_INTERFACE;
-    PUint8(uint32(cfgBuf) + 11)^ := 0;  { bInterfaceNumber }
-    PUint8(uint32(cfgBuf) + 13)^ := 2;  { bNumEndpoints }
-    PUint8(uint32(cfgBuf) + 14)^ := USB_CLASS_HID; { bInterfaceClass }
-    PUint8(uint32(cfgBuf) + 15)^ := $01; { bInterfaceSubClass (boot) }
-    PUint8(uint32(cfgBuf) + 16)^ := $01; { bInterfaceProtocol (driver.hid.keyboard) }
+    PUint8(PtrUInt(cfgBuf) + 9)^  := 9;  { bLength }
+    PUint8(PtrUInt(cfgBuf) + 10)^ := USB_DESC_INTERFACE;
+    PUint8(PtrUInt(cfgBuf) + 11)^ := 0;  { bInterfaceNumber }
+    PUint8(PtrUInt(cfgBuf) + 13)^ := 2;  { bNumEndpoints }
+    PUint8(PtrUInt(cfgBuf) + 14)^ := USB_CLASS_HID; { bInterfaceClass }
+    PUint8(PtrUInt(cfgBuf) + 15)^ := $01; { bInterfaceSubClass (boot) }
+    PUint8(PtrUInt(cfgBuf) + 16)^ := $01; { bInterfaceProtocol (driver.hid.keyboard) }
 
     { Endpoint at offset 18: EP1 IN Interrupt, maxpacket=8, interval=10 }
-    PUint8(uint32(cfgBuf) + 18)^ := 7;  { bLength }
-    PUint8(uint32(cfgBuf) + 19)^ := USB_DESC_ENDPOINT;
-    PUint8(uint32(cfgBuf) + 20)^ := $81; { bEndpointAddress: EP1 IN }
-    PUint8(uint32(cfgBuf) + 21)^ := USB_EP_ATTR_INTERRUPT; { bmAttributes }
-    PUint8(uint32(cfgBuf) + 22)^ := 8;  { wMaxPacketSize low }
-    PUint8(uint32(cfgBuf) + 23)^ := 0;  { wMaxPacketSize high }
-    PUint8(uint32(cfgBuf) + 24)^ := 10; { bInterval }
+    PUint8(PtrUInt(cfgBuf) + 18)^ := 7;  { bLength }
+    PUint8(PtrUInt(cfgBuf) + 19)^ := USB_DESC_ENDPOINT;
+    PUint8(PtrUInt(cfgBuf) + 20)^ := $81; { bEndpointAddress: EP1 IN }
+    PUint8(PtrUInt(cfgBuf) + 21)^ := USB_EP_ATTR_INTERRUPT; { bmAttributes }
+    PUint8(PtrUInt(cfgBuf) + 22)^ := 8;  { wMaxPacketSize low }
+    PUint8(PtrUInt(cfgBuf) + 23)^ := 0;  { wMaxPacketSize high }
+    PUint8(PtrUInt(cfgBuf) + 24)^ := 10; { bInterval }
 
     { Endpoint at offset 25: EP2 OUT Bulk, maxpacket=64 }
-    PUint8(uint32(cfgBuf) + 25)^ := 7;  { bLength }
-    PUint8(uint32(cfgBuf) + 26)^ := USB_DESC_ENDPOINT;
-    PUint8(uint32(cfgBuf) + 27)^ := $02; { bEndpointAddress: EP2 OUT }
-    PUint8(uint32(cfgBuf) + 28)^ := USB_EP_ATTR_BULK; { bmAttributes }
-    PUint8(uint32(cfgBuf) + 29)^ := 64; { wMaxPacketSize low }
-    PUint8(uint32(cfgBuf) + 30)^ := 0;  { wMaxPacketSize high }
-    PUint8(uint32(cfgBuf) + 31)^ := 0;  { bInterval }
+    PUint8(PtrUInt(cfgBuf) + 25)^ := 7;  { bLength }
+    PUint8(PtrUInt(cfgBuf) + 26)^ := USB_DESC_ENDPOINT;
+    PUint8(PtrUInt(cfgBuf) + 27)^ := $02; { bEndpointAddress: EP2 OUT }
+    PUint8(PtrUInt(cfgBuf) + 28)^ := USB_EP_ATTR_BULK; { bmAttributes }
+    PUint8(PtrUInt(cfgBuf) + 29)^ := 64; { wMaxPacketSize low }
+    PUint8(PtrUInt(cfgBuf) + 30)^ := 0;  { wMaxPacketSize high }
+    PUint8(PtrUInt(cfgBuf) + 31)^ := 0;  { bInterval }
 
     { Interface 1 at offset 32: class=$08 (mass storage), 1 endpoint }
-    PUint8(uint32(cfgBuf) + 32)^ := 9;  { bLength }
-    PUint8(uint32(cfgBuf) + 33)^ := USB_DESC_INTERFACE;
-    PUint8(uint32(cfgBuf) + 34)^ := 1;  { bInterfaceNumber }
-    PUint8(uint32(cfgBuf) + 36)^ := 1;  { bNumEndpoints }
-    PUint8(uint32(cfgBuf) + 37)^ := USB_CLASS_MASS_STORAGE; { bInterfaceClass }
+    PUint8(PtrUInt(cfgBuf) + 32)^ := 9;  { bLength }
+    PUint8(PtrUInt(cfgBuf) + 33)^ := USB_DESC_INTERFACE;
+    PUint8(PtrUInt(cfgBuf) + 34)^ := 1;  { bInterfaceNumber }
+    PUint8(PtrUInt(cfgBuf) + 36)^ := 1;  { bNumEndpoints }
+    PUint8(PtrUInt(cfgBuf) + 37)^ := USB_CLASS_MASS_STORAGE; { bInterfaceClass }
 
     { Endpoint at offset 41: EP3 IN Bulk, maxpacket=512 }
-    PUint8(uint32(cfgBuf) + 41)^ := 7;  { bLength }
-    PUint8(uint32(cfgBuf) + 42)^ := USB_DESC_ENDPOINT;
-    PUint8(uint32(cfgBuf) + 43)^ := $83; { bEndpointAddress: EP3 IN }
-    PUint8(uint32(cfgBuf) + 44)^ := USB_EP_ATTR_BULK; { bmAttributes }
-    PUint8(uint32(cfgBuf) + 45)^ := 0;  { wMaxPacketSize low = 512 = $0200 }
-    PUint8(uint32(cfgBuf) + 46)^ := 2;  { wMaxPacketSize high }
-    PUint8(uint32(cfgBuf) + 47)^ := 0;  { bInterval }
+    PUint8(PtrUInt(cfgBuf) + 41)^ := 7;  { bLength }
+    PUint8(PtrUInt(cfgBuf) + 42)^ := USB_DESC_ENDPOINT;
+    PUint8(PtrUInt(cfgBuf) + 43)^ := $83; { bEndpointAddress: EP3 IN }
+    PUint8(PtrUInt(cfgBuf) + 44)^ := USB_EP_ATTR_BULK; { bmAttributes }
+    PUint8(PtrUInt(cfgBuf) + 45)^ := 0;  { wMaxPacketSize low = 512 = $0200 }
+    PUint8(PtrUInt(cfgBuf) + 46)^ := 2;  { wMaxPacketSize high }
+    PUint8(PtrUInt(cfgBuf) + 47)^ := 0;  { bInterval }
 
     { --- usb_find_interface (first interface) --- }
     ifDesc := usb_find_interface(cfgBuf, 48);

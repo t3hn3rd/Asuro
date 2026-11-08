@@ -28,10 +28,10 @@ procedure UnitTest;
 
 implementation
 
-uses boot.mgr, driver.mgr, memory.heap, driver.storage.types,
+uses arch.platform.diagnostics, arch.common.legacyirq, driver.mgr, memory.heap, driver.storage.types,
      driver.storage.mgr, driver.bus.usb.core, driver.bus.usb.types,
-     proc.mgr, proc.types, arch.x86.bda, arch.x86.isr.tmr0,
-     core.util, arch.x86.util, io.syslog, io.stdio, core.strings,
+     proc.mgr, proc.types, arch.platform.process,
+     core.util, arch.platform.cpu, io.syslog, io.stdio, core.strings,
      driver.storage.vfs, driver.storage.vol.mgr, core.ds.lists;
 
 const
@@ -51,6 +51,7 @@ type
         Status : uint8;
     end;
     PCSW = ^TCSW;
+    PVolumeSlot = ^PStorage_Volume;
     PMSDevice = ^TMSDevice;
     TMSDevice = record
         Next : PMSDevice;
@@ -108,16 +109,16 @@ begin
 end;
 
 procedure poll_controller(c : PMSDevice);
-var flags : uint32;
+var flags : PtrUInt;
 begin
     { Poll and its descriptor cleanup must not be preempted by another poll. }
-    asm pushfd; cli; pop flags end;
+    flags := arch.platform.cpu.lock;
     if c^.USB^.HC^.fnPoll <> nil then c^.USB^.HC^.fnPoll(c^.USB^.HC);
-    if (flags and $200) <> 0 then asm sti end;
+    arch.platform.cpu.unlock(flags);
 end;
 
 function run_transfer(c : PMSDevice) : TUSBTransferStatus;
-var started, spins, flags : uint32; submitted : boolean;
+var started, spins : uint32; flags : PtrUInt; submitted : boolean;
 begin
     run_transfer := tsTimeout;
     if c^.Offline then exit;
@@ -127,23 +128,23 @@ begin
     c^.InFlight := true;
     { fnSubmit can configure xHCI endpoints and wait for command completion;
       never call it under the storage manager's IRQ-disabled dispatch lock. }
-    asm pushfd; pop flags end;
-    if c^.USB^.HC^.HCType <> USB_HC_XHCI then asm cli end;
+    flags := arch.platform.cpu.lock;
+    if c^.USB^.HC^.HCType = USB_HC_XHCI then arch.platform.cpu.unlock(flags);
     if c^.Offline then submitted := false
     else submitted := c^.USB^.HC^.fnSubmit(c^.USB^.HC, @c^.Transfer);
-    if (flags and $200) <> 0 then asm sti end;
+    arch.platform.cpu.unlock(flags);
     if not submitted then begin
         c^.InFlight := false;
         exit;
     end;
-    started := puint32(@Counters.c32)^;
+    started := arch.platform.process.timerTicks;
     spins := 0;
     while transfer_pending(c) do begin
         poll_controller(c);
         if not transfer_pending(c) then break;
         inc(spins);
         if (c^.Original = nil) or
-           (puint32(@Counters.c32)^ - started >= TRANSFER_TICKS) or
+           (arch.platform.process.timerTicks - started >= TRANSFER_TICKS) or
            (spins >= 10000000) then begin
             { No HC cancellation contract exists yet. Fail closed and retain the
               private transfer/buffers until completion; NEVER free live DMA. }
@@ -152,8 +153,9 @@ begin
             io.syslog.logln('USBMSC', 'Transfer timed out/disconnected; device offline, DMA quarantined.');
             exit;
         end;
-        asm pushfd; pop flags end;
-        if (flags and $200) <> 0 then asm hlt end;
+        flags := arch.platform.cpu.lock;
+        arch.platform.cpu.unlock(flags);
+        if (flags and $200) <> 0 then arch.platform.cpu.idle;
     end;
     c^.InFlight := false;
     run_transfer := c^.Transfer.Status;
@@ -216,7 +218,7 @@ end;
 
 procedure command(c : PMSDevice; opcode, length : uint8; bytes : uint32; input : boolean);
 begin
-    memset(uint32(@c^.CBW), 0, sizeof(TCBW));
+    memset(PtrUInt(@c^.CBW), 0, sizeof(TCBW));
     inc(c^.Tag);
     c^.CBW.Signature := CBW_SIGNATURE;
     c^.CBW.Tag := c^.Tag;
@@ -242,7 +244,7 @@ begin
     while offset < c^.CBW.DataLength do begin
         count := c^.CBW.DataLength - offset;
         { One bounded data transfer per command, at most one page of DMA. }
-        status := bulk(c, ep, pointer(uint32(c^.Buffer) + offset), count, actual);
+        status := bulk(c, ep, pointer(PtrUInt(c^.Buffer) + offset), count, actual);
         if status = tsStall then begin
             if not clear_halt(c, ep) then begin recover(c); exit; end;
             break;
@@ -252,7 +254,7 @@ begin
         if actual < count then break;
     end;
     transferred := offset;
-    memset(uint32(@c^.CSW), 0, sizeof(TCSW));
+    memset(PtrUInt(@c^.CSW), 0, sizeof(TCSW));
     status := bulk(c, c^.InEP, @c^.CSW, sizeof(TCSW), actual);
     if status = tsStall then begin
         if clear_halt(c, c^.InEP) then
@@ -273,7 +275,7 @@ begin
     sense := eIOError;
     command(c, $03, 6, 18, true);
     c^.CBW.Command[4] := 18;
-    memset(uint32(c^.Buffer), 0, 18);
+    memset(PtrUInt(c^.Buffer), 0, 18);
     if transport(c, actual) <> 0 then exit;
     if actual < 14 then exit;
     if (puint8(c^.Buffer)[0] and $7E) <> $70 then exit;
@@ -344,13 +346,13 @@ begin
         command(c, $00, 6, 0, false);
         error := execute(c, 0);
         if error <> eDeviceNotReady then break;
-        psleep((PIT_INPUT_HZ div PIT_DIVISOR) div 5);
+        core.util.waitTicks((PIT_INPUT_HZ div PIT_DIVISOR) div 5);
     end;
     if error <> eNone then exit;
     command(c, $25, 10, 8, true);
     if execute(c, 8) <> eNone then exit;
     sectors := be32(puint8(c^.Buffer));
-    sectorSize := be32(puint8(uint32(c^.Buffer) + 4));
+    sectorSize := be32(puint8(PtrUInt(c^.Buffer) + 4));
     if not valid_capacity(sectors, sectorSize) then exit;
     inc(sectors);
     probe := true;
@@ -363,7 +365,7 @@ begin
     if r^.LBA >= d^.maxSectorCount then exit;
     if r^.SectorCount > d^.maxSectorCount - r^.LBA then exit;
     if r^.SectorCount > $FFFFFFFF div d^.sectorSize then exit;
-    if uint32(r^.Buffer) > $FFFFFFFF - r^.SectorCount * d^.sectorSize then exit;
+    if PtrUInt(r^.Buffer) > High(PtrUInt) - r^.SectorCount * d^.sectorSize then exit;
     valid_request := true;
 end;
 
@@ -407,7 +409,7 @@ begin
         if r^.RequestType = ioRead then command(c, $28, 10, bytes, true)
         else begin
             command(c, $2A, 10, bytes, false);
-            memcpy(uint32(r^.Buffer) + offset, uint32(c^.Buffer), bytes);
+            memcpy(PtrUInt(r^.Buffer) + offset, PtrUInt(c^.Buffer), bytes);
         end;
         put32(@c^.CBW.Command[2], r^.LBA + doneBlocks);
         c^.CBW.Command[7] := blocks shr 8;
@@ -415,7 +417,7 @@ begin
         error := execute(c, bytes);
         if error = eNone then begin
             if r^.RequestType = ioRead then
-                memcpy(uint32(c^.Buffer), uint32(r^.Buffer) + offset, bytes);
+                memcpy(PtrUInt(c^.Buffer), PtrUInt(r^.Buffer) + offset, bytes);
             inc(doneBlocks, blocks); inc(offset, bytes);
         end;
     end;
@@ -431,9 +433,9 @@ begin
 end;
 
 procedure disconnect(dev : PUSBDevice);
-var c : PMSDevice; flags : uint32;
+var c : PMSDevice; flags : PtrUInt;
 begin
-    asm pushfd; cli; pop flags end;
+    flags := arch.platform.cpu.lock;
     c := Devices;
     while c <> nil do begin
         if c^.Original = dev then begin
@@ -444,7 +446,7 @@ begin
         end;
         c := c^.Next;
     end;
-    if (flags and $200) <> 0 then asm sti end;
+    arch.platform.cpu.unlock(flags);
     io.syslog.logln('USBMSC', 'Disk disconnected; further I/O rejected.');
 end;
 
@@ -459,7 +461,7 @@ begin
     if c^.Disk^.volumes = nil then exit;
     i := 0;
     while i < DL_Size(c^.Disk^.volumes) do begin
-        v := PStorage_Volume(puint32(DL_Get(c^.Disk^.volumes, i))^);
+        v := PVolumeSlot(DL_Get(c^.Disk^.volumes, i))^;
         if (v <> nil) and ((v^.lifecycleFlags and STORAGE_VOLUME_FLAG_MOUNTED) <> 0) then begin
             if driver.storage.vol.mgr.volume_is_busy(v) then detach_volumes := false
             else if not driver.storage.vfs.InvalidateVolume(v) then detach_volumes := false;
@@ -469,7 +471,7 @@ begin
 end;
 
 procedure worker_loop(ctx : PProcessContext);
-var c, next, prev, scan : PMSDevice; flags : uint32;
+var c, next, prev, scan : PMSDevice; flags : PtrUInt;
 begin
     while true do begin
         c := Devices;
@@ -490,12 +492,12 @@ begin
                 if (c^.Original = nil) and c^.VolumesDetached then begin
                     { Keep the manager's removed-device/volume tombstones stable;
                       release every class-driver allocation once DMA is finished. }
-                    asm pushfd; cli; pop flags end;
+                    flags := arch.platform.cpu.lock;
                     prev := nil; scan := Devices;
                     while (scan <> nil) and (scan <> c) do begin prev := scan; scan := scan^.Next; end;
                     if prev = nil then Devices := c^.Next else prev^.Next := c^.Next;
                     if c^.Disk <> nil then c^.Disk^.controllerId0 := 0;
-                    if (flags and $200) <> 0 then asm sti end;
+                    arch.platform.cpu.unlock(flags);
                     kfree(void(c^.USB)); kfree_aligned(c);
                 end;
             end;
@@ -506,16 +508,16 @@ begin
 end;
 
 procedure attach_worker(ctx : PProcessContext);
-var c : PMSDevice; d : PStorage_Device; sectors, sectorSize, i, flags : uint32;
+var c : PMSDevice; d : PStorage_Device; sectors, sectorSize, i : uint32; flags : PtrUInt;
     claimed : boolean;
 begin
     c := PMSDevice(ctx^.Local);
     { xHCI command submission and manager registration are not reentrant. }
     repeat
-        asm pushfd; cli; pop flags end;
+        flags := arch.platform.cpu.lock;
         claimed := not AttachBusy;
         if claimed then AttachBusy := true;
-        if (flags and $200) <> 0 then asm sti end;
+        arch.platform.cpu.unlock(flags);
         if not claimed then proc.mgr.proc_sleep_ms(1);
     until claimed;
     d := PStorage_Device(kalloc(sizeof(TStorage_Device)));
@@ -529,13 +531,13 @@ begin
         io.syslog.logln('USBMSC', 'Probe failed or unsupported disk geometry.');
         exit;
     end;
-    memset(uint32(d), 0, sizeof(TStorage_Device));
+    memset(PtrUInt(d), 0, sizeof(TStorage_Device));
     d^.volumes := DL_New(sizeof(pointer));
     if d^.volumes = nil then begin
         kfree(void(d)); c^.Offline := true; c^.Ready := true; c^.Attaching := false; AttachBusy := false; exit;
     end;
     d^.controller := ControllerUSB;
-    d^.controllerId0 := uint32(c);
+    d^.controllerId0 := PtrUInt(c);
     d^.writable := true;
     d^.sectorSize := sectorSize;
     d^.maxSectorCount := sectors;
@@ -547,7 +549,7 @@ begin
     { Manager copies the record; never keep the temporary descriptor. }
     i := 0;
     while i < driver.storage.mgr.get_device_count do begin
-        if driver.storage.mgr.get_device(i)^.controllerId0 = uint32(c) then begin
+        if driver.storage.mgr.get_device(i)^.controllerId0 = PtrUInt(c) then begin
             c^.Disk := driver.storage.mgr.get_device(i); break;
         end;
         inc(i);
@@ -560,7 +562,8 @@ end;
 
 function load(ptr : void) : boolean;
 var dev : PUSBDevice; c : PMSDevice;
-    i, flags : uint32;
+    i : uint32;
+    flags : PtrUInt;
 begin
     load := false;
     dev := PUSBDevice(ptr);
@@ -575,14 +578,14 @@ begin
     end;
     c := PMSDevice(kalloc_aligned(sizeof(TMSDevice), 4096));
     if c = nil then exit;
-    memset(uint32(c), 0, sizeof(TMSDevice));
+    memset(PtrUInt(c), 0, sizeof(TMSDevice));
     c^.USB := PUSBDevice(kalloc(sizeof(TUSBDevice)));
     c^.Buffer := kalloc_aligned(BUFFER_SIZE, 4096);
     if (c^.USB = nil) or (c^.Buffer = nil) then begin
         if c^.USB <> nil then kfree(void(c^.USB));
         kfree_aligned(c^.Buffer); kfree_aligned(c); exit;
     end;
-    memcpy(uint32(dev), uint32(c^.USB), sizeof(TUSBDevice));
+    memcpy(PtrUInt(dev), PtrUInt(c^.USB), sizeof(TUSBDevice));
     c^.Original := dev;
     c^.Attaching := true;
     for i := 0 to 1 do begin
@@ -601,10 +604,10 @@ begin
     c^.ControlEP.Direction := dirSetup;
     c^.ControlEP.MaxPacket := dev^.MaxPacket0;
     { Publish before probing so disconnect can invalidate the private context. }
-    asm pushfd; cli; pop flags end;
+    flags := arch.platform.cpu.lock;
     c^.Next := Devices; Devices := c;
     dev^.fnDisconnect := @disconnect;
-    if (flags and $200) <> 0 then asm sti end;
+    arch.platform.cpu.unlock(flags);
     { The scheduler starts only after boot.mgr.run. Probe and register from
       a task so partition discovery can wait for the persistent I/O worker. }
     if proc.mgr.create('usb.attach', @attach_worker, void(c), 1) = nil then begin
@@ -652,11 +655,11 @@ begin
         end;
         1: begin
             if m^.C.CBW.Flags = $80 then begin
-                memset(uint32(t^.Buffer), $A5, t^.BufferLen);
+                memset(PtrUInt(t^.Buffer), $A5, t^.BufferLen);
                 case m^.C.CBW.Command[0] of
                     $12: puint8(t^.Buffer)[0] := 0;
-                    $25: begin put32(puint8(t^.Buffer), 8191); put32(puint8(uint32(t^.Buffer)+4), 512); end;
-                    $03: begin memset(uint32(t^.Buffer),0,t^.BufferLen); puint8(t^.Buffer)[0]:=$70;
+                    $25: begin put32(puint8(t^.Buffer), 8191); put32(puint8(PtrUInt(t^.Buffer)+4), 512); end;
+                    $03: begin memset(PtrUInt(t^.Buffer),0,t^.BufferLen); puint8(t^.Buffer)[0]:=$70;
                         if m^.SenseKey = 0 then puint8(t^.Buffer)[2]:=7 else puint8(t^.Buffer)[2]:=m^.SenseKey; end;
                 end;
             end else begin
@@ -720,7 +723,7 @@ begin
     m := PMock(kalloc(sizeof(TMock)));
     Assert(m <> nil, 'mock allocation');
     if m <> nil then begin
-        memset(uint32(m), 0, sizeof(TMock));
+        memset(PtrUInt(m), 0, sizeof(TMock));
         m^.HC.fnSubmit := @mock_submit; m^.HC.HCType := USB_HC_EHCI; m^.HC.PrivData := m;
         m^.USB.HC := @m^.HC; m^.USB.InterfaceNumber := 3;
         m^.USB.Endpoints[0].Address := 1; m^.USB.Endpoints[0].Direction := dirIn;
@@ -734,7 +737,7 @@ begin
             Assert(probe(@m^.C, sectors, size) and (sectors = 8192) and (size = 512), 'probe SCSI disk');
             command(@m^.C, $28, 10, 512, true);
             Assert((execute(@m^.C,512) = eNone) and (puint8(m^.C.Buffer)[511] = $A5), 'read data phase');
-            command(@m^.C, $2A, 10, 512, false); memset(uint32(m^.C.Buffer),$5A,512);
+            command(@m^.C, $2A, 10, 512, false); memset(PtrUInt(m^.C.Buffer),$5A,512);
             Assert((execute(@m^.C,512) = eNone) and m^.GoodWrite, 'write data phase');
             m^.Fault := 3; command(@m^.C, $2A, 10, 512, false);
             Assert(execute(@m^.C,512) = eReadOnly, 'command failure requests sense');
@@ -773,14 +776,13 @@ begin
             Assert(not valid_request(@m^.Disk,@m^.Request), 'zero-sector request rejected');
             m^.Request.LBA := $FFFFFFFE; m^.Request.SectorCount := 4;
             Assert(not valid_request(@m^.Disk,@m^.Request), 'wrapped LBA rejected');
-            m^.Request.LBA := 0; m^.Request.SectorCount := 1; m^.Request.Buffer := pointer($FFFFFF00);
+            m^.Request.LBA := 0; m^.Request.SectorCount := 1; m^.Request.Buffer := pointer(High(PtrUInt) - $FF);
             Assert(not valid_request(@m^.Disk,@m^.Request), 'wrapped buffer rejected');
             kfree_aligned(m^.C.Buffer);
         end;
         kfree(void(m));
     end;
-    io.syslog.log('USBMSC', 'Tests passed: '); io.syslog.writeint(passed);
-    io.syslog.writestring(' failed: '); io.syslog.writeintln(failed);
+    testSummary('USBMSC', 'USBMSC_TESTS_PASSED', 'USBMSC_TESTS_FAILED', passed, failed);
 end;
 
 procedure test_command(params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
@@ -800,6 +802,4 @@ begin
     driver.mgr.register_driver('USB Mass Storage', @id, @load);
 end;
 
-initialization
-    boot.mgr.registerBoot('driver.storage.ctl.usb', @init, 'USB Mass Storage Driver', BOOT_MGR_BARRIER_DEVICE);
 end.

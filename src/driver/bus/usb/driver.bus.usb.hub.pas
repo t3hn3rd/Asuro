@@ -15,7 +15,7 @@ interface
 uses
     debug.tracer,
     io.syslog,
-    core.util, arch.x86.util,
+    core.util, arch.platform.cpu, arch.platform.diagnostics,
     memory.heap,
     driver.types,
     driver.mgr,
@@ -315,7 +315,7 @@ begin
     io.syslog.writeintln(depth);
 
     { Step 1: Get hub descriptor }
-    memset(uint32(@hubDesc), 0, sizeof(TUSBHubDescriptor));
+    memset(PtrUInt(@hubDesc), 0, sizeof(TUSBHubDescriptor));
     if not hub_get_descriptor(dev, @hubDesc, sizeof(TUSBHubDescriptor)) then begin
         io.syslog.logln('USBHub', 'Failed to get hub descriptor.');
         pop_trace;
@@ -344,7 +344,7 @@ begin
         pop_trace;
         exit;
     end;
-    memset(uint32(hub), 0, sizeof(TUSBHubData));
+    memset(PtrUInt(hub), 0, sizeof(TUSBHubData));
     hub^.Device       := dev;
     hub^.NumPorts     := hubDesc.bNbrPorts;
     hub^.PwrOn2PwrGood := hubDesc.bPwrOn2PwrGood;
@@ -378,7 +378,7 @@ begin
     if HubList <> nil then begin
         hubEntry := PUSBHubData(LL_Add(HubList));
         if hubEntry <> nil then
-            memcpy(uint32(hub), uint32(hubEntry), sizeof(TUSBHubData));
+            memcpy(PtrUInt(hub), PtrUInt(hubEntry), sizeof(TUSBHubData));
     end;
 
     { Step 6: Scan ports for connected devices }
@@ -649,20 +649,8 @@ var
     end;
 
     procedure PrintSummary;
-    var
-        pStr, fStr, msg, tmp : pchar;
     begin
-        pStr := intToString(passed);
-        fStr := intToString(failed);
-        msg := stringConcat(pStr, ' passed, ');
-        tmp := stringConcat(msg, fStr);
-        kfree(void(msg));
-        msg := stringConcat(tmp, ' failed.');
-        kfree(void(tmp));
-        io.syslog.logln('USBHub', msg);
-        kfree(void(msg));
-        kfree(void(pStr));
-        kfree(void(fStr));
+        testSummary('USBHub', 'USBHUB_TESTS_PASSED', 'USBHUB_TESTS_FAILED', passed, failed);
     end;
 
 begin
