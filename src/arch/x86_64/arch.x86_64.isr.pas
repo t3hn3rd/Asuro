@@ -67,8 +67,11 @@ var
     breakpointValid, pageFaultValid, fatalActive: boolean;
 
 function testBreakpoint: uint32; cdecl; external name 'x64_test_breakpoint';
+
 procedure testPageFault; cdecl; external name 'x64_test_page_fault';
+
 procedure testInvalidOpcode; cdecl; external name 'x64_test_invalid_opcode';
+
 procedure testDoubleFault; cdecl; external name 'x64_test_double_fault';
 
 procedure loadTables(descriptor: pointer); assembler; nostackframe;
@@ -199,6 +202,7 @@ procedure UnitTest;
 var
     passed, failed: uint32;
     result: uint32;
+
     procedure Assert(condition: boolean; name: pchar);
     begin
         if condition then begin

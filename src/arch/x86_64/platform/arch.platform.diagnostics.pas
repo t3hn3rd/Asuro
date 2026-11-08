@@ -12,18 +12,33 @@
 
 { Build-selected x86_64 adapter. }
 unit arch.platform.diagnostics;
+
 interface
 {$i ../../common/platform.diagnostics.inc}
+
 implementation
 uses debug.early;
+
 procedure log(tag, message: pchar);
-begin debug.early.puts(message); debug.early.puts(#13#10); end;
+begin
+    debug.early.puts(message);
+    debug.early.puts(#13#10);
+end;
+
 procedure push_trace(name: pchar);
-begin end;
+begin
+end;
+
 procedure pop_trace;
-begin end;
+begin
+end;
+
 procedure fatal(tag, message: pchar);
-begin log(tag, message); bootstrap_halt; end;
+begin
+    log(tag, message);
+    bootstrap_halt;
+end;
+
 procedure testSummary(tag, passedKey, failedKey: pchar; passed, failed: uint32);
 begin
     debug.early.field(passedKey, passed);

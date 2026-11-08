@@ -19,7 +19,7 @@ Every allocation is preceded by a 16-byte prefix: 4 bytes for the unit count, 12
 
 Allocations larger than a single heap page's capacity are handled by `klalloc`, which maps contiguous virtual pages and stores a magic sentinel (`$FFFFFFFE`) in the header so `kfree` can identify them and call `klfree` instead of the normal bitmap path.
 
-`kalloc` and `kfree` disable interrupts for the duration of their critical sections using a stack-balanced `pushfd`/`cli`/`pop` sequence and restore the interrupt flag via `restore_if` on all exit paths.
+`kalloc` and `kfree` disable interrupts for the duration of their critical sections using a stack-balanced `pushfd`/`cli`/`pop` sequence and restore the interrupt flag via `arch.platform.cpu.unlock` on all exit paths.
 
 ## Dependencies
 
@@ -132,7 +132,7 @@ Returns the number of heap pages currently in the linked list.
 
 ## Notes
 
-The `restore_if` helper checks bit 9 (IF) of the saved EFLAGS word and issues `STI` only if interrupts were enabled on entry. It uses `STI` rather than `POPFD` to avoid restoring potentially dangerous EFLAGS bits (IOPL, NT, VM, AC) that could trigger a General Protection Fault or Bad-TSS on the next `IRET`.
+The `arch.platform.cpu.unlock` helper checks bit 9 (IF) of the saved EFLAGS word and issues `STI` only if interrupts were enabled on entry. It uses `STI` rather than `POPFD` to avoid restoring potentially dangerous EFLAGS bits (IOPL, NT, VM, AC) that could trigger a General Protection Fault or Bad-TSS on the next `IRET`.
 
 When `DEBUG_LMM` is defined, `kalloc` allocates one additional unit and writes `GUARD_MAGIC` at the end of the allocation. `kfree` verifies this sentinel before freeing; a mismatch triggers a GPF with a syslog error, catching buffer overruns at free time.
 

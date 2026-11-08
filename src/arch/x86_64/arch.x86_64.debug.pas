@@ -11,8 +11,10 @@
 // limitations under the License.
 
 unit arch.x86_64.debug;
+
 interface
 procedure init;
+
 implementation
 uses debug.early;
 { The stub initializes COM1. Bounded polling also allows boot without a UART. }

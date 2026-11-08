@@ -205,7 +205,7 @@ Key constants:
 - `DATA_OFFSET = $10000` — data area starts at 64 KB into each page
 - `LARGE_ALLOC_MAGIC = $FFFFFFFE` — sentinel for klalloc'd multi-page allocations
 
-Interrupt safety: `pushfd; cli; pop saved_flags` (stack-balanced) + `restore_if(saved_flags)`
+Interrupt safety: `pushfd; cli; pop saved_flags` (stack-balanced) + `arch.platform.cpu.unlock(saved_flags)`
 inline procedure that only restores IF via `sti`, avoiding dangerous EFLAGS restoration
 (IOPL, NT, VM, AC bits that caused Bad-TSS on IRET).
 
@@ -256,7 +256,7 @@ list, fixes Search_Page, calls `free_page_at_address`). Skips Root_Page.
 
 | Bug | Root Cause | Fix |
 |-----|-----------|-----|
-| Bad TSS exception during network processing | `pushfd`/`popfd` across separate asm blocks: FPC doesn't track ESP changes in asm, causing EFLAGS corruption (NT=1, IOPL wrong) → Bad TSS on IRET | Stack-balanced `pushfd; cli; pop local_var` + `restore_if()` that only does `sti` if IF was set |
+| Bad TSS exception during network processing | `pushfd`/`popfd` across separate asm blocks: FPC doesn't track ESP changes in asm, causing EFLAGS corruption (NT=1, IOPL wrong) → Bad TSS on IRET | Stack-balanced `pushfd; cli; pop local_var` + `arch.platform.cpu.unlock()` that only does `sti` if IF was set |
 | GPF from SSE MOVAPS in doublebuffer flush | `SIZE_PREFIX=4`→8 gave 8-byte alignment; `MOVAPS` needs 16-byte. `klalloc` returned `page+8` (not 16-aligned) | `SIZE_PREFIX=16` (4B size + 12B pad), klalloc header expanded to 16 bytes |
 | Pages never freed (historic) | `free_page` extracted wrong block index from PDE Address field | Fixed extraction to `Address SHR 10` — page freeing works for the first time |
 

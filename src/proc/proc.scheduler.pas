@@ -14,14 +14,19 @@
 { Shared round-robin/quantum policy extracted from proc.mgr (Kieron Morris).
   Caller excludes interrupts and owns process lifetime/reaping. }
 unit proc.scheduler;
+
 interface
 uses proc.types;
 type TGetProcess = function(index: uint32): PProcessContext;
 function pickNext(current, idle: PProcessContext; count: uint32;
-                  var cursor: uint32; getProcess: TGetProcess): PProcessContext;
+                  var cursor: uint32;
+                  getProcess: TGetProcess): PProcessContext;
+
 implementation
+
 function pickNext(current, idle: PProcessContext; count: uint32;
-                  var cursor: uint32; getProcess: TGetProcess): PProcessContext;
+                  var cursor: uint32;
+                  getProcess: TGetProcess): PProcessContext;
 var
     i       : uint32;
     idx     : uint32;
@@ -58,7 +63,10 @@ begin
     end;
 
     { No runnable process found — fall back to idle }
-    if idle = nil then begin pickNext := nil; exit; end;
+    if idle = nil then begin
+        pickNext := nil;
+        exit;
+    end;
     idle^.State := psRunning;
     idle^.TicksUsed := 0;
     pickNext := idle;

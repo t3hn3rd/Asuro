@@ -12,12 +12,20 @@
 
 { Build-selected x86_64 adapter. }
 unit arch.platform.process;
+
 interface
 {$i ../../common/platform.process.inc}
+
 implementation
 uses arch.x86_64.context, arch.x86_64.irq;
+
 function prepare(stack: pointer; bytes: SizeUInt; entry: pointer): PtrUInt;
-begin prepare := arch.x86_64.context.prepare(stack, bytes, entry, 0); end;
+begin
+    prepare := arch.x86_64.context.prepare(stack, bytes, entry, 0);
+end;
+
 function timerTicks: uint32;
-begin timerTicks := uint32(arch.x86_64.irq.ticks); end;
+begin
+    timerTicks := uint32(arch.x86_64.irq.ticks);
+end;
 end.

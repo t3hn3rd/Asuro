@@ -22,8 +22,7 @@ unit driver.io.serial;
 interface
 
 uses
-    boot.mgr,
-    core.util, arch.x86.util, arch.x86.isr.mgr, core.strings;
+    arch.platform.cpu, core.strings;
 
 const
     COM1 = $3F8;
@@ -45,33 +44,14 @@ implementation
 
 procedure soutb(port : uint16; val : uint8);
 begin
-     asm
-          PUSH EAX
-          PUSH EDX
-          MOV DX, port
-          MOV AL, val
-          OUT DX, AL
-          POP EDX
-          POP EAX
-     end;
-     io_wait;
+    arch.platform.cpu.outb(port, val);
+    arch.platform.cpu.outb($80, 0);
 end;
 
 function sinb(port : uint16) : uint8;
-var
-     tmp : uint8;
 begin
-     asm
-          PUSH EAX
-          PUSH EDX
-          MOV DX, port
-          IN AL, DX
-          MOV tmp, AL
-          POP EDX
-          POP EAX
-     end;
-     sinb := tmp;
-     io_wait;
+    sinb := arch.platform.cpu.inb(port);
+    arch.platform.cpu.outb($80, 0);
 end;
 
 procedure IRQ_Hook();
@@ -201,8 +181,5 @@ begin
      send(COM1, uint8(10), 10000);
      sendHex:= true;
 end;
-
-initialization
-    boot.mgr.registerBoot('driver.io.serial', @init, 'Serial Interface', 'immediate');
 
 end.

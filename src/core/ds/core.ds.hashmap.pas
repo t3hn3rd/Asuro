@@ -1,4 +1,5 @@
 //  Copyright 2021 Kieron Morris
+//  Copyright 2026 Aaron Hance
 //
 //  Licensed under the Apache License, Version 2.0 (the "License");
 //  you may not use this file except in compliance with the License.
@@ -26,9 +27,7 @@ uses
     memory.heap,
     core.enc.fnv1a,
     core.strings,
-    io.syslog,
-    debug.tracer,
-    core.util, arch.x86.util;
+    arch.platform.diagnostics;
 
 type
     DPHashItem = ^PHashItem;
@@ -59,6 +58,7 @@ function  newEx(size : uint32; loadFactor : Single) : PHashMap;
 procedure add(map : PHashMap; key : pchar; value : void);
 function  get(map : PHashMap; key : pchar) : void;
 procedure delete(map : PHashMap; key : pchar; freeItem : boolean);
+procedure UnitTest;
 procedure printMap(map : PHashMap);
 procedure forEach(map : PHashMap; cb : THashForEachCb; ud : void);
 
@@ -66,7 +66,7 @@ implementation
 
 function KeyHash(key : pchar) : uint32;
 begin
-    KeyHash := Hash_FNV1a32(void(uint32(key)), StringSize(key));
+    KeyHash := Hash_FNV1a32(void(key), StringSize(key));
 end;
 
 function hashIndex(size : uint32; hash : uint32) : uint32;
@@ -74,31 +74,10 @@ begin
     hashIndex:= hash mod size;
 end;
 
-function newItem : PHashItem;
-begin
-    newItem:= PHashItem(kalloc(sizeof(THashItem)));
-    newItem^.Next:= nil;
-    newItem^.Key:= nil;
-    newItem^.Data:= nil; 
-    newItem^.Hash:= 0;   
-end;
-
 procedure putItem(table : DPHashItem; item : PHashItem; idx : uint32);
-var
-    ExistingItem : PHashItem;
-    c            : uint32;
-
 begin
-    ExistingItem:= table[idx];
-    if ExistingItem = nil then begin
-        table[idx]:= item;
-    end else begin
-        c:=0;
-        while ExistingItem^.Next <> nil do begin
-            ExistingItem:= ExistingItem^.Next;
-        end;
-        ExistingItem^.Next:= item;
-    end;
+    item^.Next := table[idx];
+    table[idx] := item;
 end;
 
 procedure checkAndRebase(map : PHashMap);
@@ -117,12 +96,11 @@ begin
     loadFactor:= map^.LoadFactor;
     max_load:= size * loadFactor;
     if map^.count > max_load then begin
-        NewSize:= map^.Size * 2;
-        NewTable:= DPHashItem(kalloc(sizeof(PHashItem) * NewSize));
+        if map^.Size > High(uint32) div 2 then exit;
+        NewSize := map^.Size * 2;
+        if SizeUInt(NewSize) > High(SizeUInt) div sizeof(PHashItem) then exit;
+        NewTable:= DPHashItem(kalloc(SizeUInt(NewSize) * sizeof(PHashItem)));
         If NewTable <> nil then begin
-            for i:=0 to NewSize-1 do begin
-                NewTable[i]:= nil;
-            end;
             for i:=0 to map^.size-1 do begin
                 item:= map^.table[i];
                 while item <> nil do begin
@@ -141,40 +119,34 @@ end;
 
 procedure add(map : PHashMap; key : pchar; value : void);
 var
-    Idx     : uint32;
-    hash    : uint32;
-    Item    : PHashItem;
-    nItem   : PHashItem;
-
+    idx, hash: uint32;
+    item: PHashItem;
 begin
-    if (map <> nil) and (key <> nil) then begin
-        hash:= KeyHash(key);
-        Idx:= hashIndex(map^.size, hash);
-        if map^.Table[Idx] = nil then begin
-            Item:= newItem;
-            Item^.Next:= nil;
-            map^.Table[Idx]:= Item;
-        end else begin
-            //Collision
-            Item:= map^.Table[Idx];
-            while not StringEquals(Item^.key, key) do begin
-                if Item^.Next <> nil then begin
-                    Item:= Item^.Next;
-                end else begin
-                    nItem:= newItem();
-                    Item^.Next:= nItem;
-                    Item:= nItem;
-                    Item^.Next:= nil;
-                    break;
-                end;
-            end;
+    if (map = nil) or (key = nil) then exit;
+
+    hash := KeyHash(key);
+    idx := hashIndex(map^.Size, hash);
+    item := map^.Table[idx];
+    while item <> nil do begin
+        if (item^.Hash = hash) and StringEquals(item^.Key, key) then begin
+            item^.Data := value;
+            exit;
         end;
-        if Item^.Key = nil then Item^.Key:= stringCopy(key);
-        Item^.Data:= value;
-        Item^.Hash:= hash;
-        inc(map^.count);
-        checkAndRebase(map);
+        item := item^.Next;
     end;
+
+    item := PHashItem(kalloc(sizeof(THashItem)));
+    if item = nil then exit;
+    item^.Key := stringCopy(key);
+    if item^.Key = nil then begin
+        kfree(void(item));
+        exit;
+    end;
+    item^.Data := value;
+    item^.Hash := hash;
+    putItem(map^.Table, item, idx);
+    inc(map^.Count);
+    checkAndRebase(map);
 end;
 
 function get(map : PHashMap; key : pchar) : void;
@@ -200,19 +172,22 @@ end;
 
 function newEx(size : uint32; loadFactor : Single) : PHashMap;
 var
-    Map : PHashMap;
-    i   : uint32;
-
+    map: PHashMap;
 begin
-    Map:= PHashMap(kalloc(sizeof(THashMap)));
-    Map^.size:= size;
-    Map^.Table:= DPHashItem(Kalloc(sizeof(PHashItem) * Size));
-    Map^.LoadFactor:= loadFactor;
-    Map^.Count:= 0;
-    for i:=0 to size-1 do begin
-        Map^.Table[i]:= nil;
+    newEx := nil;
+    if (size = 0) or (SizeUInt(size) > High(SizeUInt) div sizeof(PHashItem)) then exit;
+    if not (loadFactor > 0) then exit;
+
+    map := PHashMap(kalloc(sizeof(THashMap)));
+    if map = nil then exit;
+    map^.Table := DPHashItem(kalloc(SizeUInt(size) * sizeof(PHashItem)));
+    if map^.Table = nil then begin
+        kfree(void(map));
+        exit;
     end;
-    newEx:= Map;
+    map^.Size := size;
+    map^.LoadFactor := loadFactor;
+    newEx := map;
 end;
 
 function new : PHashMap;
@@ -275,31 +250,79 @@ end;
 
 procedure printMap(map : PHashMap);
 var
-    i,c : uint32;
-    item : PHashItem;
-
+    i: uint32;
+    item: PHashItem;
 begin
-    for i:=0 to map^.Size-1 do begin
-        if map^.table[i] <> nil then begin
-            io.syslog.writestring('Map[');
-            io.syslog.writeint(i);
-            io.syslog.writestring(']->(0)="');
-            io.syslog.writestring(map^.table[i]^.key);
-            io.syslog.writestring('"');
-            item:= map^.table[i]^.next;
-            c:=1;
-            while item <> nil do begin
-                io.syslog.writestring('->(');
-                io.syslog.writeint(c);
-                io.syslog.writestring(')="');
-                io.syslog.writestring(item^.key);
-                io.syslog.writestring('"');
-                inc(c);
-                item:= item^.next;
-            end;
-            io.syslog.writestringln(' ');
+    if (map = nil) or (map^.Size = 0) then exit;
+
+    for i := 0 to map^.Size - 1 do begin
+        item := map^.Table[i];
+        while item <> nil do begin
+            log('HASHMAP', item^.Key);
+            item := item^.Next;
         end;
     end;
+end;
+
+procedure UnitTest;
+var
+    map: PHashMap;
+    value: void;
+    key: pchar;
+    i, passed, failed: uint32;
+    beforeFree: SizeUInt;
+
+    procedure Assert(condition: boolean; name: pchar);
+    begin
+        if condition then
+            inc(passed)
+        else begin
+            inc(failed);
+            log('HASHMAP', name);
+        end;
+    end;
+begin
+    passed := 0;
+    failed := 0;
+    beforeFree := lmm_total_free;
+    value := kalloc(sizeof(PtrUInt));
+    map := newEx(1, 100);
+    add(map, 'a', value);
+    add(map, 'b', value);
+    add(map, 'c', value);
+    Assert((map^.Count = 3) and (get(map, 'a') = value) and
+        (get(map, 'c') = value), 'FAIL: native hash collision chain');
+    add(map, 'b', nil);
+    Assert((map^.Count = 3) and (get(map, 'b') = nil), 'FAIL: hash replacement count');
+    delete(map, 'b', false);
+    Assert((map^.Count = 2) and (get(map, 'a') = value) and
+        (get(map, 'c') = value), 'FAIL: hash collision middle deletion');
+    delete(map, 'c', false);
+    delete(map, 'a', false);
+    Assert(map^.Count = 0, 'FAIL: hash collision head and tail deletion');
+    kfree(void(map^.Table));
+    kfree(void(map));
+
+    map := new;
+    for i := 0 to 39 do begin
+        key := intToString(i);
+        add(map, key, value);
+        kfree(void(key));
+    end;
+    Assert((map^.Count = 40) and (map^.Size > HASHMAP_DEFAULT_SIZE),
+        'FAIL: hash growth');
+    for i := 0 to 39 do begin
+        key := intToString(i);
+        Assert(get(map, key) = value, 'FAIL: hash rebase preserves high pointers');
+        delete(map, key, false);
+        kfree(void(key));
+    end;
+    kfree(void(map^.Table));
+    kfree(void(map));
+    kfree(value);
+    Assert(newEx(0, 0.75) = nil, 'FAIL: zero-sized hash table rejected');
+    Assert(lmm_total_free = beforeFree, 'FAIL: hash allocation accounting');
+    testSummary('HASHMAP', 'HASHMAP_TESTS_PASSED', 'HASHMAP_TESTS_FAILED', passed, failed);
 end;
 
 end.

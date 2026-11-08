@@ -12,25 +12,33 @@
 
 { Mapping policy extracted from memory.heap (Kieron Morris). }
 unit arch.platform.memory;
+
 interface
 const MAX_HEAP_REGIONS = 256;
 {$i ../../common/platform.memory.inc}
+
 implementation
 uses arch.x86.memory.virtual, arch.x86.memory.physical, arch.platform.diagnostics;
+
 function allocateHeapPage: PtrUInt;
-var i: uint32;
+var
+    i: uint32;
 begin
     allocateHeapPage := 0;
     i := KERNEL_PAGE_NUMBER + 4;
     while i < 1024 do begin
         if arch.x86.memory.virtual.new_page(i) then begin
-            allocateHeapPage := i shl 22; exit;
+            allocateHeapPage := i shl 22;
+            exit;
         end;
         inc(i);
     end;
 end;
+
 function allocateLarge(pages: uint32): PtrUInt;
-var curr_page, i: uint16; miss: boolean;
+var
+    curr_page, i: uint16;
+    miss: boolean;
 begin
     allocateLarge := 0;
     if (pages = 0) or (pages > MAX_HEAP_REGIONS) then exit;
@@ -39,7 +47,9 @@ begin
         miss := false;
         for i := 0 to pages - 1 do begin
             if not page_mappable(curr_page + i) then begin
-                miss := true; curr_page := curr_page + i; break;
+                miss := true;
+                curr_page := curr_page + i;
+                break;
             end;
         end;
         if not miss then begin
@@ -47,7 +57,8 @@ begin
             while i < pages do begin
                 if not arch.x86.memory.virtual.new_page(curr_page + i) then begin
                     while i > 0 do begin
-                        dec(i); arch.x86.memory.virtual.free_page(curr_page + i);
+                        dec(i);
+                        arch.x86.memory.virtual.free_page(curr_page + i);
                     end;
                     exit;
                 end;
@@ -59,23 +70,57 @@ begin
         inc(curr_page);
     end;
 end;
+
 procedure release(address: PtrUInt; pages: uint32);
-var i: uint32; page_num: uint16;
+var
+    i: uint32;
+    page_num: uint16;
 begin
     if (pages = 0) or (pages > MAX_HEAP_REGIONS) then begin
-        fatal('LMM', 'Invalid heap region release'); exit;
+        fatal('LMM', 'Invalid heap region release');
+        exit;
     end;
     page_num := address shr 22;
     for i := 0 to pages - 1 do arch.x86.memory.virtual.free_page(page_num + uint16(i));
 end;
+
 function identityReserve(address: PtrUInt): pointer;
-var block: uint16;
+var
+    block: uint16;
 begin
     block := address shr 22;
     force_alloc_block(block, 0);
     map_page(block, block);
     identityReserve := pointer(uint32(block) shl 22);
 end;
-function freeBacking: uint64;
-begin freeBacking := pmm_free_blocks; end;
+
+function freePhysicalBytes: uint64;
+begin
+    freePhysicalBytes := uint64(pmm_free_blocks) * $400000;
+end;
+
+function totalPhysicalBytes: uint64;
+begin
+    totalPhysicalBytes := uint64(pmm_total_blocks) * $400000;
+end;
+function physicalAddress(address: PtrUInt): uint64;
+begin
+    physicalAddress := arch.x86.memory.virtual.vtop(address);
+end;
+
+function mapDevice(address: uint64; bytes: SizeUInt): pointer;
+var
+    page, last: uint32;
+begin
+    mapDevice := nil;
+    if (bytes = 0) or (address > $FFFFFFFF) or (bytes - 1 > $FFFFFFFF - address) then exit;
+    page := uint32(address) shr 22;
+    last := uint32(address + bytes - 1) shr 22;
+    while page <= last do begin
+        identityReserve(page shl 22);
+        inc(page);
+    end;
+    mapDevice := pointer(PtrUInt(address));
+end;
+
 end.

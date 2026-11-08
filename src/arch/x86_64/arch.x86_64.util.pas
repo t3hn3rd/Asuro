@@ -11,6 +11,7 @@
 // limitations under the License.
 
 unit arch.x86_64.util;
+
 interface
 function lockIRQ: PtrUInt;
 procedure unlockIRQ(flags: PtrUInt);
@@ -19,13 +20,16 @@ procedure invalidate(address: PtrUInt);
 function pageRoot: uint64;
 procedure outb(port: uint16; value: uint8);
 function inb(port: uint16): uint8;
+
 implementation
+
 function lockIRQ: PtrUInt; assembler; nostackframe;
 asm
     pushfq
     cli
     pop rax
 end;
+
 procedure unlockIRQ(flags: PtrUInt); assembler; nostackframe;
 asm
     test rdi, $200
@@ -33,6 +37,7 @@ asm
     sti
 @done:
 end;
+
 procedure zero(dest: pointer; bytes: SizeUInt); assembler; nostackframe;
 asm
     mov rcx, rsi
@@ -44,20 +49,24 @@ asm
     and rcx, 7
     rep stosb
 end;
+
 procedure invalidate(address: PtrUInt); assembler; nostackframe;
 asm
     invlpg [rdi]
 end;
+
 function pageRoot: uint64; assembler; nostackframe;
 asm
     mov rax, cr3
 end;
+
 procedure outb(port: uint16; value: uint8); assembler; nostackframe;
 asm
     mov edx, edi
     mov eax, esi
     out dx, al
 end;
+
 function inb(port: uint16): uint8; assembler; nostackframe;
 asm
     mov edx, edi
