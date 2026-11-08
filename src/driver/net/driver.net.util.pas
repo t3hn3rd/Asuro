@@ -22,7 +22,7 @@ unit driver.net.util;
 interface
 
 uses
-    debug.tracer, core.util, arch.x86.util, driver.net.types, io.stdio, memory.heap, core.ds.lists, core.strings;
+    debug.tracer, core.util, arch.platform.cpu, driver.net.types, io.stdio, memory.heap, core.ds.lists, core.strings;
 
 procedure copyMAC(src : puint8; dst : puint8);
 procedure copyIPv4(src : puint8; dst : puint8);
@@ -41,8 +41,20 @@ function verifyChecksum(p_data : puint16; p_len : uint16) : boolean;
 function sameSubnetIPv4(ip1, ip2, netmask : puint8) : boolean;
 procedure contextMACSwitch(p_context : PPacketContext);
 procedure contextIPv4Switch(p_context : PPacketContext);
+function networkTicks: uint32;
 
 implementation
+
+uses arch.platform.interrupts, arch.common.legacyirq;
+
+function networkTicks: uint32;
+var
+    ticks: uint64;
+begin
+    ticks := arch.platform.interrupts.timerTicks;
+    networkTicks := uint32((ticks div PIT_INPUT_HZ) * PIT_DIVISOR * 1024 +
+        ((ticks mod PIT_INPUT_HZ) * PIT_DIVISOR * 1024) div PIT_INPUT_HZ);
+end;
 
 function sameSubnetIPv4(ip1, ip2, netmask : puint8) : boolean;
 var
@@ -232,7 +244,7 @@ function newPacketContext : PPacketContext;
 begin
     push_trace('driver.net.util.newPacketContext');
     newPacketContext:= PPacketContext(kalloc(sizeof(TPacketContext)));
-    memset(uint32(newPacketContext), 0, sizeof(TPacketContext));
+    memset(PtrUInt(newPacketContext), 0, sizeof(TPacketContext));
     pop_trace;    
 end;
 
