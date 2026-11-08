@@ -14,7 +14,7 @@ uses driver.storage.fs.ext2.types, driver.storage.fs.ext2.core,
 function ValidateLabel(text : pchar; var normalized : TVolumeLabel) : TError;
 var i : uint32;
 begin
-    memset(uint32(@normalized),0,sizeof(normalized));
+    memset(PtrUInt(@normalized),0,sizeof(normalized));
     ValidateLabel:=eInvalidArgument; if text=nil then exit;
     i:=0;
     while (i<16) and (text[i]<>char(0)) do begin
@@ -29,7 +29,7 @@ function Geometry(volume : PStorage_Volume; sectors, start : uint32; config : PF
 var g, count, minimum, perBlock, tables, reserve : uint32; labelText : TVolumeLabel;
 begin
     Geometry:=eInvalidArgument;
-    memset(uint32(@v),0,sizeof(v));
+    memset(PtrUInt(@v),0,sizeof(v));
     if volume=nil then exit;
     if volume^.device=nil then exit;
     if not volume^.device^.writable then begin Geometry:=eReadOnly; exit; end;
@@ -98,7 +98,7 @@ begin
     if err<>eNone then begin kfree(void(v)); FormatVolume:=err; exit; end;
     op:=PExt2Op(kalloc(sizeof(TExt2Op)));
     if op=nil then begin kfree(void(v)); exit; end;
-    memset(uint32(op),0,sizeof(TExt2Op)); op^.V:=v;
+    memset(PtrUInt(op),0,sizeof(TExt2Op)); op^.V:=v;
     v^.Super:=puint8(kalloc(1024)); v^.Groups:=puint8(kalloc(v^.GDTBlocks*v^.BlockSize));
     op^.Scratch:=puint8(kalloc(v^.BlockSize));
     if (v^.Super=nil) or (v^.Groups=nil) or (op^.Scratch=nil) then begin
@@ -106,7 +106,7 @@ begin
         if op^.Scratch<>nil then kfree(void(op^.Scratch));
         kfree(void(op)); kfree(void(v)); exit;
     end;
-    memset(uint32(v^.Super),0,1024); memset(uint32(v^.Groups),0,v^.GDTBlocks*v^.BlockSize);
+    memset(PtrUInt(v^.Super),0,1024); memset(PtrUInt(v^.Groups),0,v^.GDTBlocks*v^.BlockSize);
     Put32(v^.Super,0,v^.InodeCount); Put32(v^.Super,4,v^.BlockCount);
     Put32(v^.Super,16,v^.InodeCount-10); Put32(v^.Super,20,v^.FirstBlock);
     i:=0; if v^.BlockSize=2048 then i:=1 else if v^.BlockSize=4096 then i:=2;
@@ -120,13 +120,13 @@ begin
     v^.Super[110]:=(v^.Super[110] and $0F) or $40;
     v^.Super[112]:=(v^.Super[112] and $3F) or $80;
     if config<>nil then if (config^.Flags and FS_FORMAT_PARAM_LABEL)<>0 then
-        memcpy(uint32(@config^.LabelText[0]),uint32(v^.Super)+120,11);
+        memcpy(PtrUInt(@config^.LabelText[0]),PtrUInt(v^.Super)+120,11);
     tables:=v^.InodesPerGroup div (v^.BlockSize div 128); freeBlocks:=0; rootBlock:=0;
     for g:=0 to v^.GroupCount-1 do begin
         first:=v^.FirstBlock+g*v^.BlocksPerGroup; count:=v^.BlockCount-first;
         if count>v^.BlocksPerGroup then count:=v^.BlocksPerGroup;
         reserve:=0; if HasSuper(g,1) then reserve:=1+v^.GDTBlocks;
-        d:=PExt2Group(uint32(v^.Groups)+g*32);
+        d:=PExt2Group(PtrUInt(v^.Groups)+g*32);
         d^.BlockBitmap:=first+reserve; d^.InodeBitmap:=first+reserve+1; d^.InodeTable:=first+reserve+2;
         used:=reserve+2+tables;
         d^.FreeInodes:=v^.InodesPerGroup;
@@ -135,42 +135,42 @@ begin
     end;
     Put32(v^.Super,12,freeBlocks);
     { Invalidate the primary signature before writing metadata. Publish it last. }
-    memset(uint32(op^.Scratch),0,v^.BlockSize);
+    memset(PtrUInt(op^.Scratch),0,v^.BlockSize);
     op^.Error:=storage_write(volume^.device,start+2,2,puint32(op^.Scratch));
     g:=0;
     while (g<v^.GroupCount) and (op^.Error=eNone) do begin
         first:=v^.FirstBlock+g*v^.BlocksPerGroup; count:=v^.BlockCount-first;
         if count>v^.BlocksPerGroup then count:=v^.BlocksPerGroup;
-        d:=PExt2Group(uint32(v^.Groups)+g*32); used:=count-d^.FreeBlocks;
-        memset(uint32(op^.Scratch),$FF,v^.BlockSize);
+        d:=PExt2Group(PtrUInt(v^.Groups)+g*32); used:=count-d^.FreeBlocks;
+        memset(PtrUInt(op^.Scratch),$FF,v^.BlockSize);
         for bit:=used to count-1 do op^.Scratch[bit div 8]:=op^.Scratch[bit div 8] and not (1 shl (bit mod 8));
         WriteBlock(op,d^.BlockBitmap,op^.Scratch);
-        memset(uint32(op^.Scratch),$FF,v^.BlockSize);
+        memset(PtrUInt(op^.Scratch),$FF,v^.BlockSize);
         used:=0; if g=0 then used:=10;
         for bit:=used to v^.InodesPerGroup-1 do op^.Scratch[bit div 8]:=op^.Scratch[bit div 8] and not (1 shl (bit mod 8));
         WriteBlock(op,d^.InodeBitmap,op^.Scratch);
-        memset(uint32(op^.Scratch),0,v^.BlockSize);
+        memset(PtrUInt(op^.Scratch),0,v^.BlockSize);
         for i:=0 to tables-1 do begin
             if not WriteBlock(op,d^.InodeTable+i,op^.Scratch) then break;
         end;
         if HasSuper(g,1) then begin
             for i:=0 to v^.GDTBlocks-1 do
-                if not WriteBlock(op,first+1+i,pointer(uint32(v^.Groups)+i*v^.BlockSize)) then break;
+                if not WriteBlock(op,first+1+i,pointer(PtrUInt(v^.Groups)+i*v^.BlockSize)) then break;
             if g<>0 then begin
-                memset(uint32(op^.Scratch),0,v^.BlockSize);
-                memcpy(uint32(v^.Super),uint32(op^.Scratch),1024); Put16(op^.Scratch,90,g);
+                memset(PtrUInt(op^.Scratch),0,v^.BlockSize);
+                memcpy(PtrUInt(v^.Super),PtrUInt(op^.Scratch),1024); Put16(op^.Scratch,90,g);
                 WriteBlock(op,first,op^.Scratch);
             end;
         end;
         Inc(g);
     end;
     if op^.Error=eNone then begin
-        memset(uint32(op^.Scratch),0,v^.BlockSize);
-        inode:=PExt2Inode(uint32(op^.Scratch)+128);
+        memset(PtrUInt(op^.Scratch),0,v^.BlockSize);
+        inode:=PExt2Inode(PtrUInt(op^.Scratch)+128);
         inode^.Mode:=EXT2_DIR or $1ED; inode^.Size:=v^.BlockSize; inode^.Links:=2;
         inode^.Sectors:=v^.SectorsPerBlock; inode^.Blocks[0]:=rootBlock;
         WriteBlock(op,PExt2Group(v^.Groups)^.InodeTable,op^.Scratch);
-        memset(uint32(op^.Scratch),0,v^.BlockSize);
+        memset(PtrUInt(op^.Scratch),0,v^.BlockSize);
         Put32(op^.Scratch,0,2); Put16(op^.Scratch,4,12); op^.Scratch[6]:=1; op^.Scratch[7]:=2; op^.Scratch[8]:=ord('.');
         Put32(op^.Scratch,12,2); Put16(op^.Scratch,16,v^.BlockSize-12); op^.Scratch[18]:=2; op^.Scratch[19]:=2;
         op^.Scratch[20]:=ord('.'); op^.Scratch[21]:=ord('.');
@@ -188,14 +188,14 @@ begin
     SetLabel:=ValidateLabel(text,labelText); if SetLabel<>eNone then exit;
     op:=BeginOp(volume); if op=nil then begin SetLabel:=eOutOfMemory; exit; end;
     if BeginMutation(op) then begin
-        memcpy(uint32(@labelText),uint32(op^.V^.Super)+120,16);
+        memcpy(PtrUInt(@labelText),PtrUInt(op^.V^.Super)+120,16);
         for g:=1 to op^.V^.GroupCount-1 do if HasSuper(g,Get32(op^.V^.Super,100)) then begin
             first:=op^.V^.FirstBlock+g*op^.V^.BlocksPerGroup;
             if not ReadBlock(op,first,op^.Scratch) then break;
-            memcpy(uint32(@labelText),uint32(op^.Scratch)+120,16);
+            memcpy(PtrUInt(@labelText),PtrUInt(op^.Scratch)+120,16);
             if not WriteBlock(op,first,op^.Scratch) then break;
         end;
-        if FinishMutation(op) then memcpy(uint32(@labelText),uint32(@volume^.labelText),sizeof(labelText));
+        if FinishMutation(op) then memcpy(PtrUInt(@labelText),PtrUInt(@volume^.labelText),sizeof(labelText));
     end;
     SetLabel:=op^.Error; EndOp(op);
 end;

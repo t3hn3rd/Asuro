@@ -9,7 +9,7 @@ function validate_format(volume : PStorage_Volume; sectors, start : uint32; conf
 function create_volume(volume : PStorage_Volume; sectors, start : uint32; config : PFSFormatParams) : TError;
 
 implementation
-uses io.syslog, debug.tracer, memory.heap, core.util, arch.x86.util,
+uses io.syslog, debug.tracer, memory.heap, core.util, arch.platform.cpu,
      driver.storage.mgr, driver.storage.vol.mgr, driver.storage.fs.fat32.labels;
 var fat32FilesystemPtr : PFilesystem = nil;
 
@@ -18,8 +18,8 @@ begin fat32FilesystemPtr := fs; end;
 
 function bootSectorHasSignature(buffer : puint32) : boolean;
 begin
-    bootSectorHasSignature := (puint8(uint32(buffer)+510)^ = $55) and
-                              (puint8(uint32(buffer)+511)^ = $AA);
+    bootSectorHasSignature := (puint8(PtrUInt(buffer)+510)^ = $55) and
+                              (puint8(PtrUInt(buffer)+511)^ = $AA);
 end;
 
 function formatSPC(config : PFSFormatParams) : uint32;
@@ -123,7 +123,7 @@ begin
     if bufSize < 512 then bufSize := 512;
     buffer := puint32(kalloc(bufSize));
     if buffer = nil then exit;
-    memset(uint32(buffer), 0, bufSize);
+    memset(PtrUInt(buffer), 0, bufSize);
 
     if disk^.dispatchRead = nil then begin
         io.syslog.logln('FAT32', 'detect_volumes: device has no read dispatch');
@@ -142,7 +142,7 @@ begin
             kfree(buffer);
             exit;
         end;
-        memset(uint32(volume), 0, sizeof(TStorage_Volume));
+        memset(PtrUInt(volume), 0, sizeof(TStorage_Volume));
         volume^.device      := disk;
         volume^.sectorStart := 0;
         volume^.sectorSize  := br^.sectorSize;
@@ -179,7 +179,7 @@ begin
     if bufSize < 512 then bufSize := 512;
     buffer := puint32(kalloc(bufSize));
     if buffer = nil then exit;
-    memset(uint32(buffer), 0, bufSize);
+    memset(PtrUInt(buffer), 0, bufSize);
 
     if storage_read(volume^.device, volume^.sectorStart, 1, buffer) <> eNone then begin kfree(buffer); exit; end;
     br := PBootRecord(buffer);
@@ -236,7 +236,7 @@ var
 begin
     create_volume := validate_format(volume, sectors, start, config);
     if create_volume <> eNone then exit;
-    memset(uint32(@labelValue[0]),0,sizeof(labelValue));
+    memset(PtrUInt(@labelValue[0]),0,sizeof(labelValue));
     if (config <> nil) and ((config^.Flags and FS_FORMAT_PARAM_LABEL) <> 0) then
         normalize_label(@config^.LabelText[0],labelValue);
     spc := formatSPC(config); fat := formatFATSize(sectors, spc);
@@ -247,20 +247,20 @@ begin
         if buffer <> nil then kfree(buffer);
         create_volume := eOutOfMemory; exit;
     end;
-    memset(uint32(boot), 0, 512); memset(uint32(buffer), 0, 128*512);
+    memset(PtrUInt(boot), 0, 512); memset(PtrUInt(buffer), 0, 128*512);
     br := PBootRecord(boot);
     br^.sectorSize := 512; br^.spc := uint8(spc); br^.rsvSectors := 32;
     br^.numFats := 1; br^.mediaDescp := $F8; br^.hiddenSectors := start;
     br^.manySectors := sectors; br^.FATSize := fat; br^.rootCluster := 2;
     br^.driveNumber := $80; br^.volumeID := 62; br^.bsignature := $29;
-    memcpy(uint32(pchar('ASURO   ')), uint32(@br^.OEMName[0]), 8);
-    memcpy(uint32(pchar('FAT32   ')), uint32(@br^.identString[0]), 8);
-    memcpy(uint32(pchar('NO NAME    ')), uint32(@br^.volumeLabel[0]), 11);
+    memcpy(PtrUInt(pchar('ASURO   ')), PtrUInt(@br^.OEMName[0]), 8);
+    memcpy(PtrUInt(pchar('FAT32   ')), PtrUInt(@br^.identString[0]), 8);
+    memcpy(PtrUInt(pchar('NO NAME    ')), PtrUInt(@br^.volumeLabel[0]), 11);
     if labelValue[0] <> #0 then begin
-        memset(uint32(@br^.volumeLabel[0]),ord(' '),11);
+        memset(PtrUInt(@br^.volumeLabel[0]),ord(' '),11);
         i := 0; while (i < 11) and (labelValue[i] <> #0) do begin br^.volumeLabel[i] := ord(labelValue[i]); Inc(i); end;
     end;
-    puint8(uint32(boot)+510)^ := $55; puint8(uint32(boot)+511)^ := $AA;
+    puint8(PtrUInt(boot)+510)^ := $55; puint8(PtrUInt(boot)+511)^ := $AA;
     err := eNone;
     repeat
         { Invalidate the old boot signature before modifying allocation metadata. }
@@ -274,20 +274,20 @@ begin
         buffer[0] := $0FFFFFF8; buffer[1] := $0FFFFFFF;
         buffer[2] := $0FFFFFFF; buffer[3] := $0FFFFFFF;
         if not writeSectors(fatStart, 1, buffer) then break;
-        memset(uint32(buffer), 0, 128*512);
+        memset(PtrUInt(buffer), 0, 128*512);
         dir := PDirectory(buffer);
         if labelValue[0] <> #0 then begin
-            memcpy(uint32(@br^.volumeLabel[0]),uint32(@dir^.fileName[0]),11);
+            memcpy(PtrUInt(@br^.volumeLabel[0]),PtrUInt(@dir^.fileName[0]),11);
             dir^.attributes := $08; dir := @PDirectory(buffer)[1];
         end;
-        memcpy(uint32(pchar('SYSTEM     ')), uint32(@dir^.fileName[0]), 11);
+        memcpy(PtrUInt(pchar('SYSTEM     ')), PtrUInt(@dir^.fileName[0]), 11);
         dir^.attributes := $10; dir^.clusterLow := 3;
         if not writeSectors(dataStart, spc, buffer) then break;
-        memset(uint32(buffer), 0, 128*512);
+        memset(PtrUInt(buffer), 0, 128*512);
         dir := PDirectory(buffer);
-        memcpy(uint32(pchar('.          ')), uint32(@dir[0].fileName[0]), 11);
+        memcpy(PtrUInt(pchar('.          ')), PtrUInt(@dir[0].fileName[0]), 11);
         dir[0].attributes := $10; dir[0].clusterLow := 3;
-        memcpy(uint32(pchar('..         ')), uint32(@dir[1].fileName[0]), 11);
+        memcpy(PtrUInt(pchar('..         ')), PtrUInt(@dir[1].fileName[0]), 11);
         dir[1].attributes := $10; dir[1].clusterLow := 0; { parent is root }
         if not writeSectors(dataStart+spc, spc, buffer) then break;
         writeSectors(start, 1, boot);

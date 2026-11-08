@@ -34,7 +34,7 @@ uses
     core.strings,
     io.stdio,
     debug.tracer,
-    core.util, arch.x86.util;
+    core.util, arch.platform.cpu;
 
 type
 
@@ -93,7 +93,7 @@ var
 begin
 
     buffer := puint32(kalloc(disk^.sectorSize))
-    memset(uint32(buffer), 0, disk^.sectorSize);
+    memset(PtrUInt(buffer), 0, disk^.sectorSize);
     PFilesystemRecord := PFilesystemRecord(buffer);
 
     filesystemRecord^.magicNumber     := $A2F2;
@@ -104,7 +104,7 @@ begin
     //filesystemRecord.volumeLabel     := config^
 
     driver.storage.mgr.storage_write(disk, start, 1, buffer);
-    memset(uint32(buffer), 0, disk^.sectorSize);
+    memset(PtrUInt(buffer), 0, disk^.sectorSize);
 
     fileEntry            := PFileEntry(buffer)[0];
     fileEntry^.filename   := thisArray;

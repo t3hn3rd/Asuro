@@ -18,7 +18,6 @@ unit driver.storage.fs.fat32;
 interface
 
 uses
-    boot.mgr,
     driver.storage.fs.mgr,
     driver.storage.types;
 
@@ -40,7 +39,7 @@ var
 procedure init;
 begin
     io.syslog.logln('FAT32', 'init: registering FAT32 filesystem');
-    memset(uint32(@filesystem), 0, sizeof(TFilesystem));
+    memset(PtrUInt(@filesystem), 0, sizeof(TFilesystem));
     filesystem.sName := 'FAT32';
     filesystem.releaseVolumeCallback := @FAT32ReleaseVolumeCtx;
     filesystem.system_id := $0B;
@@ -70,8 +69,5 @@ begin
     FAT32VolInit(@filesystem);
     driver.storage.fs.mgr.register_filesystem(@filesystem);
 end;
-
-initialization
-    boot.mgr.registerBoot('driver.storage.fs.fat32', @init, 'FAT32 Filesystem', 'driver.storage.fs.mgr');
 
 end.
