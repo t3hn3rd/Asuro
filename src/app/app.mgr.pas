@@ -23,10 +23,9 @@ unit app.mgr;
 interface
 
 uses
-    boot.mgr,
     debug.tracer, io.stdio, proc.mgr,
     //progs
-    app.base64, app.md5sum, app.dhclient, app.vbeinfo, app.testcmd, app.ping, app.meminfo, app.setres, app.iotest,
+    app.base64, app.md5sum, app.dhclient, app.testcmd, app.ping, app.meminfo, app.setres,
     //drivers
     driver.storage.ctl.ram, driver.mgr,
     //network
@@ -35,8 +34,6 @@ uses
     driver.storage.filedispatch,
     //wasm
     app.wasm.runner,
-    app.divzero,
-    app.bsod,
     app.vterminal;
 
 { Initialize all baked-in programs }
@@ -47,7 +44,6 @@ implementation
 uses
     core.version,
     //command provider units
-    arch.x86.cpu,
     app.diskcmd, driver.bus.usb.core, app.diskutil, app.notepad, app.partcmd, app.volcmd,
     app.filebrowser;
 
@@ -56,16 +52,10 @@ begin
     debug.tracer.push_trace('app.mgr.init');
 
     { Register commands from provider units }
-    io.stdio.registerCommand('CPU', @arch.x86.cpu.Terminal_Command_CPU, 'CPU Info.');
     io.stdio.registerCommand('DEV', @driver.mgr.terminal_command_dev, 'Driver Management Interface.');
     io.stdio.registerCommand('PS', @proc.mgr.terminal_command_ps, 'List running processes.');
     io.stdio.registerCommand('KILL', @proc.mgr.terminal_command_kill, 'Force-kill a process by PID.');
     io.stdio.registerCommand('TERMINATE', @proc.mgr.terminal_command_terminate, 'Gracefully terminate a process by PID.');
-    io.stdio.registerCommand('ARP', @driver.net.proto.arp.terminal_command_arp, 'Get ARP Table.');
-    io.stdio.registerCommand('IFCONFIG', @driver.net.proto.ipv4.terminal_command_ifconfig, 'Configure Network Settings.');
-    io.stdio.registerCommand('TCPCONNECT', @driver.net.proto.tcp.terminal_command_tcpconnect, 'Connect to a TCP host and send Hello World.');
-    io.stdio.registerCommand('TCPLISTEN', @driver.net.proto.tcp.terminal_command_tcplisten, 'Listen on a TCP port and log received data.');
-    io.stdio.registerCommand('TCPHTTP', @driver.net.proto.tcp.terminal_command_tcphttp, 'Send HTTP GET to a host IP (port 80 default).');
     io.stdio.registerCommand('USB', @driver.bus.usb.core.terminal_command_usb, 'driver.bus.usb subsystem information.');
 
     { File dispatch — must init before apps that register handlers }
@@ -81,21 +71,15 @@ begin
     app.md5sum.init();
     app.base64.init();
     app.dhclient.init();
-    app.vbeinfo.init();
     app.testcmd.init();
     app.ping.init();
     app.meminfo.init();
     { WASM & remaining apps }
     app.wasm.runner.init();
     app.setres.init();
-    app.divzero.init();
-    app.bsod.init();
     app.vterminal.init;
     app.filebrowser.init();
-    app.iotest.init();
 end;
 
-Initialization
-    boot.mgr.registerBoot('app.mgr', @init, 'Program Manager', BOOT_MGR_BARRIER_LATE);
 
 end.
