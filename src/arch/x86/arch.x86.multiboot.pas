@@ -38,7 +38,7 @@ type
     Pmemory_map_t = boot.multiboot.Pmemory_map_t;
 
 var
-   multibootinfo  : Pmultiboot_info_t = nil;
+   multibootinfo  : Pmultiboot_info_t absolute boot.multiboot.multibootinfo;
    multibootmagic : uint32;
 
 implementation

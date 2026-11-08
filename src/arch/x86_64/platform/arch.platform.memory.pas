@@ -11,20 +11,30 @@
 // limitations under the License.
 
 unit arch.platform.memory;
+
 interface
 uses arch.x86_64.memory.virtual;
 const MAX_HEAP_REGIONS = arch.x86_64.memory.virtual.ARENA_COUNT;
 {$i ../../common/platform.memory.inc}
+
 implementation
 uses arch.x86_64.memory.physical, arch.platform.diagnostics;
+
 function allocateHeapPage: PtrUInt;
-begin allocateHeapPage := allocate_region(1); end;
+begin
+    allocateHeapPage := allocate_region(1);
+end;
+
 function allocateLarge(pages: uint32): PtrUInt;
-begin allocateLarge := allocate_region(pages); end;
+begin
+    allocateLarge := allocate_region(pages);
+end;
+
 procedure release(address: PtrUInt; pages: uint32);
 begin
     if not release_region(address, pages) then fatal('LMM', 'Invalid heap region release');
 end;
+
 function identityReserve(address: PtrUInt): pointer;
 begin
     identityReserve := nil;
@@ -33,6 +43,24 @@ begin
         if reserve_range(address, $400000) then identityReserve := pointer(address);
     end;
 end;
-function freeBacking: uint64;
-begin freeBacking := free_count; end;
+
+function freePhysicalBytes: uint64;
+begin
+    freePhysicalBytes := free_count * FRAME_SIZE;
+end;
+
+function totalPhysicalBytes: uint64;
+begin
+    totalPhysicalBytes := total_count * FRAME_SIZE;
+end;
+function physicalAddress(address: PtrUInt): uint64;
+begin
+    physicalAddress := arch.x86_64.memory.virtual.translate(address);
+end;
+
+function mapDevice(address: uint64; bytes: SizeUInt): pointer;
+begin
+    mapDevice := arch.x86_64.memory.virtual.mapDevice(address, bytes);
+end;
+
 end.

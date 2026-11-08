@@ -37,8 +37,7 @@ procedure print_traces;
 implementation
 
 uses
-    boot.mgr,
-    core.util, arch.x86.util, core.strings, io.stdio, io.syslog;
+    core.util, core.strings, io.stdio, io.syslog;
 
 const
     MAX_TRACE = 40;
@@ -185,10 +184,5 @@ begin
         get_trace_N:= Traces[slot];
     end;
 end;
-
-initialization
-    //procedure registerBoot(Name: PChar; InitProc: TBootProc; Status: PChar; DependsOn: PChar);
-    boot.mgr.registerBoot('debug.tracer.freeze', @freeze, 'Debug Tracer Freeze', 'io.syslog' );
-    boot.mgr.registerBoot('debug.tracer', @init, 'Debug Tracer Initialization', 'io.stdio' );
 
 end.

@@ -12,12 +12,15 @@
 
 { Shared bitmap operations extracted from memory.heap. }
 unit memory.bitmap;
+
 interface
 function find_free_run(bmp: PuInt32; start, count, total: uint32): sint32;
 procedure bitmap_set_range(bmp: PuInt32; start, count: uint32);
 procedure bitmap_clear_range(bmp: PuInt32; start, count: uint32);
 function bitmap_all_set(bmp: PuInt32; start, count: uint32): boolean;
+
 implementation
+
 function find_free_run(bmp: PuInt32; start, count, total: uint32): sInt32;
 var
     idx, run_len, dw_idx: uint32;

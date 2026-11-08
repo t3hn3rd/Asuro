@@ -14,6 +14,7 @@
   the heap exists. Non-available memory-map entries always override available
   entries. Only the BSP is active; IRQ exclusion is not an SMP lock. }
 unit arch.x86_64.memory.physical;
+
 interface
 uses boot.multiboot;
 const
@@ -25,41 +26,53 @@ function alloc_high: uint64;
 function free_page(address: uint64): boolean;
 function reserve_range(address, bytes: uint64): boolean;
 function free_count: uint64;
+function total_count: uint64;
 procedure UnitTest;
+
 implementation
 uses arch.x86_64.util, debug.early;
 var
     eligible, used: PUInt32;
     frameCount, wordCount, hint: uint32;
-    freeFrames: uint64;
+    freeFrames, totalFrames: uint64;
     reservedEnd: uint64;
     kernelEnd: uint8; external name 'kernel_end';
     mapStart, mapEnd: PtrUInt;
 
 procedure fail(message: pchar);
 begin
-    puts('FAIL: PMM '); puts(message); puts(#13#10); bootstrap_halt;
+    puts('FAIL: PMM ');
+    puts(message);
+    puts(#13#10);
+    bootstrap_halt;
 end;
+
 function regionEnd(base, bytes: uint64): uint64;
 begin
     if (base >= MAX_MANAGED) or (bytes > MAX_MANAGED - base) then
         regionEnd := MAX_MANAGED
     else regionEnd := base + bytes;
 end;
+
 function nextEntry(entry: Pmemory_map_t): Pmemory_map_t;
 begin
     nextEntry := Pmemory_map_t(PtrUInt(entry) + entry^.size + 4);
 end;
+
 procedure preserve(address, bytes: uint64);
-var finish: uint64;
+var
+    finish: uint64;
 begin
     if (address >= $100000000) or (bytes > $100000000 - address) then
         fail('boot data outside initial mapping');
     finish := address + bytes;
     if finish > reservedEnd then reservedEnd := finish;
 end;
+
 procedure setAvailable(base, bytes: uint64; available: boolean);
-var first, last, i, mask: uint32; finish: uint64;
+var
+    first, last, i, mask: uint32;
+    finish: uint64;
 begin
     finish := regionEnd(base, bytes);
     if (base >= finish) or (base >= uint64(frameCount) * FRAME_SIZE) then exit;
@@ -85,8 +98,11 @@ begin
         end;
     end;
 end;
+
 function metadataAddress(bytes: uint64): uint64;
-var e, other: Pmemory_map_t; candidate, finish, nextCandidate: uint64;
+var
+    e, other: Pmemory_map_t;
+    candidate, finish, nextCandidate: uint64;
 begin
     metadataAddress := 0;
     e := Pmemory_map_t(mapStart);
@@ -117,9 +133,15 @@ begin
         e := nextEntry(e);
     end;
 end;
+
 procedure init(info: Pmultiboot_info_t);
-var e: Pmemory_map_t; limit, bytes, storage: uint64; i, entries: uint32;
-    modules: Pmodule_t; sections: PtrUInt; sectionAddress, sectionBytes: uint64;
+var
+    e: Pmemory_map_t;
+    limit, bytes, storage: uint64;
+    i, entries: uint32;
+    modules: Pmodule_t;
+    sections: PtrUInt;
+    sectionAddress, sectionBytes: uint64;
 begin
     if (info = nil) or ((info^.flags and (1 shl 6)) = 0) then fail('memory map missing');
     if (info^.mmap_length = 0) or (info^.mmap_length > $100000) or
@@ -194,6 +216,7 @@ begin
         if e^.mtype <> 1 then setAvailable(e^.base_addr, e^.length, false);
         e := nextEntry(e);
     end;
+    totalFrames := freeFrames;
     setAvailable(0, reservedEnd, false);
     setAvailable(storage, bytes, false);
     hint := 0;
@@ -201,8 +224,11 @@ begin
     field('PMM_MANAGED_LIMIT', uint64(frameCount) * FRAME_SIZE);
     field('PMM_METADATA', storage);
 end;
+
 function allocateBetween(first, last: uint32): uint64;
-var saved: PtrUInt; pass, start, finish, idx, bits, mask, bit: uint32;
+var
+    saved: PtrUInt;
+    pass, start, finish, idx, bits, mask, bit: uint32;
 begin
     allocateBetween := 0;
     saved := lockIRQ;
@@ -237,17 +263,22 @@ begin
     end;
     unlockIRQ(saved);
 end;
+
 function alloc_page(lowOnly: boolean): uint64;
 begin
     if lowOnly then alloc_page := allocateBetween(0, $100000)
     else alloc_page := allocateBetween(0, frameCount);
 end;
+
 function alloc_high: uint64;
 begin
     alloc_high := allocateBetween($100000, frameCount);
 end;
+
 function free_page(address: uint64): boolean;
-var idx, mask: uint32; saved: PtrUInt;
+var
+    idx, mask: uint32;
+    saved: PtrUInt;
 begin
     free_page := false;
     if (address and (FRAME_SIZE - 1) <> 0) or (address div FRAME_SIZE >= frameCount) then exit;
@@ -262,8 +293,11 @@ begin
     end;
     unlockIRQ(saved);
 end;
+
 function reserve_range(address, bytes: uint64): boolean;
-var first, last, i: uint32; saved: PtrUInt;
+var
+    first, last, i: uint32;
+    saved: PtrUInt;
 begin
     reserve_range := false;
     if (bytes = 0) or (address >= MAX_MANAGED) or (bytes > MAX_MANAGED - address) then exit;
@@ -273,25 +307,48 @@ begin
     saved := lockIRQ;
     if first < last then for i := first to last - 1 do
         if (used[i shr 5] and (uint32(1) shl (i and 31))) <> 0 then begin
-            unlockIRQ(saved); exit;
+            unlockIRQ(saved);
+            exit;
         end;
     setAvailable(address, bytes, false);
     reserve_range := true;
     unlockIRQ(saved);
 end;
+
 function free_count: uint64;
-begin free_count := freeFrames; end;
+begin
+    free_count := freeFrames;
+end;
+
+function total_count: uint64;
+begin
+    total_count := totalFrames;
+end;
+
 procedure UnitTest;
-var before, a, b: uint64; passed, failed: uint32;
+var
+    before, a, b: uint64;
+    passed, failed: uint32;
+
     procedure Assert(condition: boolean; name: pchar);
     begin
-        if condition then begin inc(passed); puts('PASS: '); end
-        else begin inc(failed); puts('FAIL: '); end;
-        puts(name); puts(#13#10);
+        if condition then begin
+            inc(passed);
+            puts('PASS: ');
+        end
+        else begin
+            inc(failed);
+            puts('FAIL: ');
+        end;
+        puts(name);
+        puts(#13#10);
     end;
 begin
-    passed := 0; failed := 0; before := free_count;
-    a := alloc_page(true); b := alloc_page(true);
+    passed := 0;
+    failed := 0;
+    before := free_count;
+    a := alloc_page(true);
+    b := alloc_page(true);
     Assert((a <> 0) and (b <> 0) and (a <> b) and (a >= reservedEnd) and
         (b >= reservedEnd), 'PMM unique usable frames exclude boot reservations');
     Assert(not free_page(0) and not free_page(a + 1), 'PMM rejects reserved/unaligned frees');

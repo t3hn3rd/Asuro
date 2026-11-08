@@ -16,6 +16,8 @@ unit system;
 
 interface
 
+const TRACER_ENABLE = true;
+
 type SizeInt = int64;
      SizeUInt = qword;
 
@@ -35,10 +37,28 @@ type
         frametype: longint;
     end;
 
+procedure init;
+procedure fpc_initializeunits; compilerproc;
+
 procedure bootstrap_halt; external name 'bootstrap_halt';
 function Trunc(d: Double): int64;
 
 implementation
+
+var
+    InitFinalTable: TInitFinalTable; external name 'INITFINAL';
+
+{$i ../common/system.init.inc}
+
+procedure init;
+begin
+    initializeUnits;
+end;
+
+procedure fpc_initializeunits; [public, alias: 'FPC_INITIALIZEUNITS']; compilerproc;
+begin
+    initializeUnits;
+end;
 
 { SysV AMD64 passes Double in XMM0. CVTTSD2SI rounds toward zero without
   changing the caller's x87 control word or MXCSR rounding mode. }

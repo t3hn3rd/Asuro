@@ -79,7 +79,6 @@ procedure freeParams(params: PParamList);
 function  paramCount(params: PParamList): uint32;
 function  getParam(index: uint32; params: PParamList): pchar;
 
-{ Working-directory helpers live in io.directory, which requires VFS. }
 
 { Halt mechanism for async commands }
 function  halt(id: uint32; cb: THaltCallback): boolean;
@@ -97,7 +96,7 @@ procedure UnitTest;
 implementation
 
 uses
-    arch.platform.diagnostics, arch.common.interrupts;
+    arch.platform.diagnostics, arch.platform.cpu;
 
 const
     INITIAL_CMD_CAP = 64;
@@ -108,7 +107,6 @@ var
     CmdCap     : uint32 = 0;
 
 { ---- Output buffer ---- }
-
 function createOutBuf(initial_cap: uint32): POutBuf;
 var
     ob: POutBuf;
@@ -119,10 +117,12 @@ begin
     createOutBuf := nil;
     if ob = nil then exit;
     ob^.buf := pchar(kalloc(cap));
-    if ob^.buf = nil then begin kfree(void(ob)); exit; end;
+    if ob^.buf = nil then begin
+        kfree(void(ob));
+        exit;
+    end;
     ob^.len := 0;
     ob^.cap := cap;
-    memset(PtrUInt(ob^.buf), 0, cap);
     createOutBuf := ob;
 end;
 
@@ -142,16 +142,24 @@ begin
 end;
 
 function bufGrow(buf: POutBuf; needed: uint32): boolean;
-var newCap, required: uint32; newBuf: pchar;
+var
+    newCap, required: uint32;
+    newBuf: pchar;
 begin
     bufGrow := false;
     if needed >= high(uint32) - buf^.len then exit;
     required := buf^.len + needed + 1;
-    if required <= buf^.cap then begin bufGrow := true; exit; end;
+    if required <= buf^.cap then begin
+        bufGrow := true;
+        exit;
+    end;
     newCap := buf^.cap;
     if newCap = 0 then newCap := 64;
     while newCap < required do begin
-        if newCap > high(uint32) div 2 then begin newCap := required; break; end;
+        if newCap > high(uint32) div 2 then begin
+            newCap := required;
+            break;
+        end;
         newCap := newCap * 2;
     end;
     newBuf := pchar(kalloc(newCap));
@@ -174,7 +182,9 @@ begin
 end;
 
 procedure bufWriteStr(buf: POutBuf; s: pchar);
-var len, offset: uint32; aliases: boolean;
+var
+    len, offset: uint32;
+    aliases: boolean;
 begin
     if (buf = nil) or (s = nil) then exit;
     len := stringSize(s);
@@ -305,7 +315,6 @@ begin
 end;
 
 { ---- ANSI core.gfx.color helpers ---- }
-
 procedure bufSetColor(buf: POutBuf; fg: uint8);
 begin
     { ESC[38;5;<n>m }
@@ -330,9 +339,10 @@ begin
 end;
 
 { ---- Dynamic command registry ---- }
-
 function growCommands: boolean;
-var newCap: uint32; newArr: PCommand;
+var
+    newCap: uint32;
+    newArr: PCommand;
 begin
     growCommands := false;
     if CmdCap > high(uint32) div sizeof(TCommand) div 2 then exit;
@@ -385,7 +395,9 @@ begin
 end;
 
 function findCommand(name: pchar): PCommand;
-var i: uint32; cmd: PCommand;
+var
+    i: uint32;
+    cmd: PCommand;
 begin
     findCommand := nil;
     if (name = nil) or (CmdCount = 0) then exit;
@@ -399,7 +411,6 @@ begin
 end;
 
 { ---- Parameter parsing ---- }
-
 function getParams(var buf: TCommandBuffer): PParamList;
 var
     start, finish, size: uint32;
@@ -421,10 +432,16 @@ begin
               (buf[finish] <> 0) do inc(finish);
         size := finish - start;
         current^.Param := stringNew(size);
-        if current^.Param = nil then begin freeParams(root); exit; end;
+        if current^.Param = nil then begin
+            freeParams(root);
+            exit;
+        end;
         memcpy(PtrUInt(@buf[start]), PtrUInt(current^.Param), size);
         current^.next := PParamList(kalloc(SizeOf(TParamList)));
-        if current^.next = nil then begin freeParams(root); exit; end;
+        if current^.next = nil then begin
+            freeParams(root);
+            exit;
+        end;
         current := current^.next;
         current^.next := nil;
         current^.Param := nil;
@@ -484,24 +501,26 @@ end;
 
 
 { ---- Halt mechanism ---- }
-
 function halt(id: uint32; cb: THaltCallback): boolean;
-var flags: PtrUInt;
+var
+    flags: PtrUInt;
 begin
-    flags := arch.common.interrupts.lock;
+    flags := arch.platform.cpu.lock;
     halt := not Halted;
     if not Halted then begin
         HaltID := id;
         HaltCB := cb;
         Halted := true;
     end;
-    arch.common.interrupts.unlock(flags);
+    arch.platform.cpu.unlock(flags);
 end;
 
 function done(id: uint32): boolean;
-var flags: PtrUInt; callback: THaltCallback;
+var
+    flags: PtrUInt;
+    callback: THaltCallback;
 begin
-    flags := arch.common.interrupts.lock;
+    flags := arch.platform.cpu.lock;
     done := Halted and (id = HaltID);
     callback := nil;
     if done then begin
@@ -510,7 +529,7 @@ begin
         Halted := false;
         HaltID := 0;
     end;
-    arch.common.interrupts.unlock(flags);
+    arch.platform.cpu.unlock(flags);
     if callback <> nil then callback();
 end;
 
@@ -572,8 +591,10 @@ begin
 end;
 
 
-var testCallbackCount: uint32;
+var
+    testCallbackCount: uint32;
     testCallbackReentered: boolean;
+
 procedure testHaltCallback;
 begin
     inc(testCallbackCount);
@@ -593,6 +614,7 @@ var
     oldHaltCB: THaltCallback;
     oldCount, oldCap, i, passed, failed: uint32;
     beforeFree: SizeUInt;
+
     procedure Assert(condition: boolean; name: pchar);
     begin
         if condition then inc(passed) else begin
@@ -601,18 +623,31 @@ var
         end;
     end;
 begin
-    passed := 0; failed := 0; beforeFree := lmm_total_free;
-    oldHalted := Halted; oldHaltID := HaltID; oldHaltCB := HaltCB;
-    Halted := false; HaltID := 0; HaltCB := nil;
-    testCallbackCount := 0; testCallbackReentered := false;
+    passed := 0;
+    failed := 0;
+    beforeFree := lmm_total_free;
+    oldHalted := Halted;
+    oldHaltID := HaltID;
+    oldHaltCB := HaltCB;
+    Halted := false;
+    HaltID := 0;
+    HaltCB := nil;
+    testCallbackCount := 0;
+    testCallbackReentered := false;
     Assert(halt(41, @testHaltCallback) and not halt(42, nil), 'halt reserves one owner');
     Assert(not done(42) and Halted, 'wrong completion preserves halt owner');
     Assert(done(41) and (testCallbackCount = 1) and testCallbackReentered and
            Halted and (HaltID = 42), 'completion detaches before callback reentry');
     Assert(done(42) and not done(42), 'completion releases exactly once');
-    Halted := oldHalted; HaltID := oldHaltID; HaltCB := oldHaltCB;
-    oldCommands := Commands; oldCount := CmdCount; oldCap := CmdCap;
-    Commands := nil; CmdCount := 0; CmdCap := 0;
+    Halted := oldHalted;
+    HaltID := oldHaltID;
+    HaltCB := oldHaltCB;
+    oldCommands := Commands;
+    oldCount := CmdCount;
+    oldCap := CmdCap;
+    Commands := nil;
+    CmdCount := 0;
+    CmdCap := 0;
     Assert(findCommand('missing') = nil, 'empty registry lookup');
     for i := 0 to 69 do registerCommand('ECHO', @cmd_echo, 'test');
     Assert((getCommandCount = 70) and (getCommand(69) <> nil) and
@@ -655,15 +690,17 @@ begin
         freeParams(params);
         Assert(getParam(0, nil) = nil, 'nil parameter lookup');
     end else Assert(false, 'stdio test allocation');
-    freeOutBuf(output); kfree(void(input));
+    freeOutBuf(output);
+    kfree(void(input));
     kfree(void(Commands));
-    Commands := oldCommands; CmdCount := oldCount; CmdCap := oldCap;
+    Commands := oldCommands;
+    CmdCount := oldCount;
+    CmdCap := oldCap;
     Assert(lmm_total_free = beforeFree, 'stdio allocation ownership restored');
     arch.platform.diagnostics.testSummary('STDIO', 'STDIO_TESTS_PASSED', 'STDIO_TESTS_FAILED', passed, failed);
 end;
 
 { ---- Initialization ---- }
-
 procedure init;
 begin
     if Commands <> nil then exit;

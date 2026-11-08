@@ -15,4 +15,7 @@ function allocateHeapPage: PtrUInt;
 function allocateLarge(pages: uint32): PtrUInt;
 procedure release(address: PtrUInt; pages: uint32);
 function identityReserve(address: PtrUInt): pointer;
-function freeBacking: uint64;
+function freePhysicalBytes: uint64;
+function totalPhysicalBytes: uint64;
+function physicalAddress(address: PtrUInt): uint64;
+function mapDevice(address: uint64; bytes: SizeUInt): pointer;

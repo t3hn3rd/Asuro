@@ -23,13 +23,11 @@ unit driver.bus.pci;
 interface
 
 uses
-    boot.mgr,
     debug.tracer,
-    core.util, arch.x86.util,
+    core.util, arch.platform.cpu,
     io.syslog,
     driver.types,
     memory.heap, 
-    arch.x86.memory.virtual,
     driver.mgr;
 
 const
@@ -148,7 +146,7 @@ begin
         result := loadDeviceConfig(bus, slot, 0);
         if result = true then begin
             if devices[device_count - 1].header_type and $80 <> 0 then begin
-                for func := 1 to 8 do begin
+                for func := 1 to 7 do begin
                     loadDeviceConfig(bus, slot, func);
                 end;
             end;
@@ -404,7 +402,7 @@ begin
             devices[device_count] := device;
             device_count := device_count + 1;
 
-            driver.mgr.register_device('driver.bus.pci Device', DevID, @device);
+            driver.mgr.register_device('driver.bus.pci Device', DevID, @devices[device_count - 1]);
             kfree(void(DevID));
         end else begin
             loadBusConfig(bus, slot, func, device);
@@ -473,8 +471,5 @@ begin
 
     pop_trace;
 end;
-
-Initialization
-    boot.mgr.registerBoot('driver.bus.pci', @Init, 'PCI Bus Driver', BOOT_MGR_BARRIER_BUS_LATE);
 
 end.

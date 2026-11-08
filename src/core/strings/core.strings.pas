@@ -159,24 +159,20 @@ var
 begin
     size:= stringSize(str);
     result:= stringNew(size);
-    if result = nil then begin stringCopy:= nil; exit; end;
+    if result = nil then begin
+        stringCopy:= nil;
+        exit;
+    end;
     memcpy(PtrUInt(str), PtrUInt(result), size);
     stringCopy:= result;    
 end;
 
 function stringNew(size : uint32) : pchar;
-var
-    result : pchar;
-    newSize : uint32;
-
 begin
     stringNew:= nil;
     if size = high(uint32) then exit;
-    newSize:= size + 1;
-    result:= pchar(kalloc(newSize));
-    if result = nil then exit;
-    memset(PtrUInt(result), 0, newSize);
-    stringNew:= result;
+    { kalloc zeroes the buffer and its terminating byte. }
+    stringNew:= pchar(kalloc(size + 1));
 end;
 
 function stringSize(str : pchar) : uint32;
@@ -203,15 +199,22 @@ var
 begin
     size1:= stringSize(str1);
     size2:= stringSize(str2);
-    if size2 >= high(uint32) - size1 then begin stringConcat:= nil; exit; end;
+    if size2 >= high(uint32) - size1 then begin
+        stringConcat:= nil;
+        exit;
+    end;
     result:= stringNew(size1 + size2);
-    if result = nil then begin stringConcat:= nil; exit; end;
+    if result = nil then begin
+        stringConcat:= nil;
+        exit;
+    end;
     memcpy(PtrUInt(str1), PtrUInt(result), size1);
     memcpy(PtrUInt(str2), PtrUInt(result + size1), size2);
     stringConcat:= result;
 end;
 
 // Trim the string to the specified length.
+
 function stringTrim(str : pchar; length : uInt32) : pchar;
 var
     result : pchar;
@@ -220,12 +223,16 @@ begin
     strLen:= stringSize(str);
     if length > strLen then length:= strLen;
     result:= stringNew(length);
-    if result = nil then begin stringTrim:= nil; exit; end;
+    if result = nil then begin
+        stringTrim:= nil;
+        exit;
+    end;
     memcpy(PtrUInt(str), PtrUInt(result), length);
     stringTrim:= result;
 end;
 
 // Return a substring of the string.
+
 function stringSub(str : pchar; start, size : uint32) : pchar;
 var
     result : pchar;
@@ -238,12 +245,16 @@ begin
     end;
     if size > strLen - start then size:= strLen - start;
     result:= stringNew(size);
-    if result = nil then begin stringSub:= nil; exit; end;
+    if result = nil then begin
+        stringSub:= nil;
+        exit;
+    end;
     memcpy(PtrUInt(str)+start, PtrUInt(result), size);
     stringSub:= result;
 end;
 
 // Compare find against str starting at position pos, without requiring full string equality.
+
 function stringMatchAt(str : pchar; pos : uint32; find : pchar) : boolean;
 var
     i, findLen, strLen : uint32;
@@ -264,6 +275,7 @@ begin
 end;
 
 // Replace first instance of a string with another.
+
 function stringReplace(str, find, replace : pchar) : pchar;
 var
     result : pchar;
@@ -287,9 +299,15 @@ begin
 
     // If we found the find string, replace it.
     if found then begin
-        if replLen >= high(uint32) - (strLen - findLen) then begin stringReplace:= nil; exit; end;
+        if replLen >= high(uint32) - (strLen - findLen) then begin
+            stringReplace:= nil;
+            exit;
+        end;
         result:= stringNew(strLen - findLen + replLen);
-        if result = nil then begin stringReplace:= nil; exit; end;
+        if result = nil then begin
+            stringReplace:= nil;
+            exit;
+        end;
         // Copy prefix before match
         if pos > 0 then
             memcpy(PtrUInt(str), PtrUInt(result), pos);
@@ -308,6 +326,7 @@ end;
 
 
 // Find the index of the first instance of a string.
+
 function stringIndexOf(str, find : pchar) : sint32;
 var 
     i, strLen, findLen : uint32;
@@ -343,13 +362,28 @@ function stringCompare(a, b : pchar) : sint32;
 var
     i : uint32;
 begin
-    if (a = nil) and (b = nil) then begin stringCompare := 0; exit; end;
-    if a = nil then begin stringCompare := -1; exit; end;
-    if b = nil then begin stringCompare := 1; exit; end;
+    if (a = nil) and (b = nil) then begin
+        stringCompare := 0;
+        exit;
+    end;
+    if a = nil then begin
+        stringCompare := -1;
+        exit;
+    end;
+    if b = nil then begin
+        stringCompare := 1;
+        exit;
+    end;
     i := 0;
     while (a[i] <> #0) and (b[i] <> #0) do begin
-        if ord(a[i]) < ord(b[i]) then begin stringCompare := -1; exit; end;
-        if ord(a[i]) > ord(b[i]) then begin stringCompare := 1; exit; end;
+        if ord(a[i]) < ord(b[i]) then begin
+            stringCompare := -1;
+            exit;
+        end;
+        if ord(a[i]) > ord(b[i]) then begin
+            stringCompare := 1;
+            exit;
+        end;
         i := i + 1;
     end;
     if a[i] = b[i] then
@@ -368,15 +402,30 @@ var
     i  : uint32;
     ca, cb : char;
 begin
-    if (a = nil) and (b = nil) then begin stringCompareCI := 0; exit; end;
-    if a = nil then begin stringCompareCI := -1; exit; end;
-    if b = nil then begin stringCompareCI := 1; exit; end;
+    if (a = nil) and (b = nil) then begin
+        stringCompareCI := 0;
+        exit;
+    end;
+    if a = nil then begin
+        stringCompareCI := -1;
+        exit;
+    end;
+    if b = nil then begin
+        stringCompareCI := 1;
+        exit;
+    end;
     i := 0;
     while (a[i] <> #0) and (b[i] <> #0) do begin
         ca := charToLower(a[i]);
         cb := charToLower(b[i]);
-        if ord(ca) < ord(cb) then begin stringCompareCI := -1; exit; end;
-        if ord(ca) > ord(cb) then begin stringCompareCI := 1; exit; end;
+        if ord(ca) < ord(cb) then begin
+            stringCompareCI := -1;
+            exit;
+        end;
+        if ord(ca) > ord(cb) then begin
+            stringCompareCI := 1;
+            exit;
+        end;
         i := i + 1;
     end;
     if a[i] = b[i] then
@@ -405,8 +454,14 @@ var
 begin
     strLen := stringSize(str);
     findLen := stringSize(find);
-    if findLen = 0 then begin stringIndexOfCI := 0; exit; end;
-    if findLen > strLen then begin stringIndexOfCI := -1; exit; end;
+    if findLen = 0 then begin
+        stringIndexOfCI := 0;
+        exit;
+    end;
+    if findLen > strLen then begin
+        stringIndexOfCI := -1;
+        exit;
+    end;
     for i := 0 to strLen - findLen do begin
         found := true;
         if findLen > 0 then
@@ -416,7 +471,10 @@ begin
                     break;
                 end;
             end;
-        if found then begin stringIndexOfCI := i; exit; end;
+        if found then begin
+            stringIndexOfCI := i;
+            exit;
+        end;
     end;
     stringIndexOfCI := -1;
 end;
@@ -437,10 +495,16 @@ var
     i, prefLen : uint32;
 begin
     stringStartsWith := false;
-    if prefix = nil then begin stringStartsWith := true; exit; end;
+    if prefix = nil then begin
+        stringStartsWith := true;
+        exit;
+    end;
     if str = nil then exit;
     prefLen := stringSize(prefix);
-    if prefLen = 0 then begin stringStartsWith := true; exit; end;
+    if prefLen = 0 then begin
+        stringStartsWith := true;
+        exit;
+    end;
     if stringSize(str) < prefLen then exit;
     if prefLen > 0 then
         for i := 0 to prefLen - 1 do
@@ -456,10 +520,16 @@ var
     i, prefLen : uint32;
 begin
     stringStartsWithCI := false;
-    if prefix = nil then begin stringStartsWithCI := true; exit; end;
+    if prefix = nil then begin
+        stringStartsWithCI := true;
+        exit;
+    end;
     if str = nil then exit;
     prefLen := stringSize(prefix);
-    if prefLen = 0 then begin stringStartsWithCI := true; exit; end;
+    if prefLen = 0 then begin
+        stringStartsWithCI := true;
+        exit;
+    end;
     if stringSize(str) < prefLen then exit;
     if prefLen > 0 then
         for i := 0 to prefLen - 1 do
@@ -475,11 +545,17 @@ var
     i, strLen, sufLen : uint32;
 begin
     stringEndsWith := false;
-    if suffix = nil then begin stringEndsWith := true; exit; end;
+    if suffix = nil then begin
+        stringEndsWith := true;
+        exit;
+    end;
     if str = nil then exit;
     strLen := stringSize(str);
     sufLen := stringSize(suffix);
-    if sufLen = 0 then begin stringEndsWith := true; exit; end;
+    if sufLen = 0 then begin
+        stringEndsWith := true;
+        exit;
+    end;
     if strLen < sufLen then exit;
     if sufLen > 0 then
         for i := 0 to sufLen - 1 do
@@ -495,11 +571,17 @@ var
     i, strLen, sufLen : uint32;
 begin
     stringEndsWithCI := false;
-    if suffix = nil then begin stringEndsWithCI := true; exit; end;
+    if suffix = nil then begin
+        stringEndsWithCI := true;
+        exit;
+    end;
     if str = nil then exit;
     strLen := stringSize(str);
     sufLen := stringSize(suffix);
-    if sufLen = 0 then begin stringEndsWithCI := true; exit; end;
+    if sufLen = 0 then begin
+        stringEndsWithCI := true;
+        exit;
+    end;
     if strLen < sufLen then exit;
     if sufLen > 0 then
         for i := 0 to sufLen - 1 do
@@ -758,8 +840,7 @@ var
     passed, failed : uint32;
 
     procedure Assert(condition : boolean; testName : pchar);
-    var
-        msg : pchar;
+    var msg : pchar;
     begin
         if condition then begin
             inc(passed);

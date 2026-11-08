@@ -24,10 +24,9 @@ interface
 
 uses
     core.ds.types, core.ds.dynamic,
-    io.syslog,
     memory.heap,
-    debug.tracer,
-    core.util, arch.x86.util;
+    arch.platform.diagnostics,
+    core.util;
 
 type
   {**
@@ -288,6 +287,9 @@ implementation
 uses
     core.strings;
 
+type
+    PStringSlot = ^pchar;
+
 { ---------------------------------------------------------------------------- }
 {                           Managed Linked List                                }
 { ---------------------------------------------------------------------------- }
@@ -300,6 +302,7 @@ uses
 function LL_New(ElementSize : uint32) : PLinkedListBase;
 begin
   LL_New := PLinkedListBase(kalloc(sizeof(TLinkedListBase)));
+  if LL_New = nil then exit;
   LL_New^.ElementSize := ElementSize;
   LL_New^.Count := 0;
   LL_New^.Head := nil;
@@ -311,38 +314,10 @@ end;
   @returns Pointer to the newly allocated data space.
 **}
 function LL_Add(LinkedList : PLinkedListBase) : Void;
-var
-  Element : PLinkedList;
-  Base    : PLinkedList;
 begin
-  if LinkedList^.Head = nil then
-  begin
-    Element := PLinkedList(kalloc(sizeof(TLinkedList)));
-    Element^.Previous := nil;
-    Element^.Next := nil;
-    Element^.Data := kalloc(LinkedList^.ElementSize);
-    memset(uint32(Element^.Data), 0, LinkedList^.ElementSize);
-
-    LinkedList^.Head := Element;
-    LinkedList^.Count := 1;
-    LL_Add := Element^.Data;
-  end
-  else
-  begin
-    Base := LinkedList^.Head;
-    while Base^.Next <> nil do
-      Base := Base^.Next;
-
-    Element := PLinkedList(kalloc(sizeof(TLinkedList)));
-    Element^.Previous := Base;
-    Element^.Next := nil;
-    Element^.Data := kalloc(LinkedList^.ElementSize);
-    memset(uint32(Element^.Data), 0, LinkedList^.ElementSize);
-
-    Base^.Next := Element;
-    LinkedList^.Count := LinkedList^.Count + 1;
-    LL_Add := Element^.Data;
-  end;
+    LL_Add := nil;
+    if LinkedList <> nil then
+        LL_Add := LL_Insert(LinkedList, LinkedList^.Count);
 end;
 
 {**
@@ -406,63 +381,37 @@ end;
 **}
 function LL_Insert(LinkedList : PLinkedListBase; idx : uint32) : void;
 var
-  i : uint32;
-  Base : PLinkedList;
-  Prev, Next : PLinkedList;
-  Element : PLinkedList;
+    i: uint32;
+    next, prev, element: PLinkedList;
 begin
-  LL_Insert := nil;
-  if idx > LinkedList^.Count then
-    Exit;
+    LL_Insert := nil;
+    if LinkedList = nil then exit;
+    if (idx > LinkedList^.Count) or (LinkedList^.Count = High(uint32)) then exit;
 
-  Base := LinkedList^.Head;
-  i := 0;
-  while (i < idx) and (Base <> nil) do
-  begin
-    Base := Base^.Next;
-    Inc(i);
-  end;
+    prev := nil;
+    next := LinkedList^.Head;
+    for i := 1 to idx do begin
+        prev := next;
+        next := next^.Next;
+    end;
 
-  // Insert at head
-  if i = 0 then
-  begin
-    Element := PLinkedList(kalloc(sizeof(TLinkedList)));
-    Element^.Data := kalloc(LinkedList^.ElementSize);
-    memset(uint32(Element^.Data), 0, LinkedList^.ElementSize);
-    Element^.Next := LinkedList^.Head;
-    Element^.Previous := nil;
-    if LinkedList^.Head <> nil then
-      LinkedList^.Head^.Previous := Element;
-    LinkedList^.Head := Element;
-    LinkedList^.Count := LinkedList^.Count + 1;
-    LL_Insert := Element^.Data;
-  end
-  else
-  begin
-    // Insert in the middle or end
-    if Base = nil then
-      Exit;
-    Prev := Base^.Previous;
-    Next := Base;
-
-    Element := PLinkedList(kalloc(sizeof(TLinkedList)));
-    Element^.Data := kalloc(LinkedList^.ElementSize);
-    memset(uint32(Element^.Data), 0, LinkedList^.ElementSize);
-
-    Element^.Previous := Prev;
-    Element^.Next := Next;
-
-    if Prev = nil then
-      LinkedList^.Head := Element
+    element := PLinkedList(kalloc(sizeof(TLinkedList)));
+    if element = nil then exit;
+    element^.Data := kalloc(LinkedList^.ElementSize);
+    if element^.Data = nil then begin
+        kfree(void(element));
+        exit;
+    end;
+    element^.Previous := prev;
+    element^.Next := next;
+    if prev = nil then
+        LinkedList^.Head := element
     else
-      Prev^.Next := Element;
-
-    if Next <> nil then
-      Next^.Previous := Element;
-
-    LinkedList^.Count := LinkedList^.Count + 1;
-    LL_Insert := Element^.Data;
-  end;
+        prev^.Next := element;
+    if next <> nil then
+        next^.Previous := element;
+    inc(LinkedList^.Count);
+    LL_Insert := element^.Data;
 end;
 
 {**
@@ -511,40 +460,8 @@ end;
   @returns Pointer to the resulting linked list.
 **}
 function LL_FromString(str : pchar; delimter : char) : PLinkedListBase;
-var
-  list       : PLinkedListBase;
-  head, tail : pchar;
-  size       : uint32;
-  null_delim : boolean;
-  elm        : puint32;
-  out_str    : pchar;
 begin
-  list := LL_New(sizeof(uint32));
-  LL_FromString := list;
-
-  head := str;
-  tail := head;
-  null_delim := false;
-
-  while not null_delim do
-  begin
-    if (head^ = delimter) or (head^ = char(0)) then
-    begin
-      if head^ = char(0) then
-        null_delim := true;
-      size := uint32(head) - uint32(tail);
-      if size > 0 then
-      begin
-        elm := puint32(LL_Add(list));
-        out_str := stringNew(size + 1);
-        // Copy from tail -> out_str
-        memcpy(uint32(tail), uint32(out_str), size);
-        elm^ := uint32(out_str);
-      end;
-      tail := head + 1;
-    end;
-    Inc(head);
-  end;
+    LL_FromString := STRLL_FromString(str, delimter);
 end;
 
 { ---------------------------------------------------------------------------- }
@@ -558,10 +475,10 @@ end;
 **}
 procedure STRLL_Add(LinkedList : PLinkedListBase; str : pchar);
 var
-  ptr : puint32;
+  ptr : PStringSlot;
 begin
-  ptr := puint32(LL_Add(LinkedList));
-  ptr^ := uint32(str);
+  ptr := PStringSlot(LL_Add(LinkedList));
+  if ptr <> nil then ptr^ := str;
 end;
 
 {**
@@ -572,9 +489,9 @@ end;
 **}
 function STRLL_Get(LinkedList : PLinkedListBase; idx : uint32) : pchar;
 var
-  ptr : puint32;
+  ptr : PStringSlot;
 begin
-  ptr := puint32(LL_Get(LinkedList, idx));
+  ptr := PStringSlot(LL_Get(LinkedList, idx));
   STRLL_Get := nil;
   if ptr <> nil then
     STRLL_Get := pchar(ptr^);
@@ -586,7 +503,7 @@ end;
 **}
 function STRLL_New : PLinkedListBase;
 begin
-  STRLL_New := LL_New(sizeof(uint32));
+  STRLL_New := LL_New(sizeof(pchar));
 end;
 
 {**
@@ -609,11 +526,12 @@ procedure STRLL_Delete(LinkedList : PLinkedListBase; idx : uint32);
 var
   ptr : pchar;
 begin
-  debug.tracer.push_trace('core.ds.lists.STRLL_Delete (Don''t add static core.strings)');
+  arch.platform.diagnostics.push_trace('core.ds.lists.STRLL_Delete (Don''t add static core.strings)');
   ptr := STRLL_Get(LinkedList, idx);
   if ptr <> nil then
     kfree(void(ptr));
   LL_Delete(LinkedList, idx);
+  pop_trace;
 end;
 
 {**
@@ -646,38 +564,46 @@ end;
 **}
 function STRLL_FromString(str : pchar; delimter : char) : PLinkedListBase;
 var
-  list       : PLinkedListBase;
-  head, tail : pchar;
-  size       : uint32;
-  null_delim : boolean;
-  elm        : puint32;
-  out_str    : pchar;
+    list: PLinkedListBase;
+    head, tail, text: pchar;
+    size: SizeUInt;
+    slot: PStringSlot;
 begin
-  list := LL_New(sizeof(uint32));
-  STRLL_FromString := list;
+    STRLL_FromString := nil;
+    if str = nil then exit;
+    list := STRLL_New;
+    if list = nil then exit;
 
-  head := str;
-  tail := head;
-  null_delim := false;
-
-  while not null_delim do
-  begin
-    if (head^ = delimter) or (head^ = char(0)) then
-    begin
-      if head^ = char(0) then
-        null_delim := true;
-      size := uint32(head) - uint32(tail);
-      if size > 0 then
-      begin
-        elm := puint32(LL_Add(list));
-        out_str := stringNew(size + 1);
-        memcpy(uint32(tail), uint32(out_str), size);
-        elm^ := uint32(out_str);
-      end;
-      tail := head + 1;
-    end;
-    Inc(head);
-  end;
+    head := str;
+    tail := str;
+    repeat
+        if (head^ = delimter) or (head^ = #0) then begin
+            size := PtrUInt(head) - PtrUInt(tail);
+            if size > 0 then begin
+                if size >= High(uint32) then begin
+                    STRLL_Free(list);
+                    exit;
+                end;
+                text := stringNew(uint32(size));
+                if text = nil then begin
+                    STRLL_Free(list);
+                    exit;
+                end;
+                slot := PStringSlot(LL_Add(list));
+                if slot = nil then begin
+                    kfree(void(text));
+                    STRLL_Free(list);
+                    exit;
+                end;
+                memcpy(PtrUInt(tail), PtrUInt(text), size);
+                slot^ := text;
+            end;
+            tail := head + 1;
+        end;
+        if head^ = #0 then break;
+        inc(head);
+    until false;
+    STRLL_FromString := list;
 end;
 
 { ---------------------------------------------------------------------------- }
@@ -766,118 +692,56 @@ end;
 
 procedure TestAllLists;
 var
-  i      : uint32;
-  p      : pointer;
-  ll     : PLinkedListBase;    // Managed linked list
-  strList: PLinkedListBase;    // String linked list
-  dlist  : PDList;             // Dynamic list
-  intPtr : puint32;           // For dynamic list integer values
-  testStr: pchar;
-  testStr2: pchar;
+    list: PLinkedListBase;
+    slot: puint32;
+    source: pchar;
+    beforeFree: SizeUInt;
+    passed, failed: uint32;
+
+    procedure Assert(condition: boolean; name: pchar);
+    begin
+        if condition then
+            inc(passed)
+        else begin
+            inc(failed);
+            log('LISTS', name);
+        end;
+    end;
 begin
-  { --- Test Managed Linked List --- }
-  io.syslog.writeString('--- Testing Managed Linked List ---');
-  ll := LL_New(sizeof(uint32));
-  for i := 1 to 3 do
-  begin
-    p := LL_Add(ll);
-    puint32(p)^ := i;  // Store the value (1, 2, 3)
-  end;
-  io.syslog.writeString('Managed Linked List Size: ');
-  io.syslog.writeintln(LL_Size(ll));
-  for i := 0 to LL_Size(ll) - 1 do
-  begin
-    p := LL_Get(ll, i);
-    io.syslog.writeString('Element ');
-    io.syslog.writeint(i);
-    io.syslog.writeString(': ');
-    io.syslog.writeintln(puint32(p)^);
-  end;
-  LL_Free(ll);
+    passed := 0;
+    failed := 0;
+    beforeFree := lmm_total_free;
+    list := LL_New(sizeof(uint32));
+    slot := puint32(LL_Add(list));
+    slot^ := 10;
+    slot := puint32(LL_Insert(list, 0));
+    slot^ := 5;
+    slot := puint32(LL_Insert(list, 2));
+    slot^ := 20;
+    Assert((LL_Size(list) = 3) and (puint32(LL_Get(list, 0))^ = 5) and
+        (puint32(LL_Get(list, 2))^ = 20), 'FAIL: list head and tail insertion');
+    Assert(LL_Delete(list, 1) and (puint32(LL_Get(list, 1))^ = 20),
+        'FAIL: list middle deletion');
+    Assert((LL_Get(list, 2) = nil) and (LL_Insert(list, 3) = nil),
+        'FAIL: list bounds');
+    LL_Free(list);
 
-  { --- Test String Linked List --- }
-  io.syslog.writeString('');
-  io.syslog.writeString('--- Testing String Linked List ---');
-  testStr := stringNew(5);
-  PuInt8(testStr)^ := ord('H');
-  PuInt8(testStr + 1)^ := ord('e');
-  PuInt8(testStr + 2)^ := ord('l');
-  PuInt8(testStr + 3)^ := ord('l');
-  PuInt8(testStr + 4)^ := ord('o');
-
-  testStr2 := stringNew(5);
-  puint8(testStr2)^ := ord('W');
-  puint8(testStr2 + 1)^ := ord('o');
-  puint8(testStr2 + 2)^ := ord('r');
-  puint8(testStr2 + 3)^ := ord('l');
-  puint8(testStr2 + 4)^ := ord('d');
-
-
-  strList := STRLL_New;
-  STRLL_Add(strList, testStr);
-  STRLL_Add(strList, testStr2);
-  io.syslog.writeString('String Linked List Size: ');
-  io.syslog.writeintln(STRLL_Size(strList));
-  for i := 0 to STRLL_Size(strList) - 1 do
-  begin
-    io.syslog.writeString('String ');
-    io.syslog.writeint(i);
-    io.syslog.writeString(': ');
-    io.syslog.writeString(STRLL_Get(strList, i));
-    
-  end;
-  STRLL_Free(strList);
-
-  { --- Test Dynamic List --- }
-  io.syslog.writeString('');
-  io.syslog.writeString('--- Testing Dynamic List ---');
-  dlist := DL_New(sizeof(uint32));
-  for i := 1 to 5 do
-  begin
-    intPtr := DL_Add(dlist);
-    intPtr^ := i * 10;  // Store values: 10, 20, 30, 40, 50
-  end;
-  io.syslog.writeString('Dynamic List Size: ');
-  io.syslog.writeintln(DL_Size(dlist));
-  for i := 0 to DL_Size(dlist) - 1 do
-  begin
-    intPtr := DL_Get(dlist, i);
-    io.syslog.writeString('Element ');
-    io.syslog.writeint(i);
-    io.syslog.writeString(': ');
-    io.syslog.writeintln(intPtr^);
-  end;
-
-  { Insert a new element at index 2 }
-  intPtr := DL_Insert(dlist, 2);
-  if intPtr <> nil then
-    intPtr^ := 999;  // Inserted value 999 at index 2
-  io.syslog.writeString('After insertion at index 2, size: ');
-  io.syslog.writeintln(DL_Size(dlist));
-  for i := 0 to DL_Size(dlist) - 1 do
-  begin
-    intPtr := DL_Get(dlist, i);
-    io.syslog.writeString('Element ');
-    io.syslog.writeint(i);
-    io.syslog.writeString(': ');
-    io.syslog.writeintln(intPtr^);
-  end;
-
-  { Delete element at index 3 }
-  if DL_Delete(dlist, 3) then
-    io.syslog.writeString('Deleted element at index 3.');
-  io.syslog.writeString('After deletion, size: ');
-  io.syslog.writeintln(DL_Size(dlist));
-  for i := 0 to DL_Size(dlist) - 1 do
-  begin
-    intPtr := DL_Get(dlist, i);
-    io.syslog.writeString('Element ');
-    io.syslog.writeint(i);
-    io.syslog.writeString(': ');
-    io.syslog.writeintln(intPtr^);
-  end;
-  DL_Free(dlist);
+    source := stringCopy('/alpha//beta/');
+    list := STRLL_FromString(source, '/');
+    kfree(void(source));
+    Assert((STRLL_Size(list) = 2) and StringEquals(STRLL_Get(list, 0), 'alpha') and
+        StringEquals(STRLL_Get(list, 1), 'beta'), 'FAIL: native string list split');
+    STRLL_Delete(list, 0);
+    Assert(StringEquals(STRLL_Get(list, 0), 'beta'), 'FAIL: string list delete');
+    STRLL_Free(list);
+    list := LL_FromString('one:two', ':');
+    Assert(StringEquals(STRLL_Get(list, 1), 'two'), 'FAIL: shared string splitter');
+    STRLL_Free(list);
+    list := STRLL_FromString('', '/');
+    Assert(STRLL_Size(list) = 0, 'FAIL: empty string list');
+    STRLL_Free(list);
+    Assert(lmm_total_free = beforeFree, 'FAIL: list allocation accounting');
+    testSummary('LISTS', 'LISTS_TESTS_PASSED', 'LISTS_TESTS_FAILED', passed, failed);
 end;
-
 
 end.

@@ -12,9 +12,9 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 
-{ 
+{
 	Include->MD5 - MD5 checksum.
-	
+
     @author(Angus C <angus@actm.uk>)
 	@author(Kieron Morris <kjm@kieronmorris.me>)
 }
@@ -24,7 +24,7 @@ unit core.enc.md5;
 interface
 
 uses
-    core.util, arch.x86.util,
+    core.util, arch.platform.cpu,
     memory.heap,
     debug.tracer;
 
@@ -70,7 +70,7 @@ begin
         T^ := S[0] or (S[1] shl 8) or (S[2] shl 16) or (S[3] shl 24);
         inc(S,4);
         inc(T);
-    end; 
+    end;
 end;
 
 procedure MD5Transform(Context: PMD5Context; Buffer: Pointer);
@@ -166,14 +166,14 @@ end;
 procedure MD5Init(context : PMD5Context);
 begin
     debug.tracer.push_trace('core.enc.md5.MD5Init');
-    memset(uInt32(context), 0, SizeOf(TMD5Context));
+    memset(PtrUInt(context), 0, SizeOf(TMD5Context));
     context^.Align          := 64;
     context^.State[0]       := $67452301;
     context^.State[1]       := $efcdab89;
     context^.State[2]       := $98badcfe;
     context^.State[3]       := $10325476;
     context^.Length         := 0;
-    context^.BufferCount    := 0;  
+    context^.BufferCount    := 0;
 end;
 
 procedure MD5Update(context : PMD5Context; buffer : PuInt8; bufferLen : uInt32);
@@ -183,33 +183,33 @@ var
     Num     : uInt32;
     i       : uint32;
 
-begin  
+begin
     debug.tracer.push_trace('core.enc.md5.MD5Update');
     if bufferLen = 0 then Exit;
     Align   := context^.Align;
     Src     := buffer;
     Num     := 0;
-    if context^.BufferCount > 0 then begin    
-        Num := Align - context^.BufferCount;   
+    if context^.BufferCount > 0 then begin
+        Num := Align - context^.BufferCount;
         if Num > bufferLen then num := bufferLen;
-        memcpy(uInt32(Src), uInt32(@context^.Buffer[Context^.BufferCount]), Num); 
-        context^.BufferCount := context^.BufferCount + Num;       
-        Src := PuInt8(uInt32(Src) + uint32(Num));      
-        if context^.BufferCount = Align then begin         
-            MD5Transform(context, @context^.buffer[0]);         
+        memcpy(PtrUInt(Src), PtrUInt(@context^.Buffer[Context^.BufferCount]), Num);
+        context^.BufferCount := context^.BufferCount + Num;
+        Src := PuInt8(PtrUInt(Src) + uint32(Num));
+        if context^.BufferCount = Align then begin
+            MD5Transform(context, @context^.buffer[0]);
             context^.BufferCount := 0;
-        end;     
+        end;
     end;
     Num := bufferLen - Num;
     While Num >= Align do begin
         MD5Transform(context, Src);
-        Src := PuInt8(uInt32(Src) + Align);
+        Src := PuInt8(PtrUInt(Src) + Align);
         Num := Num - Align;
     end;
-    if Num > 0 then begin     
-        context^.BufferCount := Num;   
-        memcpy(uInt32(Src), uInt32(@context^.Buffer[0]), Num);
-    end; 
+    if Num > 0 then begin
+        context^.BufferCount := Num;
+        memcpy(PtrUInt(Src), PtrUInt(@context^.Buffer[0]), Num);
+    end;
 end;
 
 function MD5Final(context : PMD5Context) : PMD5Digest;
@@ -229,12 +229,12 @@ begin
     else
         Pads := 56 - context^.BufferCount;
     MD5Update(context, PuInt8(@MD5_Padding[0]), Pads);
-    MD5Update(context, PuInt8(@Length), 8); 
-    Digest := PMD5Digest(kalloc(SizeOf(TMD5Digest)));  
-    memset(uInt32(Digest), 0, SizeOf(TMD5Digest)); 
-    Invert(PuInt8(@context^.State), PuInt32(Digest), 16); 
-    memset(uInt32(context), 0, SizeOf(TMD5Context)); 
-    MD5Final := Digest; 
+    MD5Update(context, PuInt8(@Length), 8);
+    Digest := PMD5Digest(kalloc(SizeOf(TMD5Digest)));
+    memset(PtrUInt(Digest), 0, SizeOf(TMD5Digest));
+    Invert(PuInt8(@context^.State), PuInt32(Digest), 16);
+    memset(PtrUInt(context), 0, SizeOf(TMD5Context));
+    MD5Final := Digest;
 end;
 
 function MD5Buffer(buffer : PuInt8; bufferLen : uInt32) : PMD5Digest;

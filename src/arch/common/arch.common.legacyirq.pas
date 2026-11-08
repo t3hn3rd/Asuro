@@ -12,34 +12,61 @@
 
 { Shared PC interrupt-controller programming. Call with interrupts disabled. }
 unit arch.common.legacyirq;
+
 interface
 const
     PIT_INPUT_HZ = 1193182;
     PIT_DIVISOR = 149;
 procedure remap(masterMask, slaveMask: uint8);
 procedure masks(masterMask, slaveMask: uint8);
+procedure enableLine(line: uint8);
 procedure timerStart;
 function realIRQ(line: uint8): boolean;
 procedure acknowledge(line: uint8);
+
 implementation
 uses arch.platform.cpu;
+
 procedure writeSlow(port: uint16; value: uint8);
 begin
     outb(port, value);
     outb($80, 0);
 end;
+
 procedure masks(masterMask, slaveMask: uint8);
 begin
-    writeSlow($21, masterMask); writeSlow($A1, slaveMask);
+    writeSlow($21, masterMask);
+    writeSlow($A1, slaveMask);
 end;
+
 procedure remap(masterMask, slaveMask: uint8);
 begin
-    writeSlow($20, $11); writeSlow($A0, $11);
-    writeSlow($21, $20); writeSlow($A1, $28);
-    writeSlow($21, $04); writeSlow($A1, $02);
-    writeSlow($21, $01); writeSlow($A1, $01);
+    writeSlow($20, $11);
+    writeSlow($A0, $11);
+    writeSlow($21, $20);
+    writeSlow($A1, $28);
+    writeSlow($21, $04);
+    writeSlow($A1, $02);
+    writeSlow($21, $01);
+    writeSlow($A1, $01);
     masks(masterMask, slaveMask);
 end;
+
+procedure enableLine(line: uint8);
+var
+    flags: PtrUInt;
+begin
+    if line >= 16 then exit;
+    flags := arch.platform.cpu.lock;
+    if line < 8 then
+        outb($21, inb($21) and not uint8(1 shl line))
+    else begin
+        outb($A1, inb($A1) and not uint8(1 shl (line - 8)));
+        outb($21, inb($21) and not uint8(4));
+    end;
+    arch.platform.cpu.unlock(flags);
+end;
+
 procedure timerStart;
 begin
     { Channel 0, low/high byte, mode 2, binary. }
@@ -47,6 +74,7 @@ begin
     outb($40, PIT_DIVISOR and $FF);
     outb($40, PIT_DIVISOR shr 8);
 end;
+
 function realIRQ(line: uint8): boolean;
 begin
     realIRQ := line < 16;
@@ -60,6 +88,7 @@ begin
         if not realIRQ then outb($20, $20);
     end;
 end;
+
 procedure acknowledge(line: uint8);
 begin
     if line >= 16 then exit;

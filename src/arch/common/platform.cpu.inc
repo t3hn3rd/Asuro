@@ -15,6 +15,16 @@ function lock: PtrUInt;
 procedure unlock(flags: PtrUInt);
 procedure outb(port: uint16; value: uint8);
 function inb(port: uint16): uint8;
+procedure outw(port: uint16; value: uint16);
+function inw(port: uint16): uint16;
 procedure copyBytes(source, dest: PtrUInt; bytes: SizeUInt);
 procedure zero(dest: pointer; bytes: SizeUInt);
 procedure idle;
+procedure outl(port: uint16; value: uint32);
+function inl(port: uint16): uint32;
+
+type
+    TCPURegisters = record
+        eax, ebx, ecx, edx: uint32;
+    end;
+procedure queryCPU(leaf, subleaf: uint32; var registers: TCPURegisters);

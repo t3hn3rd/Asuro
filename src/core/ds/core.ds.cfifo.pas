@@ -24,7 +24,7 @@ interface
 uses
   core.ds.types,
   memory.heap,
-  core.util, arch.x86.util;
+  core.util;
 
 { ============================================================================ }
 {                  Contiguous FIFO Queue — CFIFO_* API                       }
@@ -93,7 +93,7 @@ uses
 implementation
 
 uses
-    io.syslog, core.strings;
+    arch.platform.diagnostics, core.strings;
 
 { ---------------------------------------------------------------------------- }
 {  Internal helpers                                                            }
@@ -102,38 +102,43 @@ uses
 {** Shifts elements back to index 0, called when Head >= Capacity div 2. **}
 procedure CFIFO_Compact(Queue : PCFIFOQueue);
 var
-  src : uint32;
-  len : uint32;
+  src : PtrUInt;
+  len : SizeUInt;
 begin
   if (Queue^.Head = 0) or (Queue^.Count = 0) then exit;
-  src := uint32(Queue^.Data) + (Queue^.Head * Queue^.ElementSize);
-  len := Queue^.Count * Queue^.ElementSize;
+  src := PtrUInt(Queue^.Data) + (SizeUInt(Queue^.Head) * Queue^.ElementSize);
+  len := SizeUInt(Queue^.Count) * Queue^.ElementSize;
   { memcpy is safe here because dst < src (Head > 0), so no overlap issue }
-  memcpy(src, uint32(Queue^.Data), len);
+  memcpy(src, PtrUInt(Queue^.Data), len);
   Queue^.Head := 0;
 end;
 
 {** Doubles the buffer capacity, compacting first. **}
-procedure CFIFO_Grow(Queue : PCFIFOQueue);
+function CFIFO_Grow(Queue : PCFIFOQueue): boolean;
 var
   newCap  : uint32;
   newBuf  : void;
 begin
+  CFIFO_Grow := false;
+  if Queue^.Capacity > High(uint32) div 2 then exit;
+
   { Compact so elements start at index 0 before copying }
   CFIFO_Compact(Queue);
 
   newCap := Queue^.Capacity * 2;
   if newCap = 0 then newCap := 8;
 
-  newBuf := kalloc(newCap * Queue^.ElementSize);
-  memset(uint32(newBuf), 0, newCap * Queue^.ElementSize);
+  if SizeUInt(newCap) > High(SizeUInt) div Queue^.ElementSize then exit;
+  newBuf := kalloc(SizeUInt(newCap) * Queue^.ElementSize);
+  if newBuf = nil then exit;
 
   if Queue^.Count > 0 then
-    memcpy(uint32(Queue^.Data), uint32(newBuf), Queue^.Count * Queue^.ElementSize);
+    memcpy(PtrUInt(Queue^.Data), PtrUInt(newBuf), SizeUInt(Queue^.Count) * Queue^.ElementSize);
 
   kfree(Queue^.Data);
   Queue^.Data     := newBuf;
   Queue^.Capacity := newCap;
+  CFIFO_Grow := true;
 end;
 
 { ---------------------------------------------------------------------------- }
@@ -141,24 +146,36 @@ end;
 { ---------------------------------------------------------------------------- }
 
 function CFIFO_New(ElementSize : uint32; InitialCapacity : uint32) : PCFIFOQueue;
+var
+    queue: PCFIFOQueue;
 begin
-  CFIFO_New := PCFIFOQueue(kalloc(sizeof(TCFIFOQueue)));
-  CFIFO_New^.ElementSize := ElementSize;
-  CFIFO_New^.Capacity    := InitialCapacity;
-  CFIFO_New^.Count       := 0;
-  CFIFO_New^.Head        := 0;
-  CFIFO_New^.Data        := kalloc(InitialCapacity * ElementSize);
-  memset(uint32(CFIFO_New^.Data), 0, InitialCapacity * ElementSize);
+    CFIFO_New := nil;
+    if ElementSize = 0 then exit;
+    if InitialCapacity = 0 then InitialCapacity := 8;
+    if SizeUInt(InitialCapacity) > High(SizeUInt) div ElementSize then exit;
+
+    queue := PCFIFOQueue(kalloc(sizeof(TCFIFOQueue)));
+    if queue = nil then exit;
+    queue^.Data := kalloc(SizeUInt(InitialCapacity) * ElementSize);
+    if queue^.Data = nil then begin
+        kfree(void(queue));
+        exit;
+    end;
+    queue^.ElementSize := ElementSize;
+    queue^.Capacity := InitialCapacity;
+    CFIFO_New := queue;
 end;
 
 procedure CFIFO_Enqueue(Queue : PCFIFOQueue; Data : void);
 var
   tail : uint32;
-  dst  : uint32;
+  dst  : PtrUInt;
 begin
+  if (Queue = nil) or (Data = nil) then exit;
+
   { Grow if all slots are consumed }
   if Queue^.Count >= Queue^.Capacity then
-    CFIFO_Grow(Queue);
+    if not CFIFO_Grow(Queue) then exit;
 
   { Compact if there's no room at the back even though Count < Capacity,
     which happens when Head has advanced past zero }
@@ -169,20 +186,20 @@ begin
     tail := Queue^.Count;  { Head is now 0 }
   end;
 
-  dst := uint32(Queue^.Data) + (tail * Queue^.ElementSize);
-  memcpy(uint32(Data), dst, Queue^.ElementSize);
+  dst := PtrUInt(Queue^.Data) + (SizeUInt(tail) * Queue^.ElementSize);
+  memcpy(PtrUInt(Data), dst, Queue^.ElementSize);
   Queue^.Count := Queue^.Count + 1;
 end;
 
 function CFIFO_Dequeue(Queue : PCFIFOQueue; Data : void) : boolean;
 var
-  src : uint32;
+  src : PtrUInt;
 begin
   CFIFO_Dequeue := false;
   if Queue^.Count = 0 then exit;
 
-  src := uint32(Queue^.Data) + (Queue^.Head * Queue^.ElementSize);
-  memcpy(src, uint32(Data), Queue^.ElementSize);
+  src := PtrUInt(Queue^.Data) + (SizeUInt(Queue^.Head) * Queue^.ElementSize);
+  memcpy(src, PtrUInt(Data), Queue^.ElementSize);
 
   Queue^.Head  := Queue^.Head + 1;
   Queue^.Count := Queue^.Count - 1;
@@ -203,7 +220,7 @@ begin
   if Queue^.Count = 0 then
     CFIFO_Peek := nil
   else
-    CFIFO_Peek := void(uint32(Queue^.Data) + (Queue^.Head * Queue^.ElementSize));
+    CFIFO_Peek := void(PtrUInt(Queue^.Data) + (SizeUInt(Queue^.Head) * Queue^.ElementSize));
 end;
 
 function CFIFO_Size(Queue : PCFIFOQueue) : uint32;
@@ -232,6 +249,7 @@ procedure UnitTest;
 var
     q    : PCFIFOQueue;
     v, r : uint32;
+    nativeValue, nativeResult: PtrUInt;
     ok   : boolean;
     p    : void;
     i    : uint32;
@@ -246,32 +264,16 @@ var
         end else begin
             inc(failed);
             msg := stringConcat('FAIL: ', testName);
-            io.syslog.logln('CFIFO', msg);
+            arch.platform.diagnostics.log('CFIFO', msg);
             kfree(void(msg));
         end;
     end;
 
-    procedure PrintSummary;
-    var
-        pStr, fStr, msg, tmp : pchar;
-    begin
-        pStr := intToString(passed);
-        fStr := intToString(failed);
-        msg := stringConcat(pStr, ' passed, ');
-        tmp := stringConcat(msg, fStr);
-        kfree(void(msg));
-        msg := stringConcat(tmp, ' failed.');
-        kfree(void(tmp));
-        io.syslog.logln('CFIFO', msg);
-        kfree(void(msg));
-        kfree(void(pStr));
-        kfree(void(fStr));
-    end;
 
 begin
     passed := 0;
     failed := 0;
-    io.syslog.logln('CFIFO', 'Unit tests starting...');
+    arch.platform.diagnostics.log('CFIFO', 'Unit tests starting...');
 
     { === New / Empty / Size / Capacity === }
     q := CFIFO_New(sizeof(uint32), 4);
@@ -306,12 +308,18 @@ begin
     Assert(CFIFO_Size(q) = 6, 'Size after grow');
 
     { === Verify FIFO order: 30,40,50,60,70,80 === }
-    ok := CFIFO_Dequeue(q, @r); Assert(r = 30, 'Order 30');
-    ok := CFIFO_Dequeue(q, @r); Assert(r = 40, 'Order 40');
-    ok := CFIFO_Dequeue(q, @r); Assert(r = 50, 'Order 50');
-    ok := CFIFO_Dequeue(q, @r); Assert(r = 60, 'Order 60');
-    ok := CFIFO_Dequeue(q, @r); Assert(r = 70, 'Order 70');
-    ok := CFIFO_Dequeue(q, @r); Assert(r = 80, 'Order 80');
+    ok := CFIFO_Dequeue(q, @r);
+    Assert(r = 30, 'Order 30');
+    ok := CFIFO_Dequeue(q, @r);
+    Assert(r = 40, 'Order 40');
+    ok := CFIFO_Dequeue(q, @r);
+    Assert(r = 50, 'Order 50');
+    ok := CFIFO_Dequeue(q, @r);
+    Assert(r = 60, 'Order 60');
+    ok := CFIFO_Dequeue(q, @r);
+    Assert(r = 70, 'Order 70');
+    ok := CFIFO_Dequeue(q, @r);
+    Assert(r = 80, 'Order 80');
     Assert(CFIFO_IsEmpty(q), 'Empty after drain');
 
     { === Edge: peek/dequeue on empty === }
@@ -322,7 +330,15 @@ begin
 
     CFIFO_Free(q);
 
-    PrintSummary;
+    q := CFIFO_New(sizeof(PtrUInt), 0);
+    nativeValue := PtrUInt(q);
+    CFIFO_Enqueue(q, void(@nativeValue));
+    Assert(CFIFO_Dequeue(q, void(@nativeResult)) and (nativeResult = nativeValue),
+        'Native pointer survives queue storage');
+    CFIFO_Free(q);
+    Assert(CFIFO_New(0, 4) = nil, 'Zero-sized elements rejected');
+
+    testSummary('CFIFO', 'CFIFO_TESTS_PASSED', 'CFIFO_TESTS_FAILED', passed, failed);
 end;
 
 end.

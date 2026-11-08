@@ -13,6 +13,7 @@
 { Allocation-free diagnostics. The architecture supplies the character sink;
   formatting remains independent of UARTs, graphics, heaps, and interrupts. }
 unit debug.early;
+
 interface
 type
     TCharWriter = procedure(ch: char);
@@ -20,13 +21,16 @@ procedure setWriter(writer: TCharWriter);
 procedure puts(message: pchar);
 procedure hex(value: uint64);
 procedure field(name: pchar; value: uint64);
+
 implementation
 var
     sink: TCharWriter;
+
 procedure setWriter(writer: TCharWriter);
 begin
     sink := writer;
 end;
+
 procedure puts(message: pchar);
 begin
     if sink = nil then exit;
@@ -35,6 +39,7 @@ begin
         inc(message);
     end;
 end;
+
 procedure hex(value: uint64);
 const
     digits: array[0..15] of char = '0123456789ABCDEF';
@@ -45,6 +50,7 @@ begin
     for shift := 15 downto 0 do
         sink(digits[(value shr (shift * 4)) and $F]);
 end;
+
 procedure field(name: pchar; value: uint64);
 begin
     puts(name);

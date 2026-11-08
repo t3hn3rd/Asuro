@@ -12,22 +12,39 @@
 
 { Build-selected x86 adapter. }
 unit arch.platform.diagnostics;
+
 interface
 {$i ../../common/platform.diagnostics.inc}
+
 implementation
 uses io.syslog, debug.tracer, core.panic;
+
 procedure log(tag, message: pchar);
-begin io.syslog.logln(tag, message); end;
+begin
+    io.syslog.logln(tag, message);
+end;
+
 procedure push_trace(name: pchar);
-begin debug.tracer.push_trace(name); end;
+begin
+    debug.tracer.push_trace(name);
+end;
+
 procedure pop_trace;
-begin debug.tracer.pop_trace; end;
+begin
+    debug.tracer.pop_trace;
+end;
+
 procedure fatal(tag, message: pchar);
-begin core.panic.panic(tag, message, nil); end;
+begin
+    core.panic.panic(tag, message, nil);
+end;
+
 procedure testSummary(tag, passedKey, failedKey: pchar; passed, failed: uint32);
 begin
     io.syslog.log(tag, '');
-    io.syslog.writeint(passed); io.syslog.writestring(' passed, ');
-    io.syslog.writeint(failed); io.syslog.writestringln(' failed.');
+    io.syslog.writeint(passed);
+    io.syslog.writestring(' passed, ');
+    io.syslog.writeint(failed);
+    io.syslog.writestringln(' failed.');
 end;
 end.

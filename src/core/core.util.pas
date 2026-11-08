@@ -33,6 +33,7 @@ function switchendian16(b : uint16) : uint16;
 function switchendian32(b : uint32) : uint32;
 function getWord(i : uint32; hi : boolean) : uint16;
 function getByte(i : uint32; index : uint8) : uint8;
+function RolDWord(value: uint32; distance: uint8): uint32;
 
 procedure memset(location : PtrUInt; value : uint8; size : SizeUInt);
 procedure memcpy(source : PtrUInt; dest : PtrUInt; size : SizeUInt);
@@ -42,8 +43,19 @@ function HexCharToDecimal(hex : char) : uint8;
 
 function abs(x : sint32) : uint32;
 
+procedure waitTicks(count: uint32);
+
 implementation
-uses memory.raw, arch.platform.cpu;
+uses memory.raw, arch.platform.cpu, arch.platform.process;
+
+function RolDWord(value: uint32; distance: uint8): uint32;
+begin
+    distance := distance and 31;
+    if distance = 0 then
+        RolDWord := value
+    else
+        RolDWord := (value shl distance) or (value shr (32 - distance));
+end;
 
 function abs(x : sint32) : uint32;
 var
@@ -143,6 +155,15 @@ end;
 function BCDToUint8(bcd : uint8) : uint8;
 begin
     BCDToUint8:= ((bcd SHR 4) * 10) + (bcd AND $0F);
+end;
+
+procedure waitTicks(count: uint32);
+var
+    started: uint32;
+begin
+    started := arch.platform.process.timerTicks;
+    while arch.platform.process.timerTicks - started < count do
+        arch.platform.cpu.idle;
 end;
 
 end.

@@ -22,8 +22,7 @@ unit driver.timer.rtc;
 interface
 
 uses
-    boot.mgr,
-    arch.x86.isr.mgr, core.util, arch.x86.util, arch.x86.isr.tmr0;
+    core.util, arch.platform.cpu;
 
 type
     TDateTime = record
@@ -66,7 +65,7 @@ var
 
 begin
     outb($70, $0A);
-    io_wait();
+    arch.platform.cpu.outb($80, 0);
     bin:= inb($71);
     is_update_in_progress:= (bin AND ($1 SHL 7)) <> 0;
 end;
@@ -74,7 +73,7 @@ end;
 procedure update();
 begin
     //outb($70, $0C);	// select register C
-    //io_wait();
+    //arch.platform.cpu.outb($80, 0);
     //inb($71);
     //console.writestringln('driver.timer.rtc Update');
     //while not is_update_in_progress do begin 
@@ -82,37 +81,37 @@ begin
     //while is_update_in_progress do begin 
     //end;
     outb($70, $00);
-    io_wait();
+    arch.platform.cpu.outb($80, 0);
     DateTime.Seconds:= BCDToUint8(inb($71));
-    io_wait();
+    arch.platform.cpu.outb($80, 0);
     outb($70, $02);
-    io_wait();
+    arch.platform.cpu.outb($80, 0);
     DateTime.Minutes:= BCDToUint8(inb($71));
-    io_wait();
+    arch.platform.cpu.outb($80, 0);
     outb($70, $04);
-    io_wait();
+    arch.platform.cpu.outb($80, 0);
     DateTime.Hours:= BCDToUint8(inb($71));
-    io_wait();
+    arch.platform.cpu.outb($80, 0);
     outb($70, $06);
-    io_wait();
+    arch.platform.cpu.outb($80, 0);
     DateTime.Weekday:= BCDToUint8(inb($71));
-    io_wait();
+    arch.platform.cpu.outb($80, 0);
     outb($70, $07);
-    io_wait();
+    arch.platform.cpu.outb($80, 0);
     DateTime.Day:= BCDToUint8(inb($71));
-    io_wait();
+    arch.platform.cpu.outb($80, 0);
     outb($70, $08);
-    io_wait();
+    arch.platform.cpu.outb($80, 0);
     DateTime.Month:= BCDToUint8(inb($71));
-    io_wait();
+    arch.platform.cpu.outb($80, 0);
     outb($70, $09);
-    io_wait();
+    arch.platform.cpu.outb($80, 0);
     DateTime.Year:= BCDToUint8(inb($71));
-    io_wait();
+    arch.platform.cpu.outb($80, 0);
     outb($70, $32);
-    io_wait();
+    arch.platform.cpu.outb($80, 0);
     DateTime.Century:= BCDToUint8(inb($71));
-    io_wait();
+    arch.platform.cpu.outb($80, 0);
 end;
 
 function getDateTime : TDateTime;
@@ -122,34 +121,8 @@ begin
 end;
 
 procedure init;
-var
-    prev : uint8;
-
 begin
-    CLI;
-    //setup driver.timer.rtc
-    outb($70, $8A);
-    io_wait();
-    outb($71, $20);
-    io_wait();
-
-    //enable ints
-    outb($70, $8B);
-    io_wait();
-    prev:= inb($71);
-    io_wait();
-    outb($70, $8B);
-    io_wait();
-    outb($71, prev OR $40);
-    STI;
-    outb($70, $00);
-    inb($71);
-    
-    //arch.x86.isr.mgr.registerISR(32 + 8, @update);
-    //arch.x86.isr.tmr0.hook(uint32(@update));
+    update;
 end;
-
-initialization
-    boot.mgr.registerBoot('driver.timer.rtc', @init, 'Real Time Clock Driver', 'arch.x86.fault');
 
 end.

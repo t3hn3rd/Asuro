@@ -47,7 +47,7 @@ interface
 implementation
 
 uses
-  io.syslog,
+  arch.platform.diagnostics,
   memory.heap,
   core.strings;
 
@@ -58,13 +58,13 @@ var
   h : uint32;
 begin
   h := $811C9DC5;
-  p := puint8(uint32(Data));
+  p := puint8(Data);
   if DataLen > 0 then
     for i := 0 to DataLen - 1 do
     begin
       h := h xor uint32(p^);
       h := h * $01000193;
-      p := puint8(uint32(p) + 1);
+      inc(p);
     end;
   Hash_FNV1a32 := h;
 end;
@@ -76,13 +76,13 @@ var
   h : uint64;
 begin
   h := uint64($CBF29CE484222325);
-  p := puint8(uint32(Data));
+  p := puint8(Data);
   if DataLen > 0 then
     for i := 0 to DataLen - 1 do
     begin
       h := h xor uint64(p^);
       h := h * uint64($00000100000001B3);
-      p := puint8(uint32(p) + 1);
+      inc(p);
     end;
   Hash_FNV1a64 := h;
 end;
@@ -103,36 +103,28 @@ var
     else begin
       inc(failed);
       msg := stringConcat('FAIL: ', testName);
-      io.syslog.logln('FNV1A', msg);
+      arch.platform.diagnostics.log('FNV1A', msg);
       kfree(void(msg));
     end;
   end;
 
-  procedure PrintSummary;
-  var
-    pStr, fStr, msg, tmp : pchar;
-  begin
-    pStr := intToString(passed);
-    fStr := intToString(failed);
-    msg  := stringConcat(pStr, ' passed, ');
-    tmp  := stringConcat(msg, fStr);
-    kfree(void(msg));
-    msg  := stringConcat(tmp, ' failed.');
-    kfree(void(tmp));
-    io.syslog.logln('FNV1A', msg);
-    kfree(void(msg));
-    kfree(void(pStr));
-    kfree(void(fStr));
-  end;
 
 begin
   passed := 0;
   failed := 0;
-  io.syslog.logln('FNV1A', 'Unit tests starting...');
+  arch.platform.diagnostics.log('FNV1A', 'Unit tests starting...');
 
   { Two distinct 5-byte inputs }
-  buf1[0] := ord('h'); buf1[1] := ord('e'); buf1[2] := ord('l'); buf1[3] := ord('l'); buf1[4] := ord('o');
-  buf2[0] := ord('w'); buf2[1] := ord('o'); buf2[2] := ord('r'); buf2[3] := ord('l'); buf2[4] := ord('d');
+  buf1[0] := ord('h');
+  buf1[1] := ord('e');
+  buf1[2] := ord('l');
+  buf1[3] := ord('l');
+  buf1[4] := ord('o');
+  buf2[0] := ord('w');
+  buf2[1] := ord('o');
+  buf2[2] := ord('r');
+  buf2[3] := ord('l');
+  buf2[4] := ord('d');
 
   { === Known basis value: zero-length input returns initial h === }
   Assert(Hash_FNV1a32(void(@buf1[0]), 0) = $811C9DC5, 'FNV1a32 empty = basis $811C9DC5');
@@ -155,7 +147,7 @@ begin
   h64a := Hash_FNV1a64(void(@buf1[0]), 5);
   Assert(uint32(h64a) <> h32a, 'FNV1a32 != low32(FNV1a64)');
 
-  PrintSummary;
+  testSummary('FNV1A', 'FNV1A_TESTS_PASSED', 'FNV1A_TESTS_FAILED', passed, failed);
 end;
 
 end.

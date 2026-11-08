@@ -14,6 +14,7 @@
   A saved context points at an aligned 512-byte FX image followed by the
   normalized interrupt-frame pointer. Only kernel contexts are supported. }
 unit arch.x86_64.context;
+
 interface
 type
     PNative = ^PtrUInt;
@@ -31,6 +32,7 @@ type
 procedure setSelector(selector: TSelectContext);
 function prepare(stack: pointer; bytes: SizeUInt; entry: pointer; argument: PtrUInt): PtrUInt;
 procedure UnitTest;
+
 implementation
 uses proc.types, proc.scheduler, arch.x86_64.util, arch.x86_64.irq, arch.common.legacyirq, memory.heap, debug.early;
 var
@@ -41,21 +43,26 @@ var
     testDone: array[0..1] of uint32;
     testFailures: uint32;
     testSwitches: uint32;
+
 procedure setSelector(selector: TSelectContext);
 begin
     { Caller owns IRQ exclusion and context lifetimes. }
     choose := selector;
 end;
+
 function selectContext(saved: PtrUInt): PtrUInt; cdecl; [public, alias: 'x64_select_context'];
-var frame: PFrame;
+var
+    frame: PFrame;
 begin
     selectContext := saved;
     frame := PFrame(PNative(saved + 512)^);
     if (frame^.vector = 32) and assigned(choose) then
         selectContext := choose(saved);
 end;
+
 function prepare(stack: pointer; bytes: SizeUInt; entry: pointer; argument: PtrUInt): PtrUInt;
-var top, frameAddress, fx: PtrUInt;
+var
+    top, frameAddress, fx: PtrUInt;
     frame: PFrame;
 begin
     prepare := 0;
@@ -71,17 +78,21 @@ begin
     frame := PFrame(frameAddress);
     frame^.rdi := argument;
     frame^.rip := PtrUInt(entry);
-    frame^.cs := $18; frame^.ss := $10;
-    frame^.flags := $202; frame^.rsp := top;
+    frame^.cs := $18;
+    frame^.ss := $10;
+    frame^.flags := $202;
+    frame^.rsp := top;
     PUInt16(fx)^ := $037F; { initial x87 control word; empty tag word }
     PUInt32(fx + 24)^ := $1F80; { initial MXCSR }
     PNative(fx + 512)^ := frameAddress;
     prepare := fx;
 end;
+
 function testGetProcess(index: uint32): PProcessContext;
 begin
     if index < 3 then testGetProcess := testProcesses[index] else testGetProcess := nil;
 end;
+
 function testSelect(saved: PtrUInt): PtrUInt;
 begin
     testCurrent^.SavedStack := saved;
@@ -90,9 +101,12 @@ begin
     inc(testSwitches);
     testSelect := testCurrent^.SavedStack;
 end;
+
 function testRegisters(counter: PUInt32; pattern: uint64): uint32; cdecl; external name 'x64_test_context_registers';
+
 procedure worker(index: PtrUInt); cdecl;
-var value: PtrUInt;
+var
+    value: PtrUInt;
     allocation: void;
 begin
     value := PtrUInt($1234567800000000) + index;
@@ -102,21 +116,30 @@ begin
     if (PUInt64(allocation)^ <> value) or
        (value <> PtrUInt($1234567800000000) + index) then inc(testFailures);
     memory.heap.kfree(allocation);
-    asm cli end;
+    asm
+        cli
+    end;
     testProcesses[index + 1]^.State := psFinished;
     PUInt32(@testDone[index])^ := 1;
-    asm sti end;
+    asm
+        sti
+    end;
     { The next timer moves away permanently; stack is freed by bootstrap. }
-    while true do asm pause end;
+    while true do asm
+        pause
+    end;
 end;
+
 procedure UnitTest;
-var stackA, stackB: void;
+var
+    stackA, stackB: void;
     beforeFree: SizeUInt;
     attempts, i: uint32;
     saved: PtrUInt;
 begin
     beforeFree := lmm_total_free;
-    stackA := kalloc(16384); stackB := kalloc(16384);
+    stackA := kalloc(16384);
+    stackB := kalloc(16384);
     for i := 0 to 2 do begin
         testProcesses[i] := PProcessContext(kalloc(sizeof(TProcessContext)));
         testProcesses[i]^.ProcessID := i;
@@ -126,30 +149,46 @@ begin
     testProcesses[1]^.SavedStack := prepare(pointer(stackA), 16384, @worker, 0);
     testProcesses[2]^.SavedStack := prepare(pointer(stackB), 16384, @worker, 1);
     if (testProcesses[1]^.SavedStack = 0) or (testProcesses[2]^.SavedStack = 0) then begin
-        puts('FAIL: prepare kernel contexts'#13#10); bootstrap_halt;
+        puts('FAIL: prepare kernel contexts'#13#10);
+        bootstrap_halt;
     end;
-    testCurrent := testProcesses[0]; testCurrent^.State := psRunning; testCursor := 0; testDone[0] := 0; testDone[1] := 0;
-    testFailures := 0; testSwitches := 0;
+    testCurrent := testProcesses[0];
+    testCurrent^.State := psRunning;
+    testCursor := 0;
+    testDone[0] := 0;
+    testDone[1] := 0;
+    testFailures := 0;
+    testSwitches := 0;
     setSelector(@testSelect);
     masks($FE, $FF);
-    asm sti end;
+    asm
+        sti
+    end;
     attempts := 0;
     while ((PUInt32(@testDone[0])^ = 0) or (PUInt32(@testDone[1])^ = 0)) and
           (attempts < 10000000) do begin
-        inc(attempts); asm pause end;
+        inc(attempts);
+        asm
+            pause
+        end;
     end;
     saved := lockIRQ;
     masks($FF, $FF);
     setSelector(nil);
     if (testDone[0] = 0) or (testDone[1] = 0) or (testSwitches < 6) or
        ((saved and $200) = 0) then inc(testFailures);
-    kfree(stackA); kfree(stackB);
-    for i := 0 to 2 do begin kfree(void(testProcesses[i])); testProcesses[i] := nil; end;
+    kfree(stackA);
+    kfree(stackB);
+    for i := 0 to 2 do begin
+        kfree(void(testProcesses[i]));
+        testProcesses[i] := nil;
+    end;
     if lmm_total_free <> beforeFree then inc(testFailures);
     field('CONTEXT_SWITCHES', testSwitches);
     field('CONTEXT_TESTS_FAILED', testFailures);
     if testFailures <> 0 then begin
-        puts('FAIL: preemptive kernel contexts'#13#10); bootstrap_halt;
+        puts('FAIL: preemptive kernel contexts'#13#10);
+        bootstrap_halt;
     end;
     puts('PASS: two kernel contexts preserve registers/x87/SSE, allocate and release stacks'#13#10);
 end;

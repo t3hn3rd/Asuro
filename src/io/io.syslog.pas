@@ -11,8 +11,6 @@ unit io.syslog;
 
 interface
 
-uses
-    boot.mgr;
 
 type
     TLogHook = procedure(msg: pchar);
@@ -296,8 +294,5 @@ begin
       consumers (file logging, debug panels, etc.) that want complete lines.
       If we registered serialHook, driver.io.serial would get double output. }
 end;
-
-initialization
-    boot.mgr.registerBoot('io.syslog', @init, 'Syslog Interface', 'driver.io.serial');
 
 end.

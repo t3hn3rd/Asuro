@@ -10,22 +10,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-{ VFS directory helpers extracted from io.stdio (Kieron Morris). }
-unit io.directory;
-interface
-function getWorkingDirectory: pchar;
-procedure setWorkingDirectory(str: pchar);
-implementation
-uses driver.storage.vfs;
-function getWorkingDirectory: pchar;
-begin
-    getWorkingDirectory := driver.storage.vfs.GetWorkingDirectory;
-end;
-
-procedure setWorkingDirectory(str: pchar);
-begin
-    if str <> nil then
-        driver.storage.vfs.ChangeDirectory(str);
-end;
-
-end.
+type
+    TIRQHandler = procedure;
+    TTimerHandler = procedure(data: void);
+procedure registerIRQ(vector: uint8; handler: TIRQHandler);
+procedure registerTimer(handler: TTimerHandler);
+procedure routePCI(line, vector: uint8);
+function timerTicks: uint64;
