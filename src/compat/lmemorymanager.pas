@@ -22,12 +22,12 @@ type
     THeapPageHeader = memory.heap.THeapPageHeader;
 
 procedure init;
-function kalloc(size : uint32) : void;
-function klalloc(size : uint32) : void;
-procedure klfree(address : uint32);
-function kpalloc(address : uint32) : void;
+function kalloc(size : SizeUInt) : void;
+function klalloc(size : SizeUInt) : void;
+procedure klfree(address : PtrUInt);
+function kpalloc(address : PtrUInt) : void;
 procedure kfree(area : void);
-function lmm_total_free : uint32;
+function lmm_total_free : SizeUInt;
 function lmm_page_count : uint32;
 
 implementation
@@ -37,22 +37,22 @@ begin
     memory.heap.init;
 end;
 
-function kalloc(size : uint32) : void; inline;
+function kalloc(size : SizeUInt) : void; inline;
 begin
     kalloc := memory.heap.kalloc(size);
 end;
 
-function klalloc(size : uint32) : void; inline;
+function klalloc(size : SizeUInt) : void; inline;
 begin
     klalloc := memory.heap.klalloc(size);
 end;
 
-procedure klfree(address : uint32); inline;
+procedure klfree(address : PtrUInt); inline;
 begin
     memory.heap.klfree(address);
 end;
 
-function kpalloc(address : uint32) : void; inline;
+function kpalloc(address : PtrUInt) : void; inline;
 begin
     kpalloc := memory.heap.kpalloc(address);
 end;
@@ -62,7 +62,7 @@ begin
     memory.heap.kfree(area);
 end;
 
-function lmm_total_free : uint32; inline;
+function lmm_total_free : SizeUInt; inline;
 begin
     lmm_total_free := memory.heap.lmm_total_free;
 end;
