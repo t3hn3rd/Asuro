@@ -23,7 +23,7 @@ interface
 
 uses
     debug.tracer, memory.heap,
-    core.util, arch.x86.util, core.strings,
+    core.util, arch.platform.cpu, core.strings,
     driver.net, driver.net.types, driver.net.util,
     core.ds.lists,
     driver.net.proto.eth2, io.stdio;
@@ -84,8 +84,8 @@ begin
     Header.HDR_CHK_Hi:= CHK AND $FF;//CHK SHR 8;
     Header.HDR_CHK_Lo:= CHK SHR 8;//CHK AND $FF;
     Buffer:= kalloc(Len);
-    memcpy(uint32(@Header), uint32(Buffer), Header.header_len * 4);
-    memcpy(uint32(p_data), uint32(Buffer) + (Header.header_len * 4), p_len);
+    memcpy(PtrUInt(@Header), PtrUInt(Buffer), Header.header_len * 4);
+    memcpy(PtrUInt(p_data), PtrUInt(Buffer) + (Header.header_len * 4), p_len);
     driver.net.proto.eth2.send(Buffer, (Header.header_len * 4) + p_len, $0800, p_context);
     kfree(Buffer);
     pop_trace;
@@ -101,11 +101,15 @@ var
 
 begin
     push_trace('driver.net.proto.ipv4.recv');
+    if (p_data = nil) or (p_len < 20) then exit;
     Header:= PIPV4Header(p_data);
     AHeader.version:= Header^.version;
     AHeader.header_len:= Header^.header_len;
     AHeader.ToS:= Header^.ToS;
     AHeader.total_len:= (Header^.total_len_Hi SHL 8) + Header^.total_len_Lo;
+    if (AHeader.version <> 4) or (AHeader.header_len < 5) or
+       (AHeader.total_len < AHeader.header_len * 4) or
+       (AHeader.total_len > p_len) then exit;
     AHeader.identifier:= (Header^.identifier_Hi SHL 8) + Header^.identifier_Lo;
     AHeader.Flags.RS:= false;
     AHeader.Flags.DF:= (Header^.Flags AND $2) > 0;
@@ -122,7 +126,7 @@ begin
 
     buf:= puint8(p_data);
     buf:= buf + (AHeader.header_len * 4);
-    len:= p_len - (AHeader.header_len * 4);
+    len:= AHeader.total_len - (AHeader.header_len * 4);
 
     copyIPv4(@AHeader.Src[0], @p_context^.IP.Source[0]);
     copyIPv4(@AHeader.Dst[0], @p_context^.IP.Destination[0]);

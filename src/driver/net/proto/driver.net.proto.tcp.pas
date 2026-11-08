@@ -40,8 +40,8 @@ procedure terminal_command_tcphttp(params : PParamList; stdin_buf, stdout_buf, s
 implementation
 
 uses
-    memory.heap, core.util, arch.x86.util, io.syslog, core.rand, core.ds.lists,
-    driver.net, arch.x86.isr.tmr0, arch.x86.bda,
+    memory.heap, core.util, arch.platform.cpu, io.syslog, core.rand, core.ds.lists,
+    driver.net, arch.platform.interrupts, arch.common.legacyirq,
     core.strings, driver.net.proto.arp,
     proc.mgr, proc.types;
 
@@ -79,6 +79,10 @@ const
 var
     Connections : PDList;
     Registered  : Boolean = false;
+    TimerFraction: uint32;
+
+type
+    PPtrUInt = ^PtrUInt;
 
 { ============================================================================ }
 {  Utility: TCP Flag Helpers                                                   }
@@ -120,16 +124,16 @@ begin
         pseudoSize := pseudoSize + 1;
 
     pseudoBuf := kalloc(pseudoSize);
-    memset(uint32(pseudoBuf), 0, pseudoSize);
+    memset(PtrUInt(pseudoBuf), 0, pseudoSize);
 
     pseudoHdr := PTCPPseudoHeader(pseudoBuf);
-    memcpy(uint32(srcIP), uint32(@pseudoHdr^.Source_IP), 4);
-    memcpy(uint32(dstIP), uint32(@pseudoHdr^.Destination_IP), 4);
+    memcpy(PtrUInt(srcIP), PtrUInt(@pseudoHdr^.Source_IP), 4);
+    memcpy(PtrUInt(dstIP), PtrUInt(@pseudoHdr^.Destination_IP), 4);
     pseudoHdr^.Reserved := 0;
     pseudoHdr^.Protocol := TCP_PROTOCOL_ID;
     pseudoHdr^.TCP_Length := switchendian16(tcpLen);
 
-    memcpy(uint32(tcpData), uint32(pseudoBuf) + sizeof(TTCPPseudoHeader), tcpLen);
+    memcpy(PtrUInt(tcpData), PtrUInt(pseudoBuf) + sizeof(TTCPPseudoHeader), tcpLen);
 
     { Compute one's complement sum }
     sum := 0;
@@ -160,7 +164,7 @@ var
 begin
     push_trace('driver.net.proto.tcp.CreateTCB');
     tcb := PTCB(kalloc(sizeof(TTCB)));
-    memset(uint32(tcb), 0, sizeof(TTCB));
+    memset(PtrUInt(tcb), 0, sizeof(TTCB));
     tcb^.State := tssClosed;
     tcb^.RCV_WND := TCP_DEFAULT_WINDOW;
     tcb^.SendBufSize := TCP_DEFAULT_WINDOW;
@@ -299,7 +303,7 @@ begin
     for i := 0 to DL_Size(Connections) - 1 do begin
         p := DL_Get(Connections, i);
         if p <> nil then begin
-            tcb := PTCB(puint32(p)^);
+            tcb := PTCB(PPtrUInt(p)^);
             if tcb <> nil then begin
                 if tcb^.Active then begin
                     if (tcb^.LocalPort = localPort) and
@@ -326,7 +330,7 @@ begin
     for i := 0 to DL_Size(Connections) - 1 do begin
         p := DL_Get(Connections, i);
         if p <> nil then begin
-            tcb := PTCB(puint32(p)^);
+            tcb := PTCB(PPtrUInt(p)^);
             if tcb <> nil then begin
                 if tcb^.Active and (tcb^.State = tssListen) and (tcb^.LocalPort = localPort) then begin
                     FindListenTCB := tcb;
@@ -339,13 +343,13 @@ end;
 
 procedure AddTCB(tcb : PTCB);
 var
-    p : puint32;
+    p : PPtrUInt;
 begin
     push_trace('driver.net.proto.tcp.AddTCB');
     if Connections = nil then
-        Connections := DL_New(sizeof(uint32));
-    p := puint32(DL_Add(Connections));
-    p^ := uint32(tcb);
+        Connections := DL_New(sizeof(PtrUInt));
+    p := PPtrUInt(DL_Add(Connections));
+    p^ := PtrUInt(tcb);
 end;
 
 procedure RemoveTCB(tcb : PTCB);
@@ -359,7 +363,7 @@ begin
     for i := 0 to DL_Size(Connections) - 1 do begin
         p := DL_Get(Connections, i);
         if p <> nil then begin
-            cur := PTCB(puint32(p)^);
+            cur := PTCB(PPtrUInt(p)^);
             if cur = tcb then begin
                 DL_Delete(Connections, i);
                 exit;
@@ -406,7 +410,7 @@ begin
     for i := 0 to DL_Size(Connections) - 1 do begin
         p := DL_Get(Connections, i);
         if p <> nil then begin
-            tcb := PTCB(puint32(p)^);
+            tcb := PTCB(PPtrUInt(p)^);
             if (tcb <> nil) and tcb^.Active and
                (tcb^.LocalPort = localPort) and
                (tcb^.State = tssSynReceived) then
@@ -429,7 +433,7 @@ begin
     for i := 0 to DL_Size(Connections) - 1 do begin
         p := DL_Get(Connections, i);
         if p <> nil then begin
-            tcb := PTCB(puint32(p)^);
+            tcb := PTCB(PPtrUInt(p)^);
             if (tcb <> nil) and tcb^.Active and
                (tcb^.LocalPort = localPort) and
                (tcb^.State = tssEstablished) and
@@ -522,7 +526,7 @@ begin
         if not tcb^.OOOSegments[i].Valid then begin
             tcb^.OOOSegments[i].SeqNum := seqNum;
             tcb^.OOOSegments[i].Data := kalloc(payloadLen);
-            memcpy(uint32(payload), uint32(tcb^.OOOSegments[i].Data), payloadLen);
+            memcpy(PtrUInt(payload), PtrUInt(tcb^.OOOSegments[i].Data), payloadLen);
             tcb^.OOOSegments[i].DataLen := payloadLen;
             tcb^.OOOSegments[i].Valid := true;
             exit;
@@ -541,7 +545,7 @@ begin
         kfree(tcb^.OOOSegments[oldIdx].Data);
     tcb^.OOOSegments[oldIdx].SeqNum := seqNum;
     tcb^.OOOSegments[oldIdx].Data := kalloc(payloadLen);
-    memcpy(uint32(payload), uint32(tcb^.OOOSegments[oldIdx].Data), payloadLen);
+    memcpy(PtrUInt(payload), PtrUInt(tcb^.OOOSegments[oldIdx].Data), payloadLen);
     tcb^.OOOSegments[oldIdx].DataLen := payloadLen;
     tcb^.OOOSegments[oldIdx].Valid := true;
 end;
@@ -566,8 +570,8 @@ begin
                 if copyLen > (tcb^.RecvBufSize - tcb^.RecvBufLen) then
                     copyLen := tcb^.RecvBufSize - tcb^.RecvBufLen;
                 if copyLen > 0 then begin
-                    memcpy(uint32(tcb^.OOOSegments[i].Data),
-                           uint32(tcb^.RecvBuf) + tcb^.RecvBufLen, copyLen);
+                    memcpy(PtrUInt(tcb^.OOOSegments[i].Data),
+                           PtrUInt(tcb^.RecvBuf) + tcb^.RecvBufLen, copyLen);
                     tcb^.RecvBufLen := tcb^.RecvBufLen + copyLen;
                     tcb^.RCV_NXT := tcb^.RCV_NXT + copyLen;
                     tcb^.RCV_WND := tcb^.RecvBufSize - tcb^.RecvBufLen;
@@ -611,7 +615,7 @@ begin
 
     totalLen := hdrLen + payloadLen;
     buffer := kalloc(totalLen);
-    memset(uint32(buffer), 0, totalLen);
+    memset(PtrUInt(buffer), 0, totalLen);
 
     hdr := PTCPHeader(buffer);
     hdr^.SrcPort := switchendian16(tcb^.LocalPort);
@@ -623,7 +627,7 @@ begin
         { Data offset = 6 (24 bytes), includes MSS option }
         hdr^.DataOff_Flags := switchendian16(MakeDataOffFlags(6, flags));
         { Write MSS option after 20-byte header: Kind=2, Len=4, MSS }
-        opts := puint8(uint32(buffer) + sizeof(TTCPHeader));
+        opts := puint8(PtrUInt(buffer) + sizeof(TTCPHeader));
         opts[0] := TCP_MSS_OPT_KIND;
         opts[1] := TCP_MSS_OPT_LEN;
         opts[2] := uint8(TCP_DEFAULT_MSS SHR 8);
@@ -637,7 +641,7 @@ begin
     hdr^.UrgentPtr := 0;
 
     if (payload <> nil) and (payloadLen > 0) then
-        memcpy(uint32(payload), uint32(buffer) + hdrLen, payloadLen);
+        memcpy(PtrUInt(payload), PtrUInt(buffer) + hdrLen, payloadLen);
 
     { Calculate checksum }
     chk := CalculateChecksum(buffer, totalLen, @tcb^.LocalIP[0], @tcb^.RemoteIP[0]);
@@ -666,7 +670,7 @@ begin
         tcb^.RTTMeasuring := true;
         tcb^.RTTSeqNum := tcb^.SND_NXT + payloadLen;
         if isSYN then tcb^.RTTSeqNum := tcb^.SND_NXT + 1;
-        tcb^.RTTStartTime := Counters.c32;
+        tcb^.RTTStartTime := networkTicks;
     end;
 
     { Reset keep-alive timer on any send }
@@ -681,11 +685,11 @@ begin
     if ((flags AND (TCP_FLAG_SYN OR TCP_FLAG_FIN)) <> 0) or (payloadLen > 0) then begin
         if tcb^.RetransBuf <> nil then kfree(tcb^.RetransBuf);
         tcb^.RetransBuf := kalloc(totalLen);
-        memcpy(uint32(buffer), uint32(tcb^.RetransBuf), totalLen);
+        memcpy(PtrUInt(buffer), PtrUInt(tcb^.RetransBuf), totalLen);
         tcb^.RetransBufLen := totalLen;
         tcb^.RetransTimer := tcb^.RTO;  { Use adaptive RTO }
         tcb^.RetransCount := 0;
-        tcb^.LastSendTime := Counters.c32;
+        tcb^.LastSendTime := networkTicks;
     end;
 
     freePacketContext(context);
@@ -701,7 +705,7 @@ var
 begin
     push_trace('driver.net.proto.tcp.SendRST');
     buffer := kalloc(sizeof(TTCPHeader));
-    memset(uint32(buffer), 0, sizeof(TTCPHeader));
+    memset(PtrUInt(buffer), 0, sizeof(TTCPHeader));
 
     hdr.SrcPort := switchendian16(localPort);
     hdr.DstPort := switchendian16(remotePort);
@@ -712,7 +716,7 @@ begin
     hdr.Checksum  := 0;
     hdr.UrgentPtr := 0;
 
-    memcpy(uint32(@hdr), uint32(buffer), sizeof(TTCPHeader));
+    memcpy(PtrUInt(@hdr), PtrUInt(buffer), sizeof(TTCPHeader));
 
     chk := CalculateChecksum(buffer, sizeof(TTCPHeader), localIP, remoteIP);
     PTCPHeader(buffer)^.Checksum := chk;
@@ -760,7 +764,7 @@ begin
 
     { Parse options pointer }
     if dataOff > 5 then begin
-        optsPtr := puint8(uint32(hdr) + sizeof(TTCPHeader));
+        optsPtr := puint8(PtrUInt(hdr) + sizeof(TTCPHeader));
         optsLen := (dataOff - 5) * 4;
     end else begin
         optsPtr := nil;
@@ -797,7 +801,7 @@ begin
 
                     { RTT measurement complete }
                     if tcb^.RTTMeasuring then begin
-                        rttSample := Counters.c32 - tcb^.RTTStartTime;
+                        rttSample := networkTicks - tcb^.RTTStartTime;
                         if rttSample > 0 then
                             UpdateRTT(tcb, rttSample);
                         tcb^.RTTMeasuring := false;
@@ -854,7 +858,7 @@ begin
 
                     { RTT measurement }
                     if tcb^.RTTMeasuring then begin
-                        rttSample := Counters.c32 - tcb^.RTTStartTime;
+                        rttSample := networkTicks - tcb^.RTTStartTime;
                         if rttSample > 0 then
                             UpdateRTT(tcb, rttSample);
                         tcb^.RTTMeasuring := false;
@@ -890,7 +894,7 @@ begin
 
                     { RTT measurement: complete if ACK covers timed segment }
                     if tcb^.RTTMeasuring and (ackNum >= tcb^.RTTSeqNum) then begin
-                        rttSample := Counters.c32 - tcb^.RTTStartTime;
+                        rttSample := networkTicks - tcb^.RTTStartTime;
                         if rttSample > 0 then
                             UpdateRTT(tcb, rttSample);
                         tcb^.RTTMeasuring := false;
@@ -939,8 +943,8 @@ begin
                         tcb^.SND_NXT := tcb^.SND_NXT + copyLen;
                         { Shift remaining data in send buffer }
                         if copyLen < tcb^.SendBufLen then begin
-                            memcpy(uint32(tcb^.SendBuf) + copyLen,
-                                   uint32(tcb^.SendBuf),
+                            memcpy(PtrUInt(tcb^.SendBuf) + copyLen,
+                                   PtrUInt(tcb^.SendBuf),
                                    tcb^.SendBufLen - copyLen);
                         end;
                         tcb^.SendBufLen := tcb^.SendBufLen - copyLen;
@@ -963,7 +967,7 @@ begin
                         copyLen := tcb^.RecvBufSize - tcb^.RecvBufLen;
 
                     if copyLen > 0 then begin
-                        memcpy(uint32(payload), uint32(tcb^.RecvBuf) + tcb^.RecvBufLen, copyLen);
+                        memcpy(PtrUInt(payload), PtrUInt(tcb^.RecvBuf) + tcb^.RecvBufLen, copyLen);
                         tcb^.RecvBufLen := tcb^.RecvBufLen + copyLen;
                         tcb^.RCV_NXT := tcb^.RCV_NXT + copyLen;
                         tcb^.RCV_WND := tcb^.RecvBufSize - tcb^.RecvBufLen;
@@ -1164,7 +1168,7 @@ begin
 
             { Parse MSS option from SYN }
             if dataOff > 5 then begin
-                optsPtr := puint8(uint32(p_data) + sizeof(TTCPHeader));
+                optsPtr := puint8(PtrUInt(p_data) + sizeof(TTCPHeader));
                 optsLen := (dataOff - 5) * 4;
                 mss := ParseMSSOption(optsPtr, optsLen);
                 if mss > 0 then
@@ -1217,6 +1221,9 @@ var
     count    : uint32;
     effMSS   : uint16;
 begin
+    TimerFraction := TimerFraction + PIT_DIVISOR * 1024;
+    if TimerFraction < PIT_INPUT_HZ then exit;
+    TimerFraction := TimerFraction - PIT_INPUT_HZ;
     if Connections = nil then exit;
     count := DL_Size(Connections);
     if count = 0 then exit;
@@ -1225,7 +1232,7 @@ begin
     while i < count do begin
         p := DL_Get(Connections, i);
         if p <> nil then begin
-            tcb := PTCB(puint32(p)^);
+            tcb := PTCB(PPtrUInt(p)^);
             if (tcb <> nil) and tcb^.Active then begin
 
                 { Delayed ACK timer }
@@ -1422,7 +1429,7 @@ begin
     if tcb = nil then exit;
 
     copyIPv4(@getIPv4Config^.Address[0], @tcb^.LocalIP[0]);
-    memset(uint32(@tcb^.RemoteIP[0]), 0, 4);
+    memset(PtrUInt(@tcb^.RemoteIP[0]), 0, 4);
     tcb^.LocalPort := context^.LocalPort;
     tcb^.RemotePort := 0;
     tcb^.State := tssListen;
@@ -1503,7 +1510,7 @@ begin
         if copyLen > (tcb^.SendBufSize - tcb^.SendBufLen) then
             copyLen := tcb^.SendBufSize - tcb^.SendBufLen;
         if copyLen > 0 then begin
-            memcpy(uint32(p_data), uint32(tcb^.SendBuf) + tcb^.SendBufLen, copyLen);
+            memcpy(PtrUInt(p_data), PtrUInt(tcb^.SendBuf) + tcb^.SendBufLen, copyLen);
             tcb^.SendBufLen := tcb^.SendBufLen + copyLen;
         end;
         send := tteOK;
@@ -1523,7 +1530,7 @@ begin
         if copyLen > (tcb^.SendBufSize - tcb^.SendBufLen) then
             copyLen := tcb^.SendBufSize - tcb^.SendBufLen;
         if copyLen > 0 then begin
-            memcpy(uint32(p_data), uint32(tcb^.SendBuf) + tcb^.SendBufLen, copyLen);
+            memcpy(PtrUInt(p_data), PtrUInt(tcb^.SendBuf) + tcb^.SendBufLen, copyLen);
             tcb^.SendBufLen := tcb^.SendBufLen + copyLen;
         end;
         send := tteOK;
@@ -1867,7 +1874,7 @@ begin
         port := uint16(stringToInt(getParam(1, params)));
 
     { Store host string for HTTP Host header }
-    memset(uint32(@TCPHTTP_Host[0]), 0, 64);
+    memset(PtrUInt(@TCPHTTP_Host[0]), 0, 64);
     i := 0;
     while (ip_str[i] <> #0) and (i < 63) do begin
         TCPHTTP_Host[i] := ip_str[i];
@@ -1900,9 +1907,9 @@ begin
     push_trace('driver.net.proto.tcp.register');
     writeToLogLn('        L4/TCP: register');
     if not Registered then begin
-        Connections := DL_New(sizeof(uint32));
+        Connections := DL_New(sizeof(PtrUInt));
         driver.net.proto.ipv4.registerProtocol(TCP_PROTOCOL_ID, @ProcessPacket);
-        arch.x86.isr.tmr0.hook(uint32(@TimerTick));
+        arch.platform.interrupts.registerTimer(@TimerTick);
         Registered := true;
         io.syslog.logln('TCP', 'TCP registered.');
     end;

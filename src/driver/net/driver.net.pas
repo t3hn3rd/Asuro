@@ -22,7 +22,6 @@ unit driver.net;
 interface
 
 uses
-    boot.mgr,
     debug.tracer,
     driver.net.types, driver.net.util,
     io.syslog,
@@ -40,7 +39,7 @@ procedure writeToLogLn(str : pchar);
 implementation
 
 uses  
-    driver.net.dev.e1000,              //dev
+    io.stdio, driver.net.dev.e1000,              //dev
     driver.net.proto.eth2,               //L2
     driver.net.proto.arp, driver.net.proto.ipv4,          //L3
     driver.net.proto.icmp, driver.net.proto.tcp, driver.net.proto.udp,     //L4
@@ -141,10 +140,14 @@ begin
     driver.net.proto.udp.register;
     //l5
     driver.net.proto.dhcp.register;
+    driver.net.dev.e1000.init;
+    io.stdio.registerCommand('ARP', @driver.net.proto.arp.terminal_command_arp, 'Get ARP Table.');
+    io.stdio.registerCommand('IFCONFIG', @driver.net.proto.ipv4.terminal_command_ifconfig, 'Configure Network Settings.');
+    io.stdio.registerCommand('TCPCONNECT', @driver.net.proto.tcp.terminal_command_tcpconnect, 'Connect to a TCP host and send Hello World.');
+    io.stdio.registerCommand('TCPLISTEN', @driver.net.proto.tcp.terminal_command_tcplisten, 'Listen on a TCP port and log received data.');
+    io.stdio.registerCommand('TCPHTTP', @driver.net.proto.tcp.terminal_command_tcphttp, 'Send HTTP GET to a host IP (port 80 default).');
     pop_trace;
 end;
 
-initialization
-    boot.mgr.registerBoot('driver.net', @Init, 'Net Driver', BOOT_MGR_BARRIER_LATE)
 
 end.
