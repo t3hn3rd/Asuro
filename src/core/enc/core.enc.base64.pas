@@ -26,7 +26,7 @@ uses
     memory.heap,
     core.strings,
     debug.tracer,
-    core.util, arch.x86.util;
+    core.util, arch.platform.cpu;
 
 const
     base64_enc_map : array[0..63] of char = ('A','B','C','D','E',
@@ -64,7 +64,7 @@ begin
         // integer overflow
     end else begin
         output := PuInt8(kalloc(olen));
-        b64end := PuInt8(uInt32(src) + uInt32(len));
+        b64end := PuInt8(PtrUInt(src) + uInt32(len));
         b64in  := src;
         b64pos := output;
         line_len := 0;
@@ -130,7 +130,7 @@ var
 
 begin
     pad := 0;
-    memset(uInt32(@dtable[0]), $80, 256);
+    memset(PtrUInt(@dtable[0]), $80, 256);
 
     for i := 0 to (sizeof(base64_enc_map) - 2) do begin
         dtable[uInt8(base64_enc_map[i])] := uInt8(i);

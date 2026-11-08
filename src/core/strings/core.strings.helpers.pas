@@ -112,16 +112,16 @@ begin
     if (arr = nil) or (n < 2) then exit;
     if n > 1 then
         for i := 1 to n - 1 do begin
-            p   := PPChar(pointer(uint32(arr) + i * sizeof(pchar)));
+            p   := PPChar(pointer(PtrUInt(arr) + i * sizeof(pchar)));
             tmp := p^;
             j   := i;
             while j > 0 do begin
-                p := PPChar(pointer(uint32(arr) + (j - 1) * sizeof(pchar)));
+                p := PPChar(pointer(PtrUInt(arr) + (j - 1) * sizeof(pchar)));
                 if stringCompareCI(tmp, p^) >= 0 then break;
-                PPChar(pointer(uint32(arr) + j * sizeof(pchar)))^ := p^;
+                PPChar(pointer(PtrUInt(arr) + j * sizeof(pchar)))^ := p^;
                 j := j - 1;
             end;
-            PPChar(pointer(uint32(arr) + j * sizeof(pchar)))^ := tmp;
+            PPChar(pointer(PtrUInt(arr) + j * sizeof(pchar)))^ := tmp;
         end;
 end;
 
@@ -142,21 +142,21 @@ begin
     if (arr = nil) or (n < 2) then exit;
     if n > 1 then
         for i := 1 to n - 1 do begin
-            p    := PPChar(pointer(uint32(arr) + i * sizeof(pchar)));
-            dp   := puint32(pointer(uint32(data) + i * sizeof(uint32)));
+            p    := PPChar(pointer(PtrUInt(arr) + i * sizeof(pchar)));
+            dp   := puint32(pointer(PtrUInt(data) + i * sizeof(uint32)));
             tmpN := p^;
             tmpD := dp^;
             j    := i;
             while j > 0 do begin
-                p := PPChar(pointer(uint32(arr) + (j - 1) * sizeof(pchar)));
+                p := PPChar(pointer(PtrUInt(arr) + (j - 1) * sizeof(pchar)));
                 if stringCompareCI(tmpN, p^) >= 0 then break;
-                PPChar(pointer(uint32(arr) + j * sizeof(pchar)))^ := p^;
-                puint32(pointer(uint32(data) + j * sizeof(uint32)))^ :=
-                    puint32(pointer(uint32(data) + (j - 1) * sizeof(uint32)))^;
+                PPChar(pointer(PtrUInt(arr) + j * sizeof(pchar)))^ := p^;
+                puint32(pointer(PtrUInt(data) + j * sizeof(uint32)))^ :=
+                    puint32(pointer(PtrUInt(data) + (j - 1) * sizeof(uint32)))^;
                 j := j - 1;
             end;
-            PPChar(pointer(uint32(arr) + j * sizeof(pchar)))^ := tmpN;
-            puint32(pointer(uint32(data) + j * sizeof(uint32)))^ := tmpD;
+            PPChar(pointer(PtrUInt(arr) + j * sizeof(pchar)))^ := tmpN;
+            puint32(pointer(PtrUInt(data) + j * sizeof(uint32)))^ := tmpD;
         end;
 end;
 

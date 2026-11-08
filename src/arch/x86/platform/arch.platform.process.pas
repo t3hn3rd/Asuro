@@ -12,12 +12,20 @@
 
 { Build-selected x86 adapter. }
 unit arch.platform.process;
+
 interface
 {$i ../../common/platform.process.inc}
+
 implementation
 uses arch.x86.proc.context, arch.x86.bda;
+
 function prepare(stack: pointer; bytes: SizeUInt; entry: pointer): PtrUInt;
-begin prepare := arch.x86.proc.context.prepare(stack, bytes, entry); end;
+begin
+    prepare := arch.x86.proc.context.prepare(stack, bytes, entry);
+end;
+
 function timerTicks: uint32;
-begin timerTicks := PUInt32(@Counters.c32)^; end;
+begin
+    timerTicks := PUInt32(@Counters.c32)^;
+end;
 end.

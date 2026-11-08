@@ -13,6 +13,7 @@
 { Shared I/O data contracts without console, driver or runtime dependencies.
   Types extracted from io.stdio by Kieron Morris. }
 unit io.types;
+
 interface
 type
     { Output buffer — kalloc'd, growable }

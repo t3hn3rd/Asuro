@@ -12,12 +12,17 @@
 
 { i386 initial frame, extracted from proc.mgr (Kieron Morris). }
 unit arch.x86.proc.context;
+
 interface
 function prepare(stack: pointer; bytes: SizeUInt; entry: pointer): PtrUInt;
+
 implementation
 uses memory.raw;
+
 function prepare(stack: pointer; bytes: SizeUInt; entry: pointer): PtrUInt;
-var top, frame: PtrUInt; i: uint32;
+var
+    top, frame: PtrUInt;
+    i: uint32;
 begin
     prepare := 0;
     if (stack = nil) or (entry = nil) or (bytes < 64) or

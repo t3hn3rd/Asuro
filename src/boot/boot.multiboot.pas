@@ -14,6 +14,7 @@
 
 { Multiboot v1 wire layout: fixed-width fields on every architecture. }
 unit boot.multiboot;
+
 interface
 const MULTIBOOT_BOOTLOADER_MAGIC = $2BADB002;
 type
@@ -70,6 +71,8 @@ type
 		      length : uint64;
 		      mtype: uint32;
         end;
+
+var multibootinfo: Pmultiboot_info_t = nil;
 
 implementation
 end.

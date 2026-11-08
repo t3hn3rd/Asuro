@@ -12,10 +12,13 @@
 
 { Commands extracted from io.stdio (Kieron Morris). }
 unit arch.x86.console;
+
 interface
 procedure init;
+
 implementation
 uses io.stdio, core.version, driver.timer.rtc, arch.x86.util;
+
 procedure cmd_version(params: PParamList; stdin_buf, stdout_buf, stderr_buf: POutBuf);
 begin
     bufWriteStr(stdout_buf, '  Asuro Version: ');

@@ -59,13 +59,13 @@ var
   h : uint32;
 begin
   h := $811C9DC5;
-  p := puint8(uint32(Data));
+  p := puint8(Data);
   if DataLen > 0 then
     for i := 0 to DataLen - 1 do
     begin
       h := h xor uint32(p^);
       h := h * $01000193;
-      p := puint8(uint32(p) + 1);
+      inc(p);
     end;
   Hash_FNV1a32 := h;
 end;
@@ -77,13 +77,13 @@ var
   h : uint64;
 begin
   h := uint64($CBF29CE484222325);
-  p := puint8(uint32(Data));
+  p := puint8(Data);
   if DataLen > 0 then
     for i := 0 to DataLen - 1 do
     begin
       h := h xor uint64(p^);
       h := h * uint64($00000100000001B3);
-      p := puint8(uint32(p) + 1);
+      inc(p);
     end;
   Hash_FNV1a64 := h;
 end;
@@ -99,8 +99,16 @@ begin
   test.harness.Start(@context, 'core.enc.fnv1a');
 
   { Two distinct 5-byte inputs }
-  buf1[0] := ord('h'); buf1[1] := ord('e'); buf1[2] := ord('l'); buf1[3] := ord('l'); buf1[4] := ord('o');
-  buf2[0] := ord('w'); buf2[1] := ord('o'); buf2[2] := ord('r'); buf2[3] := ord('l'); buf2[4] := ord('d');
+  buf1[0] := ord('h');
+  buf1[1] := ord('e');
+  buf1[2] := ord('l');
+  buf1[3] := ord('l');
+  buf1[4] := ord('o');
+  buf2[0] := ord('w');
+  buf2[1] := ord('o');
+  buf2[2] := ord('r');
+  buf2[3] := ord('l');
+  buf2[4] := ord('d');
 
   { === Known basis value: zero-length input returns initial h === }
   test.harness.Assert(@context, Hash_FNV1a32(void(@buf1[0]), 0) = $811C9DC5, 'FNV1a32 empty = basis $811C9DC5');

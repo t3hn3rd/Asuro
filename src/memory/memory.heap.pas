@@ -72,6 +72,7 @@ var
 
 procedure init;
 procedure UnitTest;
+{ Returned allocations are zero-filled, including reused storage. }
 function kalloc(size : SizeUInt) : void;
 function klalloc(size : SizeUInt) : void;
 procedure klfree(address : PtrUInt);
@@ -85,15 +86,23 @@ function lmm_page_count : uint32;
 implementation
 
 uses arch.platform.memory, arch.platform.cpu, arch.platform.diagnostics;
+
 procedure GPF;
-begin fatal('LMM', 'FAIL: heap invariant'); end;
+begin
+    fatal('LMM', 'FAIL: heap invariant');
+end;
+
 procedure heap_log(message: pchar);
-begin arch.platform.diagnostics.log('LMM', message); end;
+begin
+    arch.platform.diagnostics.log('LMM', message);
+end;
+
 procedure heap_oom(message: pchar);
-begin fatal('OOM', message); end;
+begin
+    fatal('OOM', message);
+end;
 
 { ==== Internal helpers ==== }
-
 function get_bitmap(hp: PHeapPageHeader): PuInt32; inline;
 begin
     get_bitmap := PuInt32(PtrUInt(hp) + uint32(sizeof(THeapPageHeader)));
@@ -104,16 +113,7 @@ begin
     get_data_base := PtrUInt(hp) + DATA_OFFSET;
 end;
 
-procedure zero_mem(dest: Pointer; bytes: SizeUInt);
-begin arch.platform.cpu.zero(dest, bytes); end;
-procedure restore_if(saved: PtrUInt); inline;
-begin arch.platform.cpu.unlock(saved); end;
-
 { ==== Page management ==== }
-
-function new_lmm_page: PtrUInt;
-begin new_lmm_page := arch.platform.memory.allocateHeapPage; end;
-
 function new_heap_page(current: PHeapPageHeader): PHeapPageHeader;
 var
     addr: PtrUInt;
@@ -121,7 +121,7 @@ var
     i: uint32;
 begin
     push_trace('memory.heap.new_heap_page');
-    addr := new_lmm_page;
+    addr := arch.platform.memory.allocateHeapPage;
     if addr = 0 then begin
         new_heap_page := nil;
         pop_trace;
@@ -175,7 +175,6 @@ begin
 end;
 
 { ==== Public API ==== }
-
 procedure init;
 begin
     push_trace('memory.heap.init');
@@ -191,7 +190,9 @@ begin
 end;
 
 function kpalloc(address: PtrUInt): void;
-begin kpalloc := void(arch.platform.memory.identityReserve(address)); end;
+begin
+    kpalloc := void(arch.platform.memory.identityReserve(address));
+end;
 
 procedure klfree(address: PtrUInt);
 var
@@ -220,22 +221,25 @@ begin
 
     { Need extra 16 bytes for header: [page_count:4][magic:4][pad:8] }
     if (size = 0) or (size > High(SizeUInt) - PAGE_SIZE_LMM - SIZE_PREFIX) then begin
-        pop_trace; exit;
+        pop_trace;
+        exit;
     end;
     total_size := size + 16;
     if ((total_size + PAGE_SIZE_LMM - 1) div PAGE_SIZE_LMM) > MAX_HEAP_REGIONS then begin
-        pop_trace; exit;
+        pop_trace;
+        exit;
     end;
     pages := (total_size + PAGE_SIZE_LMM - 1) div PAGE_SIZE_LMM;
     if pages = 0 then pages := 1;
 
     base_addr := arch.platform.memory.allocateLarge(pages);
     if base_addr <> 0 then begin
-        zero_mem(Pointer(base_addr), SIZE_PREFIX);
+        arch.platform.cpu.zero(Pointer(base_addr), SIZE_PREFIX);
         PuInt32(base_addr)^ := pages;
         PuInt32(base_addr + 4)^ := LARGE_ALLOC_MAGIC;
         klalloc := void(base_addr + SIZE_PREFIX);
-        pop_trace; exit;
+        pop_trace;
+        exit;
     end;
 
     heap_log('ERROR: klalloc no contiguous pages.');
@@ -260,7 +264,7 @@ begin
     kalloc := nil;
 
     if (size = 0) or (size > High(SizeUInt) - PAGE_SIZE_LMM - SIZE_PREFIX) then begin
-        restore_if(saved_flags);
+        arch.platform.cpu.unlock(saved_flags);
         exit;
     end;
 
@@ -268,12 +272,12 @@ begin
     if size > TOTAL_UNITS * ALLOC_UNIT - SIZE_PREFIX - 16 then begin
         kalloc := klalloc(size);
         if kalloc = nil then begin
-            restore_if(saved_flags);
+            arch.platform.cpu.unlock(saved_flags);
             heap_oom('kalloc: large allocation failed');
             exit;
         end;
-        zero_mem(Pointer(kalloc), size);
-        restore_if(saved_flags);
+        arch.platform.cpu.zero(Pointer(kalloc), size);
+        arch.platform.cpu.unlock(saved_flags);
         exit;
     end;
 
@@ -308,7 +312,7 @@ begin
                 kalloc := void(alloc_base + SIZE_PREFIX);
 
                 { Zero the user-visible area }
-                zero_mem(Pointer(kalloc), size);
+                arch.platform.cpu.zero(Pointer(kalloc), size);
 
                 {$IFDEF DEBUG_LMM}
                 { Write guard sentinel at end of allocated region }
@@ -316,7 +320,7 @@ begin
                 {$ENDIF}
 
                 Search_Page := hp;
-                restore_if(saved_flags);
+                arch.platform.cpu.unlock(saved_flags);
                 exit;
             end;
         end;
@@ -325,7 +329,7 @@ begin
         if hp^.NextPage = nil then begin
             hp := new_heap_page(hp);
             if hp = nil then begin
-                restore_if(saved_flags);
+                arch.platform.cpu.unlock(saved_flags);
                 heap_oom('kalloc: out of memory');
                 exit;
             end;
@@ -335,7 +339,7 @@ begin
         Search_Page := hp;
     end;
 
-    restore_if(saved_flags);
+    arch.platform.cpu.unlock(saved_flags);
 end;
 
 procedure kfree(area: void); [public, alias: 'kernel_kfree'];
@@ -358,7 +362,7 @@ begin
     if PuInt32(PtrUInt(area) - 12)^ = LARGE_ALLOC_MAGIC then begin
         base := PtrUInt(area) - 16;
         klfree(base);
-        restore_if(saved_flags);
+        arch.platform.cpu.unlock(saved_flags);
         exit;
     end;
 
@@ -378,7 +382,7 @@ begin
        (prefix_val > hp^.TotalUnits - unit_idx) then begin
         heap_log('ERROR: kfree invalid range.');
         GPF;
-        restore_if(saved_flags);
+        arch.platform.cpu.unlock(saved_flags);
         exit;
     end;
 
@@ -387,7 +391,7 @@ begin
     if PuInt32(alloc_base + prefix_val * ALLOC_UNIT - 4)^ <> GUARD_MAGIC then begin
         heap_log('ERROR: kfree guard corrupted - buffer overrun!');
         GPF;
-        restore_if(saved_flags);
+        arch.platform.cpu.unlock(saved_flags);
         exit;
     end;
     {$ENDIF}
@@ -396,7 +400,7 @@ begin
     if not bitmap_all_set(bmp, unit_idx, prefix_val) then begin
         heap_log('ERROR: kfree double free!');
         GPF;
-        restore_if(saved_flags);
+        arch.platform.cpu.unlock(saved_flags);
         exit;
     end;
 
@@ -411,11 +415,10 @@ begin
     { If page is completely free, return it to VMM/PMM }
     try_release_page(hp);
 
-    restore_if(saved_flags);
+    arch.platform.cpu.unlock(saved_flags);
 end;
 
 { ==== Statistics ==== }
-
 function lmm_total_free: SizeUInt;
 var
     hp: PHeapPageHeader;
@@ -446,21 +449,34 @@ var
     beforeFree: SizeUInt;
     beforeFrames: uint64;
     passed, failed: uint32;
+
     procedure Assert(condition: boolean; name: pchar);
     begin
-        if condition then begin inc(passed); heap_log(name); end
-        else begin inc(failed); heap_log('FAIL: heap test'); heap_log(name); end;
+        if condition then begin
+            inc(passed);
+            heap_log(name);
+        end
+        else begin
+            inc(failed);
+            heap_log('FAIL: heap test');
+            heap_log(name);
+        end;
     end;
 begin
-    passed := 0; failed := 0;
+    passed := 0;
+    failed := 0;
     beforeFree := lmm_total_free;
-    beforeFrames := arch.platform.memory.freeBacking;
-    a := kalloc(1); b := kalloc(17);
+    beforeFrames := arch.platform.memory.freePhysicalBytes;
+    a := kalloc(1);
+    b := kalloc(17);
     Assert((a <> nil) and (b <> nil) and ((PtrUInt(a) and 15) = 0) and
            ((PtrUInt(b) and 15) = 0), 'PASS: heap odd sizes remain 16-byte aligned');
     Assert((PUInt8(a)^ = 0) and (PUInt8(PtrUInt(b) + 16)^ = 0), 'PASS: heap allocation zeroed');
-    PUInt8(a)^ := 123; PUInt8(PtrUInt(b) + 16)^ := 45;
-    kfree(a); kfree(b); kfree(nil);
+    PUInt8(a)^ := 123;
+    PUInt8(PtrUInt(b) + 16)^ := 45;
+    kfree(a);
+    kfree(b);
+    kfree(nil);
     a := kalloc(1);
     Assert(PUInt8(a)^ = 0, 'PASS: heap reused storage zeroed');
     kfree(a);
@@ -473,7 +489,7 @@ begin
     kfree(large);
     Assert((kalloc(0) = nil) and (kalloc(High(SizeUInt)) = nil), 'PASS: heap rejects zero/overflow sizes');
     Assert((lmm_total_free = beforeFree) and (lmm_page_count = 1), 'PASS: heap free accounting restored');
-    Assert(arch.platform.memory.freeBacking = beforeFrames, 'PASS: heap backing frames restored');
+    Assert(arch.platform.memory.freePhysicalBytes = beforeFrames, 'PASS: heap backing frames restored');
     arch.platform.diagnostics.testSummary('LMM', 'HEAP_TESTS_PASSED', 'HEAP_TESTS_FAILED', passed, failed);
     if failed <> 0 then GPF;
 end;

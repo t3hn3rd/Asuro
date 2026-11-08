@@ -25,13 +25,14 @@ extern kernel_end
 section .multiboot align=4
 header:
     dd 0x1BADB002
-    dd 0x00010003
-    dd -(0x1BADB002 + 0x00010003)
+    dd 0x00010007
+    dd -(0x1BADB002 + 0x00010007)
     dd header
     dd header
     dd load_end
     dd kernel_end
     dd loader
+    dd 0, 1024, 768, 32
 
 section .text
 loader:

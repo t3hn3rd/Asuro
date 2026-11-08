@@ -13,6 +13,7 @@
 { BSP kernel mappings. Page-table frames stay below 4 GiB so the bootstrap
   identity map can access them; data frames may live above 4 GiB. }
 unit arch.x86_64.memory.virtual;
+
 interface
 const
     ARENA_SIZE = $400000;
@@ -23,8 +24,10 @@ function release_region(address: PtrUInt; arenas: uint32): boolean;
 function map_page(address: PtrUInt; physical: uint64; owned: boolean): boolean;
 function unmap_page(address: PtrUInt; var physical: uint64): boolean;
 function translate(address: PtrUInt): uint64;
+function mapDevice(address: uint64; bytes: SizeUInt): pointer;
 procedure init;
 procedure UnitTest;
+
 implementation
 uses arch.x86_64.memory.physical, arch.x86_64.util, memory.bitmap, debug.early;
 const
@@ -36,7 +39,6 @@ var
     tablePages: uint64;
     leafFlags: uint64;
     failAfter: sint32; { deterministic OOM injection, disabled outside UnitTest }
-
 function acquire(lowOnly: boolean): uint64;
 begin
     acquire := 0;
@@ -44,12 +46,20 @@ begin
     if failAfter > 0 then dec(failAfter);
     acquire := arch.x86_64.memory.physical.alloc_page(lowOnly);
 end;
+
 procedure fail(message: pchar);
-begin puts('FAIL: VMM '); puts(message); puts(#13#10); bootstrap_halt; end;
+begin
+    puts('FAIL: VMM ');
+    puts(message);
+    puts(#13#10);
+    bootstrap_halt;
+end;
+
 function managed(address: PtrUInt): boolean;
 begin
     managed := (address >= HEAP_BASE) and (address - HEAP_BASE < uint64(ARENA_COUNT) * ARENA_SIZE);
 end;
+
 function enableNX: boolean; assembler; nostackframe;
 asm
     push rbx
@@ -66,8 +76,12 @@ asm
 @done:
     pop rbx
 end;
+
 function map_page(address: PtrUInt; physical: uint64; owned: boolean): boolean;
-var table, slot: PUInt64; shift, created: sint32; frame, saved: uint64;
+var
+    table, slot: PUInt64;
+    shift, created: sint32;
+    frame, saved: uint64;
     parents: array[0..2] of PUInt64;
     frames: array[0..2] of uint64;
 begin
@@ -75,7 +89,9 @@ begin
     if not managed(address) or ((address and $FFF) <> 0) or
        ((physical and not ADDRESS_MASK) <> 0) then exit;
     saved := lockIRQ;
-    table := root; created := 0; shift := 39;
+    table := root;
+    created := 0;
+    shift := 39;
     while shift > 12 do begin
         slot := @table[(address shr shift) and $1FF];
         if (slot^ and 1) = 0 then begin
@@ -84,7 +100,8 @@ begin
             zero(pointer(PtrUInt(frame)), 4096);
             parents[created] := slot;
             frames[created] := frame;
-            inc(created); inc(tablePages);
+            inc(created);
+            inc(tablePages);
             slot^ := frame or 3;
         end;
         if (slot^ and $80) <> 0 then break;
@@ -108,12 +125,17 @@ begin
     end;
     unlockIRQ(saved);
 end;
+
 function leaf(address: PtrUInt): PUInt64;
-var table: PUInt64; shift: sint32; entry: uint64;
+var
+    table: PUInt64;
+    shift: sint32;
+    entry: uint64;
 begin
     leaf := nil;
     if not managed(address) then exit;
-    table := root; shift := 39;
+    table := root;
+    shift := 39;
     while shift > 12 do begin
         entry := table[(address shr shift) and $1FF];
         if ((entry and 1) = 0) or ((entry and $80) <> 0) then exit;
@@ -122,12 +144,17 @@ begin
     end;
     leaf := @table[(address shr 12) and $1FF];
 end;
+
 function translate(address: PtrUInt): uint64;
-var table: PUInt64; shift: sint32; entry, span: uint64;
+var
+    table: PUInt64;
+    shift: sint32;
+    entry, span: uint64;
 begin
     translate := 0;
     if (address > $00007FFFFFFFFFFF) and (address < HEAP_BASE) then exit;
-    table := root; shift := 39;
+    table := root;
+    shift := 39;
     while shift >= 12 do begin
         entry := table[(address shr shift) and $1FF];
         if (entry and 1) = 0 then exit;
@@ -140,34 +167,78 @@ begin
         dec(shift, 9);
     end;
 end;
-procedure prune(address: PtrUInt);
-var parents: array[0..2] of PUInt64; tables: array[0..2] of PUInt64;
-    table, slot: PUInt64; shift, level: sint32; i: uint32; empty: boolean;
+
+function mapDevice(address: uint64; bytes: SizeUInt): pointer;
+var
+    first, last, page: PtrUInt;
+    table, slot: PUInt64;
+    flags: PtrUInt;
 begin
-    table := root; shift := 39; level := 0;
+    mapDevice := nil;
+    if (bytes = 0) or (address >= $100000000) or (bytes > $100000000 - address) then exit;
+    first := PtrUInt(address) and not PtrUInt($1FFFFF);
+    last := PtrUInt(address + bytes - 1) and not PtrUInt($1FFFFF);
+    flags := lockIRQ;
+    page := first;
+    repeat
+        table := PUInt64(PtrUInt(root[0] and ADDRESS_MASK));
+        table := PUInt64(PtrUInt(table[(page shr 30) and $1FF] and ADDRESS_MASK));
+        slot := @table[(page shr 21) and $1FF];
+        { Bootstrap low identity leaves are 2 MiB. Disable caching for MMIO. }
+        slot^ := slot^ or $18;
+        invalidate(page);
+        if page = last then break;
+        inc(page, $200000);
+    until false;
+    unlockIRQ(flags);
+    mapDevice := pointer(PtrUInt(address));
+end;
+
+procedure prune(address: PtrUInt);
+var
+    parents: array[0..2] of PUInt64;
+    tables: array[0..2] of PUInt64;
+    table, slot: PUInt64;
+    shift, level: sint32;
+    i: uint32;
+    empty: boolean;
+begin
+    table := root;
+    shift := 39;
+    level := 0;
     while shift > 12 do begin
         slot := @table[(address shr shift) and $1FF];
         if ((slot^ and 1) = 0) or ((slot^ and $80) <> 0) then exit;
         parents[level] := slot;
         table := PUInt64(PtrUInt(slot^ and ADDRESS_MASK));
         tables[level] := table;
-        inc(level); dec(shift, 9);
+        inc(level);
+        dec(shift, 9);
     end;
     while level > 0 do begin
-        dec(level); empty := true;
-        for i := 0 to 511 do if (tables[level][i] and 1) <> 0 then begin empty := false; break; end;
+        dec(level);
+        empty := true;
+        for i := 0 to 511 do if (tables[level][i] and 1) <> 0 then begin
+            empty := false;
+            break;
+        end;
         if not empty then exit;
         parents[level]^ := 0;
         if not arch.x86_64.memory.physical.free_page(PtrUInt(tables[level])) then fail('table release');
         dec(tablePages);
     end;
 end;
+
 function unmap_page(address: PtrUInt; var physical: uint64): boolean;
-var slot: PUInt64; saved: PtrUInt;
+var
+    slot: PUInt64;
+    saved: PtrUInt;
 begin
-    unmap_page := false; physical := 0;
+    unmap_page := false;
+    physical := 0;
     if not managed(address) or ((address and $FFF) <> 0) then exit;
-    saved := lockIRQ; slot := leaf(address);
+    saved := lockIRQ;
+    slot := leaf(address);
     if slot <> nil then if (slot^ and 1) <> 0 then begin
         physical := slot^ and ADDRESS_MASK;
         slot^ := 0;
@@ -177,8 +248,12 @@ begin
     end;
     unlockIRQ(saved);
 end;
+
 procedure releaseMapped(address: PtrUInt; pages: uint32);
-var i: uint32; slot: PUInt64; physical: uint64;
+var
+    i: uint32;
+    slot: PUInt64;
+    physical: uint64;
 begin
     if pages = 0 then exit;
     for i := 0 to pages - 1 do begin
@@ -196,14 +271,22 @@ begin
         inc(i, 512);
     end;
 end;
+
 function allocate_region(arenas: uint32): PtrUInt;
-var idx: sint32; i, pages: uint32; base, saved: PtrUInt; physical: uint64;
+var
+    idx: sint32;
+    i, pages: uint32;
+    base, saved: PtrUInt;
+    physical: uint64;
 begin
     allocate_region := 0;
     if (arenas = 0) or (arenas > ARENA_COUNT) or (arenaBitmap = nil) then exit;
     saved := lockIRQ;
     idx := find_free_run(arenaBitmap, 0, arenas, ARENA_COUNT);
-    if idx < 0 then begin unlockIRQ(saved); exit; end;
+    if idx < 0 then begin
+        unlockIRQ(saved);
+        exit;
+    end;
     bitmap_set_range(arenaBitmap, idx, arenas);
     base := HEAP_BASE + uint64(idx) * ARENA_SIZE;
     pages := arenas * (ARENA_SIZE div 4096);
@@ -223,8 +306,12 @@ begin
     end else allocate_region := base;
     unlockIRQ(saved);
 end;
+
 function release_region(address: PtrUInt; arenas: uint32): boolean;
-var idx, i, pages: uint32; saved: PtrUInt; slot: PUInt64;
+var
+    idx, i, pages: uint32;
+    saved: PtrUInt;
+    slot: PUInt64;
 begin
     release_region := false;
     if not managed(address) or ((address and (ARENA_SIZE - 1)) <> 0) or
@@ -232,43 +319,69 @@ begin
     idx := (address - HEAP_BASE) div ARENA_SIZE;
     if arenas > ARENA_COUNT - idx then exit;
     saved := lockIRQ;
-    if not bitmap_all_set(arenaBitmap, idx, arenas) then begin unlockIRQ(saved); exit; end;
+    if not bitmap_all_set(arenaBitmap, idx, arenas) then begin
+        unlockIRQ(saved);
+        exit;
+    end;
     pages := arenas * (ARENA_SIZE div 4096);
     for i := 0 to pages - 1 do begin
         slot := leaf(address + uint64(i) * 4096);
-        if slot = nil then begin unlockIRQ(saved); exit; end;
-        if (slot^ and (PTE_OWNED or 1)) <> (PTE_OWNED or 1) then begin unlockIRQ(saved); exit; end;
+        if slot = nil then begin
+            unlockIRQ(saved);
+            exit;
+        end;
+        if (slot^ and (PTE_OWNED or 1)) <> (PTE_OWNED or 1) then begin
+            unlockIRQ(saved);
+            exit;
+        end;
     end;
     releaseMapped(address, pages);
     bitmap_clear_range(arenaBitmap, idx, arenas);
     release_region := true;
     unlockIRQ(saved);
 end;
+
 procedure init;
-var storage: uint64;
+var
+    storage: uint64;
 begin
     root := PUInt64(PtrUInt(pageRoot and ADDRESS_MASK));
     leafFlags := 3;
     if enableNX then leafFlags := leafFlags or (uint64(1) shl 63);
-    tablePages := 0; failAfter := -1;
+    tablePages := 0;
+    failAfter := -1;
     storage := arch.x86_64.memory.physical.alloc_page(true);
     if storage = 0 then fail('arena metadata allocation');
     arenaBitmap := PUInt32(PtrUInt(storage));
     zero(arenaBitmap, 4096);
 end;
+
 procedure UnitTest;
 const TEST_ADDRESS = HEAP_BASE + $800000;
       TEST_PATTERN = uint64($FEDCBA9876543210);
-var before, frame, removed, highFrame: uint64; region: PtrUInt; passed, failed: uint32;
+var
+    before, frame, removed, highFrame: uint64;
+    region: PtrUInt;
+    passed, failed: uint32;
+
     procedure Assert(condition: boolean; name: pchar);
     begin
-        if condition then begin inc(passed); puts('PASS: '); end
-        else begin inc(failed); puts('FAIL: '); end;
-        puts(name); puts(#13#10);
+        if condition then begin
+            inc(passed);
+            puts('PASS: ');
+        end
+        else begin
+            inc(failed);
+            puts('FAIL: ');
+        end;
+        puts(name);
+        puts(#13#10);
         if not condition then bootstrap_halt;
     end;
 begin
-    passed := 0; failed := 0; before := free_count;
+    passed := 0;
+    failed := 0;
+    before := free_count;
     frame := arch.x86_64.memory.physical.alloc_page(true);
     Assert(frame <> 0, 'VMM test frame allocation');
     Assert(map_page(TEST_ADDRESS, frame, false), 'VMM high virtual mapping');

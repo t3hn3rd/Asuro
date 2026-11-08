@@ -22,8 +22,7 @@ unit driver.mgr;
 interface
 
 uses
-    boot.mgr,
-    io.syslog, io.stdio, core.util, arch.x86.util, core.strings, memory.heap, debug.tracer;
+    io.syslog, io.stdio, core.util, arch.platform.cpu, core.strings, memory.heap, debug.tracer;
 
 const
     idANY = $FFFFFFFF;
@@ -423,8 +422,5 @@ begin
     end;
     pop_trace;
 end;
-
-initialization
-    boot.mgr.registerBoot('driver.mgr', @init, 'Driver Manager Initialization', BOOT_MGR_BARRIER_MID);
 
 end.
