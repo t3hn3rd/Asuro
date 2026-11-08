@@ -15,8 +15,7 @@ unit driver.video.gpu;
 interface
 
 uses
-    boot.mgr,
-    core.util, arch.x86.util, io.syslog, debug.tracer, core.strings;
+    core.util, arch.platform.cpu, io.syslog, debug.tracer, core.strings;
 
 const
     GPU_MAX_DRIVERS    = 8;
@@ -28,7 +27,7 @@ type
         Width       : uint32;
         Height      : uint32;
         BPP         : uint8;
-        Framebuffer : uint32; { physical address of linear framebuffer }
+        Framebuffer : PtrUInt; { mapped address of linear framebuffer }
         Pitch       : uint32; { bytes per scanline }
     end;
     PGPUModeInfo = ^TGPUModeInfo;
@@ -173,6 +172,7 @@ procedure fireModeChangeCallbacks(const info : TGPUModeInfo);
 var
     i : uint8;
 begin
+    if CallbackCount = 0 then exit;
     for i := 0 to CallbackCount - 1 do begin
         if Callbacks[i] <> nil then
             Callbacks[i](info);
@@ -185,6 +185,7 @@ var
 begin
     push_trace('driver.video.gpu.setMode');
     setMode := false;
+    if DriverCount = 0 then exit;
 
     for i := 0 to DriverCount - 1 do begin
         if Drivers[i].Available and (Drivers[i].SetMode <> nil) then begin
@@ -223,8 +224,5 @@ begin
     else
         activeDriverName := 'none';
 end;
-
-initialization
-    boot.mgr.registerBoot('driver.video.gpu', @init, 'GPU Driver Framework Initialization', 'driver.mgr');
 
 end.

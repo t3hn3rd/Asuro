@@ -34,7 +34,7 @@ uses
     driver.video,
     driver.storage.vol.mgr,
     driver.video.windows,
-    core.util, arch.x86.util;
+    core.util, arch.platform.cpu;
 
 const
     WIN_W = 740;
@@ -129,9 +129,9 @@ begin
     item := PUIText(kalloc(sizeof(TUIText)+n+m+1));
     if item = nil then exit;
     item^.Next := TextTemps; TextTemps := item;
-    dest := pchar(uint32(item)+sizeof(TUIText));
-    if n > 0 then memcpy(uint32(a), uint32(dest), n);
-    if m > 0 then memcpy(uint32(b), uint32(dest)+n, m);
+    dest := pchar(PtrUInt(item)+sizeof(TUIText));
+    if n > 0 then memcpy(PtrUInt(a), PtrUInt(dest), n);
+    if m > 0 then memcpy(PtrUInt(b), PtrUInt(dest)+n, m);
     dest[n+m] := #0; uiConcat := dest;
 end;
 
@@ -606,7 +606,7 @@ begin
         end;
     end;
 
-    memset(uint32(@part), 0, sizeof(TPartition_table));
+    memset(PtrUInt(@part), 0, sizeof(TPartition_table));
     driver.storage.vol.mbr.setup_partition(@part, lba, sectors);
     cbCtx := begin_partition_ui(1);
     if cbCtx = nil then exit;
@@ -702,18 +702,19 @@ end;
 procedure operation_done(error : TError; userdata : pointer);
 var
     ctx : PFmtUICallbackCtx;
-    flags : uint32;
+    flags : PtrUInt;
 begin
     ctx := PFmtUICallbackCtx(userdata);
     if ctx <> nil then begin
-        asm pushfd; cli; pop flags end;
+        flags := arch.platform.cpu.lock;
         if ctx^.SessionID = ui_session_id then begin
             fmt_done_error := error;
             fmt_done_vol_idx := ctx^.VolumeIdx;
-            done_kind := ctx^.Kind; done_device := ctx^.DeviceIdx;
+            done_kind := ctx^.Kind;
+            done_device := ctx^.DeviceIdx;
             puint32(@fmt_done_flag)^ := 1;
         end;
-        if (flags and $200) <> 0 then asm sti end;
+        arch.platform.cpu.unlock(flags);
         kfree(void(ctx));
     end;
 end;
@@ -824,7 +825,7 @@ begin
     fs := driver.storage.fs.mgr.get_filesystem(selIdx);
     if fs = nil then begin closeMsgBox; exit; end;
 
-    memset(uint32(@params), 0, sizeof(TFSFormatParams));
+    memset(PtrUInt(@params), 0, sizeof(TFSFormatParams));
     params.Version := FS_FORMAT_PARAMS_VERSION_1;
     paramPtr := nil;
 
@@ -874,7 +875,7 @@ begin
         if fs^.validateLabelCallback(text,normalized) <> eNone then begin
             set_fmt_param_error('Use up to 11 ASCII characters without punctuation such as / or :'); exit;
         end;
-        memcpy(uint32(@normalized[0]),uint32(@params.LabelText[0]),12);
+        memcpy(PtrUInt(@normalized[0]),PtrUInt(@params.LabelText[0]),12);
         params.Flags := params.Flags or FS_FORMAT_PARAM_LABEL; paramPtr := @params;
     end;
 

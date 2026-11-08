@@ -83,6 +83,7 @@ begin
         VideoBuffer^.BitsPerPixel:= BitsPerPixel;
         VideoBuffer^.Width:= Width;
         VideoBuffer^.Height:= Height;
+        VideoBuffer^.Pitch := Pitch;
         allocateVESAFrameBuffer(VideoBuffer^.Location, VideoBuffer^.Width, VideoBuffer^.Height, BitsPerPixel);
         if VideoBuffer^.Location <> 0 then
             VideoBuffer^.Initialized:= True;

@@ -22,7 +22,7 @@ unit driver.video.vesa24;
 interface
 
 uses
-    driver.video.types, driver.video.vesa, debug.tracer, core.gfx.color;
+    driver.video.types, debug.tracer, core.gfx.color;
 
 //Init the draw routines by providing what we support through the DrawRoutines struct.
 procedure init(DrawRoutines : PDrawRoutines);

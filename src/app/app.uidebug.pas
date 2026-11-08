@@ -19,7 +19,7 @@ unit app.uidebug;
 interface
 
 uses
-    driver.video.lvgl, driver.video.windows, driver.hid.mouse, driver.video, arch.x86.multiboot, debug.tracer;
+    driver.video.lvgl, driver.video.windows, driver.hid.mouse, driver.video, boot.multiboot, debug.tracer;
 
 { Call once per frame from the main loop (before lvgl_handler). }
 procedure update;

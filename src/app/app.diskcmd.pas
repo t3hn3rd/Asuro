@@ -25,7 +25,7 @@ uses
     core.strings,
     io.stdio,
     debug.tracer,
-    core.util, arch.x86.util,
+    core.util, arch.platform.cpu,
     driver.storage.vol.mgr;
 
 var
@@ -254,7 +254,7 @@ begin
     { Allocate a zero buffer - 64 sectors at a time }
     bufSects := 64;
     buf := puint32(kalloc(bufSects * device^.sectorSize));
-    memset(uint32(buf), 0, bufSects * device^.sectorSize);
+    memset(PtrUInt(buf), 0, bufSects * device^.sectorSize);
 
     print('Wiping device ');
     printint(idx);

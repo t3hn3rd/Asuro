@@ -15,8 +15,7 @@ unit driver.video.desktop;
 interface
 
 uses
-    boot.mgr,
-    driver.video.lvgl, driver.video, driver.video.gpu, driver.timer.rtc, core.strings, core.util, arch.x86.util, debug.tracer, arch.x86.multiboot, arch.x86.cpu, driver.io.serial, driver.video.windows, core.version;
+    driver.video.lvgl, driver.video, driver.video.gpu, driver.timer.rtc, core.strings, core.util, arch.platform.cpu, debug.tracer, boot.multiboot, driver.io.serial, driver.video.windows, core.version;
 
 type
     TProgLaunchProc = procedure;
@@ -246,6 +245,9 @@ var
     mem_str, res_str, cpu_str, clk_str : pchar;
     cw           : sint32;
     badge_h      : sint32;
+    registers, features: TCPURegisters;
+    vendor: array[0..12] of char;
+    maxLeaf: uint32;
 begin
     if driver.video.windows.isWindowOpen(sysinfo_win_id) then exit;
 
@@ -269,9 +271,20 @@ begin
     { ---- System Information ---- }
     addSectionHeader(content, 'System Information');
 
-    cpu_str := @arch.x86.cpu.CPUID.Identifier[0];
+    queryCPU(0, 0, registers);
+    maxLeaf := registers.eax;
+    puint32(@vendor[0])^ := registers.ebx;
+    puint32(@vendor[4])^ := registers.edx;
+    puint32(@vendor[8])^ := registers.ecx;
+    vendor[12] := #0;
+    cpu_str := @vendor[0];
+    queryCPU(1, 0, features);
     addInfoRow(content, cw, 'CPU Vendor', cpu_str);
-    clk_str := stringConcat(intToString(arch.x86.cpu.CPUID.ClockSpeed.MHz), ' MHz');
+    clk_str := 'Not reported';
+    if maxLeaf >= $16 then begin
+        queryCPU($16, 0, registers);
+        if registers.eax <> 0 then clk_str := stringConcat(intToString(registers.eax), ' MHz');
+    end;
     addInfoRow(content, cw, 'CPU Clock', clk_str);
     mem_str := stringConcat(intToString(((multibootinfo^.mem_upper + 1000) div 1024) + 1), ' MB');
     addInfoRow(content, cw, 'Memory', mem_str);
@@ -314,65 +327,65 @@ begin
     lv_obj_remove_flag(instr_box, LV_OBJ_FLAG_SCROLLABLE);
 
     { Old capabilities (EDX) }
-    if arch.x86.cpu.CPUID.Capabilities0^.FPU     then addBadge(instr_box, 'FPU');
-    if arch.x86.cpu.CPUID.Capabilities0^.VME     then addBadge(instr_box, 'VME');
-    if arch.x86.cpu.CPUID.Capabilities0^.DE      then addBadge(instr_box, 'DE');
-    if arch.x86.cpu.CPUID.Capabilities0^.PSE     then addBadge(instr_box, 'PSE');
-    if arch.x86.cpu.CPUID.Capabilities0^.TSC     then addBadge(instr_box, 'TSC');
-    if arch.x86.cpu.CPUID.Capabilities0^.MSR     then addBadge(instr_box, 'MSR');
-    if arch.x86.cpu.CPUID.Capabilities0^.PAE     then addBadge(instr_box, 'PAE');
-    if arch.x86.cpu.CPUID.Capabilities0^.MCE     then addBadge(instr_box, 'arch.x86.fault.mce');
-    if arch.x86.cpu.CPUID.Capabilities0^.CX8     then addBadge(instr_box, 'CX8');
-    if arch.x86.cpu.CPUID.Capabilities0^.APIC    then addBadge(instr_box, 'APIC');
-    if arch.x86.cpu.CPUID.Capabilities0^.SEP     then addBadge(instr_box, 'SEP');
-    if arch.x86.cpu.CPUID.Capabilities0^.MTRR    then addBadge(instr_box, 'MTRR');
-    if arch.x86.cpu.CPUID.Capabilities0^.PGE     then addBadge(instr_box, 'PGE');
-    if arch.x86.cpu.CPUID.Capabilities0^.MCA     then addBadge(instr_box, 'MCA');
-    if arch.x86.cpu.CPUID.Capabilities0^.CMOV    then addBadge(instr_box, 'CMOV');
-    if arch.x86.cpu.CPUID.Capabilities0^.PAT     then addBadge(instr_box, 'PAT');
-    if arch.x86.cpu.CPUID.Capabilities0^.PSE36   then addBadge(instr_box, 'PSE36');
-    if arch.x86.cpu.CPUID.Capabilities0^.PSN     then addBadge(instr_box, 'PSN');
-    if arch.x86.cpu.CPUID.Capabilities0^.CLF     then addBadge(instr_box, 'CLF');
-    if arch.x86.cpu.CPUID.Capabilities0^.DTES    then addBadge(instr_box, 'DTES');
-    if arch.x86.cpu.CPUID.Capabilities0^.ACPI    then addBadge(instr_box, 'ACPI');
-    if arch.x86.cpu.CPUID.Capabilities0^.MMX     then addBadge(instr_box, 'MMX');
-    if arch.x86.cpu.CPUID.Capabilities0^.FXSR    then addBadge(instr_box, 'FXSR');
-    if arch.x86.cpu.CPUID.Capabilities0^.SSE     then addBadge(instr_box, 'SSE');
-    if arch.x86.cpu.CPUID.Capabilities0^.SSE2    then addBadge(instr_box, 'SSE2');
-    if arch.x86.cpu.CPUID.Capabilities0^.SS      then addBadge(instr_box, 'SS');
-    if arch.x86.cpu.CPUID.Capabilities0^.HTT     then addBadge(instr_box, 'HTT');
-    if arch.x86.cpu.CPUID.Capabilities0^.TM1     then addBadge(instr_box, 'TM1');
-    if arch.x86.cpu.CPUID.Capabilities0^.IA64    then addBadge(instr_box, 'IA64');
-    if arch.x86.cpu.CPUID.Capabilities0^.PBE     then addBadge(instr_box, 'PBE');
+    if (features.edx and (uint32(1) shl 0) <> 0)     then addBadge(instr_box, 'FPU');
+    if (features.edx and (uint32(1) shl 1) <> 0)     then addBadge(instr_box, 'VME');
+    if (features.edx and (uint32(1) shl 2) <> 0)      then addBadge(instr_box, 'DE');
+    if (features.edx and (uint32(1) shl 3) <> 0)     then addBadge(instr_box, 'PSE');
+    if (features.edx and (uint32(1) shl 4) <> 0)     then addBadge(instr_box, 'TSC');
+    if (features.edx and (uint32(1) shl 5) <> 0)     then addBadge(instr_box, 'MSR');
+    if (features.edx and (uint32(1) shl 6) <> 0)     then addBadge(instr_box, 'PAE');
+    if (features.edx and (uint32(1) shl 7) <> 0)     then addBadge(instr_box, 'arch.x86.fault.mce');
+    if (features.edx and (uint32(1) shl 8) <> 0)     then addBadge(instr_box, 'CX8');
+    if (features.edx and (uint32(1) shl 9) <> 0)    then addBadge(instr_box, 'APIC');
+    if (features.edx and (uint32(1) shl 11) <> 0)     then addBadge(instr_box, 'SEP');
+    if (features.edx and (uint32(1) shl 12) <> 0)    then addBadge(instr_box, 'MTRR');
+    if (features.edx and (uint32(1) shl 13) <> 0)     then addBadge(instr_box, 'PGE');
+    if (features.edx and (uint32(1) shl 14) <> 0)     then addBadge(instr_box, 'MCA');
+    if (features.edx and (uint32(1) shl 15) <> 0)    then addBadge(instr_box, 'CMOV');
+    if (features.edx and (uint32(1) shl 16) <> 0)     then addBadge(instr_box, 'PAT');
+    if (features.edx and (uint32(1) shl 17) <> 0)   then addBadge(instr_box, 'PSE36');
+    if (features.edx and (uint32(1) shl 18) <> 0)     then addBadge(instr_box, 'PSN');
+    if (features.edx and (uint32(1) shl 19) <> 0)     then addBadge(instr_box, 'CLF');
+    if (features.edx and (uint32(1) shl 21) <> 0)    then addBadge(instr_box, 'DTES');
+    if (features.edx and (uint32(1) shl 22) <> 0)    then addBadge(instr_box, 'ACPI');
+    if (features.edx and (uint32(1) shl 23) <> 0)     then addBadge(instr_box, 'MMX');
+    if (features.edx and (uint32(1) shl 24) <> 0)    then addBadge(instr_box, 'FXSR');
+    if (features.edx and (uint32(1) shl 25) <> 0)     then addBadge(instr_box, 'SSE');
+    if (features.edx and (uint32(1) shl 26) <> 0)    then addBadge(instr_box, 'SSE2');
+    if (features.edx and (uint32(1) shl 27) <> 0)      then addBadge(instr_box, 'SS');
+    if (features.edx and (uint32(1) shl 28) <> 0)     then addBadge(instr_box, 'HTT');
+    if (features.edx and (uint32(1) shl 29) <> 0)     then addBadge(instr_box, 'TM1');
+    if (features.edx and (uint32(1) shl 30) <> 0)    then addBadge(instr_box, 'IA64');
+    if (features.edx and (uint32(1) shl 31) <> 0)     then addBadge(instr_box, 'PBE');
 
     { New capabilities (ECX) }
-    if arch.x86.cpu.CPUID.Capabilities1^.SSE3    then addBadge(instr_box, 'SSE3');
-    if arch.x86.cpu.CPUID.Capabilities1^.PCLMUL  then addBadge(instr_box, 'PCLMUL');
-    if arch.x86.cpu.CPUID.Capabilities1^.DTES64  then addBadge(instr_box, 'DTES64');
-    if arch.x86.cpu.CPUID.Capabilities1^.MONITOR then addBadge(instr_box, 'MONITOR');
-    if arch.x86.cpu.CPUID.Capabilities1^.DS_CPL  then addBadge(instr_box, 'DS_CPL');
-    if arch.x86.cpu.CPUID.Capabilities1^.VMX     then addBadge(instr_box, 'VMX');
-    if arch.x86.cpu.CPUID.Capabilities1^.SMX     then addBadge(instr_box, 'SMX');
-    if arch.x86.cpu.CPUID.Capabilities1^.EST     then addBadge(instr_box, 'EST');
-    if arch.x86.cpu.CPUID.Capabilities1^.TM2     then addBadge(instr_box, 'TM2');
-    if arch.x86.cpu.CPUID.Capabilities1^.SSSE3   then addBadge(instr_box, 'SSSE3');
-    if arch.x86.cpu.CPUID.Capabilities1^.CID     then addBadge(instr_box, 'CID');
-    if arch.x86.cpu.CPUID.Capabilities1^.FMA     then addBadge(instr_box, 'FMA');
-    if arch.x86.cpu.CPUID.Capabilities1^.CX16    then addBadge(instr_box, 'CX16');
-    if arch.x86.cpu.CPUID.Capabilities1^.ETPRD   then addBadge(instr_box, 'ETPRD');
-    if arch.x86.cpu.CPUID.Capabilities1^.PDCM    then addBadge(instr_box, 'PDCM');
-    if arch.x86.cpu.CPUID.Capabilities1^.PCIDE   then addBadge(instr_box, 'PCIDE');
-    if arch.x86.cpu.CPUID.Capabilities1^.DCA     then addBadge(instr_box, 'DCA');
-    if arch.x86.cpu.CPUID.Capabilities1^.SSE4_1  then addBadge(instr_box, 'SSE4.1');
-    if arch.x86.cpu.CPUID.Capabilities1^.SSE4_2  then addBadge(instr_box, 'SSE4.2');
-    if arch.x86.cpu.CPUID.Capabilities1^.x2APIC  then addBadge(instr_box, 'x2APIC');
-    if arch.x86.cpu.CPUID.Capabilities1^.MOVBE   then addBadge(instr_box, 'MOVBE');
-    if arch.x86.cpu.CPUID.Capabilities1^.POPCNT  then addBadge(instr_box, 'POPCNT');
-    if arch.x86.cpu.CPUID.Capabilities1^.AES     then addBadge(instr_box, 'AES');
-    if arch.x86.cpu.CPUID.Capabilities1^.XSAVE   then addBadge(instr_box, 'XSAVE');
-    if arch.x86.cpu.CPUID.Capabilities1^.OSXSAVE then addBadge(instr_box, 'OSXSAVE');
-    if arch.x86.cpu.CPUID.Capabilities1^.AVX     then addBadge(instr_box, 'AVX');
-    if arch.x86.cpu.CPUID.Capabilities1^.RDRAND  then addBadge(instr_box, 'RDRAND');
+    if (features.ecx and (uint32(1) shl 0) <> 0)    then addBadge(instr_box, 'SSE3');
+    if (features.ecx and (uint32(1) shl 1) <> 0)  then addBadge(instr_box, 'PCLMUL');
+    if (features.ecx and (uint32(1) shl 2) <> 0)  then addBadge(instr_box, 'DTES64');
+    if (features.ecx and (uint32(1) shl 3) <> 0) then addBadge(instr_box, 'MONITOR');
+    if (features.ecx and (uint32(1) shl 4) <> 0)  then addBadge(instr_box, 'DS_CPL');
+    if (features.ecx and (uint32(1) shl 5) <> 0)     then addBadge(instr_box, 'VMX');
+    if (features.ecx and (uint32(1) shl 6) <> 0)     then addBadge(instr_box, 'SMX');
+    if (features.ecx and (uint32(1) shl 7) <> 0)     then addBadge(instr_box, 'EST');
+    if (features.ecx and (uint32(1) shl 8) <> 0)     then addBadge(instr_box, 'TM2');
+    if (features.ecx and (uint32(1) shl 9) <> 0)   then addBadge(instr_box, 'SSSE3');
+    if (features.ecx and (uint32(1) shl 10) <> 0)     then addBadge(instr_box, 'CID');
+    if (features.ecx and (uint32(1) shl 12) <> 0)     then addBadge(instr_box, 'FMA');
+    if (features.ecx and (uint32(1) shl 13) <> 0)    then addBadge(instr_box, 'CX16');
+    if (features.ecx and (uint32(1) shl 14) <> 0)   then addBadge(instr_box, 'ETPRD');
+    if (features.ecx and (uint32(1) shl 15) <> 0)    then addBadge(instr_box, 'PDCM');
+    if (features.ecx and (uint32(1) shl 17) <> 0)   then addBadge(instr_box, 'PCIDE');
+    if (features.ecx and (uint32(1) shl 18) <> 0)     then addBadge(instr_box, 'DCA');
+    if (features.ecx and (uint32(1) shl 19) <> 0)  then addBadge(instr_box, 'SSE4.1');
+    if (features.ecx and (uint32(1) shl 20) <> 0)  then addBadge(instr_box, 'SSE4.2');
+    if (features.ecx and (uint32(1) shl 21) <> 0)  then addBadge(instr_box, 'x2APIC');
+    if (features.ecx and (uint32(1) shl 22) <> 0)   then addBadge(instr_box, 'MOVBE');
+    if (features.ecx and (uint32(1) shl 23) <> 0)  then addBadge(instr_box, 'POPCNT');
+    if (features.ecx and (uint32(1) shl 25) <> 0)     then addBadge(instr_box, 'AES');
+    if (features.ecx and (uint32(1) shl 26) <> 0)   then addBadge(instr_box, 'XSAVE');
+    if (features.ecx and (uint32(1) shl 27) <> 0) then addBadge(instr_box, 'OSXSAVE');
+    if (features.ecx and (uint32(1) shl 28) <> 0)     then addBadge(instr_box, 'AVX');
+    if (features.ecx and (uint32(1) shl 30) <> 0)  then addBadge(instr_box, 'RDRAND');
 
     { Force layout so wrapped row heights are resolved,
       then set instr_box to its actual content height. }
@@ -862,8 +875,5 @@ begin
     updateClockText;
     animateResultsPanel;
 end;
-
-Initialization
-    boot.mgr.registerBoot('proc.desktop', @init, 'Initialize Desktop', 'boot.splash.teardown');
 
 end.

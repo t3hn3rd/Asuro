@@ -22,7 +22,7 @@ unit app.base64;
 interface
 
 uses
-    io.stdio, core.util, arch.x86.util, core.strings, debug.tracer, core.enc.base64, memory.heap;
+    io.stdio, core.util, arch.platform.cpu, core.strings, debug.tracer, core.enc.base64, memory.heap;
 
 procedure init();
 

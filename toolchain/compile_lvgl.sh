@@ -33,7 +33,7 @@ echo " "
 if [ -f "${CACHE_DIR}/${LVGL_CACHE_NAME}" ]; then
     echo "Found cached liblvgl.a in ${CACHE_DIR}, copying to ${OUT_DIR}..."
     cp "${CACHE_DIR}/${LVGL_CACHE_NAME}" "${OUT_DIR}/liblvgl.a"
-    echo "(Delete lvgl/liblvgl.a to force a full rebuild.)"
+    echo "(Delete ${CACHE_DIR}/${LVGL_CACHE_NAME} to force a full rebuild.)"
     echo " "
     echo "LVGL compilation complete (cached)."
     echo " "
@@ -122,11 +122,7 @@ fi
 # Cache liblvgl.a and source to host mount for next build
 echo "Caching LVGL to host mount..."
 mkdir -p "$CACHE_DIR"
-rm -rf ${CACHE_DIR}/* ${CACHE_DIR}/.[!.]* ${CACHE_DIR}/..?* 2>/dev/null || true
 cp "${OUT_DIR}/liblvgl.a" "${CACHE_DIR}/${LVGL_CACHE_NAME}"
-cp -a "$LVGL_DIR/src" "${CACHE_DIR}/src"
-cp -a "$LVGL_DIR"/*.h "${CACHE_DIR}/" 2>/dev/null || true
-cp -a "$LVGL_OBJ_DIR" "${CACHE_DIR}/obj"
 echo "Done."
 
 echo " "

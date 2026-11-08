@@ -11,15 +11,14 @@ unit driver.hid.ps2.mouse;
 interface
 
 uses
-    boot.mgr,
     debug.tracer,
     driver.hid.mouse,
     io.syslog,
     driver.video,
-    core.util, arch.x86.util,
+    core.util, arch.platform.cpu,
     memory.heap,
     core.strings,
-    arch.x86.isr.mgr,
+    arch.platform.interrupts, arch.common.legacyirq,
     driver.mgr;
 
 type
@@ -114,6 +113,7 @@ end;
 procedure main();
 var
     i : integer;
+    bytesRead: uint32;
     b : byte;
     packet  : TMousePacket;
     x, y, f : byte;
@@ -124,7 +124,9 @@ begin
       When it returns true, data is ready — read it directly with inb($60).
       Do NOT call mouse_read here: it uses mouse_wait_long (100k iterations)
       and would spin-block the ISR if the next packet byte hasn't arrived yet. }
-    while mouse_wait(0) do begin
+    bytesRead := 0;
+    while (bytesRead < 32) and ((inb($64) and $21) = $21) do begin
+        inc(bytesRead);
         b := inb($60);
         if Cycle = 0 then begin
             if (b AND $08) = $08 then begin
@@ -213,8 +215,10 @@ var
     status : uint8;
     devid_byte : uint8;
     tmp : uint8;
+    irqFlags: PtrUInt;
 begin
     push_trace('driver.hid.ps2.mouse.load');
+    irqFlags := arch.platform.cpu.lock;
 
     { Disable both PS/2 ports while configuring }
     mouse_wait_long(1);
@@ -290,10 +294,12 @@ begin
 
     mouse_write($F4);
     mouse_read();
-    arch.x86.isr.mgr.registerISR(44, @Main);
+    arch.platform.interrupts.registerIRQ(44, @Main);
+    arch.common.legacyirq.enableLine(12);
     io.syslog.logln('PS/2 MOUSE', 'LOADED.');
     io.syslog.log('PS/2 MOUSE', 'Memory: ');
-    io.syslog.writehexln(uint32(@current));
+    io.syslog.writehexln(PtrUInt(@current));
+    arch.platform.cpu.unlock(irqFlags);
     load := true;
     pop_trace;
 end;
@@ -319,8 +325,5 @@ begin
     io.syslog.logln('PS/2 MOUSE', 'INIT END.');
     pop_trace;
 end;
-
-initialization
-    boot.mgr.registerBoot('driver.hid.ps2.mouse', @init, 'PS/2 Mouse Driver', BOOT_MGR_BARRIER_DEVICE);
 
 end.
