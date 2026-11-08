@@ -2,8 +2,7 @@ unit app.wasm;
 
 interface
 
-uses
-    boot.mgr;
+procedure init;
 
 implementation
 
@@ -12,14 +11,15 @@ uses
     wasm.vm.io,
     wasm;
 
-procedure init();
+var
+    initialized: boolean = false;
+
+procedure init;
 begin
-    { Let's test Wasuro! }
+    if initialized then exit;
     wasm.vm.io.io_set_writechar(@io.syslog.logchar);
     wasm.wasm_init;
+    initialized := true;
 end;
-
-initialization
-    boot.mgr.registerBoot('app.wasm', @init, 'Initialize WASM VM Backend', BOOT_MGR_BARRIER_FINAL)
 
 end.

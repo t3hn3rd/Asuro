@@ -36,6 +36,7 @@ var
 begin
     if heap = nil then exit;
     if heap^.Memory <> nil then begin
+        if heap^.PageCount <> 0 then
         for i := 0 to heap^.PageCount - 1 do begin
             if heap^.Memory[i] <> nil then
                 kfree(void(heap^.Memory[i]));
@@ -73,6 +74,7 @@ var
 begin
     if tables = nil then exit;
     if tables^.Tables <> nil then begin
+        if tables^.TableCount <> 0 then
         for i := 0 to tables^.TableCount - 1 do begin
             if tables^.Tables[i].Elements <> nil then
                 kfree(void(tables^.Tables[i].Elements));
@@ -90,6 +92,7 @@ var
 begin
     if ds = nil then exit;
     if ds^.Segments <> nil then begin
+        if ds^.SegmentCount <> 0 then
         for i := 0 to ds^.SegmentCount - 1 do begin
             if ds^.Segments[i].Data <> nil then
                 kfree(void(ds^.Segments[i].Data));
@@ -107,6 +110,7 @@ var
 begin
     if es = nil then exit;
     if es^.Segments <> nil then begin
+        if es^.SegmentCount <> 0 then
         for i := 0 to es^.SegmentCount - 1 do begin
             if es^.Segments[i].FuncIndices <> nil then
                 kfree(void(es^.Segments[i].FuncIndices));
@@ -124,6 +128,7 @@ var
 begin
     if ts = nil then exit;
     if ts^.Types <> nil then begin
+        if ts^.TypeCount <> 0 then
         for i := 0 to ts^.TypeCount - 1 do begin
             if ts^.Types[i].ParamTypes <> nil then
                 kfree(void(ts^.Types[i].ParamTypes));
@@ -143,6 +148,7 @@ var
 begin
     if is_ = nil then exit;
     if is_^.Entries <> nil then begin
+        if is_^.ImportCount <> 0 then
         for i := 0 to is_^.ImportCount - 1 do begin
             if is_^.Entries[i].ModuleName <> nil then
                 kfree(void(is_^.Entries[i].ModuleName));
@@ -172,6 +178,7 @@ var
 begin
     if es = nil then exit;
     if es^.Entries <> nil then begin
+        if es^.ExportCount <> 0 then
         for i := 0 to es^.ExportCount - 1 do begin
             if es^.Entries[i].Name <> nil then
                 kfree(void(es^.Entries[i].Name));
@@ -189,6 +196,7 @@ var
 begin
     if cs = nil then exit;
     if cs^.Entries <> nil then begin
+        if cs^.CodeCount <> 0 then
         for i := 0 to cs^.CodeCount - 1 do begin
             if cs^.Entries[i].Code <> nil then
                 kfree(void(cs^.Entries[i].Code));

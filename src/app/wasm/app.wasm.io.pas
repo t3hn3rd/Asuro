@@ -4,9 +4,7 @@
     Provides concrete WASI callback functions that route fd 0/1/2
     to the owning Asuro process's StdIn/StdOut/StdErr buffers.
 
-    An ActiveShim module-level variable is set before each tick batch
-    and cleared after.  Hooks only fire synchronously within wasm_tick
-    so this is safe under preemptive scheduling.
+    Hooks resolve the shim from the currently scheduled process.
 
     @author(Kieron Morris <kjm@kieronmorris.me>)
 }
@@ -20,9 +18,7 @@ uses
     wasm.types.context,
     wasm.types.values;
 
-{ Set/clear the active shim — call before/after each tick batch }
-procedure setActiveShim(shim : PProcessWASMShim);
-procedure clearActiveShim;
+
 
 { WASI hook implementations — register via wasm_set_fd_write etc. }
 function asuro_fd_write(fd : TWASMUInt32; buf : TWASMPUInt8; len : TWASMUInt32) : TWASMUInt32;
@@ -46,19 +42,13 @@ implementation
 uses
     io.stdio, proc.types,
     wasm.types.wasi, wasm.types.stack, wasm.types.heap,
-    arch.x86.bda, core.rand, core.util, arch.x86.util;
+    proc.mgr, arch.platform.interrupts, arch.common.legacyirq, core.rand, core.util, arch.platform.cpu;
 
-var
-    ActiveShimPtr : PProcessWASMShim;
-
-procedure setActiveShim(shim : PProcessWASMShim);
-begin
-    ActiveShimPtr := shim;
-end;
-
-procedure clearActiveShim;
+function ActiveShimPtr: PProcessWASMShim;
 begin
     ActiveShimPtr := nil;
+    if proc.mgr.CurrentProcess <> nil then
+        ActiveShimPtr := PProcessWASMShim(proc.mgr.CurrentProcess^.Local);
 end;
 
 { ---- fd_write: fd 1 = stdout, fd 2 = stderr ---- }
@@ -81,7 +71,7 @@ begin
     end;
     end;
 
-    if outbuf = nil then exit;
+    if (outbuf = nil) or (len = 0) then exit;
 
     { Write byte-by-byte into the POutBuf }
     for i := 0 to len - 1 do
@@ -111,7 +101,7 @@ begin
     avail := inbuf^.len;
     if avail = 0 then exit;
     if len < avail then copyLen := len else copyLen := avail;
-    memcpy(uint32(inbuf^.buf), uint32(buf), copyLen);
+    memcpy(PtrUInt(inbuf^.buf), PtrUInt(buf), copyLen);
     asuro_fd_read := copyLen;
 end;
 
@@ -126,13 +116,16 @@ begin
     ActiveShimPtr^.ProcessCtx^.ExitCode := code;
 end;
 
-{ ---- clock_time_get: use BIOS tick counter ---- }
+{ ---- Monotonic time from the platform timer ---- }
 
 function asuro_clock_time_get(clock_id : TWASMUInt32; precision : TWASMUInt64;
                               var time : TWASMUInt64) : TWASMUInt32;
+var
+    ticks: uint64;
 begin
-    { Return time in nanoseconds based on BIOS 1024 Hz counter }
-    time := TWASMUInt64(arch.x86.bda.Counters.c64) * 976562;
+    ticks := arch.platform.interrupts.timerTicks;
+    time := (ticks div PIT_INPUT_HZ) * PIT_DIVISOR * 1000000000 +
+        ((ticks mod PIT_INPUT_HZ) * PIT_DIVISOR * 1000000000) div PIT_INPUT_HZ;
     asuro_clock_time_get := WASI_ESUCCESS;
 end;
 
@@ -141,7 +134,7 @@ end;
 function asuro_clock_res_get(clock_id : TWASMUInt32;
                              var resolution : TWASMUInt64) : TWASMUInt32;
 begin
-    resolution := 976562; { ~0.977ms in nanoseconds (1/1024 s) }
+    resolution := (uint64(PIT_DIVISOR) * 1000000000 + PIT_INPUT_HZ - 1) div PIT_INPUT_HZ;
     asuro_clock_res_get := WASI_ESUCCESS;
 end;
 
