@@ -22,7 +22,6 @@ procedure init;
 implementation
 
 uses
-    boot.mgr,
     driver.video.desktop,
     app.uidebug,
     driver.video.lvgl,
@@ -31,7 +30,7 @@ uses
     proc.mgr,
     proc.types,
     io.syslog,
-    arch.x86.isr.tmr0;
+    arch.platform.interrupts;
 
 { Render process entry point — runs as a normal scheduled process with
   interrupts enabled.  Continuously drives the full render pipeline so
@@ -60,8 +59,8 @@ begin
             driver.video.desktop.update;
             app.uidebug.update;
             lvgl_handler;
-            lvgl_unlock;
             driver.video.Flush;
+            lvgl_unlock;
         end;
         if SHOULD_CRASH then begin
             asm
@@ -72,7 +71,7 @@ begin
     end;
 end;
 
-procedure tick;
+procedure tick(data: void);
 begin
     { This function is called on every timer tick (interrupt 32) via the ISR hooks.
       It can be used to trigger periodic tasks without needing a dedicated process. }
@@ -81,12 +80,9 @@ end;
 
 procedure init;
 begin
-    arch.x86.isr.tmr0.hook(uint32(@tick));  { Register the tick handler to run on every timer interrupt }
+    arch.platform.interrupts.registerTimer(@tick);  { Register the tick handler to run on every timer interrupt }
     proc.mgr.create('gfxd', @render_loop, nil, 5);
     io.syslog.logln('gfxd', 'Render process spawned.');
 end;
-
-Initialization
-    boot.mgr.registerBoot('svc.gfxd', @init, 'GFX Daemon', BOOT_MGR_BARRIER_LATE);
 
 end.

@@ -22,7 +22,7 @@ unit driver.video.vesa32;
 interface
 
 uses
-    driver.video.types, driver.video.vesa, debug.tracer, core.gfx.color;
+    driver.video.types, debug.tracer, core.gfx.color;
 
 //Init the draw routines by providing what we support through the DrawRoutines struct.
 procedure init(DrawRoutines : PDrawRoutines);
@@ -37,7 +37,7 @@ var
 begin
     //debug.tracer.push_trace('vesa32.DrawPixel.enter');
     Location:= Puint32(Buffer^.Location);
-    LocationIndex:= (Y * Buffer^.Width) + X;
+    LocationIndex:= (Y * (Buffer^.Pitch div 4)) + X;
     Location[LocationIndex]:= uint32(Pixel);
     //debug.tracer.push_trace('vesa32.DrawPixel.exit');
 end;

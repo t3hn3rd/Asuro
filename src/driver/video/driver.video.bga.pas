@@ -17,9 +17,8 @@ unit driver.video.bga;
 interface
 
 uses
-    boot.mgr,
-    core.util, arch.x86.util, io.syslog, debug.tracer, driver.video.gpu, driver.bus.pci, driver.types, driver.mgr,
-    arch.x86.memory.virtual, memory.heap;
+    core.util, arch.platform.cpu, io.syslog, debug.tracer, driver.video.gpu, driver.bus.pci, driver.types, driver.mgr,
+    arch.platform.memory, memory.heap;
 
 procedure init;
 
@@ -58,6 +57,7 @@ const
 var
     BGAPresent    : boolean = false;
     BGAFramebuffer: uint32 = 0;
+    BGAMemoryBytes: uint64 = 0;
     BGAPCIBus     : uint8 = 0;
     BGAPCISlot    : uint8 = 0;
     BGAPCIFunc    : uint8 = 0;
@@ -74,22 +74,6 @@ function bgaReadReg(index : uint16) : uint16;
 begin
     outw(BGA_PORT_INDEX, index);
     bgaReadReg := inw(BGA_PORT_DATA);
-end;
-
-{ Map the framebuffer physical memory pages so we can access it }
-procedure mapFramebuffer(address, width, height : uint32; bpp : uint8);
-var
-    framebufferSize : uint32;
-    lowerPage, upperPage, page : uint32;
-begin
-    push_trace('driver.video.bga.mapFramebuffer');
-    framebufferSize := (width * height * uint32(bpp)) div 8;
-    lowerPage := (address SHR 22) - 1;
-    upperPage := ((address + framebufferSize) SHR 22) + 1;
-    for page := lowerPage to upperPage do begin
-        kpalloc(page SHL 22);
-    end;
-    pop_trace;
 end;
 
 { Drivermanagement load callback: called when driver.bus.pci finds a matching device }
@@ -141,6 +125,18 @@ begin
     id := bgaReadReg(BGA_REG_ID);
     if (id >= BGA_ID_MIN) and (id <= BGA_ID_MAX) then begin
         BGAPresent := true;
+        { PCI's legacy device_id field contains the vendor ID. VirtualBox's
+          BGA data port returns VRAM bytes on a 32-bit read; index $0A is its
+          monitor-count interface, not the Bochs 64 KiB memory register.
+          See VirtualBox DevVGA.cpp, vgaIoPortReadVbeData. }
+        if (dev^.device_id = $80EE) or (dev^.device_id = $15AD) then
+            BGAMemoryBytes := inl(BGA_PORT_DATA)
+        else if id >= $B0C5 then
+            BGAMemoryBytes := uint64(bgaReadReg($0A)) * 65536
+        else if id = $B0C4 then
+            BGAMemoryBytes := 8 * 1024 * 1024
+        else
+            BGAMemoryBytes := 4 * 1024 * 1024;
         io.syslog.log('BGA', 'Detected BGA version $');
         io.syslog.writehexln(id);
 
@@ -164,6 +160,10 @@ end;
 { GPU framework: setMode callback }
 function bgaSetMode(width, height : uint32; bpp : uint8;
                      var info : TGPUModeInfo) : boolean;
+var
+    mapped: pointer;
+    bytes: uint64;
+    oldWidth, oldHeight, oldBPP, oldEnable: uint16;
 begin
     push_trace('driver.video.bga.bgaSetMode');
     bgaSetMode := false;
@@ -172,6 +172,18 @@ begin
         pop_trace;
         exit;
     end;
+
+    if (width = 0) or (height = 0) or (width > 65535) or
+       (height > 65535) or (bpp <> 32) then exit;
+    bytes := uint64(width) * height * 4;
+    if (BGAMemoryBytes = 0) or (bytes > BGAMemoryBytes) or
+       (bytes > High(SizeUInt)) then exit;
+    mapped := arch.platform.memory.mapDevice(BGAFramebuffer, SizeUInt(bytes));
+    if mapped = nil then exit;
+    oldWidth := bgaReadReg(BGA_REG_XRES);
+    oldHeight := bgaReadReg(BGA_REG_YRES);
+    oldBPP := bgaReadReg(BGA_REG_BPP);
+    oldEnable := bgaReadReg(BGA_REG_ENABLE);
 
     { Disable the display while changing mode }
     bgaWriteReg(BGA_REG_ENABLE, BGA_DISABLED);
@@ -191,20 +203,28 @@ begin
     bgaWriteReg(BGA_REG_ENABLE, BGA_ENABLED or BGA_LFB_ENABLED);
 
     { Verify mode was set }
-    if bgaReadReg(BGA_REG_XRES) <> (width and $FFFF) then begin
+    if (bgaReadReg(BGA_REG_XRES) <> width) or
+       (bgaReadReg(BGA_REG_YRES) <> height) or
+       (bgaReadReg(BGA_REG_BPP) <> bpp) then begin
+        bgaWriteReg(BGA_REG_ENABLE, BGA_DISABLED);
+        bgaWriteReg(BGA_REG_XRES, oldWidth);
+        bgaWriteReg(BGA_REG_YRES, oldHeight);
+        bgaWriteReg(BGA_REG_BPP, oldBPP);
+        bgaWriteReg(BGA_REG_VIRT_WIDTH, oldWidth);
+        bgaWriteReg(BGA_REG_VIRT_HEIGHT, oldHeight);
+        bgaWriteReg(BGA_REG_ENABLE, oldEnable);
         io.syslog.logln('BGA', 'setMode: XRES verify failed.');
         pop_trace;
         exit;
     end;
 
-    { Map the framebuffer pages }
-    mapFramebuffer(BGAFramebuffer, width, height, bpp);
+
 
     { Fill in the mode info for the caller }
     info.Width       := width;
     info.Height      := height;
     info.BPP         := bpp;
-    info.Framebuffer := BGAFramebuffer;
+    info.Framebuffer := PtrUInt(mapped);
     info.Pitch       := (width * uint32(bpp)) div 8;
 
     io.syslog.log('BGA', 'Mode set: ');
@@ -247,7 +267,5 @@ begin
     pop_trace;
 end;
 
-initialization
-    boot.mgr.registerBoot('driver.video.bga', @init, 'BGA Display Driver Initialization', 'driver.video');
 
 end.

@@ -12,18 +12,17 @@ unit driver.hid.ps2.keyboard;
 interface
 
 uses
-    boot.mgr,
     driver.hid.keyboard,
     io.syslog,
-    core.util, arch.x86.util,
-    arch.x86.isr.ps2keyboard;
+    core.util, arch.platform.cpu,
+    arch.platform.interrupts, arch.common.legacyirq;
 
 var
-    key_matrix       : array [1..256] of TKeyInfo;
-    key_matrix_shift : array [1..256] of TKeyInfo;
+    key_matrix       : array [0..255] of TKeyInfo;
+    key_matrix_shift : array [0..255] of TKeyInfo;
 
 procedure init();
-procedure init_layout(keyboard_layout : array of TKeyInfo);
+procedure init_layout(const keyboard_layout : array of TKeyInfo);
 procedure disable;
 procedure lang_USA();
 
@@ -33,11 +32,12 @@ uses
     driver.mgr;
 
 var
+    enabled : boolean = false;
     extended_code : boolean = false;
     windows_keys_down : array[$5B..$5C] of boolean;
     delete_down : boolean = false;
 
-procedure callback(scan_code : void);
+procedure callback(scan_code : uint8);
 var
     info     : TKeyInfo;
     raw      : uint8;
@@ -100,26 +100,36 @@ begin
     end;
 end;
 
+procedure keyboardIRQ;
+var
+    code: uint8;
+begin
+    if (inb($64) and $21) <> 1 then exit;
+    code := inb($60);
+    if enabled then callback(code);
+end;
+
 function load(ptr : void) : boolean;
 begin
-    arch.x86.isr.ps2keyboard.register();
-    arch.x86.isr.ps2keyboard.hook(uint32(@callback));
+    enabled := true;
+    arch.platform.interrupts.registerIRQ(33, @keyboardIRQ);
+    arch.common.legacyirq.enableLine(1);
     io.syslog.logln('PS/2 KEYBOARD', 'LOADED.');
     load := true;
 end;
 
 procedure disable;
 begin
-    arch.x86.isr.ps2keyboard.unhook(uint32(@callback));
+    enabled := false;
     io.syslog.logln('PS/2 KEYBOARD', 'Disabled (driver.bus.usb driver.hid.keyboard active).');
 end;
 
-procedure init_layout(keyboard_layout : array of TKeyInfo);
+procedure init_layout(const keyboard_layout : array of TKeyInfo);
 var
     devid : TDeviceIdentifier;
 begin
     io.syslog.logln('PS/2 KEYBOARD', 'INIT BEGIN.');
-    if keyboard_layout[1].key_code = 0 then lang_USA();
+    if (High(keyboard_layout) < 1) or (keyboard_layout[1].key_code = 0) then lang_USA();
     devid.bus := biUnknown;
     devid.id0 := 0;
     devid.id1 := 0;
@@ -382,8 +392,5 @@ begin
     key_matrix_shift[52].key_code := $3E;
     key_matrix_shift[53].key_code := $3F;
 end;
-
-initialization
-    boot.mgr.registerBoot('driver.hid.ps2.keyboard', @init, 'PS/2 Keyboard Driver', BOOT_MGR_BARRIER_DEVICE);
 
 end.

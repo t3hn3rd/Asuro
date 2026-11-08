@@ -11,8 +11,7 @@
       - Status bar showing Line, Col, filename, and dirty flag
 
     Key design notes:
-      - lv_event_t.stop_processing (bit 1 at struct byte offset 24) is set
-        directly to prevent LVGL's default textarea key handler from also
+      - lv_event_stop_processing prevents LVGL's default textarea handler from also
         acting on keys we have fully handled ourselves.
       - Shift state is read from driver.hid.keyboard.is_shift / driver.hid.keyboard.is_ctrl.
       - selection anchor (sel_anchor) is stored as a sint32 byte offset;
@@ -43,7 +42,7 @@ uses
     io.syslog,
     io.stdio,
     debug.tracer,
-    core.util, arch.x86.util,
+    core.util, arch.platform.cpu,
     driver.storage.vfs,
     driver.video,
     driver.video.windows;
@@ -62,19 +61,6 @@ const
 
     FILE_BUF_SIZE  = 65536;   { 64 KB read / write buffer }
 
-    {
-      Byte offset and bitmask for lv_event_t.stop_processing.
-      struct lv_event_t (32-bit ABI):
-        offset  0: current_target  (ptr)
-        offset  4: original_target (ptr)
-        offset  8: code            (uint32  — lv_event_code_t)
-        offset 12: user_data       (ptr)
-        offset 16: param           (ptr)
-        offset 20: prev            (ptr)
-        offset 24: flags byte      [bit0=deleted, bit1=stop_processing, bit2=stop_bubbling]
-    }
-    LV_EVT_STOP_OFF = 24;
-    LV_EVT_STOP_BIT = 2;    { bit 1 = stop_processing }
 
 type
     PNotepadState = ^TNotepadState;
@@ -130,8 +116,7 @@ procedure removeInstance(state: PNotepadState); forward;
   ============================================================ }
 procedure stopEvent(e: Plv_event);
 begin
-    puint8(uint32(e) + LV_EVT_STOP_OFF)^ :=
-        puint8(uint32(e) + LV_EVT_STOP_OFF)^ or LV_EVT_STOP_BIT;
+    lv_event_stop_processing(e);
 end;
 
 { ============================================================
@@ -157,18 +142,18 @@ begin
     if to_idx   < from_idx then to_idx  := from_idx;
     result_len := from_idx + ins_len + (src_len - to_idx);
     buf := pchar(kalloc(result_len + 1));
-    memset(uint32(buf), 0, result_len + 1);
+    memset(PtrUInt(buf), 0, result_len + 1);
     pos := 0;
     if from_idx > 0 then begin
-        memcpy(uint32(src), uint32(buf), from_idx);
+        memcpy(PtrUInt(src), PtrUInt(buf), from_idx);
         pos := from_idx;
     end;
     if ins_len > 0 then begin
-        memcpy(uint32(insert), uint32(@buf[pos]), ins_len);
+        memcpy(PtrUInt(insert), PtrUInt(@buf[pos]), ins_len);
         pos := pos + ins_len;
     end;
     if to_idx < src_len then
-        memcpy(uint32(@src[to_idx]), uint32(@buf[pos]), src_len - to_idx);
+        memcpy(PtrUInt(@src[to_idx]), PtrUInt(@buf[pos]), src_len - to_idx);
     buildSplicedString := buf;
 end;
 
@@ -198,12 +183,12 @@ begin
 
     { Generous output buffer: original + 4 bytes per line (worst case ~512 lines) }
     out_buf := pchar(kalloc(src_len + 2049));
-    memset(uint32(out_buf), 0, src_len + 2049);
+    memset(PtrUInt(out_buf), 0, src_len + 2049);
     out_pos := 0;
 
     { Copy everything before the affected region verbatim }
     if first_ls > 0 then begin
-        memcpy(uint32(src), uint32(out_buf), first_ls);
+        memcpy(PtrUInt(src), PtrUInt(out_buf), first_ls);
         out_pos := first_ls;
     end;
 
@@ -215,7 +200,7 @@ begin
         if i >= sel_end then begin
             { Past the affected region: copy the remainder verbatim }
             if i < src_len then begin
-                memcpy(uint32(@src[i]), uint32(@out_buf[out_pos]), src_len - i);
+                memcpy(PtrUInt(@src[i]), PtrUInt(@out_buf[out_pos]), src_len - i);
                 out_pos := out_pos + (src_len - i);
             end;
             break;
@@ -426,8 +411,8 @@ begin
     len := stringSize(txt);
     if len > FILE_BUF_SIZE - 1 then len := FILE_BUF_SIZE - 1;
     buf := pchar(kalloc(FILE_BUF_SIZE));
-    memset(uint32(buf), 0, FILE_BUF_SIZE);
-    memcpy(uint32(txt), uint32(buf), len);
+    memset(PtrUInt(buf), 0, FILE_BUF_SIZE);
+    memcpy(PtrUInt(txt), PtrUInt(buf), len);
     fHandle := driver.storage.vfs.OpenFile(state^.currentPath, omReadWrite, @fError);
     if fHandle = 0 then
         fHandle := driver.storage.vfs.OpenFile(state^.currentPath, omCreate, @fError);
@@ -477,7 +462,7 @@ begin
         exit;
     end;
     buf := pchar(kalloc(FILE_BUF_SIZE));
-    memset(uint32(buf), 0, FILE_BUF_SIZE);
+    memset(PtrUInt(buf), 0, FILE_BUF_SIZE);
     driver.storage.vfs.ReadFile(fHandle, 0, puint8(buf), FILE_BUF_SIZE - 1);
     driver.storage.vfs.CloseFile(fHandle);
     if state^.currentPath <> nil then kfree(void(state^.currentPath));
@@ -943,7 +928,7 @@ begin
 
     { Allocate and zero-initialise state }
     state := PNotepadState(kalloc(sizeof(TNotepadState)));
-    memset(uint32(state), 0, sizeof(TNotepadState));
+    memset(PtrUInt(state), 0, sizeof(TNotepadState));
     state^.win_id     := wid;
     state^.sel_anchor := -1;
     addInstance(state);

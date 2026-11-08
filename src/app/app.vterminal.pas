@@ -17,7 +17,7 @@ interface
 
 uses
     driver.video.lvgl, driver.video, driver.video.windows, driver.video.desktop, driver.hid.keyboard, debug.tracer,
-    core.strings, core.util, arch.x86.util, memory.heap, core.version, io.stdio, driver.storage.vfs,
+    core.strings, core.util, arch.platform.cpu, memory.heap, core.version, io.stdio, driver.storage.vfs,
     proc.mgr, proc.types, core.ds.lists, core.ds.hashmap, driver.storage.filedispatch;
 
 procedure init;
@@ -114,10 +114,10 @@ begin
     if slen = 0 then exit;
     if state^.text_len + slen >= MAX_TEXT - 1 then begin
         i := MAX_TEXT div 2;
-        memcpy(uint32(@state^.text_buf[i]), uint32(@state^.text_buf[0]), state^.text_len - i);
+        memcpy(PtrUInt(@state^.text_buf[i]), PtrUInt(@state^.text_buf[0]), state^.text_len - i);
         state^.text_len := state^.text_len - i;
     end;
-    memcpy(uint32(s), uint32(@state^.text_buf[state^.text_len]), slen);
+    memcpy(PtrUInt(s), PtrUInt(@state^.text_buf[state^.text_len]), slen);
     state^.text_len := state^.text_len + slen;
     state^.text_buf[state^.text_len] := #0;
 end;
@@ -141,6 +141,17 @@ begin
         sb := lv_obj_get_scroll_bottom(state^.content);
         if sb > 0 then
             lv_obj_scroll_by(state^.content, 0, -sb, LV_ANIM_OFF);
+    end;
+end;
+
+procedure showLaunchError(state: PVTermState; errors: POutBuf);
+begin
+    if (errors <> nil) and (errors^.len > 0) then begin
+        errors^.buf[errors^.len] := #0;
+        appendText(state, errors^.buf);
+    end else begin
+        appendText(state, 'Unknown command. Type HELP for a list.');
+        appendChar(state, #10);
     end;
 end;
 
@@ -223,7 +234,7 @@ end;
 procedure drainBackgroundJobs(state : PVTermState);
 var
     i       : sint32;
-    slotPtr : ^uint32;
+    slotPtr : ^PtrUInt;
     job     : PBackgroundJob;
     ctx     : PProcessContext;
     finished: boolean;
@@ -233,7 +244,7 @@ begin
     if state^.bg_jobs = nil then exit;
     dirty := false;
     for i := sint32(DL_Size(state^.bg_jobs)) - 1 downto 0 do begin
-        slotPtr := DL_Get(state^.bg_jobs, uint32(i));
+        slotPtr := pointer(DL_Get(state^.bg_jobs, uint32(i)));
         if slotPtr = nil then continue;
         job := PBackgroundJob(slotPtr^);
         if job = nil then continue;
@@ -312,7 +323,7 @@ begin
     showPrompt(state);
     { Clear any partial input line }
     state^.line_len := 0;
-    memset(uint32(@state^.line_buf[0]), 0, MAX_LINE);
+    memset(PtrUInt(@state^.line_buf[0]), 0, MAX_LINE);
 end;
 
 { ============================================================
@@ -444,7 +455,7 @@ var
     pcount     : uint32;
     lastParam  : pchar;
     job        : PBackgroundJob;
-    slotPtr    : ^uint32;
+    slotPtr    : ^PtrUInt;
     absPath    : pchar;
     dispatchPID : uint32;
 begin
@@ -456,8 +467,8 @@ begin
 
     { Push non-empty lines into history }
     if state^.line_len > 0 then begin
-        memcpy(uint32(@state^.line_buf[0]),
-               uint32(@state^.hist[state^.hist_head][0]),
+        memcpy(PtrUInt(@state^.line_buf[0]),
+               PtrUInt(@state^.hist[state^.hist_head][0]),
                state^.line_len + 1);
         state^.hist_head := (state^.hist_head + 1) mod HIST_SIZE;
         if state^.hist_count < HIST_SIZE then inc(state^.hist_count);
@@ -467,7 +478,7 @@ begin
     if state^.line_len = 0 then begin
         showPrompt(state);
         state^.line_len := 0;
-        memset(uint32(@state^.line_buf[0]), 0, MAX_LINE);
+        memset(PtrUInt(@state^.line_buf[0]), 0, MAX_LINE);
         exit;
     end;
 
@@ -484,7 +495,7 @@ begin
             kfree(void(uppera));
             io.stdio.freeParams(params);
             state^.line_len := 0;
-            memset(uint32(@state^.line_buf[0]), 0, MAX_LINE);
+            memset(PtrUInt(@state^.line_buf[0]), 0, MAX_LINE);
             showPrompt(state);
             exit;
         end;
@@ -495,7 +506,7 @@ begin
             kfree(void(uppera));
             io.stdio.freeParams(params);
             state^.line_len := 0;
-            memset(uint32(@state^.line_buf[0]), 0, MAX_LINE);
+            memset(PtrUInt(@state^.line_buf[0]), 0, MAX_LINE);
             showPrompt(state);
             exit;
         end;
@@ -504,7 +515,7 @@ begin
             kfree(void(uppera));
             io.stdio.freeParams(params);
             state^.line_len := 0;
-            memset(uint32(@state^.line_buf[0]), 0, MAX_LINE);
+            memset(PtrUInt(@state^.line_buf[0]), 0, MAX_LINE);
             showPrompt(state);
             exit;
         end;
@@ -513,7 +524,7 @@ begin
             kfree(void(uppera));
             io.stdio.freeParams(params);
             state^.line_len := 0;
-            memset(uint32(@state^.line_buf[0]), 0, MAX_LINE);
+            memset(PtrUInt(@state^.line_buf[0]), 0, MAX_LINE);
             showPrompt(state);
             exit;
         end;
@@ -522,7 +533,7 @@ begin
             kfree(void(uppera));
             io.stdio.freeParams(params);
             state^.line_len := 0;
-            memset(uint32(@state^.line_buf[0]), 0, MAX_LINE);
+            memset(PtrUInt(@state^.line_buf[0]), 0, MAX_LINE);
             showPrompt(state);
             exit;
         end;
@@ -531,7 +542,7 @@ begin
         if stringEquals(uppera, 'JOBS') then begin
             if (state^.bg_jobs <> nil) and (DL_Size(state^.bg_jobs) > 0) then begin
                 for pcount := 0 to DL_Size(state^.bg_jobs) - 1 do begin
-                    slotPtr := DL_Get(state^.bg_jobs, pcount);
+                    slotPtr := pointer(DL_Get(state^.bg_jobs, pcount));
                     if (slotPtr <> nil) then begin
                         job := PBackgroundJob(slotPtr^);
                         if job <> nil then begin
@@ -564,7 +575,7 @@ begin
             kfree(void(uppera));
             io.stdio.freeParams(params);
             state^.line_len := 0;
-            memset(uint32(@state^.line_buf[0]), 0, MAX_LINE);
+            memset(PtrUInt(@state^.line_buf[0]), 0, MAX_LINE);
             showPrompt(state);
             exit;
         end;
@@ -573,7 +584,7 @@ begin
         if stringEquals(uppera, 'FG') then begin
             if (state^.bg_jobs <> nil) and (DL_Size(state^.bg_jobs) > 0) then begin
                 { Use first bg job if no arg given }
-                slotPtr := DL_Get(state^.bg_jobs, 0);
+                slotPtr := pointer(DL_Get(state^.bg_jobs, 0));
                 if (slotPtr <> nil) then begin
                     job := PBackgroundJob(slotPtr^);
                     if job <> nil then begin
@@ -600,7 +611,7 @@ begin
             kfree(void(uppera));
             io.stdio.freeParams(params);
             state^.line_len := 0;
-            memset(uint32(@state^.line_buf[0]), 0, MAX_LINE);
+            memset(PtrUInt(@state^.line_buf[0]), 0, MAX_LINE);
             exit;
         end;
 
@@ -621,7 +632,7 @@ begin
                 { --- Background launch --- }
                 job := PBackgroundJob(kalloc(SizeOf(TBackgroundJob)));
                 if job <> nil then begin
-                    memset(uint32(job), 0, SizeOf(TBackgroundJob));
+                    memset(PtrUInt(job), 0, SizeOf(TBackgroundJob));
                     job^.StdOut := io.stdio.createOutBuf(1024);
                     job^.StdErr := io.stdio.createOutBuf(1024);
                     job^.LastDrain := 0;
@@ -632,7 +643,7 @@ begin
                     { Copy command name }
                     pcount := stringSize(params^.Param);
                     if pcount > 31 then pcount := 31;
-                    memcpy(uint32(params^.Param), uint32(@job^.CmdName[0]), pcount);
+                    memcpy(PtrUInt(params^.Param), PtrUInt(@job^.CmdName[0]), pcount);
                     job^.CmdName[pcount] := #0;
 
                     { Launch but don't set ForegroundPID }
@@ -644,9 +655,9 @@ begin
                     if ctx <> nil then begin
                         job^.PID := ctx^.ProcessID;
                         if state^.bg_jobs = nil then
-                            state^.bg_jobs := DL_New(SizeOf(uint32));
-                        slotPtr := DL_Add(state^.bg_jobs);
-                        slotPtr^ := uint32(job);
+                            state^.bg_jobs := DL_New(SizeOf(PtrUInt));
+                        slotPtr := pointer(DL_Add(state^.bg_jobs));
+                        slotPtr^ := PtrUInt(job);
                         appendText(state, '[');
                         lastParam := intToString(job^.JobNum);
                         appendText(state, lastParam);
@@ -702,7 +713,7 @@ begin
                     { Background file dispatch }
                     job := PBackgroundJob(kalloc(SizeOf(TBackgroundJob)));
                     if job <> nil then begin
-                        memset(uint32(job), 0, SizeOf(TBackgroundJob));
+                        memset(PtrUInt(job), 0, SizeOf(TBackgroundJob));
                         job^.StdOut := io.stdio.createOutBuf(1024);
                         job^.StdErr := io.stdio.createOutBuf(1024);
                         job^.LastDrain := 0;
@@ -711,7 +722,7 @@ begin
                         job^.JobNum := state^.bg_next_job;
                         pcount := stringSize(params^.Param);
                         if pcount > 31 then pcount := 31;
-                        memcpy(uint32(params^.Param), uint32(@job^.CmdName[0]), pcount);
+                        memcpy(PtrUInt(params^.Param), PtrUInt(@job^.CmdName[0]), pcount);
                         job^.CmdName[pcount] := #0;
 
                         dispatchPID := driver.storage.filedispatch.dispatch(absPath, params,
@@ -719,9 +730,9 @@ begin
                         if dispatchPID > 0 then begin
                             job^.PID := dispatchPID;
                             if state^.bg_jobs = nil then
-                                state^.bg_jobs := DL_New(SizeOf(uint32));
-                            slotPtr := DL_Add(state^.bg_jobs);
-                            slotPtr^ := uint32(job);
+                                state^.bg_jobs := DL_New(SizeOf(PtrUInt));
+                            slotPtr := pointer(DL_Add(state^.bg_jobs));
+                            slotPtr^ := PtrUInt(job);
                             appendText(state, '[');
                             lastParam := intToString(job^.JobNum);
                             appendText(state, lastParam);
@@ -732,8 +743,7 @@ begin
                             kfree(void(lastParam));
                             appendChar(state, #10);
                         end else begin
-                            appendText(state, 'Unknown command. Type HELP for a list.');
-                            appendChar(state, #10);
+                            showLaunchError(state, job^.StdErr);
                             io.stdio.freeOutBuf(job^.StdOut);
                             io.stdio.freeOutBuf(job^.StdErr);
                             kfree(void(job));
@@ -758,8 +768,7 @@ begin
                     if dispatchPID > 0 then begin
                         state^.ForegroundPID := dispatchPID;
                     end else begin
-                        appendText(state, 'Unknown command. Type HELP for a list.');
-                        appendChar(state, #10);
+                        showLaunchError(state, state^.fg_stderr);
                         io.stdio.freeOutBuf(state^.fg_stdout);  state^.fg_stdout := nil;
                         io.stdio.freeOutBuf(state^.fg_stderr);  state^.fg_stderr := nil;
                         io.stdio.freeOutBuf(state^.fg_stdin);   state^.fg_stdin := nil;
@@ -783,7 +792,7 @@ begin
 
     { Reset input line }
     state^.line_len := 0;
-    memset(uint32(@state^.line_buf[0]), 0, MAX_LINE);
+    memset(PtrUInt(@state^.line_buf[0]), 0, MAX_LINE);
 end;
 
 { ============================================================
@@ -831,7 +840,7 @@ begin
             appendText(state, '^C');
             appendChar(state, #10);
             state^.line_len := 0;
-            memset(uint32(@state^.line_buf[0]), 0, MAX_LINE);
+            memset(PtrUInt(@state^.line_buf[0]), 0, MAX_LINE);
             showPrompt(state);
         end;
         exit;
@@ -849,8 +858,8 @@ begin
     if key = LV_KEY_UP then begin
         if state^.hist_count > 0 then begin
             if state^.hist_pos = -1 then begin
-                memcpy(uint32(@state^.line_buf[0]),
-                       uint32(@state^.saved_line[0]),
+                memcpy(PtrUInt(@state^.line_buf[0]),
+                       PtrUInt(@state^.saved_line[0]),
                        state^.line_len + 1);
                 state^.saved_len := state^.line_len;
                 state^.hist_pos := 0;
@@ -863,8 +872,8 @@ begin
             state^.text_buf[state^.text_len] := #0;
             state^.line_len := stringSize(
                 @state^.hist[(sint32(state^.hist_head) - 1 - state^.hist_pos + HIST_SIZE * 2) mod HIST_SIZE][0]);
-            memcpy(uint32(@state^.hist[(sint32(state^.hist_head) - 1 - state^.hist_pos + HIST_SIZE * 2) mod HIST_SIZE][0]),
-                   uint32(@state^.line_buf[0]),
+            memcpy(PtrUInt(@state^.hist[(sint32(state^.hist_head) - 1 - state^.hist_pos + HIST_SIZE * 2) mod HIST_SIZE][0]),
+                   PtrUInt(@state^.line_buf[0]),
                    state^.line_len + 1);
             appendText(state, @state^.line_buf[0]);
             refreshDisplay(state);
@@ -882,12 +891,12 @@ begin
             if state^.hist_pos >= 0 then begin
                 state^.line_len := stringSize(
                     @state^.hist[(sint32(state^.hist_head) - 1 - state^.hist_pos + HIST_SIZE * 2) mod HIST_SIZE][0]);
-                memcpy(uint32(@state^.hist[(sint32(state^.hist_head) - 1 - state^.hist_pos + HIST_SIZE * 2) mod HIST_SIZE][0]),
-                       uint32(@state^.line_buf[0]),
+                memcpy(PtrUInt(@state^.hist[(sint32(state^.hist_head) - 1 - state^.hist_pos + HIST_SIZE * 2) mod HIST_SIZE][0]),
+                       PtrUInt(@state^.line_buf[0]),
                        state^.line_len + 1);
             end else begin
-                memcpy(uint32(@state^.saved_line[0]),
-                       uint32(@state^.line_buf[0]),
+                memcpy(PtrUInt(@state^.saved_line[0]),
+                       PtrUInt(@state^.line_buf[0]),
                        state^.saved_len + 1);
                 state^.line_len := state^.saved_len;
             end;
@@ -941,7 +950,7 @@ procedure onClose(wid: uint32);
 var
     cnt     : Plv_obj;
     state   : PVTermState;
-    slotPtr : ^uint32;
+    slotPtr : ^PtrUInt;
     bgJob   : PBackgroundJob;
     scr_w   : sint32;
 begin
@@ -969,7 +978,7 @@ begin
         { Kill and free background jobs }
         if state^.bg_jobs <> nil then begin
             for scr_w := sint32(DL_Size(state^.bg_jobs)) - 1 downto 0 do begin
-                slotPtr := DL_Get(state^.bg_jobs, uint32(scr_w));
+                slotPtr := pointer(DL_Get(state^.bg_jobs, uint32(scr_w)));
                 if slotPtr <> nil then begin
                     bgJob := PBackgroundJob(slotPtr^);
                     if bgJob <> nil then begin
@@ -1020,7 +1029,7 @@ begin
     { Allocate a new instance }
     state := PVTermState(kalloc(SizeOf(TVTermState)));
     if state = nil then exit;
-    memset(uint32(state), 0, SizeOf(TVTermState));
+    memset(PtrUInt(state), 0, SizeOf(TVTermState));
 
     state^.hist_pos := -1;
     state^.cwd := stringCopy('/');

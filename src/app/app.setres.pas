@@ -14,7 +14,7 @@ unit app.setres;
 interface
 
 uses
-    io.stdio, driver.video.gpu, core.util, arch.x86.util, core.strings, debug.tracer, io.syslog;
+    io.stdio, driver.video.lvgl, driver.video.gpu, core.util, arch.platform.cpu, core.strings, debug.tracer, io.syslog;
 
 procedure init();
 
@@ -25,6 +25,7 @@ var
     w, h : uint32;
     wStr, hStr : pchar;
     info : TGPUModeInfo;
+    changed: boolean;
 
 begin
     debug.tracer.push_trace('setres.run');
@@ -55,7 +56,10 @@ begin
     io.stdio.bufWriteStrLn(stdout_buf, 'x32...');
 
     { Step 1: Set display mode via GPU framework (tries BGA first, then VBE) }
-    if not driver.video.gpu.setMode(w, h, 32, info) then begin
+    driver.video.lvgl.lvgl_lock;
+    changed := driver.video.gpu.setMode(w, h, 32, info);
+    driver.video.lvgl.lvgl_unlock;
+    if not changed then begin
         io.stdio.bufWriteStrLn(stderr_buf, 'Error: Mode switch failed. Mode may not be supported.');
         debug.tracer.pop_trace;
         exit;

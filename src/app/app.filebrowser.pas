@@ -32,7 +32,7 @@ uses
     core.gfx.fileicons,
     debug.tracer,
     core.util,
-    arch.x86.util;
+    arch.platform.cpu;
 
 const
     WIN_W          = 800;
@@ -785,9 +785,9 @@ begin
     dir_names  := PNameBuf(kalloc(sizeof(TNameBuf)));
     file_names := PNameBuf(kalloc(sizeof(TNameBuf)));
     file_sizes := PSizeBuf(kalloc(sizeof(TSizeBuf)));
-    memset(uint32(dir_names),  0, sizeof(TNameBuf));
-    memset(uint32(file_names), 0, sizeof(TNameBuf));
-    memset(uint32(file_sizes), 0, sizeof(TSizeBuf));
+    memset(PtrUInt(dir_names),  0, sizeof(TNameBuf));
+    memset(PtrUInt(file_names), 0, sizeof(TNameBuf));
+    memset(PtrUInt(file_sizes), 0, sizeof(TSizeBuf));
 
     { Load directory from VFS — this may do disk I/O }
     Map := driver.storage.vfs.GetDirectoryListingFrom(state^.cur_path, '/');
@@ -1330,7 +1330,7 @@ begin
         parent := stringCopy('/')
     else begin
         parent := pchar(kalloc(uint32(i) + 1));
-        memcpy(uint32(cur), uint32(parent), uint32(i));
+        memcpy(PtrUInt(cur), PtrUInt(parent), uint32(i));
         parent[i] := char(0);
     end;
     navigate_to(state, parent);
@@ -1440,7 +1440,7 @@ begin
 
         { Segment name label }
         segBuf := pchar(kalloc(segEnd - segStart + 1));
-        memcpy(uint32(@path[segStart]), uint32(segBuf), segEnd - segStart);
+        memcpy(PtrUInt(@path[segStart]), uint32(segBuf), segEnd - segStart);
         segBuf[segEnd - segStart] := char(0);
         lbl := lv_label_create(btn);
         lv_label_set_text(lbl, segBuf);
@@ -1979,7 +1979,7 @@ begin
     if state^.tabs[idx] <> nil then
         free_tab_snapshot(state^.tabs[idx]);
     snap := PTabSnapshot(kalloc(sizeof(TTabSnapshot)));
-    memset(uint32(snap), 0, sizeof(TTabSnapshot));
+    memset(PtrUInt(snap), 0, sizeof(TTabSnapshot));
     if state^.cur_path <> nil then
         snap^.cur_path := stringCopy(state^.cur_path)
     else
@@ -2090,7 +2090,7 @@ begin
     save_tab(state, state^.active_tab);
     { Create snapshot for new tab }
     snap := PTabSnapshot(kalloc(sizeof(TTabSnapshot)));
-    memset(uint32(snap), 0, sizeof(TTabSnapshot));
+    memset(PtrUInt(snap), 0, sizeof(TTabSnapshot));
     snap^.cur_path := stringCopy(path);
     snap^.hist_len := 0;
     snap^.hist_pos := 0;
@@ -3053,7 +3053,7 @@ begin
 
     { Allocate and zero-initialise state }
     state := PFileBrowserState(kalloc(sizeof(TFileBrowserState)));
-    memset(uint32(state), 0, sizeof(TFileBrowserState));
+    memset(PtrUInt(state), 0, sizeof(TFileBrowserState));
     state^.win_id   := g_win_id;
     state^.cur_path := stringCopy('/');
     state^.view_mode := vmDetail;
