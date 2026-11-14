@@ -1142,6 +1142,12 @@ begin
     pop_trace;
 end;
 
+function xhci_port_speed(hc : PUSBHCDriver; port : uint8) : uint8;
+begin
+    xhci_port_speed := xhci_map_speed(
+        (xhci_port_status(hc, port) AND XHCI_PORTSC_SPEED_MASK) SHR XHCI_PORTSC_SPEED_SHIFT);
+end;
+
 function xhci_port_reset(hc : PUSBHCDriver; port : uint8) : boolean;
 var
     priv     : PXHCI_PrivData;
@@ -2095,6 +2101,7 @@ begin
         hc.fnPoll       := TUSBHCPoll(@xhci_poll);
         hc.fnPortReset  := TUSBHCPortReset(@xhci_port_reset);
         hc.fnPortStatus := TUSBHCPortStatus(@xhci_port_status);
+        hc.fnPortSpeed := TUSBHCPortSpeed(@xhci_port_speed);
 
         { Reset the controller }
         if not xhci_reset(@hc) then begin

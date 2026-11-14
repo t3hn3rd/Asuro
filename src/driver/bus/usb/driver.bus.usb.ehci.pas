@@ -783,6 +783,13 @@ end;
 
 { ========================= Port Reset ========================= }
 
+function ehci_port_speed(hc : PUSBHCDriver; port : uint8) : uint8;
+begin
+    { Successful EHCI root resets retain only high-speed devices;
+      full/low-speed devices are handed to a companion controller. }
+    ehci_port_speed := USB_SPEED_HIGH;
+end;
+
 function ehci_port_reset(hc : PUSBHCDriver; port : uint8) : boolean;
 var
     priv   : PEHCI_PrivData;
@@ -1558,6 +1565,7 @@ begin
         hc.fnPoll       := TUSBHCPoll(@ehci_poll);
         hc.fnPortReset  := TUSBHCPortReset(@ehci_port_reset);
         hc.fnPortStatus := TUSBHCPortStatus(@ehci_port_status);
+        hc.fnPortSpeed := TUSBHCPortSpeed(@ehci_port_speed);
 
         { Reset the controller }
         if not ehci_reset(@hc) then begin

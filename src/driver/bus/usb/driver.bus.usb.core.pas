@@ -247,8 +247,7 @@ begin
             if (status AND $01) <> 0 then begin
                 io.syslog.log('driver.bus.usb Core', 'Device detected on port ');
                 io.syslog.writeintln(port);
-                { Determine speed from status bits - HC specific, 
-                  default to full-speed for now }
+                { Root-port speed is resolved by enumerate_device after reset. }
                 speed := USB_SPEED_FULL;
                 enumerate_device(hc, port, speed, nil, port);
             end;
@@ -655,6 +654,10 @@ begin
             end;
         end;
     end;
+
+    { Speed is valid after reset. Hub children retain the hub-reported speed. }
+    if (parentHub = nil) and (hc^.fnPortSpeed <> nil) then
+        speed := hc^.fnPortSpeed(hc, port);
 
     { Step 2: Create device at address 0 }
     dev := PUSBDevice(kalloc(sizeof(TUSBDevice)));
