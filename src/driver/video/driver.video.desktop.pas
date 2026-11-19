@@ -4,7 +4,7 @@
     Provides a modern driver.video.desktop with:
       - Gradient background
       - macOS-style floating dock/taskbar with search box
-      - Program launcher with search & slide animation
+      - Program launcher with search
       - driver.timer.rtc clock
       - Mouse cursor
 
@@ -47,12 +47,12 @@ const
     RESULTS_ROW_H = 36;
     RESULTS_MAX_VISIBLE = 6;
     RESULTS_PAD   = 6;
+    RESULTS_ROW_GAP = 2;
+    RESULTS_BORDER = 1;
+    RESULTS_DOCK_GAP = 6;
 
     SYSINFO_W     = 480;
     SYSINFO_H     = 560;
-
-    { Animation }
-    ANIM_SPEED    = 12;      { pixels per frame to slide }
 
 { ---- Program registry ---- }
 type
@@ -87,12 +87,6 @@ var
 
     { Clock }
     last_minute   : uint8;
-
-    { Slide animation state }
-    anim_target_y : sint32;
-    anim_current_y: sint32;
-    anim_closing  : boolean;
-    anim_hidden_y : sint32;
 
     { Search active state }
     search_active : boolean;
@@ -384,8 +378,10 @@ begin
 end;
 
 { ============================================================
-  Clear search and close results (with animation)
+  Clear search and close results
   ============================================================ }
+procedure destroyResultsPanel; forward;
+
 procedure clearAndClose;
 begin
     search_active := false;
@@ -396,15 +392,12 @@ begin
     { Remove from driver.hid.keyboard group so it stops receiving key input }
     lv_group_remove_obj(search_ta);
     lv_textarea_set_text(search_ta, '');
-    if results_open and not anim_closing then
-        anim_closing := true;
+    destroyResultsPanel;
 end;
 
 { ============================================================
   Results popup — create / destroy / filter
   ============================================================ }
-procedure destroyResultsPanel; forward;
-
 procedure result_btn_cb(e: Plv_event); cdecl;
 var
     code   : uint32;
@@ -432,6 +425,12 @@ begin
     end;
 end;
 
+function resultsPanelHeight(rows: sint32): sint32;
+begin
+    resultsPanelHeight := rows * RESULTS_ROW_H +
+        (rows - 1) * RESULTS_ROW_GAP + 2 * (RESULTS_PAD + RESULTS_BORDER);
+end;
+
 procedure createResultsPanel;
 var
     scr      : Plv_obj;
@@ -443,22 +442,17 @@ begin
 
     scr := lv_screen_active;
     dock_x := lv_obj_get_x(dock);
-    panel_h := sint32(RESULTS_MAX_VISIBLE) * RESULTS_ROW_H + RESULTS_PAD * 2;
-
-    anim_hidden_y := lv_obj_get_y(dock);
-    anim_target_y := lv_obj_get_y(dock) - panel_h - 6;
-    anim_current_y := anim_hidden_y;
-    anim_closing := false;
+    panel_h := resultsPanelHeight(RESULTS_MAX_VISIBLE);
 
     results_panel := lv_obj_create(scr);
     lv_obj_remove_style_all(results_panel);
     lv_obj_set_size(results_panel, RESULTS_W, panel_h);
     { Align results panel with the search textarea }
-    lv_obj_set_pos(results_panel, dock_x + 12, anim_current_y);
+    lv_obj_set_x(results_panel, dock_x + 12);
     lv_obj_set_style_bg_color(results_panel, lv_color_make(30, 33, 45), 0);
     lv_obj_set_style_bg_opa(results_panel, 240, 0);
     lv_obj_set_style_radius(results_panel, 12, 0);
-    lv_obj_set_style_border_width(results_panel, 1, 0);
+    lv_obj_set_style_border_width(results_panel, RESULTS_BORDER, 0);
     lv_obj_set_style_border_color(results_panel, lv_color_make(70, 75, 100), 0);
     lv_obj_set_style_border_opa(results_panel, 160, 0);
     lv_obj_set_style_shadow_width(results_panel, 12, 0);
@@ -471,7 +465,7 @@ begin
     lv_obj_set_style_pad_bottom(results_panel, RESULTS_PAD, 0);
     lv_obj_set_style_layout(results_panel, LV_LAYOUT_FLEX, 0);
     lv_obj_set_flex_flow(results_panel, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_row(results_panel, 2, 0);
+    lv_obj_set_style_pad_row(results_panel, RESULTS_ROW_GAP, 0);
     lv_obj_remove_flag(results_panel, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scrollbar_mode(results_panel, LV_SCROLLBAR_MODE_OFF);
     lv_obj_remove_flag(results_panel, LV_OBJ_FLAG_CLICKABLE);
@@ -479,7 +473,7 @@ begin
     for i := 0 to RESULTS_MAX_VISIBLE - 1 do begin
         result_btns[i] := lv_button_create(results_panel);
         lv_obj_remove_style_all(result_btns[i]);
-        lv_obj_set_size(result_btns[i], RESULTS_W - RESULTS_PAD * 2, RESULTS_ROW_H);
+        lv_obj_set_size(result_btns[i], RESULTS_W - 2 * (RESULTS_PAD + RESULTS_BORDER), RESULTS_ROW_H);
         lv_obj_set_style_bg_color(result_btns[i], lv_color_make(45, 50, 70), 0);
         lv_obj_set_style_bg_opa(result_btns[i], 0, 0);
         lv_obj_set_style_radius(result_btns[i], 8, 0);
@@ -558,12 +552,16 @@ begin
         inc(vis);
     end;
 
-    { Resize panel to fit visible results }
-    if results_visible > 0 then begin
-        panel_h := sint32(results_visible) * RESULTS_ROW_H + RESULTS_PAD * 2;
-        lv_obj_set_height(results_panel, panel_h);
-        anim_target_y := lv_obj_get_y(dock) - panel_h - 6;
+    if results_visible = 0 then begin
+        lv_obj_add_flag(results_panel, LV_OBJ_FLAG_HIDDEN);
+        exit;
     end;
+
+    { Move the top edge with the height change to keep the bottom edge anchored. }
+    panel_h := resultsPanelHeight(sint32(results_visible));
+    lv_obj_set_height(results_panel, panel_h);
+    lv_obj_set_y(results_panel, lv_obj_get_y(dock) - panel_h - RESULTS_DOCK_GAP);
+    lv_obj_remove_flag(results_panel, LV_OBJ_FLAG_HIDDEN);
 end;
 
 { ============================================================
@@ -585,17 +583,14 @@ begin
             lv_obj_set_style_anim_duration(search_ta, 400, LV_PART_CURSOR);
             lv_group_add_obj(lvgl_get_kb_group, search_ta);
             lv_group_focus_obj(search_ta);
-            if not results_open and not anim_closing then begin
-                createResultsPanel;
-                filterResults;
-            end;
+            createResultsPanel;
+            filterResults;
         end;
     end
     else if code = LV_EVENT_VALUE_CHANGED then begin
         { Text changed — only filter if search is active }
         if search_active then begin
-            if not results_open and not anim_closing then
-                createResultsPanel;
+            createResultsPanel;
             filterResults;
         end;
     end
@@ -630,42 +625,6 @@ begin
 end;
 
 { ============================================================
-  Animate the results panel — slide in/out
-  ============================================================ }
-procedure animateResultsPanel;
-var
-    target_y : sint32;
-begin
-    if results_panel = nil then exit;
-
-    if anim_closing then begin
-        target_y := anim_hidden_y;
-        if anim_current_y < target_y then begin
-            anim_current_y := anim_current_y + ANIM_SPEED;
-            if anim_current_y >= target_y then begin
-                anim_current_y := target_y;
-                destroyResultsPanel;
-                anim_closing := false;
-                exit;
-            end;
-        end else begin
-            destroyResultsPanel;
-            anim_closing := false;
-            exit;
-        end;
-    end else begin
-        if anim_current_y > anim_target_y then begin
-            anim_current_y := anim_current_y - ANIM_SPEED;
-            if anim_current_y < anim_target_y then
-                anim_current_y := anim_target_y;
-        end;
-    end;
-
-    if results_panel <> nil then
-        lv_obj_set_pos(results_panel, lv_obj_get_x(results_panel), anim_current_y);
-end;
-
-{ ============================================================
   Mode-change callback — fired by GPU framework after setMode
   ============================================================ }
 procedure desktopModeChanged(const info : TGPUModeInfo);
@@ -690,7 +649,6 @@ begin
     sysinfo_win_id := 0;
     results_open   := false;
     results_panel  := nil;
-    anim_closing   := false;
     search_active  := false;
 
     scr := lv_screen_active;
@@ -860,7 +818,6 @@ end;
 procedure update;
 begin
     updateClockText;
-    animateResultsPanel;
 end;
 
 Initialization

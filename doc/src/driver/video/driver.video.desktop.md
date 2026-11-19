@@ -52,6 +52,6 @@ Registered with the GPU framework. Calls `relayout` when the display mode change
 
 ## Notes
 
-- Search results are filtered using case-insensitive substring matching (`ciContains`) and display up to 6 matches with a slide-in animation.
+- Search results are filtered using case-insensitive substring matching and display up to 6 matches directly above the taskbar.
 - The dock uses LVGL's flex layout with a fixed height; icon buttons are added programmatically for each registered program.
 - The mouse cursor is an LVGL object that is repositioned each frame by reading `driver.hid.mouse.MouseX`/`MouseY`.

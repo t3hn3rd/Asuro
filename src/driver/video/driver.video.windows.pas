@@ -70,7 +70,7 @@ function  getWindowFrame(win_id: uint32): Plv_obj;
 { Destroy a window and free its slot. }
 procedure destroyWindow(win_id: uint32);
 
-{ Bring a window to front. }
+{ Activate a window and bring it to front. }
 procedure focusWindow(win_id: uint32);
 
 { Check if a window is open. }
@@ -93,8 +93,16 @@ procedure reapOrphanedWindows;
 
 implementation
 
+const
+    TITLEBAR_INACTIVE_COLOR = $2D303A;
+    TITLEBAR_ACTIVE_COLOR   = $3C4050;
+
 var
     wins : array[1..MAX_WINDOWS] of TWinRecord;
+    { Window IDs from back to front. The last entry has focus. }
+    z_order : array[1..MAX_WINDOWS] of uint32;
+    z_count : uint32 = 0;
+    pointer_hook_added : boolean = false;
 
     { Persistent point arrays for grip lines (2 points per line, 3 lines).
       These draw diagonal lines from top-right towards bottom-left
@@ -156,16 +164,54 @@ begin
     end;
 end;
 
-{ ============================================================
-  Internal: bring window to front
-  ============================================================ }
-procedure bringToFront(id: uint32);
+procedure removeFromZOrder(win_id: uint32);
+var
+    i, j : uint32;
 begin
-    if (id < 1) or (id > MAX_WINDOWS) then exit;
-    if wins[id].state = wsNone then exit;
-    lv_obj_move_foreground(wins[id].frame);
-    if wins[id].cursor_obj <> nil then
-        lv_obj_move_foreground(wins[id].cursor_obj);
+    for i := 1 to z_count do begin
+        if z_order[i] <> win_id then continue;
+        for j := i to z_count - 1 do
+            z_order[j] := z_order[j + 1];
+        dec(z_count);
+        exit;
+    end;
+end;
+
+{ ============================================================
+  Public: activate a window and bring it to front
+  ============================================================ }
+procedure focusWindow(win_id: uint32);
+begin
+    if not isWindowOpen(win_id) then exit;
+    if z_count > 0 then begin
+        if z_order[z_count] = win_id then exit;
+        lv_obj_set_style_bg_color(wins[z_order[z_count]].titlebar,
+            lv_color_hex(TITLEBAR_INACTIVE_COLOR), 0);
+    end;
+
+    removeFromZOrder(win_id);
+    inc(z_count);
+    z_order[z_count] := win_id;
+    lv_obj_set_style_bg_color(wins[win_id].titlebar, lv_color_hex(TITLEBAR_ACTIVE_COLOR), 0);
+    lv_obj_move_foreground(wins[win_id].frame);
+    if wins[win_id].cursor_obj <> nil then
+        lv_obj_move_foreground(wins[win_id].cursor_obj);
+end;
+
+procedure pointer_press_cb(e: Plv_event); cdecl;
+var
+    obj : Plv_obj;
+    id  : uint32;
+begin
+    obj := lv_indev_get_active_obj;
+    while obj <> nil do begin
+        id := findByFrame(obj);
+        if id <> 0 then begin
+            focusWindow(id);
+            exit;
+        end;
+        obj := lv_obj_get_parent(obj);
+    end;
 end;
 
 { ============================================================
@@ -197,8 +243,6 @@ begin
     wins[id].drag_oy := my - fy;
     wins[id].dragging := true;
     wins[id].resizing := false;
-
-    bringToFront(id);
 end;
 
 { ============================================================
@@ -301,8 +345,6 @@ begin
     wins[id].dragging := false;
     wins[id].drag_ox := mx;
     wins[id].drag_oy := my;
-
-    bringToFront(id);
 end;
 
 { ============================================================
@@ -443,6 +485,7 @@ var
     coll_btn  : Plv_obj;
     coll_lbl  : Plv_obj;
     content   : Plv_obj;
+    indev     : Plv_indev;
 begin
     createWindow := 0;
 
@@ -500,7 +543,7 @@ begin
     titlebar := lv_obj_create(frame);
     lv_obj_remove_style_all(titlebar);
     lv_obj_set_size(titlebar, w, WIN_TITLEBAR_H);
-    lv_obj_set_style_bg_color(titlebar, lv_color_make(45, 48, 58), 0);
+    lv_obj_set_style_bg_color(titlebar, lv_color_hex(TITLEBAR_INACTIVE_COLOR), 0);
     lv_obj_set_style_bg_opa(titlebar, LV_OPA_COVER, 0);
     lv_obj_set_style_pad_left(titlebar, 0, 0);
     lv_obj_set_style_pad_right(titlebar, 0, 0);
@@ -653,8 +696,17 @@ begin
     wins[id].cursor_obj   := cursor;
     wins[id].owner_pid    := 0;
 
-    { Bring to front }
-    bringToFront(id);
+    if not pointer_hook_added then begin
+        indev := lv_indev_get_next(nil);
+        while indev <> nil do begin
+            if lv_indev_get_type(indev) = Ord(LV_INDEV_TYPE_POINTER) then begin
+                lv_indev_add_event_cb(indev, @pointer_press_cb, LV_EVENT_PRESSED, nil);
+                pointer_hook_added := true;
+            end;
+            indev := lv_indev_get_next(indev);
+        end;
+    end;
+    focusWindow(id);
 
     debug.tracer.pop_trace;
 
@@ -687,11 +739,21 @@ end;
   Public: destroy window
   ============================================================ }
 procedure destroyWindow(win_id: uint32);
+var
+    was_focused : boolean;
 begin
     if (win_id < 1) or (win_id > MAX_WINDOWS) then exit;
     if wins[win_id].state = wsNone then exit;
 
     debug.tracer.push_trace('driver.video.windows.destroy');
+
+    was_focused := false;
+    if z_count > 0 then
+        was_focused := z_order[z_count] = win_id;
+    removeFromZOrder(win_id);
+    if was_focused and (z_count > 0) then
+        lv_obj_set_style_bg_color(wins[z_order[z_count]].titlebar,
+            lv_color_hex(TITLEBAR_ACTIVE_COLOR), 0);
 
     lv_obj_delete(wins[win_id].frame);
 
@@ -712,14 +774,6 @@ begin
     wins[win_id].owner_pid := 0;
 
     debug.tracer.pop_trace;
-end;
-
-{ ============================================================
-  Public: focus window (bring to front)
-  ============================================================ }
-procedure focusWindow(win_id: uint32);
-begin
-    bringToFront(win_id);
 end;
 
 { ============================================================
