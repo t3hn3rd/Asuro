@@ -31,7 +31,7 @@ procedure relayout;
 implementation
 
 uses
-    io.syslog, core.ds.lists, memory.heap, driver.hid.keyboard;
+    io.syslog, core.ds.lists, memory.heap, driver.hid.keyboard, app.tasks;
 
 const
     DOCK_HEIGHT   = 48;
@@ -789,6 +789,7 @@ begin
 
     { ---- Register built-in programs ---- }
     registerProgram('System Information', @openSysInfo);
+    registerProgram('Tasks', @openTasks);
 
     { Register for resolution-change notifications from GPU framework }
     driver.video.gpu.registerModeChangeCallback(@desktopModeChanged);
@@ -837,6 +838,10 @@ procedure update;
 begin
     if takeWindowsKeyPress then
         openAppMenu;
+    if takeTasksShortcut then begin
+        if search_active then clearAndClose;
+        openTasks;
+    end;
     updateClockText;
 end;
 

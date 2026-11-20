@@ -85,6 +85,7 @@ function  getWindowCount: uint32;
 
 { Set a callback to be notified when a window is resized. }
 procedure setWindowResizeCallback(win_id: uint32; cb: TWinResizeCallback);
+procedure setWindowMinWidth(win_id: uint32; min_width: sint32);
 
 { Assign an owning process to a window.
   When reapOrphanedWindows detects the process has died, the window
@@ -847,6 +848,13 @@ begin
     if (win_id < 1) or (win_id > MAX_WINDOWS) then exit;
     if wins[win_id].state = wsNone then exit;
     wins[win_id].on_resize := cb;
+end;
+
+procedure setWindowMinWidth(win_id: uint32; min_width: sint32);
+begin
+    if not isWindowOpen(win_id) then exit;
+    if min_width < WIN_MIN_W then min_width := WIN_MIN_W;
+    wins[win_id].min_w := min_width;
 end;
 
 { ============================================================
