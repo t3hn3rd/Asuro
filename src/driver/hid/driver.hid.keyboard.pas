@@ -38,7 +38,26 @@ procedure hook(proc : pp_hook_method);
   Dispatches to the registered hook. Updates global modifier state. }
 procedure reportKeyEvent(info : TKeyInfo);
 
+{ Queue a Windows key press for the desktop to handle outside the interrupt. }
+procedure reportWindowsKey;
+function takeWindowsKeyPress: boolean;
+
 implementation
+
+var
+    windows_key_pending : boolean = false;
+
+procedure reportWindowsKey;
+begin
+    windows_key_pending := true;
+end;
+
+function takeWindowsKeyPress: boolean;
+begin
+    if not windows_key_pending then exit(false);
+    windows_key_pending := false;
+    takeWindowsKeyPress := true;
+end;
 
 procedure hook(proc : pp_hook_method);
 begin

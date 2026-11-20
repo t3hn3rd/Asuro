@@ -60,6 +60,10 @@ type
 
 { Create a new window. Returns window ID (0 = failure). }
 function  createWindow(title: pchar; x, y, w, h: sint32; closeCB: TWinCloseCallback; cursor: Plv_obj): uint32;
+function  createFixedWindow(title: pchar; x, y, w, h: sint32; closeCB: TWinCloseCallback; cursor: Plv_obj): uint32;
+
+{ Fit an open window to its content, up to max_h including the title bar. }
+procedure fitWindowHeight(win_id: uint32; max_h: sint32);
 
 { Get the content area of a window (to add widgets into). }
 function  getWindowContent(win_id: uint32): Plv_obj;
@@ -473,7 +477,7 @@ end;
 { ============================================================
   Public: create a window
   ============================================================ }
-function createWindow(title: pchar; x, y, w, h: sint32; closeCB: TWinCloseCallback; cursor: Plv_obj): uint32;
+function createWindowInternal(title: pchar; x, y, w, h: sint32; closeCB: TWinCloseCallback; cursor: Plv_obj; resizable: boolean): uint32;
 var
     id        : uint32;
     scr       : Plv_obj;
@@ -487,7 +491,7 @@ var
     content   : Plv_obj;
     indev     : Plv_indev;
 begin
-    createWindow := 0;
+    createWindowInternal := 0;
 
     id := allocSlot;
     if id = 0 then exit;
@@ -635,45 +639,47 @@ begin
     lv_obj_set_style_width(content, 6, LV_PART_SCROLLBAR);
     lv_obj_set_style_pad_all(content, 2, LV_PART_SCROLLBAR);
 
-    { ---- Resize grip (floating over frame bottom-right) ---- }
-    { The grip is a child of frame but ignores flex layout }
-    wins[id].resize_grip := lv_obj_create(frame);
-    lv_obj_remove_style_all(wins[id].resize_grip);
-    lv_obj_set_size(wins[id].resize_grip, WIN_RESIZE_GRIP, WIN_RESIZE_GRIP);
-    lv_obj_add_flag(wins[id].resize_grip, LV_OBJ_FLAG_FLOATING);
-    lv_obj_add_flag(wins[id].resize_grip, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_flag(wins[id].resize_grip, LV_OBJ_FLAG_PRESS_LOCK);
-    lv_obj_remove_flag(wins[id].resize_grip, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_scrollbar_mode(wins[id].resize_grip, LV_SCROLLBAR_MODE_OFF);
-    lv_obj_set_style_bg_opa(wins[id].resize_grip, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(wins[id].resize_grip, 0, 0);
-    lv_obj_set_style_pad_all(wins[id].resize_grip, 0, 0);
-    lv_obj_set_pos(wins[id].resize_grip, w - WIN_RESIZE_GRIP, h - WIN_RESIZE_GRIP);
+    if resizable then begin
+        { ---- Resize grip (floating over frame bottom-right) ---- }
+        { The grip is a child of frame but ignores flex layout }
+        wins[id].resize_grip := lv_obj_create(frame);
+        lv_obj_remove_style_all(wins[id].resize_grip);
+        lv_obj_set_size(wins[id].resize_grip, WIN_RESIZE_GRIP, WIN_RESIZE_GRIP);
+        lv_obj_add_flag(wins[id].resize_grip, LV_OBJ_FLAG_FLOATING);
+        lv_obj_add_flag(wins[id].resize_grip, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_flag(wins[id].resize_grip, LV_OBJ_FLAG_PRESS_LOCK);
+        lv_obj_remove_flag(wins[id].resize_grip, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_scrollbar_mode(wins[id].resize_grip, LV_SCROLLBAR_MODE_OFF);
+        lv_obj_set_style_bg_opa(wins[id].resize_grip, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_width(wins[id].resize_grip, 0, 0);
+        lv_obj_set_style_pad_all(wins[id].resize_grip, 0, 0);
+        lv_obj_set_pos(wins[id].resize_grip, w - WIN_RESIZE_GRIP, h - WIN_RESIZE_GRIP);
 
-    { Diagonal grip lines (three short lines suggesting resize) }
-    wins[id].grip_line1 := lv_line_create(wins[id].resize_grip);
-    lv_obj_set_style_line_color(wins[id].grip_line1, lv_color_make(120, 125, 140), 0);
-    lv_obj_set_style_line_width(wins[id].grip_line1, 1, 0);
-    lv_obj_set_style_line_opa(wins[id].grip_line1, 180, 0);
-    lv_line_set_points(wins[id].grip_line1, @grip_pts[0][0], 2);
+        { Diagonal grip lines (three short lines suggesting resize) }
+        wins[id].grip_line1 := lv_line_create(wins[id].resize_grip);
+        lv_obj_set_style_line_color(wins[id].grip_line1, lv_color_make(120, 125, 140), 0);
+        lv_obj_set_style_line_width(wins[id].grip_line1, 1, 0);
+        lv_obj_set_style_line_opa(wins[id].grip_line1, 180, 0);
+        lv_line_set_points(wins[id].grip_line1, @grip_pts[0][0], 2);
 
-    wins[id].grip_line2 := lv_line_create(wins[id].resize_grip);
-    lv_obj_set_style_line_color(wins[id].grip_line2, lv_color_make(120, 125, 140), 0);
-    lv_obj_set_style_line_width(wins[id].grip_line2, 1, 0);
-    lv_obj_set_style_line_opa(wins[id].grip_line2, 180, 0);
-    lv_line_set_points(wins[id].grip_line2, @grip_pts[1][0], 2);
+        wins[id].grip_line2 := lv_line_create(wins[id].resize_grip);
+        lv_obj_set_style_line_color(wins[id].grip_line2, lv_color_make(120, 125, 140), 0);
+        lv_obj_set_style_line_width(wins[id].grip_line2, 1, 0);
+        lv_obj_set_style_line_opa(wins[id].grip_line2, 180, 0);
+        lv_line_set_points(wins[id].grip_line2, @grip_pts[1][0], 2);
 
-    wins[id].grip_line3 := lv_line_create(wins[id].resize_grip);
-    lv_obj_set_style_line_color(wins[id].grip_line3, lv_color_make(120, 125, 140), 0);
-    lv_obj_set_style_line_width(wins[id].grip_line3, 1, 0);
-    lv_obj_set_style_line_opa(wins[id].grip_line3, 180, 0);
-    lv_line_set_points(wins[id].grip_line3, @grip_pts[2][0], 2);
+        wins[id].grip_line3 := lv_line_create(wins[id].resize_grip);
+        lv_obj_set_style_line_color(wins[id].grip_line3, lv_color_make(120, 125, 140), 0);
+        lv_obj_set_style_line_width(wins[id].grip_line3, 1, 0);
+        lv_obj_set_style_line_opa(wins[id].grip_line3, 180, 0);
+        lv_line_set_points(wins[id].grip_line3, @grip_pts[2][0], 2);
 
-    { Grip events }
-    lv_obj_add_event_cb(wins[id].resize_grip, @grip_press_cb, LV_EVENT_PRESSED, nil);
-    lv_obj_add_event_cb(wins[id].resize_grip, @grip_pressing_cb, LV_EVENT_PRESSING, nil);
-    lv_obj_add_event_cb(wins[id].resize_grip, @grip_release_cb, LV_EVENT_RELEASED, nil);
-    lv_obj_add_event_cb(wins[id].resize_grip, @grip_release_cb, LV_EVENT_PRESS_LOST, nil);
+        { Grip events }
+        lv_obj_add_event_cb(wins[id].resize_grip, @grip_press_cb, LV_EVENT_PRESSED, nil);
+        lv_obj_add_event_cb(wins[id].resize_grip, @grip_pressing_cb, LV_EVENT_PRESSING, nil);
+        lv_obj_add_event_cb(wins[id].resize_grip, @grip_release_cb, LV_EVENT_RELEASED, nil);
+        lv_obj_add_event_cb(wins[id].resize_grip, @grip_release_cb, LV_EVENT_PRESS_LOST, nil);
+    end;
 
     { ---- Store record ---- }
     wins[id].state        := wsOpen;
@@ -710,7 +716,17 @@ begin
 
     debug.tracer.pop_trace;
 
-    createWindow := id;
+    createWindowInternal := id;
+end;
+
+function createWindow(title: pchar; x, y, w, h: sint32; closeCB: TWinCloseCallback; cursor: Plv_obj): uint32;
+begin
+    createWindow := createWindowInternal(title, x, y, w, h, closeCB, cursor, true);
+end;
+
+function createFixedWindow(title: pchar; x, y, w, h: sint32; closeCB: TWinCloseCallback; cursor: Plv_obj): uint32;
+begin
+    createFixedWindow := createWindowInternal(title, x, y, w, h, closeCB, cursor, false);
 end;
 
 { ============================================================
@@ -722,6 +738,27 @@ begin
     if (win_id < 1) or (win_id > MAX_WINDOWS) then exit;
     if wins[win_id].state = wsNone then exit;
     getWindowContent := wins[win_id].content;
+end;
+
+procedure fitWindowHeight(win_id: uint32; max_h: sint32);
+var
+    content : Plv_obj;
+    height  : sint32;
+begin
+    if not isWindowOpen(win_id) then exit;
+    if wins[win_id].state <> wsOpen then exit;
+    if max_h < WIN_TITLEBAR_H then exit;
+
+    content := wins[win_id].content;
+    lv_obj_set_height(content, LV_SIZE_CONTENT);
+    lv_obj_update_layout(content);
+    height := lv_obj_get_height(content) + WIN_TITLEBAR_H;
+    if height > max_h then height := max_h;
+
+    wins[win_id].win_h := height;
+    lv_obj_set_height(content, height - WIN_TITLEBAR_H);
+    lv_obj_set_height(wins[win_id].frame, height);
+    repositionGrip(win_id);
 end;
 
 { ============================================================
