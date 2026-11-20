@@ -359,6 +359,9 @@ var
     info      : TKeyInfo;
 begin
     modifiers := kb^.ReportBuf[0];
+    if (modifiers AND (not kb^.PrevReport[0]) AND (KB_MOD_LGUI OR KB_MOD_RGUI)) <> 0 then
+        driver.hid.keyboard.reportWindowsKey;
+
     shifted := ((modifiers AND KB_MOD_LSHIFT) <> 0) or
                ((modifiers AND KB_MOD_RSHIFT) <> 0);
 

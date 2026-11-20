@@ -31,7 +31,7 @@ procedure relayout;
 implementation
 
 uses
-    io.syslog, core.ds.lists, memory.heap;
+    io.syslog, core.ds.lists, memory.heap, driver.hid.keyboard;
 
 const
     DOCK_HEIGHT   = 48;
@@ -40,19 +40,25 @@ const
     DOCK_RADIUS   = 16;
     DOCK_ITEM_H   = 36;
 
-    SEARCH_W      = 220;
     SEARCH_RADIUS = 16;
 
-    RESULTS_W     = SEARCH_W;
-    RESULTS_ROW_H = 36;
-    RESULTS_MAX_VISIBLE = 6;
-    RESULTS_PAD   = 6;
-    RESULTS_ROW_GAP = 2;
+    RESULTS_W     = 280;
+    RESULTS_H     = 296;
+    RESULTS_ROW_H = 38;
+    RESULTS_PAD   = 8;
+    RESULTS_SCROLLBAR_W = 4;
     RESULTS_BORDER = 1;
     RESULTS_DOCK_GAP = 6;
+    RESULTS_FOOTER_H = 44;
+
+    MENU_SHUTDOWN = 1;
+    MENU_RESTART  = 2;
+    MENU_CONSOLE  = 3;
 
     SYSINFO_W     = 480;
-    SYSINFO_H     = 560;
+    SYSINFO_PAD   = 20;
+    SYSINFO_SCROLLBAR_W = 6;
+    SYSINFO_SCROLLBAR_INSET = 2;
 
 { ---- Program registry ---- }
 type
@@ -76,11 +82,10 @@ var
 
     { Results popup }
     results_panel : Plv_obj;
-    result_btns   : array[0..RESULTS_MAX_VISIBLE-1] of Plv_obj;
-    result_lbls   : array[0..RESULTS_MAX_VISIBLE-1] of Plv_obj;
-    result_prog   : array[0..RESULTS_MAX_VISIBLE-1] of uint32;
-    results_visible : uint32;
-    results_open  : boolean;
+    results_list  : Plv_obj;
+    empty_label   : Plv_obj;
+    first_result  : PProgEntry;
+    console_launch: TProgLaunchProc;
 
     { System Info window }
     sysinfo_win_id : uint32;
@@ -104,6 +109,8 @@ begin
     entry^.name   := name;
     entry^.launch := launcher;
     entry^.active := true;
+    if stringEqualsCI(name, 'Terminal') then
+        console_launch := launcher;
 end;
 
 { ============================================================
@@ -148,7 +155,7 @@ end;
 { ============================================================
   Add a row: "LABEL: VALUE" to a parent container
   ============================================================ }
-procedure addInfoRow(parent: Plv_obj; row_w: sint32; key: pchar; value: pchar);
+procedure addInfoRow(parent: Plv_obj; key: pchar; value: pchar);
 var
     row      : Plv_obj;
     lbl_key  : Plv_obj;
@@ -156,7 +163,7 @@ var
 begin
     row := lv_obj_create(parent);
     lv_obj_remove_style_all(row);
-    lv_obj_set_size(row, row_w - 40, 22);
+    lv_obj_set_size(row, lv_pct(100), 22);
     lv_obj_set_style_pad_all(row, 0, 0);
     lv_obj_remove_flag(row, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_style_layout(row, LV_LAYOUT_FLEX, 0);
@@ -190,13 +197,13 @@ end;
 { ============================================================
   Thin horizontal separator line
   ============================================================ }
-procedure addSeparator(parent: Plv_obj; row_w: sint32);
+procedure addSeparator(parent: Plv_obj);
 var
     sep : Plv_obj;
 begin
     sep := lv_obj_create(parent);
     lv_obj_remove_style_all(sep);
-    lv_obj_set_size(sep, row_w - 40, 1);
+    lv_obj_set_size(sep, lv_pct(100), 1);
     lv_obj_set_style_bg_color(sep, lv_color_make(60, 65, 85), 0);
     lv_obj_set_style_bg_opa(sep, LV_OPA_COVER, 0);
     lv_obj_remove_flag(sep, LV_OBJ_FLAG_SCROLLABLE);
@@ -234,23 +241,21 @@ end;
 procedure openSysInfo;
 var
     scr_w, scr_h : sint32;
-    wx, wy       : sint32;
+    max_h        : sint32;
     content      : Plv_obj;
     instr_box    : Plv_obj;
     mem_str, res_str, cpu_str, clk_str : pchar;
-    cw           : sint32;
-    badge_h      : sint32;
+    frame        : Plv_obj;
 begin
     if driver.video.windows.isWindowOpen(sysinfo_win_id) then exit;
 
     scr_w := sint32(driver.video.frontBufferWidth);
     scr_h := sint32(driver.video.frontBufferHeight);
-    wx := (scr_w - SYSINFO_W) div 2;
-    wy := (scr_h - SYSINFO_H) div 2 - 30;
+    max_h := scr_h - DOCK_HEIGHT - DOCK_MARGIN * 3;
 
-    sysinfo_win_id := driver.video.windows.createWindow(
+    sysinfo_win_id := driver.video.windows.createFixedWindow(
         'System Information',
-        wx, wy, SYSINFO_W, SYSINFO_H,
+        (scr_w - SYSINFO_W) div 2, DOCK_MARGIN, SYSINFO_W, max_h,
         @sysinfo_close_handler,
         cursor_obj
     );
@@ -258,49 +263,52 @@ begin
     content := driver.video.windows.getWindowContent(sysinfo_win_id);
     if content = nil then exit;
 
-    cw := SYSINFO_W;
+    lv_obj_set_style_pad_left(content, SYSINFO_PAD, 0);
+    lv_obj_set_style_pad_right(content, SYSINFO_PAD + SYSINFO_SCROLLBAR_W + SYSINFO_SCROLLBAR_INSET, 0);
+    lv_obj_set_style_width(content, SYSINFO_SCROLLBAR_W, LV_PART_SCROLLBAR);
+    lv_obj_set_style_pad_right(content, SYSINFO_SCROLLBAR_INSET, LV_PART_SCROLLBAR);
+    lv_obj_set_scroll_dir(content, LV_DIR_VER);
 
     { ---- System Information ---- }
     addSectionHeader(content, 'System Information');
 
     cpu_str := @arch.x86.cpu.CPUID.Identifier[0];
-    addInfoRow(content, cw, 'CPU Vendor', cpu_str);
+    addInfoRow(content, 'CPU Vendor', cpu_str);
     clk_str := stringConcat(intToString(arch.x86.cpu.CPUID.ClockSpeed.MHz), ' MHz');
-    addInfoRow(content, cw, 'CPU Clock', clk_str);
+    addInfoRow(content, 'CPU Clock', clk_str);
     mem_str := stringConcat(intToString(((multibootinfo^.mem_upper + 1000) div 1024) + 1), ' MB');
-    addInfoRow(content, cw, 'Memory', mem_str);
+    addInfoRow(content, 'Memory', mem_str);
     res_str := stringConcat(intToString(driver.video.frontBufferWidth), 'x');
     res_str := stringConcat(res_str, intToString(driver.video.frontBufferHeight));
     res_str := stringConcat(res_str, 'x');
     res_str := stringConcat(res_str, intToString(driver.video.frontBufferBpp));
-    addInfoRow(content, cw, 'Resolution', res_str);
-    addInfoRow(content, cw, 'Graphics', driver.video.gpu.activeDriverName);
+    addInfoRow(content, 'Resolution', res_str);
+    addInfoRow(content, 'Graphics', driver.video.gpu.activeDriverName);
 
-    addSeparator(content, cw);
+    addSeparator(content);
 
     { ---- OS Information ---- }
     addSectionHeader(content, 'OS Information');
 
-    addInfoRow(content, cw, 'Kernel Version', core.version.VERSION);
-    addInfoRow(content, cw, 'Line Count', intToString(core.version.LINE_COUNT));
-    addInfoRow(content, cw, 'File Count', intToString(core.version.FILE_COUNT));
-    addInfoRow(content, cw, 'Driver Count', intToString(core.version.DRIVER_COUNT));
-    addInfoRow(content, cw, 'FPC Version', core.version.FPC_VERSION);
-    addInfoRow(content, cw, 'NASM Version', core.version.NASM_VERSION);
-    addInfoRow(content, cw, 'Make Version', core.version.MAKE_VERSION);
-    addInfoRow(content, cw, 'GUI Toolkit', 'LVGL 9.2.2');
-    addInfoRow(content, cw, 'Compilation Time', core.version.COMPILE_TIME);
-    addInfoRow(content, cw, 'Compilation Date', core.version.COMPILE_DATE);
+    addInfoRow(content, 'Kernel Version', core.version.VERSION);
+    addInfoRow(content, 'Line Count', intToString(core.version.LINE_COUNT));
+    addInfoRow(content, 'File Count', intToString(core.version.FILE_COUNT));
+    addInfoRow(content, 'Driver Count', intToString(core.version.DRIVER_COUNT));
+    addInfoRow(content, 'FPC Version', core.version.FPC_VERSION);
+    addInfoRow(content, 'NASM Version', core.version.NASM_VERSION);
+    addInfoRow(content, 'Make Version', core.version.MAKE_VERSION);
+    addInfoRow(content, 'GUI Toolkit', 'LVGL 9.2.2');
+    addInfoRow(content, 'Compilation Time', core.version.COMPILE_TIME);
+    addInfoRow(content, 'Compilation Date', core.version.COMPILE_DATE);
 
-    addSeparator(content, cw);
+    addSeparator(content);
 
     { ---- Supported CPU Instructions ---- }
     addSectionHeader(content, 'Supported CPU Instructions');
 
     instr_box := lv_obj_create(content);
     lv_obj_remove_style_all(instr_box);
-    lv_obj_set_width(instr_box, cw - 40);
-    lv_obj_set_height(instr_box, 800);  { temporary large height for wrapping }
+    lv_obj_set_size(instr_box, lv_pct(100), LV_SIZE_CONTENT);
     lv_obj_set_style_layout(instr_box, LV_LAYOUT_FLEX, 0);
     lv_obj_set_flex_flow(instr_box, LV_FLEX_FLOW_ROW_WRAP);
     lv_obj_set_style_pad_row(instr_box, 4, 0);
@@ -315,7 +323,7 @@ begin
     if arch.x86.cpu.CPUID.Capabilities0^.TSC     then addBadge(instr_box, 'TSC');
     if arch.x86.cpu.CPUID.Capabilities0^.MSR     then addBadge(instr_box, 'MSR');
     if arch.x86.cpu.CPUID.Capabilities0^.PAE     then addBadge(instr_box, 'PAE');
-    if arch.x86.cpu.CPUID.Capabilities0^.MCE     then addBadge(instr_box, 'arch.x86.fault.mce');
+    if arch.x86.cpu.CPUID.Capabilities0^.MCE     then addBadge(instr_box, 'MCE');
     if arch.x86.cpu.CPUID.Capabilities0^.CX8     then addBadge(instr_box, 'CX8');
     if arch.x86.cpu.CPUID.Capabilities0^.APIC    then addBadge(instr_box, 'APIC');
     if arch.x86.cpu.CPUID.Capabilities0^.SEP     then addBadge(instr_box, 'SEP');
@@ -368,13 +376,10 @@ begin
     if arch.x86.cpu.CPUID.Capabilities1^.AVX     then addBadge(instr_box, 'AVX');
     if arch.x86.cpu.CPUID.Capabilities1^.RDRAND  then addBadge(instr_box, 'RDRAND');
 
-    { Force layout so wrapped row heights are resolved,
-      then set instr_box to its actual content height. }
-    lv_obj_update_layout(lv_screen_active);
-    badge_h := lv_obj_get_self_height(instr_box);
-
-    if badge_h > 0 then
-        lv_obj_set_height(instr_box, badge_h);
+    driver.video.windows.fitWindowHeight(sysinfo_win_id, max_h);
+    frame := driver.video.windows.getWindowFrame(sysinfo_win_id);
+    lv_obj_update_layout(frame);
+    lv_obj_set_y(frame, DOCK_MARGIN + (max_h - lv_obj_get_height(frame)) div 2);
 end;
 
 { ============================================================
@@ -398,195 +403,219 @@ end;
 { ============================================================
   Results popup — create / destroy / filter
   ============================================================ }
-procedure result_btn_cb(e: Plv_event); cdecl;
-var
-    code   : uint32;
-    target : Plv_obj;
-    i, pi  : uint32;
-    entry  : PProgEntry;
+procedure launchResult(entry: PProgEntry);
 begin
-    code := lv_event_get_code(e);
-    if code <> LV_EVENT_CLICKED then exit;
-    target := lv_event_get_target(e);
+    if entry = nil then exit;
+    if not entry^.active then exit;
+    clearAndClose;
+    entry^.launch;
+end;
 
-    for i := 0 to RESULTS_MAX_VISIBLE - 1 do begin
-        if result_btns[i] = target then begin
-            pi := result_prog[i];
-            if (programs <> nil) and (pi < LL_Size(programs)) then begin
-                entry := PProgEntry(LL_Get(programs, pi));
-                if (entry <> nil) and entry^.active then begin
-                    io.syslog.logln('Desktop', 'Launching program');
-                    clearAndClose;
-                    entry^.launch;
-                end;
+procedure result_btn_cb(e: Plv_event); cdecl;
+begin
+    launchResult(PProgEntry(lv_event_get_user_data(e)));
+end;
+
+procedure footer_btn_cb(e: Plv_event); cdecl;
+begin
+    case uint32(lv_event_get_user_data(e)) of
+        MENU_RESTART:
+            resetSystem;
+        MENU_CONSOLE:
+            if Assigned(console_launch) then begin
+                clearAndClose;
+                console_launch;
             end;
-            exit;
-        end;
     end;
 end;
 
-function resultsPanelHeight(rows: sint32): sint32;
+procedure createFooterButton(footer: Plv_obj; icon: pchar; action: uint32);
+var
+    btn, lbl: Plv_obj;
 begin
-    resultsPanelHeight := rows * RESULTS_ROW_H +
-        (rows - 1) * RESULTS_ROW_GAP + 2 * (RESULTS_PAD + RESULTS_BORDER);
+    btn := lv_button_create(footer);
+    lv_obj_remove_style_all(btn);
+    lv_obj_set_size(btn, 0, lv_pct(100));
+    lv_obj_set_flex_grow(btn, 1);
+    lv_obj_set_style_radius(btn, 8, 0);
+    lv_obj_set_style_bg_opa(btn, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(btn, lv_color_make(40, 44, 58), 0);
+    lv_obj_set_style_bg_color(btn, lv_color_make(58, 64, 84), LV_STATE_PRESSED);
+    lbl := lv_label_create(btn);
+    lv_label_set_text(lbl, icon);
+    lv_obj_set_style_text_font(lbl, @lv_font_fa_solid_16, 0);
+    lv_obj_set_style_text_color(lbl, lv_color_make(190, 201, 230), 0);
+    lv_obj_center(lbl);
+
+    if (action = MENU_SHUTDOWN) or ((action = MENU_CONSOLE) and not Assigned(console_launch)) then begin
+        lv_obj_add_state(btn, LV_STATE_DISABLED);
+        lv_obj_set_style_opa(btn, 110, 0);
+    end else
+        lv_obj_add_event_cb(btn, @footer_btn_cb, LV_EVENT_CLICKED, pointer(action));
 end;
 
 procedure createResultsPanel;
 var
-    scr      : Plv_obj;
-    dock_x   : sint32;
-    panel_h  : sint32;
-    i        : uint32;
+    footer, btn, lbl: Plv_obj;
+    i, count: uint32;
+    entry: PProgEntry;
 begin
-    if results_open then exit;
+    if results_panel <> nil then exit;
 
-    scr := lv_screen_active;
-    dock_x := lv_obj_get_x(dock);
-    panel_h := resultsPanelHeight(RESULTS_MAX_VISIBLE);
-
-    results_panel := lv_obj_create(scr);
+    results_panel := lv_obj_create(lv_screen_active);
     lv_obj_remove_style_all(results_panel);
-    lv_obj_set_size(results_panel, RESULTS_W, panel_h);
-    { Align results panel with the search textarea }
-    lv_obj_set_x(results_panel, dock_x + 12);
+    lv_obj_set_size(results_panel, RESULTS_W, RESULTS_H);
+    lv_obj_set_pos(results_panel, lv_obj_get_x(dock) + 12,
+        lv_obj_get_y(dock) - RESULTS_H - RESULTS_DOCK_GAP);
     lv_obj_set_style_bg_color(results_panel, lv_color_make(30, 33, 45), 0);
-    lv_obj_set_style_bg_opa(results_panel, 240, 0);
-    lv_obj_set_style_radius(results_panel, 12, 0);
+    lv_obj_set_style_bg_opa(results_panel, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(results_panel, 14, 0);
     lv_obj_set_style_border_width(results_panel, RESULTS_BORDER, 0);
     lv_obj_set_style_border_color(results_panel, lv_color_make(70, 75, 100), 0);
     lv_obj_set_style_border_opa(results_panel, 160, 0);
     lv_obj_set_style_shadow_width(results_panel, 12, 0);
     lv_obj_set_style_shadow_color(results_panel, lv_color_make(0, 0, 0), 0);
     lv_obj_set_style_shadow_opa(results_panel, 140, 0);
-    lv_obj_set_style_shadow_offset_y(results_panel, -2, 0);
-    lv_obj_set_style_pad_left(results_panel, RESULTS_PAD, 0);
-    lv_obj_set_style_pad_right(results_panel, RESULTS_PAD, 0);
-    lv_obj_set_style_pad_top(results_panel, RESULTS_PAD, 0);
-    lv_obj_set_style_pad_bottom(results_panel, RESULTS_PAD, 0);
-    lv_obj_set_style_layout(results_panel, LV_LAYOUT_FLEX, 0);
+    lv_obj_set_style_pad_all(results_panel, RESULTS_PAD, 0);
+    lv_obj_set_style_pad_row(results_panel, RESULTS_PAD, 0);
     lv_obj_set_flex_flow(results_panel, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_row(results_panel, RESULTS_ROW_GAP, 0);
     lv_obj_remove_flag(results_panel, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_scrollbar_mode(results_panel, LV_SCROLLBAR_MODE_OFF);
-    lv_obj_remove_flag(results_panel, LV_OBJ_FLAG_CLICKABLE);
 
-    for i := 0 to RESULTS_MAX_VISIBLE - 1 do begin
-        result_btns[i] := lv_button_create(results_panel);
-        lv_obj_remove_style_all(result_btns[i]);
-        lv_obj_set_size(result_btns[i], RESULTS_W - 2 * (RESULTS_PAD + RESULTS_BORDER), RESULTS_ROW_H);
-        lv_obj_set_style_bg_color(result_btns[i], lv_color_make(45, 50, 70), 0);
-        lv_obj_set_style_bg_opa(result_btns[i], 0, 0);
-        lv_obj_set_style_radius(result_btns[i], 8, 0);
-        lv_obj_set_style_pad_left(result_btns[i], 12, 0);
-        lv_obj_set_style_border_width(result_btns[i], 0, 0);
-        lv_obj_set_style_shadow_width(result_btns[i], 0, 0);
-        lv_obj_add_flag(result_btns[i], LV_OBJ_FLAG_CLICKABLE);
-        lv_obj_set_style_layout(result_btns[i], LV_LAYOUT_FLEX, 0);
-        lv_obj_set_flex_flow(result_btns[i], LV_FLEX_FLOW_ROW);
-        lv_obj_set_flex_align(result_btns[i], LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    results_list := lv_obj_create(results_panel);
+    lv_obj_remove_style_all(results_list);
+    lv_obj_set_size(results_list, lv_pct(100), 0);
+    lv_obj_set_flex_grow(results_list, 1);
+    lv_obj_set_flex_flow(results_list, LV_FLEX_FLOW_COLUMN);
+    { Leave the same gap on either side of the scrollbar. }
+    lv_obj_set_style_pad_left(results_list, 5, 0);
+    lv_obj_set_style_pad_right(results_list, RESULTS_PAD + RESULTS_SCROLLBAR_W, 0);
+    lv_obj_set_scroll_dir(results_list, LV_DIR_VER);
+    lv_obj_set_scrollbar_mode(results_list, LV_SCROLLBAR_MODE_ON);
+    lv_obj_set_style_width(results_list, RESULTS_SCROLLBAR_W, LV_PART_SCROLLBAR);
+    lv_obj_set_style_radius(results_list, 2, LV_PART_SCROLLBAR);
+    lv_obj_set_style_bg_color(results_list, lv_color_make(105, 115, 145), LV_PART_SCROLLBAR);
+    lv_obj_set_style_bg_opa(results_list, LV_OPA_COVER, LV_PART_SCROLLBAR);
 
-        result_lbls[i] := lv_label_create(result_btns[i]);
-        lv_label_set_text(result_lbls[i], '');
-        lv_obj_set_style_text_color(result_lbls[i], lv_color_make(210, 215, 235), 0);
-        lv_obj_set_style_text_font(result_lbls[i], @lv_font_montserrat_14, 0);
+    empty_label := lv_label_create(results_list);
+    lv_label_set_text(empty_label, 'No matching applications');
+    lv_obj_set_width(empty_label, lv_pct(100));
+    lv_obj_set_style_text_align(empty_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_font(empty_label, @lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(empty_label, lv_color_make(165, 173, 198), 0);
+    lv_obj_set_style_pad_all(empty_label, 12, 0);
 
-        result_prog[i] := $FFFFFFFF;
+    if programs <> nil then begin
+        count := LL_Size(programs);
+        for i := 1 to count do begin
+            entry := PProgEntry(LL_Get(programs, i - 1));
+            if entry = nil then continue;
 
-        lv_obj_add_event_cb(result_btns[i], @result_btn_cb, LV_EVENT_CLICKED, nil);
+            btn := lv_button_create(results_list);
+            lv_obj_remove_style_all(btn);
+            lv_obj_set_size(btn, lv_pct(100), RESULTS_ROW_H);
+            lv_obj_set_style_border_width(btn, 1, 0);
+            lv_obj_set_style_border_color(btn, lv_color_make(67, 73, 94), 0);
+            lv_obj_set_style_pad_left(btn, 1, 0);
+            lv_obj_set_style_pad_right(btn, 1, 0);
+            lv_obj_set_user_data(btn, entry);
+            lv_obj_add_event_cb(btn, @result_btn_cb, LV_EVENT_CLICKED, entry);
 
-        lv_obj_add_flag(result_btns[i], LV_OBJ_FLAG_HIDDEN);
+            lbl := lv_label_create(btn);
+            lv_label_set_text(lbl, entry^.name);
+            lv_obj_set_width(lbl, lv_pct(100));
+            lv_label_set_long_mode(lbl, LV_LABEL_LONG_DOT);
+            lv_obj_set_style_text_color(lbl, lv_color_make(210, 215, 235), 0);
+            lv_obj_set_style_text_font(lbl, @lv_font_montserrat_14, 0);
+            lv_obj_set_style_text_align(lbl, LV_TEXT_ALIGN_LEFT, 0);
+            lv_obj_center(lbl);
+        end;
     end;
 
-    results_visible := 0;
-    results_open := true;
+    footer := lv_obj_create(results_panel);
+    lv_obj_remove_style_all(footer);
+    lv_obj_set_size(footer, lv_pct(100), RESULTS_FOOTER_H);
+    lv_obj_set_flex_flow(footer, LV_FLEX_FLOW_ROW);
+    lv_obj_set_style_pad_column(footer, 6, 0);
+    lv_obj_set_style_pad_top(footer, 6, 0);
+    lv_obj_set_style_border_width(footer, 1, 0);
+    lv_obj_set_style_border_side(footer, LV_BORDER_SIDE_TOP, 0);
+    lv_obj_set_style_border_color(footer, lv_color_make(67, 73, 94), 0);
+    lv_obj_remove_flag(footer, LV_OBJ_FLAG_SCROLLABLE);
+    createFooterButton(footer, #$EF#$80#$91, MENU_SHUTDOWN);
+    createFooterButton(footer, #$EF#$8B#$B9, MENU_RESTART);
+    createFooterButton(footer, #$EF#$84#$A0, MENU_CONSOLE);
+
+    lv_obj_move_foreground(cursor_obj);
 end;
 
 procedure destroyResultsPanel;
 begin
-    if not results_open then exit;
-    if results_panel <> nil then begin
-        lv_obj_delete(results_panel);
-        results_panel := nil;
-    end;
-    results_open := false;
-    results_visible := 0;
+    if results_panel = nil then exit;
+    lv_obj_delete(results_panel);
+    results_panel := nil;
+    results_list := nil;
+    empty_label := nil;
+    first_result := nil;
 end;
 
-{ ============================================================
-  Filter results based on current textarea text
-  ============================================================ }
 procedure filterResults;
 var
-    query   : pchar;
-    i, vis  : uint32;
-    panel_h : sint32;
-    fentry  : PProgEntry;
+    query: pchar;
+    i, count: sint32;
+    btn: Plv_obj;
+    entry: PProgEntry;
 begin
-    if not results_open then exit;
     if results_panel = nil then exit;
-
     query := lv_textarea_get_text(search_ta);
+    first_result := nil;
 
-    vis := 0;
-    if programs <> nil then begin
-        for i := 0 to LL_Size(programs) - 1 do begin
-            if vis >= RESULTS_MAX_VISIBLE then break;
-            fentry := PProgEntry(LL_Get(programs, i));
-            if (fentry = nil) or (not fentry^.active) then continue;
-
-            if (query = nil) or (query^ = #0) or stringContainsCI(fentry^.name, query) then begin
-                lv_label_set_text(result_lbls[vis], fentry^.name);
-                result_prog[vis] := i;
-                lv_obj_remove_flag(result_btns[vis], LV_OBJ_FLAG_HIDDEN);
-                inc(vis);
-            end;
-        end;
+    count := sint32(lv_obj_get_child_count(results_list));
+    for i := 1 to count - 1 do begin
+        btn := lv_obj_get_child(results_list, i);
+        entry := PProgEntry(lv_obj_get_user_data(btn));
+        if entry^.active and ((query = nil) or (query^ = #0) or
+            stringContainsCI(entry^.name, query)) then begin
+            lv_obj_remove_flag(btn, LV_OBJ_FLAG_HIDDEN);
+            if first_result = nil then begin
+                first_result := entry;
+                lv_obj_set_style_border_side(btn, LV_BORDER_SIDE_NONE, 0);
+            end else
+                lv_obj_set_style_border_side(btn, LV_BORDER_SIDE_TOP, 0);
+        end else
+            lv_obj_add_flag(btn, LV_OBJ_FLAG_HIDDEN);
     end;
 
-    results_visible := vis;
-
-    { Hide remaining slots }
-    while vis < RESULTS_MAX_VISIBLE do begin
-        lv_obj_add_flag(result_btns[vis], LV_OBJ_FLAG_HIDDEN);
-        result_prog[vis] := $FFFFFFFF;
-        inc(vis);
-    end;
-
-    if results_visible = 0 then begin
-        lv_obj_add_flag(results_panel, LV_OBJ_FLAG_HIDDEN);
-        exit;
-    end;
-
-    { Move the top edge with the height change to keep the bottom edge anchored. }
-    panel_h := resultsPanelHeight(sint32(results_visible));
-    lv_obj_set_height(results_panel, panel_h);
-    lv_obj_set_y(results_panel, lv_obj_get_y(dock) - panel_h - RESULTS_DOCK_GAP);
-    lv_obj_remove_flag(results_panel, LV_OBJ_FLAG_HIDDEN);
+    if first_result = nil then
+        lv_obj_remove_flag(empty_label, LV_OBJ_FLAG_HIDDEN)
+    else
+        lv_obj_add_flag(empty_label, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_scroll_to_y(results_list, 0, LV_ANIM_OFF);
 end;
 
 { ============================================================
   Search textarea event handler
   ============================================================ }
+procedure openAppMenu;
+begin
+    if not search_active then begin
+        search_active := true;
+        lv_obj_set_style_bg_opa(search_ta, LV_OPA_COVER, LV_PART_CURSOR);
+        lv_obj_set_style_anim_duration(search_ta, 400, LV_PART_CURSOR);
+        lv_group_add_obj(lvgl_get_kb_group, search_ta);
+        createResultsPanel;
+        filterResults;
+    end;
+    lv_group_focus_obj(search_ta);
+end;
+
 procedure search_event_cb(e: Plv_event); cdecl;
 var
     code   : uint32;
-    rentry : PProgEntry;
 begin
     code := lv_event_get_code(e);
 
-    if code = LV_EVENT_CLICKED then begin
-        { User clicked the search box — activate search }
-        if not search_active then begin
-            search_active := true;
-            { Enable cursor blink, show cursor, and driver.hid.keyboard input }
-            lv_obj_set_style_bg_opa(search_ta, LV_OPA_COVER, LV_PART_CURSOR);
-            lv_obj_set_style_anim_duration(search_ta, 400, LV_PART_CURSOR);
-            lv_group_add_obj(lvgl_get_kb_group, search_ta);
-            lv_group_focus_obj(search_ta);
-            createResultsPanel;
-            filterResults;
-        end;
-    end
+    if code = LV_EVENT_CLICKED then
+        openAppMenu
     else if code = LV_EVENT_VALUE_CHANGED then begin
         { Text changed — only filter if search is active }
         if search_active then begin
@@ -594,18 +623,8 @@ begin
             filterResults;
         end;
     end
-    else if code = LV_EVENT_READY then begin
-        { Enter pressed (one-line textarea) — launch first result }
-        if results_visible > 0 then begin
-            if (programs <> nil) and (result_prog[0] < LL_Size(programs)) then begin
-                rentry := PProgEntry(LL_Get(programs, result_prog[0]));
-                if rentry <> nil then begin
-                    clearAndClose;
-                    rentry^.launch;
-                end;
-            end;
-        end;
-    end;
+    else if code = LV_EVENT_READY then
+        launchResult(first_result);
 end;
 
 { ============================================================
@@ -647,7 +666,6 @@ begin
     debug.tracer.push_trace('driver.video.desktop.init.enter');
 
     sysinfo_win_id := 0;
-    results_open   := false;
     results_panel  := nil;
     search_active  := false;
 
@@ -709,7 +727,7 @@ begin
     { ---- Search textarea (LVGL widget, not manual) ---- }
     search_ta := lv_textarea_create(dock);
     lv_obj_remove_style_all(search_ta);
-    lv_obj_set_size(search_ta, SEARCH_W, DOCK_ITEM_H);
+    lv_obj_set_size(search_ta, RESULTS_W, DOCK_ITEM_H);
     lv_textarea_set_one_line(search_ta, true);
     lv_textarea_set_placeholder_text(search_ta, 'Search programs...');
     lv_textarea_set_text(search_ta, '');
@@ -817,6 +835,8 @@ end;
   ============================================================ }
 procedure update;
 begin
+    if takeWindowsKeyPress then
+        openAppMenu;
     updateClockText;
 end;
 
