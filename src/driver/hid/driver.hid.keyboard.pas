@@ -41,11 +41,13 @@ procedure reportKeyEvent(info : TKeyInfo);
 { Queue a Windows key press for the desktop to handle outside the interrupt. }
 procedure reportWindowsKey;
 function takeWindowsKeyPress: boolean;
+function takeTasksShortcut: boolean;
 
 implementation
 
 var
     windows_key_pending : boolean = false;
+    tasks_shortcut_pending : boolean = false;
 
 procedure reportWindowsKey;
 begin
@@ -64,12 +66,24 @@ begin
     captin_hook := proc;
 end;
 
+function takeTasksShortcut: boolean;
+begin
+    if not tasks_shortcut_pending then exit(false);
+    tasks_shortcut_pending := false;
+    takeTasksShortcut := true;
+end;
+
 procedure reportKeyEvent(info : TKeyInfo);
 begin
     { Update global modifier state from the event }
     is_shift := info.SHIFT_DOWN;
     is_ctrl  := info.CTRL_DOWN;
     is_alt   := info.ALT_DOWN;
+
+    if (info.key_code = $7F) and info.CTRL_DOWN and info.ALT_DOWN then begin
+        if info.is_down_code then tasks_shortcut_pending := true;
+        exit;
+    end;
 
     if captin_hook <> nil then
         captin_hook(info);

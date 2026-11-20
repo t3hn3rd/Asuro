@@ -98,6 +98,7 @@ type
         Priority    : uint8;
         Quantum     : uint16;
         TicksUsed   : uint16;
+        CpuTicks    : uint32; { Total PIT ticks charged to this process }
 
         { System messages }
         PendingMsg  : TProcessSysMsg;
