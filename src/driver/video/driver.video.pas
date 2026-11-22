@@ -1,4 +1,5 @@
 //  Copyright 2021 Kieron Morris
+//  Copyright 2026 Aaron Hance
 //
 //  Licensed under the Apache License, Version 2.0 (the "License");
 //  you may not use this file except in compliance with the License.
@@ -30,6 +31,7 @@ procedure DrawPixel(X : uint32; Y : uint32; Pixel : TRGB32);
 procedure DrawLine(x1,y1,x2,y2 : uint32; thickness : uint32; Color : TRGB32);
 procedure DrawRect(x1,y1,x2,y2 : uint32; line_thickness : uint32; Color : TRGB32);
 procedure FillRect(x1,y1,x2,y2 : uint32; line_thickness : uint32; Line_Color : TRGB32; Fill_Color : TRGB32);
+procedure FlushRect(x, y, width, height: uint32);
 procedure Flush();
 procedure reinit(fb_addr : PtrUInt; width, height, pitch : uint32; bpp : uint8);
 
@@ -47,7 +49,7 @@ function frontBufferLocation : PtrUInt;
 
 Procedure basicFDrawTexture(Buffer : PVideoBuffer; X : uint32; Y : uint32; Texture : PTexture);
 
-{ Text drawing — renders 8x16 bitmap font glyphs directly to the
+{ Text drawing - renders 8x16 bitmap font glyphs directly to the
   framebuffer via DrawPixel.  Useful for panic screens and other
   contexts where LVGL is unavailable. }
 function DrawChar(X, Y : uint32; C : char; Color : TRGB32) : uint32;
@@ -207,7 +209,7 @@ var
     DriverMap      : PHashMap;
 
 { ============================================================
-  GPU mode-change callback — reinits front/back buffers
+  GPU mode-change callback - reinits front/back buffers
   ============================================================ }
 procedure videoModeChanged(const info : TGPUModeInfo);
 begin
@@ -296,6 +298,11 @@ begin
     //debug.tracer.push_trace('driver.video.DrawPixel.exit');
 end;
 
+procedure FlushRect(x, y, width, height: uint32);
+begin
+    driver.video.doublebuffer.FlushRect(@VideoInterface.FrontBuffer,
+        @VideoInterface.BackBuffer, x, y, width, height);
+end;
 procedure Flush();
 begin
     //debug.tracer.push_trace('driver.video.Flush.enter');
@@ -359,7 +366,7 @@ begin
 end;
 
 { ============================================================
-  Text drawing — 8x16 bitmap font via Std_Font
+  Text drawing - 8x16 bitmap font via Std_Font
   ============================================================ }
 
 const

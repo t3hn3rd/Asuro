@@ -1689,6 +1689,7 @@ function  lvgl_handler: uint32;
 function  lvgl_get_display: Plv_display;
 procedure lvgl_set_mouse_cursor(cursor: Plv_obj);
 function  lvgl_get_ticks: uint32;
+function  lvgl_get_frame_count: uint32;
 function  lvgl_get_kb_group: Plv_group;
 procedure lvgl_update_resolution(screen_w, screen_h: uint32);
 
@@ -1709,7 +1710,7 @@ function lv_color_make(r, g, b: uint8): lv_color_t;
 implementation
 
 uses
-    proc.types, proc.mgr, arch.common.legacyirq;
+    proc.types, proc.mgr, arch.common.legacyirq, core.clock;
 
 { ============================================================
   Wrappers for LVGL inline/macro functions
@@ -1744,9 +1745,11 @@ var
     kb_indev    : Plv_indev;
     kb_group    : Plv_group;
 
-    { Tick counter — incremented by 1024Hz timer ISR }
+    { PIT fallback when an independent clock is unavailable. }
     tick_accumulator : uint32;
     tick_fraction : uint64;
+    clock_ms: uint64;
+    presented_frames: uint32;
 
     { Keyboard ring buffer for LVGL }
     kb_buf      : array[0..63] of uint32;
@@ -1758,6 +1761,9 @@ var
 
 const
     KB_BUF_SIZE = 64;
+    { LVGL timers use whole milliseconds: 11 ms is the nearest 90 Hz period. }
+    UI_REFRESH_HZ = 90;
+    UI_REFRESH_MS = (1000 + UI_REFRESH_HZ div 2) div UI_REFRESH_HZ;
     { LVGL render buffer: 1/10th of screen }
     LV_BUF_LINES = 120;
 
@@ -1909,6 +1915,12 @@ begin
         end;
     end;
 
+    { Transfer only the region LVGL redrew, while the render lock is held.
+      Partial buffers may flush many times; count only their final part. }
+    driver.video.FlushRect(area^.x1, area^.y1, area_w, area^.y2 - area^.y1 + 1);
+    if lv_display_flush_is_last(disp) then begin
+        inc(presented_frames);
+    end;
     lv_display_flush_ready(disp);
 end;
 
@@ -2045,6 +2057,9 @@ begin
 
     tick_accumulator := 0;
     tick_fraction := 0;
+    presented_frames := 0;
+    if core.clock.prepare then
+        clock_ms := core.clock.nowUS div 1000;
     kb_head := 0;
     kb_tail := 0;
     kb_current_key := 0;
@@ -2063,17 +2078,20 @@ begin
 
     { Create display }
     disp := lv_display_create(sint32(screen_w), sint32(screen_h));
+    lv_timer_set_period(lv_display_get_refr_timer(disp), UI_REFRESH_MS);
     lv_display_set_flush_cb(disp, @lvgl_flush_cb);
     lv_display_set_buffers(disp, lv_buf1, nil,
         lv_buf1_size, LV_DISPLAY_RENDER_MODE_PARTIAL);
 
     { Create driver.hid.mouse input device with read callback }
     mouse_indev := lv_indev_create;
+    lv_timer_set_period(lv_indev_get_read_timer(mouse_indev), UI_REFRESH_MS);
     lv_indev_set_type(mouse_indev, LV_INDEV_TYPE_POINTER);
     lv_indev_set_read_cb(mouse_indev, @lvgl_mouse_read_cb);
 
     { Create driver.hid.keyboard input device with read callback }
     kb_indev := lv_indev_create;
+    lv_timer_set_period(lv_indev_get_read_timer(kb_indev), UI_REFRESH_MS);
     lv_indev_set_type(kb_indev, LV_INDEV_TYPE_KEYPAD);
     lv_indev_set_read_cb(kb_indev, @lvgl_kb_read_cb);
     kb_group := lv_group_create;
@@ -2087,7 +2105,7 @@ begin
     { Hook driver.hid.keyboard driver for key events }
     driver.hid.keyboard.hook(@lvgl_keyboard_hook);
 
-    { Hook 1024Hz timer for accurate LVGL tick }
+    { Retain the PIT clock as a fallback. }
     arch.platform.interrupts.registerTimer(@lvgl_timer_tick);
 
     { Register for GPU mode-change notifications so LVGL resolution updates automatically }
@@ -2132,6 +2150,7 @@ end;
 function lvgl_handler: uint32;
 var
     elapsed: uint32;
+    now_ms: uint64;
     irqFlags: PtrUInt;
     scroll_delta: sint32;
     mx, my: sint32;
@@ -2143,9 +2162,15 @@ begin
     elapsed := tick_accumulator;
     tick_accumulator := 0;
     arch.platform.cpu.unlock(irqFlags);
-    tick_fraction := tick_fraction + uint64(elapsed) * PIT_DIVISOR * 1000;
-    elapsed := tick_fraction div PIT_INPUT_HZ;
-    tick_fraction := tick_fraction mod PIT_INPUT_HZ;
+    if core.clock.ready then begin
+        now_ms := core.clock.nowUS div 1000;
+        elapsed := uint32(now_ms - clock_ms);
+        clock_ms := now_ms;
+    end else begin
+        tick_fraction := tick_fraction + uint64(elapsed) * PIT_DIVISOR * 1000;
+        elapsed := tick_fraction div PIT_INPUT_HZ;
+        tick_fraction := tick_fraction mod PIT_INPUT_HZ;
+    end;
     if elapsed > 0 then lv_tick_inc(elapsed);
 
     { Process scroll wheel }
@@ -2186,6 +2211,11 @@ end;
 function lvgl_get_ticks: uint32;
 begin
     lvgl_get_ticks := lv_tick_get;
+end;
+
+function lvgl_get_frame_count: uint32;
+begin
+    lvgl_get_frame_count := presented_frames;
 end;
 
 function lvgl_get_kb_group: Plv_group;

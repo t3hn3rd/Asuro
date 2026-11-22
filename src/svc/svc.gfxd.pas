@@ -3,11 +3,11 @@
 
     Spawns a dedicated render process that loops indefinitely, driving the
     driver.video.desktop, LVGL and driver.video-flush pipeline.  The loop does real work every
-    iteration (especially the 7.3 MB SSE framebuffer copy in driver.video.Flush),
-    which keeps the vCPU active so the NEM/Hyper-V back-end never
-    deschedules it and starves the PIT of interrupts.
+    iteration. LVGL presents only completed frames; polling does not copy
+    unchanged framebuffer contents.
 
     @author(Kieron Morris <kjm@kieronmorris.me>)
+    @author(Aaron Hance <ah@aaronhance.me>)
 }
 unit svc.gfxd;
 
@@ -30,6 +30,7 @@ uses
     proc.mgr,
     proc.types,
     io.syslog,
+    core.clock,
     arch.platform.interrupts;
 
 { Render process entry point — runs as a normal scheduled process with
@@ -38,7 +39,8 @@ uses
   that would trigger pause-loop exits under NEM/Hyper-V). }
 
 const
-    TICKS_PER_FRAME = 32;  { target ticks per frame; adjust as needed to balance refresh rate and CPU usage }
+    POLL_INTERVAL_US = 1000;
+    FALLBACK_TICKS = 8;
 
 var
     LAST_UPDATE : uint32 = 0;
@@ -47,19 +49,24 @@ var
 procedure render_loop(ctx : PProcessContext);
 var
     should_update : boolean;
+    last_poll, now_us: uint64;
 
 begin
+    last_poll := 0;
     while true do begin
-        should_update := (CURRENT_TICK - LAST_UPDATE) >= TICKS_PER_FRAME;
-        should_update := should_update or (CURRENT_TICK < LAST_UPDATE);  { handle tick counter wraparound }
+        if core.clock.ready then begin
+            now_us := core.clock.nowUS;
+            should_update := now_us - last_poll >= POLL_INTERVAL_US;
+        end else
+            should_update := (puint32(@CURRENT_TICK)^ - LAST_UPDATE) >= FALLBACK_TICKS;
         if (should_update) then begin
-            LAST_UPDATE := CURRENT_TICK;
+            if core.clock.ready then last_poll := now_us;
+            LAST_UPDATE := puint32(@CURRENT_TICK)^;
             lvgl_lock;
             driver.video.windows.reapOrphanedWindows;
             driver.video.desktop.update;
             app.uidebug.update;
             lvgl_handler;
-            driver.video.Flush;
             lvgl_unlock;
         end;
         if SHOULD_CRASH then begin

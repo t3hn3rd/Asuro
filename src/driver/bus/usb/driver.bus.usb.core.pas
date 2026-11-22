@@ -1178,6 +1178,12 @@ end;
 
 procedure UnitTest;
 var
+    savedList: PLinkedListBase;
+    fixture, registered: PUSBHCDriver;
+    device: PUSBDevice;
+    slot: PPUSBDevice;
+    beforeFree: SizeUInt;
+    savedIRQ: PtrUInt;
     context : TTestContext;
     setup  : TUSBSetupPacket;
     cfgBuf : Pointer;
@@ -1196,32 +1202,32 @@ begin
     if (HCList <> nil) and (fixture <> nil) and (device <> nil) then begin
         fixture^.Name := 'USB native-pointer fixture';
         registered := register_hc(fixture);
-        Assert(registered <> nil, 'register heap-backed controller');
+        test.harness.Assert(@context, registered <> nil, 'register heap-backed controller');
         if registered <> nil then begin
-            Assert((registered <> fixture) and (get_hc(0) = registered), 'stable controller copy');
+            test.harness.Assert(@context, (registered <> fixture) and (get_hc(0) = registered), 'stable controller copy');
             slot := PPUSBDevice(LL_Add(registered^.Devices));
-            Assert(slot <> nil, 'allocate native device slot');
+            test.harness.Assert(@context, slot <> nil, 'allocate native device slot');
             if slot <> nil then begin
                 slot^ := device;
                 device^.HC := registered;
-                Assert(PPUSBDevice(LL_Get(registered^.Devices, 0))^ = device, 'device slot preserves native pointer');
+                test.harness.Assert(@context, PPUSBDevice(LL_Get(registered^.Devices, 0))^ = device, 'device slot preserves native pointer');
                 usb_remove_device(device);
                 device := nil;
-                Assert(LL_Size(registered^.Devices) = 0, 'device removal detaches slot');
+                test.harness.Assert(@context, LL_Size(registered^.Devices) = 0, 'device removal detaches slot');
             end;
             unregister_hc(registered);
-            Assert(get_hc_count = 0, 'controller removal releases registration');
+            test.harness.Assert(@context, get_hc_count = 0, 'controller removal releases registration');
         end;
         unregister_hc(fixture);
         poll_all;
         usb_check_hotplug;
-        Assert(get_hc(0) = nil, 'empty controller list is safe');
-    end else Assert(false, 'allocate controller fixture');
+        test.harness.Assert(@context, get_hc(0) = nil, 'empty controller list is safe');
+    end else test.harness.Assert(@context, false, 'allocate controller fixture');
     if device <> nil then kfree(void(device));
     if fixture <> nil then kfree(void(fixture));
     if HCList <> nil then LL_Free(HCList);
     HCList := savedList;
-    Assert(lmm_total_free = beforeFree, 'controller fixture releases owned memory');
+    test.harness.Assert(@context, lmm_total_free = beforeFree, 'controller fixture releases owned memory');
     arch.platform.cpu.unlock(savedIRQ);
 
     { === HC list management === }

@@ -48,6 +48,23 @@ begin
     inb := arch.x86_64.util.inb(port);
 end;
 
+function readMSR(index: uint32): uint64; assembler; nostackframe;
+asm
+    mov ecx, edi
+    rdmsr
+    shl rdx, 32
+    or rax, rdx
+end;
+
+function readTimestamp: uint64; assembler; nostackframe;
+asm
+    lfence
+    rdtsc
+    shl rdx, 32
+    or rax, rdx
+    lfence
+end;
+
 procedure copyBytes(source, dest: PtrUInt; bytes: SizeUInt);
 begin
     memory.raw.move(pointer(source), pointer(dest), bytes);
@@ -96,6 +113,14 @@ asm
     mov edx, edi
     xor eax, eax
     in ax, dx
+end;
+
+procedure resetSystem;
+begin
+    asm cli end;
+    while (inb($64) and 2) <> 0 do asm pause end;
+    outb($64, $FE);
+    while true do idle;
 end;
 
 end.

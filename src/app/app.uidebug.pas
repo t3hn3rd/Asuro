@@ -13,13 +13,14 @@
     Toggle with F12 or programmatically via toggle procedure.
 
     @author(Kieron Morris <kjm@kieronmorris.me>)
+    @author(Aaron Hance <ah@aaronhance.me>)
 }
 unit app.uidebug;
 
 interface
 
 uses
-    driver.video.lvgl, driver.video.windows, driver.hid.mouse, driver.video, boot.multiboot, debug.tracer;
+    driver.video.lvgl, driver.video.windows, driver.hid.mouse, driver.video, arch.platform.memory, debug.tracer;
 
 { Call once per frame from the main loop (before lvgl_handler). }
 procedure update;
@@ -70,6 +71,7 @@ var
     frame_count   : uint32;
     last_tick     : uint32;
     current_fps   : uint32;
+    last_label_frame: uint32;
 
 { ============================================================
   Safe 32-bit division (avoids FPC promoting to int64)
@@ -362,12 +364,12 @@ begin
     if overlay = nil then exit;
 
     { ---- FPS calculation ---- }
-    frame_count := frame_count + 1;
     now_tick := lvgl_get_ticks;
 
     if (now_tick - last_tick) >= FPS_INTERVAL then begin
-        current_fps := safeDiv32(frame_count * 8000, now_tick - last_tick);
-        frame_count := 0;
+        current_fps := uint32((uint64(uint32(lvgl_get_frame_count - frame_count)) * 1000) div
+            uint32(now_tick - last_tick));
+        frame_count := lvgl_get_frame_count;
         last_tick := now_tick;
 
         { Record FPS sample in ring buffer }
@@ -411,10 +413,10 @@ begin
     lv_label_set_text(lbl_ticks, @buf[0]);
 
     { ---- Total memory ---- }
-    mem_mb := safeDiv32(multibootinfo^.mem_upper + 1000, 1024) + 1;
+    mem_mb := uint32(arch.platform.memory.totalPhysicalBytes div (1024 * 1024));
     p := bufAppend('Memory: ', 0);
     p := bufAppendInt(mem_mb, p);
-    p := bufAppend(' MB', p);
+    p := bufAppend(' MiB', p);
     lv_label_set_text(lbl_memory, @buf[0]);
 
     { ---- Resolution ---- }
@@ -441,17 +443,23 @@ begin
             destroyOverlay;
             visible := false;
         end else begin
-            frame_count := 0;
+            frame_count := lvgl_get_frame_count;
             last_tick := lvgl_get_ticks;
             current_fps := 0;
             hist_index := 0;
             hist_count := 0;
             createOverlay;
             visible := true;
+            refreshLabels;
+            last_label_frame := lvgl_get_frame_count;
         end;
     end;
-    if visible then
+    { Polling is faster than presentation. Do not rebuild the same labels
+      repeatedly between frames, which adds allocations and invalidations. }
+    if visible and (lvgl_get_frame_count <> last_label_frame) then begin
         refreshLabels;
+        last_label_frame := lvgl_get_frame_count;
+    end;
 end;
 
 procedure toggle;

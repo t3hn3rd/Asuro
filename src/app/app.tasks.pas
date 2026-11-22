@@ -7,7 +7,7 @@ procedure openTasks;
 implementation
 
 uses
-    arch.x86.util, core.util, core.strings, core.ds.lists, memory.heap,
+    arch.platform.cpu, core.util, core.strings, core.ds.lists, memory.heap,
     proc.mgr, proc.types, driver.hid.mouse, driver.video, driver.video.lvgl, driver.video.windows;
 
 const
@@ -69,10 +69,11 @@ var
     i, count : uint32;
     ctx : PProcessContext;
     entry : PTaskInfo;
+    flags : PtrUInt;
 begin
     count := 0;
     entry := entries;
-    asm pushf; cli end;
+    flags := arch.platform.cpu.lock;
     for i := 1 to capacity do begin
         ctx := getProcessByIndex(i - 1);
         if ctx = nil then break;
@@ -83,14 +84,14 @@ begin
         entry^.priority := ctx^.Priority;
         entry^.quantum := ctx^.Quantum;
         entry^.cpu_ticks := ctx^.CpuTicks;
-        entry^.stack_kib := (ctx^.StackTop - uint32(ctx^.StackBase)) div 1024;
+        entry^.stack_kib := (ctx^.StackTop - PtrUInt(ctx^.StackBase)) div 1024;
         entry^.bindings := 0;
         if ctx^.Resources <> nil then
             entry^.bindings := DL_Size(PDList(ctx^.Resources));
         inc(entry);
         inc(count);
     end;
-    asm popf end;
+    arch.platform.cpu.unlock(flags);
     snapshotTasks := count;
 end;
 

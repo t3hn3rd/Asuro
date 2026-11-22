@@ -50,6 +50,19 @@ begin
     inb := arch.x86.util.inb(port);
 end;
 
+function readMSR(index: uint32): uint64; assembler; nostackframe;
+asm
+    mov ecx, eax
+    rdmsr
+end;
+
+function readTimestamp: uint64; assembler; nostackframe;
+asm
+    lfence
+    rdtsc
+    lfence
+end;
+
 procedure copyBytes(source, dest: PtrUInt; bytes: SizeUInt);
 begin
     if bytes >= 16 then arch.x86.util.__REP_MOVSB_memcpy(source, dest, bytes)
@@ -111,6 +124,11 @@ asm
     mov [edi + 12], edx
     pop edi
     pop ebx
+end;
+
+procedure resetSystem;
+begin
+    arch.x86.util.resetSystem;
 end;
 
 end.

@@ -6,7 +6,7 @@ procedure UnitTest;
 procedure init;
 
 implementation
-uses driver.storage.vfs, driver.storage.fs.mgr, driver.storage.fs.fat32, arch.platform.diagnostics, io.stdio, io.syslog, memory.heap, core.util, core.ds.cfifo,
+uses driver.storage.vfs, driver.storage.fs.mgr, driver.storage.fs.fat32, driver.storage.fs.fat32.core, arch.platform.diagnostics, io.stdio, io.syslog, memory.heap, core.util, core.ds.cfifo,
      driver.storage.types, driver.storage.mgr, driver.storage.vol.mbr,
      driver.storage.vol.mgr, driver.storage.fs.fat32.types,
      driver.storage.fs.fat32.vol, driver.storage.fs.fat32.labels, core.strings, test.harness;
@@ -88,7 +88,7 @@ var
             fs^.readOffsetAsyncCallback := nil;
             fs^.writeOffsetAsyncCallback := nil;
         end;
-        FAT32ReleaseVolumeState(volume);
+        FAT32ReleaseVolumeCtx(volume);
         memset(PtrUInt(volume), 0, sizeof(TStorage_Volume));
         volume^.device := device;
         volume^.sectorSize := 512;

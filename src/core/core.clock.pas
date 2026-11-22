@@ -1,6 +1,18 @@
-{ Benchmark time must advance while IRQ delivery is masked.
+// Copyright 2026 Aaron Hance
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+// http://www.apache.org/licenses/LICENSE-2.0
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+{ Monotonic time must advance while IRQ delivery is masked.
   Prefer the fixed-rate Hyper-V reference counter; RTC-calibrated TSC is a fallback. }
-unit driver.storage.bench.clock;
+unit core.clock;
 interface
 function prepare : boolean;
 function ready : boolean;
@@ -9,7 +21,7 @@ function sourceName : pchar;
 function errorReason : pchar;
 procedure UnitTest;
 implementation
-uses arch.x86.util, io.syslog, test.harness;
+uses arch.platform.cpu, io.syslog, test.harness;
 var clockReady, clockBusy, referenceClock : boolean;
     failure : pchar;
     frequency, epoch : uint64;
@@ -24,48 +36,24 @@ begin
         (signature=$31237648) and ((privileges and 2)<>0);
 end;
 function referenceSupported : boolean;
-var cpuECX, cpuEDX, maxLeaf, signature, privileges : uint32;
+var
+    cpu, maximum, signature, privileges: TCPURegisters;
 begin
-    referenceSupported:=false;
-    asm
-        push ebx
-        mov eax,1
-        cpuid
-        mov cpuECX,ecx
-        mov cpuEDX,edx
-        pop ebx
-    end;
-    if ((cpuECX and $80000000)=0) or ((cpuEDX and $20)=0) then exit;
-    asm
-        push ebx
-        mov eax,$40000000
-        cpuid
-        mov maxLeaf,eax
-        mov eax,$40000001
-        cpuid
-        mov signature,eax
-        pop ebx
-    end;
-    if (maxLeaf<$40000003) or (signature<>$31237648) then exit;
-    asm
-        push ebx
-        mov eax,$40000003
-        cpuid
-        mov privileges,eax
-        pop ebx
-    end;
-    referenceSupported:=referenceAvailable(cpuECX,cpuEDX,maxLeaf,signature,privileges);
+    referenceSupported := false;
+    queryCPU(1, 0, cpu);
+    if ((cpu.ecx and $80000000) = 0) or ((cpu.edx and $20) = 0) then exit;
+    queryCPU($40000000, 0, maximum);
+    if maximum.eax < $40000003 then exit;
+    queryCPU($40000001, 0, signature);
+    if signature.eax <> $31237648 then exit;
+    queryCPU($40000003, 0, privileges);
+    referenceSupported := referenceAvailable(cpu.ecx, cpu.edx,
+        maximum.eax, signature.eax, privileges.eax);
 end;
+
 function readReference : uint64;
-var hi, lo : uint32;
 begin
-    asm
-        mov ecx,$40000020
-        rdmsr
-        mov lo,eax
-        mov hi,edx
-    end;
-    readReference:=(uint64(hi) shl 32) or lo;
+    readReference := readMSR($40000020);
 end;
 function referenceUS(value : uint64) : uint64;
 begin referenceUS:=value div 10; end; { reference ticks are 100 ns }
@@ -82,44 +70,23 @@ begin
 end;
 
 function readCycles : uint64;
-var hi, lo : uint32;
 begin
-    { prepare checks SSE2 and invariant TSC before this is ever used. }
-    asm
-        lfence
-        rdtsc
-        mov lo,eax
-        mov hi,edx
-        lfence
-    end;
-    readCycles := (uint64(hi) shl 32) or lo;
+    readCycles := readTimestamp;
 end;
+
 function supported : boolean;
-var basic, extended, features, invariant : uint32;
+var
+    basic, features, extended, invariant: TCPURegisters;
 begin
-    asm
-        push ebx
-        xor eax,eax
-        cpuid
-        mov basic,eax
-        mov eax,1
-        cpuid
-        mov features,edx
-        mov eax,$80000000
-        cpuid
-        mov extended,eax
-        pop ebx
-    end;
     supported := false;
-    if (basic<1) or ((features and $04000010)<>$04000010) or (extended<$80000007) then exit;
-    asm
-        push ebx
-        mov eax,$80000007
-        cpuid
-        mov invariant,edx
-        pop ebx
-    end;
-    supported := (invariant and $100)<>0;
+    queryCPU(0, 0, basic);
+    if basic.eax < 1 then exit;
+    queryCPU(1, 0, features);
+    if (features.edx and $04000010) <> $04000010 then exit;
+    queryCPU($80000000, 0, extended);
+    if extended.eax < $80000007 then exit;
+    queryCPU($80000007, 0, invariant);
+    supported := (invariant.edx and $100) <> 0;
 end;
 function toUS(cycles, hz : uint64) : uint64;
 begin
@@ -138,16 +105,16 @@ begin
     hz := (first+second) div 2; acceptSamples := true;
 end;
 function rtcSecond(var seconds : uint32) : boolean;
-var flags : uint32; before, after, raw, again, mode : uint8;
+var flags : PtrUInt; before, after, raw, again, mode : uint8;
 begin
     { Keep each CMOS index/data transaction together, but never wait under CLI. }
-    asm pushfd; cli; pop flags end;
+    flags := arch.platform.cpu.lock;
     outb($70,$0A); before:=inb($71);
     outb($70,$00); raw:=inb($71);
     outb($70,$00); again:=inb($71);
     outb($70,$0B); mode:=inb($71);
     outb($70,$0A); after:=inb($71);
-    if (flags and $200)<>0 then asm sti end;
+    arch.platform.cpu.unlock(flags);
     rtcSecond := false;
     if (((before or after) and $80)<>0) or (raw<>again) then exit;
     if (mode and 4)<>0 then seconds:=raw
@@ -171,21 +138,21 @@ begin
     end;
 end;
 function prepare : boolean;
-var flags, second, attempt, i : uint32;
+var flags: PtrUInt; second, attempt, i : uint32;
     first, middle, last, hz : uint64; ok : boolean;
 begin
     prepare:=false;
-    asm pushfd; cli; pop flags end;
+    flags := arch.platform.cpu.lock;
     if clockReady then begin
-        if (flags and $200)<>0 then asm sti end;
+        arch.platform.cpu.unlock(flags);
         prepare:=true; exit;
     end;
     if clockBusy then begin
-        if (flags and $200)<>0 then asm sti end;
+        arch.platform.cpu.unlock(flags);
         exit;
     end;
     clockBusy:=true; failure:=nil;
-    if (flags and $200)<>0 then asm sti end;
+    arch.platform.cpu.unlock(flags);
     ok:=false;
     if referenceSupported then begin
         first:=readReference;
@@ -195,9 +162,9 @@ begin
             if last-first>=10 then begin ok:=true; break; end;
         end;
         if ok then begin
-            asm cli end;
+            arch.platform.cpu.lock;
             referenceClock:=true; epoch:=first; clockReady:=true; clockBusy:=false;
-            if (flags and $200)<>0 then asm sti end;
+            arch.platform.cpu.unlock(flags);
             io.syslog.logln('BENCHCLOCK','Using VM reference clock; no calibration.');
             prepare:=true; exit;
         end;
@@ -222,10 +189,10 @@ begin
         end;
         if not ok then failure:='RTC/TSC fallback samples were unstable; retry when the system is idle.';
     end;
-    asm cli end;
+    arch.platform.cpu.lock;
     if ok then begin frequency:=hz; epoch:=last; referenceClock:=false; clockReady:=true; end;
     clockBusy:=false;
-    if (flags and $200)<>0 then asm sti end;
+    arch.platform.cpu.unlock(flags);
     prepare:=ok;
 end;
 function ready : boolean;
@@ -244,7 +211,7 @@ begin
     end;
 end;
 procedure UnitTest;
-var hz, first, last : uint64; flags, i : uint32;
+var hz, first, last : uint64; i : uint32; flags : PtrUInt;
     context : TTestContext;
 begin
     test.harness.Start(@context, 'driver.storage.bench.clock');
@@ -262,10 +229,10 @@ begin
     if referenceSupported then begin
         test.harness.Assert(@context, prepare,'VM reference clock initialization');
         if ready then begin
-            asm pushfd; cli; pop flags end;
+            flags := arch.platform.cpu.lock;
             first:=nowUS; last:=first;
             for i:=1 to 10000 do begin last:=nowUS; if last>first then break; end;
-            if (flags and $200)<>0 then asm sti end;
+            arch.platform.cpu.unlock(flags);
             test.harness.Assert(@context, last>first,'VM clock advances with interrupts masked');
         end;
     end;
