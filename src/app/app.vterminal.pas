@@ -790,14 +790,8 @@ end;
   LVGL event callbacks — retrieve state from user_data
   ============================================================ }
 
-procedure content_click_cb(e: Plv_event); cdecl;
-var
-    code  : lv_event_code_t;
-    state : PVTermState;
+procedure focusInput(state: PVTermState);
 begin
-    code := lv_event_get_code(e);
-    if code <> LV_EVENT_CLICKED then exit;
-    state := PVTermState(lv_event_get_user_data(e));
     if state = nil then exit;
     if state^.content = nil then exit;
 
@@ -806,6 +800,12 @@ begin
         lv_group_add_obj(lvgl_get_kb_group, state^.content);
         lv_group_focus_obj(state^.content);
     end;
+end;
+
+procedure content_click_cb(e: Plv_event); cdecl;
+begin
+    if lv_event_get_code(e) <> LV_EVENT_CLICKED then exit;
+    focusInput(PVTermState(lv_event_get_user_data(e)));
 end;
 
 procedure content_key_cb(e: Plv_event); cdecl;
@@ -1092,6 +1092,7 @@ begin
     appendChar(state, #10);
     appendChar(state, #10);
     showPrompt(state);
+    focusInput(state);
 end;
 
 { ============================================================

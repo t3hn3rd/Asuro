@@ -38,11 +38,39 @@ procedure hook(proc : pp_hook_method);
   Dispatches to the registered hook. Updates global modifier state. }
 procedure reportKeyEvent(info : TKeyInfo);
 
+{ Queue a Windows key press for the desktop to handle outside the interrupt. }
+procedure reportWindowsKey;
+function takeWindowsKeyPress: boolean;
+function takeTasksShortcut: boolean;
+
 implementation
+
+var
+    windows_key_pending : boolean = false;
+    tasks_shortcut_pending : boolean = false;
+
+procedure reportWindowsKey;
+begin
+    windows_key_pending := true;
+end;
+
+function takeWindowsKeyPress: boolean;
+begin
+    if not windows_key_pending then exit(false);
+    windows_key_pending := false;
+    takeWindowsKeyPress := true;
+end;
 
 procedure hook(proc : pp_hook_method);
 begin
     captin_hook := proc;
+end;
+
+function takeTasksShortcut: boolean;
+begin
+    if not tasks_shortcut_pending then exit(false);
+    tasks_shortcut_pending := false;
+    takeTasksShortcut := true;
 end;
 
 procedure reportKeyEvent(info : TKeyInfo);
@@ -51,6 +79,11 @@ begin
     is_shift := info.SHIFT_DOWN;
     is_ctrl  := info.CTRL_DOWN;
     is_alt   := info.ALT_DOWN;
+
+    if (info.key_code = $7F) and info.CTRL_DOWN and info.ALT_DOWN then begin
+        if info.is_down_code then tasks_shortcut_pending := true;
+        exit;
+    end;
 
     if captin_hook <> nil then
         captin_hook(info);

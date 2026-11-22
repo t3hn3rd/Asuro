@@ -60,6 +60,10 @@ type
 
 { Create a new window. Returns window ID (0 = failure). }
 function  createWindow(title: pchar; x, y, w, h: sint32; closeCB: TWinCloseCallback; cursor: Plv_obj): uint32;
+function  createFixedWindow(title: pchar; x, y, w, h: sint32; closeCB: TWinCloseCallback; cursor: Plv_obj): uint32;
+
+{ Fit an open window to its content, up to max_h including the title bar. }
+procedure fitWindowHeight(win_id: uint32; max_h: sint32);
 
 { Get the content area of a window (to add widgets into). }
 function  getWindowContent(win_id: uint32): Plv_obj;
@@ -70,7 +74,7 @@ function  getWindowFrame(win_id: uint32): Plv_obj;
 { Destroy a window and free its slot. }
 procedure destroyWindow(win_id: uint32);
 
-{ Bring a window to front. }
+{ Activate a window and bring it to front. }
 procedure focusWindow(win_id: uint32);
 
 { Check if a window is open. }
@@ -81,6 +85,7 @@ function  getWindowCount: uint32;
 
 { Set a callback to be notified when a window is resized. }
 procedure setWindowResizeCallback(win_id: uint32; cb: TWinResizeCallback);
+procedure setWindowMinWidth(win_id: uint32; min_width: sint32);
 
 { Assign an owning process to a window.
   When reapOrphanedWindows detects the process has died, the window
@@ -93,8 +98,16 @@ procedure reapOrphanedWindows;
 
 implementation
 
+const
+    TITLEBAR_INACTIVE_COLOR = $2D303A;
+    TITLEBAR_ACTIVE_COLOR   = $3C4050;
+
 var
     wins : array[1..MAX_WINDOWS] of TWinRecord;
+    { Window IDs from back to front. The last entry has focus. }
+    z_order : array[1..MAX_WINDOWS] of uint32;
+    z_count : uint32 = 0;
+    pointer_hook_added : boolean = false;
 
     { Persistent point arrays for grip lines (2 points per line, 3 lines).
       These draw diagonal lines from top-right towards bottom-left
@@ -156,16 +169,54 @@ begin
     end;
 end;
 
-{ ============================================================
-  Internal: bring window to front
-  ============================================================ }
-procedure bringToFront(id: uint32);
+procedure removeFromZOrder(win_id: uint32);
+var
+    i, j : uint32;
 begin
-    if (id < 1) or (id > MAX_WINDOWS) then exit;
-    if wins[id].state = wsNone then exit;
-    lv_obj_move_foreground(wins[id].frame);
-    if wins[id].cursor_obj <> nil then
-        lv_obj_move_foreground(wins[id].cursor_obj);
+    for i := 1 to z_count do begin
+        if z_order[i] <> win_id then continue;
+        for j := i to z_count - 1 do
+            z_order[j] := z_order[j + 1];
+        dec(z_count);
+        exit;
+    end;
+end;
+
+{ ============================================================
+  Public: activate a window and bring it to front
+  ============================================================ }
+procedure focusWindow(win_id: uint32);
+begin
+    if not isWindowOpen(win_id) then exit;
+    if z_count > 0 then begin
+        if z_order[z_count] = win_id then exit;
+        lv_obj_set_style_bg_color(wins[z_order[z_count]].titlebar,
+            lv_color_hex(TITLEBAR_INACTIVE_COLOR), 0);
+    end;
+
+    removeFromZOrder(win_id);
+    inc(z_count);
+    z_order[z_count] := win_id;
+    lv_obj_set_style_bg_color(wins[win_id].titlebar, lv_color_hex(TITLEBAR_ACTIVE_COLOR), 0);
+    lv_obj_move_foreground(wins[win_id].frame);
+    if wins[win_id].cursor_obj <> nil then
+        lv_obj_move_foreground(wins[win_id].cursor_obj);
+end;
+
+procedure pointer_press_cb(e: Plv_event); cdecl;
+var
+    obj : Plv_obj;
+    id  : uint32;
+begin
+    obj := lv_indev_get_active_obj;
+    while obj <> nil do begin
+        id := findByFrame(obj);
+        if id <> 0 then begin
+            focusWindow(id);
+            exit;
+        end;
+        obj := lv_obj_get_parent(obj);
+    end;
 end;
 
 { ============================================================
@@ -197,8 +248,6 @@ begin
     wins[id].drag_oy := my - fy;
     wins[id].dragging := true;
     wins[id].resizing := false;
-
-    bringToFront(id);
 end;
 
 { ============================================================
@@ -301,8 +350,6 @@ begin
     wins[id].dragging := false;
     wins[id].drag_ox := mx;
     wins[id].drag_oy := my;
-
-    bringToFront(id);
 end;
 
 { ============================================================
@@ -431,7 +478,7 @@ end;
 { ============================================================
   Public: create a window
   ============================================================ }
-function createWindow(title: pchar; x, y, w, h: sint32; closeCB: TWinCloseCallback; cursor: Plv_obj): uint32;
+function createWindowInternal(title: pchar; x, y, w, h: sint32; closeCB: TWinCloseCallback; cursor: Plv_obj; resizable: boolean): uint32;
 var
     id        : uint32;
     scr       : Plv_obj;
@@ -443,8 +490,9 @@ var
     coll_btn  : Plv_obj;
     coll_lbl  : Plv_obj;
     content   : Plv_obj;
+    indev     : Plv_indev;
 begin
-    createWindow := 0;
+    createWindowInternal := 0;
 
     id := allocSlot;
     if id = 0 then exit;
@@ -500,7 +548,7 @@ begin
     titlebar := lv_obj_create(frame);
     lv_obj_remove_style_all(titlebar);
     lv_obj_set_size(titlebar, w, WIN_TITLEBAR_H);
-    lv_obj_set_style_bg_color(titlebar, lv_color_make(45, 48, 58), 0);
+    lv_obj_set_style_bg_color(titlebar, lv_color_hex(TITLEBAR_INACTIVE_COLOR), 0);
     lv_obj_set_style_bg_opa(titlebar, LV_OPA_COVER, 0);
     lv_obj_set_style_pad_left(titlebar, 0, 0);
     lv_obj_set_style_pad_right(titlebar, 0, 0);
@@ -592,45 +640,47 @@ begin
     lv_obj_set_style_width(content, 6, LV_PART_SCROLLBAR);
     lv_obj_set_style_pad_all(content, 2, LV_PART_SCROLLBAR);
 
-    { ---- Resize grip (floating over frame bottom-right) ---- }
-    { The grip is a child of frame but ignores flex layout }
-    wins[id].resize_grip := lv_obj_create(frame);
-    lv_obj_remove_style_all(wins[id].resize_grip);
-    lv_obj_set_size(wins[id].resize_grip, WIN_RESIZE_GRIP, WIN_RESIZE_GRIP);
-    lv_obj_add_flag(wins[id].resize_grip, LV_OBJ_FLAG_FLOATING);
-    lv_obj_add_flag(wins[id].resize_grip, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_flag(wins[id].resize_grip, LV_OBJ_FLAG_PRESS_LOCK);
-    lv_obj_remove_flag(wins[id].resize_grip, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_scrollbar_mode(wins[id].resize_grip, LV_SCROLLBAR_MODE_OFF);
-    lv_obj_set_style_bg_opa(wins[id].resize_grip, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(wins[id].resize_grip, 0, 0);
-    lv_obj_set_style_pad_all(wins[id].resize_grip, 0, 0);
-    lv_obj_set_pos(wins[id].resize_grip, w - WIN_RESIZE_GRIP, h - WIN_RESIZE_GRIP);
+    if resizable then begin
+        { ---- Resize grip (floating over frame bottom-right) ---- }
+        { The grip is a child of frame but ignores flex layout }
+        wins[id].resize_grip := lv_obj_create(frame);
+        lv_obj_remove_style_all(wins[id].resize_grip);
+        lv_obj_set_size(wins[id].resize_grip, WIN_RESIZE_GRIP, WIN_RESIZE_GRIP);
+        lv_obj_add_flag(wins[id].resize_grip, LV_OBJ_FLAG_FLOATING);
+        lv_obj_add_flag(wins[id].resize_grip, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_add_flag(wins[id].resize_grip, LV_OBJ_FLAG_PRESS_LOCK);
+        lv_obj_remove_flag(wins[id].resize_grip, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_scrollbar_mode(wins[id].resize_grip, LV_SCROLLBAR_MODE_OFF);
+        lv_obj_set_style_bg_opa(wins[id].resize_grip, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_width(wins[id].resize_grip, 0, 0);
+        lv_obj_set_style_pad_all(wins[id].resize_grip, 0, 0);
+        lv_obj_set_pos(wins[id].resize_grip, w - WIN_RESIZE_GRIP, h - WIN_RESIZE_GRIP);
 
-    { Diagonal grip lines (three short lines suggesting resize) }
-    wins[id].grip_line1 := lv_line_create(wins[id].resize_grip);
-    lv_obj_set_style_line_color(wins[id].grip_line1, lv_color_make(120, 125, 140), 0);
-    lv_obj_set_style_line_width(wins[id].grip_line1, 1, 0);
-    lv_obj_set_style_line_opa(wins[id].grip_line1, 180, 0);
-    lv_line_set_points(wins[id].grip_line1, @grip_pts[0][0], 2);
+        { Diagonal grip lines (three short lines suggesting resize) }
+        wins[id].grip_line1 := lv_line_create(wins[id].resize_grip);
+        lv_obj_set_style_line_color(wins[id].grip_line1, lv_color_make(120, 125, 140), 0);
+        lv_obj_set_style_line_width(wins[id].grip_line1, 1, 0);
+        lv_obj_set_style_line_opa(wins[id].grip_line1, 180, 0);
+        lv_line_set_points(wins[id].grip_line1, @grip_pts[0][0], 2);
 
-    wins[id].grip_line2 := lv_line_create(wins[id].resize_grip);
-    lv_obj_set_style_line_color(wins[id].grip_line2, lv_color_make(120, 125, 140), 0);
-    lv_obj_set_style_line_width(wins[id].grip_line2, 1, 0);
-    lv_obj_set_style_line_opa(wins[id].grip_line2, 180, 0);
-    lv_line_set_points(wins[id].grip_line2, @grip_pts[1][0], 2);
+        wins[id].grip_line2 := lv_line_create(wins[id].resize_grip);
+        lv_obj_set_style_line_color(wins[id].grip_line2, lv_color_make(120, 125, 140), 0);
+        lv_obj_set_style_line_width(wins[id].grip_line2, 1, 0);
+        lv_obj_set_style_line_opa(wins[id].grip_line2, 180, 0);
+        lv_line_set_points(wins[id].grip_line2, @grip_pts[1][0], 2);
 
-    wins[id].grip_line3 := lv_line_create(wins[id].resize_grip);
-    lv_obj_set_style_line_color(wins[id].grip_line3, lv_color_make(120, 125, 140), 0);
-    lv_obj_set_style_line_width(wins[id].grip_line3, 1, 0);
-    lv_obj_set_style_line_opa(wins[id].grip_line3, 180, 0);
-    lv_line_set_points(wins[id].grip_line3, @grip_pts[2][0], 2);
+        wins[id].grip_line3 := lv_line_create(wins[id].resize_grip);
+        lv_obj_set_style_line_color(wins[id].grip_line3, lv_color_make(120, 125, 140), 0);
+        lv_obj_set_style_line_width(wins[id].grip_line3, 1, 0);
+        lv_obj_set_style_line_opa(wins[id].grip_line3, 180, 0);
+        lv_line_set_points(wins[id].grip_line3, @grip_pts[2][0], 2);
 
-    { Grip events }
-    lv_obj_add_event_cb(wins[id].resize_grip, @grip_press_cb, LV_EVENT_PRESSED, nil);
-    lv_obj_add_event_cb(wins[id].resize_grip, @grip_pressing_cb, LV_EVENT_PRESSING, nil);
-    lv_obj_add_event_cb(wins[id].resize_grip, @grip_release_cb, LV_EVENT_RELEASED, nil);
-    lv_obj_add_event_cb(wins[id].resize_grip, @grip_release_cb, LV_EVENT_PRESS_LOST, nil);
+        { Grip events }
+        lv_obj_add_event_cb(wins[id].resize_grip, @grip_press_cb, LV_EVENT_PRESSED, nil);
+        lv_obj_add_event_cb(wins[id].resize_grip, @grip_pressing_cb, LV_EVENT_PRESSING, nil);
+        lv_obj_add_event_cb(wins[id].resize_grip, @grip_release_cb, LV_EVENT_RELEASED, nil);
+        lv_obj_add_event_cb(wins[id].resize_grip, @grip_release_cb, LV_EVENT_PRESS_LOST, nil);
+    end;
 
     { ---- Store record ---- }
     wins[id].state        := wsOpen;
@@ -653,12 +703,31 @@ begin
     wins[id].cursor_obj   := cursor;
     wins[id].owner_pid    := 0;
 
-    { Bring to front }
-    bringToFront(id);
+    if not pointer_hook_added then begin
+        indev := lv_indev_get_next(nil);
+        while indev <> nil do begin
+            if lv_indev_get_type(indev) = Ord(LV_INDEV_TYPE_POINTER) then begin
+                lv_indev_add_event_cb(indev, @pointer_press_cb, LV_EVENT_PRESSED, nil);
+                pointer_hook_added := true;
+            end;
+            indev := lv_indev_get_next(indev);
+        end;
+    end;
+    focusWindow(id);
 
     debug.tracer.pop_trace;
 
-    createWindow := id;
+    createWindowInternal := id;
+end;
+
+function createWindow(title: pchar; x, y, w, h: sint32; closeCB: TWinCloseCallback; cursor: Plv_obj): uint32;
+begin
+    createWindow := createWindowInternal(title, x, y, w, h, closeCB, cursor, true);
+end;
+
+function createFixedWindow(title: pchar; x, y, w, h: sint32; closeCB: TWinCloseCallback; cursor: Plv_obj): uint32;
+begin
+    createFixedWindow := createWindowInternal(title, x, y, w, h, closeCB, cursor, false);
 end;
 
 { ============================================================
@@ -670,6 +739,27 @@ begin
     if (win_id < 1) or (win_id > MAX_WINDOWS) then exit;
     if wins[win_id].state = wsNone then exit;
     getWindowContent := wins[win_id].content;
+end;
+
+procedure fitWindowHeight(win_id: uint32; max_h: sint32);
+var
+    content : Plv_obj;
+    height  : sint32;
+begin
+    if not isWindowOpen(win_id) then exit;
+    if wins[win_id].state <> wsOpen then exit;
+    if max_h < WIN_TITLEBAR_H then exit;
+
+    content := wins[win_id].content;
+    lv_obj_set_height(content, LV_SIZE_CONTENT);
+    lv_obj_update_layout(content);
+    height := lv_obj_get_height(content) + WIN_TITLEBAR_H;
+    if height > max_h then height := max_h;
+
+    wins[win_id].win_h := height;
+    lv_obj_set_height(content, height - WIN_TITLEBAR_H);
+    lv_obj_set_height(wins[win_id].frame, height);
+    repositionGrip(win_id);
 end;
 
 { ============================================================
@@ -687,11 +777,21 @@ end;
   Public: destroy window
   ============================================================ }
 procedure destroyWindow(win_id: uint32);
+var
+    was_focused : boolean;
 begin
     if (win_id < 1) or (win_id > MAX_WINDOWS) then exit;
     if wins[win_id].state = wsNone then exit;
 
     debug.tracer.push_trace('driver.video.windows.destroy');
+
+    was_focused := false;
+    if z_count > 0 then
+        was_focused := z_order[z_count] = win_id;
+    removeFromZOrder(win_id);
+    if was_focused and (z_count > 0) then
+        lv_obj_set_style_bg_color(wins[z_order[z_count]].titlebar,
+            lv_color_hex(TITLEBAR_ACTIVE_COLOR), 0);
 
     lv_obj_delete(wins[win_id].frame);
 
@@ -712,14 +812,6 @@ begin
     wins[win_id].owner_pid := 0;
 
     debug.tracer.pop_trace;
-end;
-
-{ ============================================================
-  Public: focus window (bring to front)
-  ============================================================ }
-procedure focusWindow(win_id: uint32);
-begin
-    bringToFront(win_id);
 end;
 
 { ============================================================
@@ -756,6 +848,13 @@ begin
     if (win_id < 1) or (win_id > MAX_WINDOWS) then exit;
     if wins[win_id].state = wsNone then exit;
     wins[win_id].on_resize := cb;
+end;
+
+procedure setWindowMinWidth(win_id: uint32; min_width: sint32);
+begin
+    if not isWindowOpen(win_id) then exit;
+    if min_width < WIN_MIN_W then min_width := WIN_MIN_W;
+    wins[win_id].min_w := min_width;
 end;
 
 { ============================================================

@@ -2130,7 +2130,9 @@ begin
         my := driver.hid.mouse.getMouseY;
         pt.x := mx;
         pt.y := my;
-        target := lv_indev_search_obj(lv_screen_active, @pt);
+        target := lv_indev_search_obj(lv_layer_top, @pt);
+        if target = nil then
+            target := lv_indev_search_obj(lv_screen_active, @pt);
         { Walk up to find the nearest scrollable ancestor }
         walk := target;
         while walk <> nil do begin

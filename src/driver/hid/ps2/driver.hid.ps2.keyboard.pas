@@ -32,18 +32,39 @@ implementation
 uses
     driver.mgr;
 
+var
+    extended_code : boolean = false;
+    windows_keys_down : array[$5B..$5C] of boolean;
+    delete_down : boolean = false;
+
 procedure callback(scan_code : void);
 var
     info     : TKeyInfo;
     raw      : uint8;
     baseCode : uint8;
     isBreak  : boolean;
+    isDelete : boolean;
 begin
     raw := uint8(scan_code);
+    if raw = $E0 then begin
+        extended_code := true;
+        exit;
+    end;
 
     { In PS/2 scancode set 1, bit 7 set = key release (break code) }
     isBreak  := (raw AND $80) <> 0;
     baseCode := raw AND $7F;
+    isDelete := extended_code and (baseCode = $53);
+
+    if extended_code then begin
+        extended_code := false;
+        if (baseCode = $5B) or (baseCode = $5C) then begin
+            if not isBreak and not windows_keys_down[baseCode] then
+                reportWindowsKey;
+            windows_keys_down[baseCode] := not isBreak;
+            exit;
+        end;
+    end;
 
     { Update modifier state (use raw codes so both make/break are handled) }
     if raw = 42  then driver.hid.keyboard.is_shift := true;
@@ -57,6 +78,14 @@ begin
     info.CTRL_DOWN     := driver.hid.keyboard.is_ctrl;
     info.ALT_DOWN      := driver.hid.keyboard.is_alt;
     info.is_down_code  := not isBreak;
+
+    if isDelete then begin
+        if delete_down = info.is_down_code then exit;
+        delete_down := info.is_down_code;
+        info.key_code := $7F;
+        driver.hid.keyboard.reportKeyEvent(info);
+        exit;
+    end;
 
     if driver.hid.keyboard.is_shift then begin
         if key_matrix_shift[baseCode].key_code <> 0 then begin

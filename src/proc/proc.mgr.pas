@@ -386,13 +386,13 @@ var
     ctx : PProcessContext;
 begin
     if pid = 0 then exit;  { Cannot kill idle }
+    asm pushf; cli end;
     ctx := findByID(pid);
     if ctx <> nil then begin
-        asm pushf; cli end;
         ctx^.State := psFinished;
         ctx^.ExitCode := $FFFFFFFF;
-        asm popf end;
     end;
+    asm popf end;
 end;
 
 { ---- Process self-management ---- }
@@ -654,6 +654,7 @@ var
     slotPtr : ^uint32;
     ctx     : PProcessContext;
 begin
+    inc(CurrentProcess^.CpuTicks);
     { Reap dead processes first }
     reapFinished;
 
