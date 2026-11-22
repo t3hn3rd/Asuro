@@ -1,3 +1,20 @@
+//  Copyright 2026 Aaron Hance
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//  http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+
+{
+    @author(Aaron Hance <ah@aaronhance.me>)
+}
 unit test;
 
 interface
@@ -12,6 +29,7 @@ implementation
 
 uses
     core.strings,
+    app.diskutil,
     driver.bus.usb.types,
     driver.bus.usb.core,
     driver.bus.usb.uhci,
@@ -32,6 +50,11 @@ uses
     core.ds.prio,
     driver.storage.vfs,
     driver.storage.test,
+    driver.storage.bench,
+    driver.storage.metatest,
+    driver.storage.perftest,
+    driver.storage.ctl.ahci,
+    driver.storage.ctl.usb,
     core.enc.fnv1a,
     core.enc.djb2,
     core.ds.bloom,
@@ -46,6 +69,7 @@ procedure runAllTests();
 begin
     { Run unit tests }
     core.strings.UnitTest;
+    app.diskutil.UnitTest;
     driver.bus.usb.types.UnitTest;
     driver.bus.usb.core.UnitTest;
     driver.bus.usb.uhci.UnitTest;
@@ -66,6 +90,11 @@ begin
     core.ds.prio.UnitTest;
     driver.storage.vfs.UnitTest;
     driver.storage.test.UnitTest;
+    driver.storage.bench.UnitTest;
+    driver.storage.metatest.UnitTest;
+    driver.storage.perftest.UnitTest;
+    driver.storage.ctl.ahci.UnitTest;
+    driver.storage.ctl.usb.UnitTest;
     core.enc.fnv1a.UnitTest;
     core.enc.djb2.UnitTest;
     core.ds.bloom.UnitTest;

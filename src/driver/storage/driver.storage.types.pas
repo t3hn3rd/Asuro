@@ -53,6 +53,22 @@ type
     { Directory entry core.types }
     TDirectory_Entry_Type = (directoryEntry, fileEntry, mountEntry);
 
+    { Generic directory entry }
+    TDirectory_Entry = record
+        fileName     : pchar;
+        entryType    : TDirectory_Entry_Type;
+        fileSize     : uint32;
+        modifiedDate : uint16;   { FAT-style: bits 15-9=year-1980, 8-5=month, 4-0=day }
+        modifiedTime : uint16;   { FAT-style: bits 15-11=hour, 10-5=min, 4-0=sec/2 }
+        attributes   : uint8;    { FS-specific attribute bits }
+    end;
+
+    TDrive_Error = record
+        code : uint16;
+        description : pchar;
+        recoverable : boolean;
+    end;
+
     { Storage error codes — shared across I/O layer, drivers, FS, and VFS }
     TError = (
         { Success }
@@ -89,7 +105,7 @@ type
         { VFS / FD errors }
         eTooManyOpenFiles,        { per-process FD table full }
         eInvalidHandle,           { TFileHandle does not refer to an open FD }
-        eNotStreamMode,           { SeekFile called on a non-omStream handle }
+
         eFileNotLoaded,           { ReadFile on a pre-load handle whose data is not yet loaded }
         eAlreadyExists,           { generic: target name already exists (symlink, file, etc.) }
 
@@ -126,6 +142,37 @@ type
     PDirectory_Entry = ^TDirectory_Entry;
     PDrive_Error     = ^TDrive_Error;
     PIORequest       = ^TIORequest;
+    PFSFormatParams  = ^TFSFormatParams;
+
+    TStorageLifecycleEvent = (
+        sleVolumeAdded,
+        sleVolumeMounted,
+        sleVolumeUnmounted,
+        sleVolumeFormatStarted,
+        sleVolumeFormatCompleted,
+        sleVolumeInvalidating,
+        sleVolumeInvalidated,
+        sleVolumeRemoved,
+        sleDeviceAdded,
+        sleDeviceRemoved,
+        sleVolumeLabelChanged
+    );
+
+    TStorageLifecycleCallback = procedure(event : TStorageLifecycleEvent;
+                                          device : PStorage_Device;
+                                          volume : PStorage_Volume;
+                                          error : TError;
+                                          userdata : pointer);
+
+    TVolumeLabel = array[0..32] of char; { cached, NUL-terminated display name }
+
+    TFSFormatParams = record
+        Version     : uint16;
+        Flags       : uint16;
+        ClusterSize : uint32;
+        FileCount   : uint32;
+        LabelText   : array[0..11] of char;
+    end;
 
     { === Driver dispatch type (Phase 2+) === }
 
@@ -134,45 +181,60 @@ type
 
     { === I/O callback type === }
 
-    { Async I/O completion callback — fired from ISR context when a request finishes.
+    { Completion callback used across storage/VFS async APIs.
       error = eNone on success; specific code on failure.
-      userdata is the opaque pointer passed by the submitter. }
+      userdata is the opaque pointer passed by the submitter.
+      Context is API-specific: some callers complete from ISR context, others
+      from task/worker context, and some may invoke the callback immediately. }
     TIOCallback = procedure(error : TError; userdata : pointer);
 
     { Filesystem callback core.types }
-    PPWriteHook     = procedure(volume : PStorage_volume; directory : pchar; entry : PDirectory_Entry; byteCount : uint32; buffer : puint32; statusOut : puint32);
-    PPReadHook      = function(volume : PStorage_Volume; directory : pchar; fileName : pchar; buffer : puint32; bytecount : puint32) : uint32;
-    PPCreateHook    = procedure(volume : PStorage_volume; start : uint32; size : uint32; config : puint32);
-    PPCreateAsyncHook = procedure(volume : PStorage_volume; start : uint32; size : uint32; config : puint32; callback : TIOCallback; callbackData : pointer);
+    PPCreateHook    = function(volume : PStorage_volume; sectors : uint32; start : uint32; config : PFSFormatParams) : TError;
+    PPCreateAsyncHook = procedure(volume : PStorage_volume; start : uint32; size : uint32; config : PFSFormatParams; callback : TIOCallback; callbackData : pointer);
     PPDetectHook    = procedure(disk : PStorage_Device);
     PPCreateDirHook  = procedure(volume : PStorage_volume; directory : pchar; dirname : pchar; attributes : uint32; status : puint32);
     PPReadDirHook    = function(volume : PStorage_volume; directory : pchar; status : puint32) : PLinkedListBase;
     PPDeleteFileHook = procedure(volume : PStorage_Volume; filePath : pchar; status : puint32);
     PPDeleteDirHook  = procedure(volume : PStorage_Volume; path : pchar; status : puint32);
+    PPValidateLabelHook = function(text : pchar; var normalized : TVolumeLabel) : TError;
+    PPSetLabelHook = function(volume : PStorage_Volume; text : pchar) : TError;
+    PPReleaseVolumeHook = procedure(volume : PStorage_Volume);
     PPIdentifyHook   = function(volume : PStorage_Volume) : boolean;
     PPRenameFileHook = procedure(volume : PStorage_Volume; filePath : pchar; newName : pchar; status : puint32);
     { Offset-based read: reads byteCount bytes starting at byte offset into the file.
-      Returns the number of bytes actually read.
-      Filesystems that do not implement this leave the field nil and VFS falls back
-      to the load-all readCallback behaviour. }
-    PPReadOffsetHook = function(volume : PStorage_Volume; directory : pchar; fileName : pchar; offset : uint32; buffer : puint32; byteCount : uint32) : uint32;
+      Returns the number of bytes actually read.  ctx is the opaque per-file
+      context returned by openFileCallback (nil when called without a handle). }
+    PPReadOffsetHook = function(volume : PStorage_Volume; directory : pchar; fileName : pchar; offset : uint32; buffer : puint32; byteCount : uint32; ctx : pointer) : uint32;
     { Offset-based write: writes byteCount bytes starting at byte offset into the file.
       Returns the number of bytes actually written.
       Filesystems that do not implement this leave the field nil; VFS returns 0
       for stream-mode writes on volume FDs. }
-    PPWriteOffsetHook = function(volume : PStorage_Volume; directory : pchar; fileName : pchar; offset : uint32; buffer : puint32; byteCount : uint32) : uint32;
+    PPWriteOffsetHook = function(volume : PStorage_Volume; directory : pchar; fileName : pchar; offset : uint32; buffer : puint32; byteCount : uint32; ctx : pointer) : uint32;
+    { Async offset-based read/write hooks. Implementations must return immediately
+      and fire callback when the transfer completes. BytesRead/BytesWritten may be
+      nil; if provided, implementations store the actual completed byte count. }
+    PPReadOffsetAsyncHook = procedure(volume : PStorage_Volume; directory : pchar; fileName : pchar; offset : uint32; buffer : puint32; byteCount : uint32; ctx : pointer; bytesRead : puint32; callback : TIOCallback; callbackData : pointer);
+    PPWriteOffsetAsyncHook = procedure(volume : PStorage_Volume; directory : pchar; fileName : pchar; offset : uint32; buffer : puint32; byteCount : uint32; ctx : pointer; bytesWritten : puint32; callback : TIOCallback; callbackData : pointer);
+    { File size query: returns the size in bytes of the named file.
+      Returns 0 if the file does not exist or has zero length. }
+    PPFileSizeHook = function(volume : PStorage_Volume; directory : pchar; fileName : pchar) : uint32;
+    { Per-file open hook: called by VFS on OpenFile to create FS-level cached
+      metadata.  Returns an opaque pointer stored in the FD and passed as ctx
+      to read/write hooks.  Also returns the current file size through the
+      var parameter.  Returning nil is legal (disables per-call fast-path). }
+    PPOpenFileHook = function(volume : PStorage_Volume; directory : pchar; fileName : pchar; var fileSize : uint32) : pointer;
+    { Mode-aware open avoids creating a missing file during a read-only open. }
+    PPOpenFileModeHook = function(volume : PStorage_Volume; directory : pchar; fileName : pchar; allowCreate : boolean; var fileSize : uint32) : pointer;
+    { Per-file close hook: frees the context allocated by openFileCallback. }
+    PPCloseFileHook = procedure(ctx : pointer);
 
     { === Async filesystem hook core.types ===
       Each mirrors the corresponding sync hook but receives a TIOCallback + callbackData.
       The implementation must return immediately; the callback is fired when the
       operation completes from worker-process context (IF=1, safe to block). }
     PPLinkedListBase      = ^PLinkedListBase;   { needed for PPReadDirAsyncHook parameter }
-    PPWriteAsyncHook      = procedure(volume : PStorage_Volume; directory : pchar; entry : PDirectory_Entry; byteCount : uint32; buffer : puint32; callback : TIOCallback; callbackData : pointer);
-    PPReadAsyncHook       = procedure(volume : PStorage_Volume; directory : pchar; fileName : pchar; buffer : puint32; byteCount : puint32; callback : TIOCallback; callbackData : pointer);
     PPCreateDirAsyncHook  = procedure(volume : PStorage_Volume; directory : pchar; dirname : pchar; attributes : uint32; status : puint32; callback : TIOCallback; callbackData : pointer);
     PPReadDirAsyncHook    = procedure(volume : PStorage_Volume; directory : pchar; resultList : PPLinkedListBase; status : puint32; callback : TIOCallback; callbackData : pointer);
-    PPDeleteFileAsyncHook = procedure(volume : PStorage_Volume; filePath : pchar; status : puint32; callback : TIOCallback; callbackData : pointer);
-    PPDeleteDirAsyncHook  = procedure(volume : PStorage_Volume; path : pchar; status : puint32; callback : TIOCallback; callbackData : pointer);
 
     { === I/O Request core.types === }
 
@@ -193,10 +255,21 @@ type
         UserData     : pointer;         { points back to caller's stack-local request (blocking path) }
         Callback     : TIOCallback;     { async completion callback (nil for blocking path) }
         CallbackData : pointer;         { opaque data passed to Callback }
+        { Manager-owned fields; callers need not initialise these. }
+        MergeNext : PIORequest;
+        OriginalSectors, QueuedTick, DispatchTick : uint32;
     end;
 
     byteArray8  = array[0..7] of char;
     PByteArray8 = ^byteArray8;
+
+    TStorageStats = record
+        Submitted, Completed, Failed, Commands, Merged, QueueFull : uint32;
+        ReadSectors, WriteSectors, QueuePeak, ActivePeak : uint32;
+        QueueTicks, ServiceTicks, MaxQueueTicks, MaxServiceTicks : uint32;
+        SmallRequests, MediumRequests, LargeRequests : uint32;
+        FatCacheHits, FatCacheMisses : uint32;
+    end;
 
     { Generic storage device }
     TStorage_Device = record
@@ -211,22 +284,27 @@ type
         dispatchRead     : TDriverDispatch;   { nil if driver not yet migrated }
         dispatchWrite    : TDriverDispatch;   { nil if driver not yet migrated }
         requestQueue     : PCFIFOQueue;       { per-device I/O request CFIFO }
-        activeRequest    : PIORequest;        { currently dispatched to HW, or nil }
+        dispatching      : boolean; { prevents recursive synchronous-error queue draining }
+        activeCount      : uint32;            { number of commands currently dispatched to HW }
+        mergeMaxSectors  : uint32; { zero disables merging; driver sets safe command limit }
+        maxActive        : uint32;            { max concurrent commands (NCQ depth) }
 
         maxSectorCount   : uint32;
         sectorSize       : uint32; //in bytes
         start            : uint32; //start of device in sectors
+        metadataBusy     : boolean; { volume/partition operation owns device }
+        mbrWriteBusy     : boolean; { serializes staged sector-zero writes }
         cachedMBR        : pointer;           { cached mbr data, nil if not yet read }
         isBootDevice     : boolean;           { true if this is the device GRUB booted from }
+        Stats            : TStorageStats; { cold tail: wrapping counters, timer ticks }
     end;
 
     { Filesystem driver descriptor }
     TFilesystem = record
         sName              : pchar;
         system_id          : uint8;
-        writeCallback      : PPWriteHook;
-        readCallback       : PPReadHook;
         createCallback     : PPCreateHook;
+        validateFormat     : PPCreateHook; { pure preflight, before invalidation }
         detectCallback     : PPDetectHook;
         createDirCallback  : PPCreateDirHook;
         readDirCallback    : PPReadDirHook;
@@ -237,17 +315,25 @@ type
         readOffsetCallback : PPReadOffsetHook;
         { Offset-based write for streaming mode — nil if not implemented }
         writeOffsetCallback : PPWriteOffsetHook;
+        { Async offset-based read/write for streaming mode — nil if not implemented }
+        readOffsetAsyncCallback : PPReadOffsetAsyncHook;
+        writeOffsetAsyncCallback : PPWriteOffsetAsyncHook;
+        { File size query — returns size in bytes without loading the file }
+        fileSizeCallback : PPFileSizeHook;
         { Async format — nil if FS only supports synchronous create }
         createAsyncCallback : PPCreateAsyncHook;
-        { Async variants of the main I/O hooks — nil if FS only supports sync.
-          Sync VFS functions will call these + spin-wait when available. }
-        writeAsyncCallback      : PPWriteAsyncHook;
-        readAsyncCallback       : PPReadAsyncHook;
         createDirAsyncCallback  : PPCreateDirAsyncHook;
         readDirAsyncCallback    : PPReadDirAsyncHook;
-        deleteFileAsyncCallback : PPDeleteFileAsyncHook;
-        deleteDirAsyncCallback  : PPDeleteDirAsyncHook;
         renameFileCallback      : PPRenameFileHook;
+        { Per-file open/close — nil if FS does not cache per-file metadata }
+        openFileCallback        : PPOpenFileHook;
+        openFileModeCallback    : PPOpenFileModeHook;
+        closeFileCallback       : PPCloseFileHook;
+        formatParamFlags        : uint32;
+        validateLabelCallback   : PPValidateLabelHook;
+        setLabelCallback        : PPSetLabelHook;
+        { Optional teardown after handles close, before the volume is freed. }
+        releaseVolumeCallback   : PPReleaseVolumeHook;
     end;
 
     { Generic storage volume }
@@ -260,23 +346,21 @@ type
         freeSectors  : uint32;
         filesystem   : PFilesystem;
         isBootDrive  : boolean;
+        lifecycleFlags : uint32;
+        labelText    : TVolumeLabel;
+        fsPrivate    : pointer;      { FS-driver private data (e.g. PFATCache for FAT32) }
     end;
 
-    { Generic directory entry }
-    TDirectory_Entry = record
-        fileName     : pchar;
-        entryType    : TDirectory_Entry_Type;
-        fileSize     : uint32;
-        modifiedDate : uint16;   { FAT-style: bits 15-9=year-1980, 8-5=month, 4-0=day }
-        modifiedTime : uint16;   { FAT-style: bits 15-11=hour, 10-5=min, 4-0=sec/2 }
-        attributes   : uint8;    { FS-specific attribute bits }
-    end;
-
-    TDrive_Error = record 
-        code : uint16;
-        description : pchar;
-        recoverable : boolean;
-    end;
+const
+    FS_FORMAT_PARAM_CLUSTER_SIZE = 1;
+    FS_FORMAT_PARAM_FILE_COUNT   = 2;
+    FS_FORMAT_PARAM_LABEL        = 4;
+    FS_FORMAT_PARAMS_VERSION_1   = 1;
+    STORAGE_VOLUME_FLAG_MOUNTED      = 1;
+    STORAGE_VOLUME_FLAG_FORMATTING   = 2;
+    STORAGE_VOLUME_FLAG_INVALIDATING = 4;
+    STORAGE_VOLUME_FLAG_REMOVED      = 8;
+    STORAGE_VOLUME_FLAG_FREE_UNKNOWN = 16;
 
 
 implementation

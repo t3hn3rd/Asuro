@@ -14,6 +14,7 @@ unit app.diskutil;
 interface
 
 procedure init();
+procedure UnitTest;
 
 implementation
 
@@ -32,7 +33,8 @@ uses
     debug.tracer,
     driver.video,
     driver.storage.vol.mgr,
-    driver.video.windows;
+    driver.video.windows,
+    core.util, arch.x86.util;
 
 const
     WIN_W = 740;
@@ -58,10 +60,33 @@ var
     active_mbox        : Plv_obj;
     { Widgets kept across dialogs }
     fmt_dropdown       : Plv_obj;
+    fmt_param_area     : Plv_obj;
+    fmt_cluster_input  : Plv_obj;
+    fmt_filecount_input: Plv_obj;
+    fmt_label_input    : Plv_obj;
+    label_target_id, label_target_index : uint32;
+    fmt_param_error_lbl: Plv_obj;
     add_textarea       : Plv_obj;
     add_err_lbl        : Plv_obj;
     { Sidebar item tracking for highlight }
     active_sidebar_btn : Plv_obj;
+    fmt_poll_timer     : Plv_timer;
+    fmt_done_flag      : uint32;
+    fmt_done_error     : TError;
+    fmt_done_vol_idx   : uint32;
+    storage_dirty_flag : uint32;
+    storage_watch_id   : uint32;
+    ui_session_id      : uint32;
+    operation_pending : boolean;
+    done_kind, done_device : uint32;
+
+type
+    PFmtUICallbackCtx = ^TFmtUICallbackCtx;
+    TFmtUICallbackCtx = record
+        SessionID : uint32;
+        VolumeIdx : uint32;
+        Kind, DeviceIdx : uint32;
+    end;
 
 { ============================================================
   Forward declarations
@@ -73,45 +98,91 @@ procedure refreshSidebar; forward;
 procedure showDeviceDetail(devIdx: uint32); forward;
 procedure showVolumeDetail(volIdx: uint32); forward;
 procedure clearDetail; forward;
+procedure fmt_poll_cb(tmr: Plv_timer); cdecl; forward;
+procedure diskutil_storage_event(event : TStorageLifecycleEvent; device : PStorage_Device; volume : PStorage_Volume; error : TError; userdata : pointer); forward;
+procedure rebuild_fmt_param_ui(fs : PFilesystem); forward;
 
 { ============================================================
   Helpers — size formatting
   ============================================================ }
-function formatSizeStr(bytes: uint32): pchar;
+{ All transient text belongs to gfxd and is released on its next UI tick.
+  LVGL copies labels/options; no widget retains these pointers. A header in the
+  same allocation handles nested concatenations without leaking intermediates. }
+type
+    PUIText = ^TUIText;
+    TUIText = record Next : PUIText; end;
+var TextTemps : PUIText = nil;
+
+procedure releaseTextTemps;
+var item : PUIText;
 begin
-    if bytes >= 1073741824 then
-        formatSizeStr := stringConcat(intToString(bytes div 1073741824), ' GB')
-    else if bytes >= 1048576 then
-        formatSizeStr := stringConcat(intToString(bytes div 1048576), ' MB')
-    else if bytes >= 1024 then
-        formatSizeStr := stringConcat(intToString(bytes div 1024), ' KB')
-    else
-        formatSizeStr := stringConcat(intToString(bytes), ' B');
+    while TextTemps <> nil do begin
+        item := TextTemps; TextTemps := item^.Next; kfree(void(item));
+    end;
 end;
 
-function formatSizePrecise(bytes: uint32): pchar;
+function uiConcat(a, b : pchar) : pchar;
+var item : PUIText; n, m : uint32; dest : pchar;
+begin
+    uiConcat := '';
+    n := stringSize(a); m := stringSize(b);
+    item := PUIText(kalloc(sizeof(TUIText)+n+m+1));
+    if item = nil then exit;
+    item^.Next := TextTemps; TextTemps := item;
+    dest := pchar(uint32(item)+sizeof(TUIText));
+    if n > 0 then memcpy(uint32(a), uint32(dest), n);
+    if m > 0 then memcpy(uint32(b), uint32(dest)+n, m);
+    dest[n+m] := #0; uiConcat := dest;
+end;
+
+function uiInt(value : uint64) : pchar;
+var digits : array[0..20] of char; pos : uint32;
+begin
+    pos := 20; digits[pos] := #0;
+    repeat
+        Dec(pos); digits[pos] := char(ord('0') + value mod 10); value := value div 10;
+    until value = 0;
+    uiInt := uiConcat(@digits[pos], '');
+end;
+
+procedure operation_done(error : TError; userdata : pointer); forward;
+function begin_partition_ui(kind : uint32) : PFmtUICallbackCtx; forward;
+
+function formatSizeStr(bytes: uint64): pchar;
+begin
+    if bytes >= 1073741824 then
+        formatSizeStr := uiConcat(uiInt(bytes div 1073741824), ' GB')
+    else if bytes >= 1048576 then
+        formatSizeStr := uiConcat(uiInt(bytes div 1048576), ' MB')
+    else if bytes >= 1024 then
+        formatSizeStr := uiConcat(uiInt(bytes div 1024), ' KB')
+    else
+        formatSizeStr := uiConcat(uiInt(bytes), ' B');
+end;
+
+function formatSizePrecise(bytes: uint64): pchar;
 var
-    whole, frac : uint32;
+    whole, frac : uint64;
 begin
     if bytes >= 1073741824 then begin
         whole := bytes div 1073741824;
         frac := ((bytes mod 1073741824) * 10) div 1073741824;
         if frac > 0 then
-            formatSizePrecise := stringConcat(stringConcat(intToString(whole), stringConcat('.', intToString(frac))), ' GB')
+            formatSizePrecise := uiConcat(uiConcat(uiInt(whole), uiConcat('.', uiInt(frac))), ' GB')
         else
-            formatSizePrecise := stringConcat(intToString(whole), ' GB');
+            formatSizePrecise := uiConcat(uiInt(whole), ' GB');
     end else if bytes >= 1048576 then begin
         whole := bytes div 1048576;
         frac := ((bytes mod 1048576) * 10) div 1048576;
         if frac > 0 then
-            formatSizePrecise := stringConcat(stringConcat(intToString(whole), stringConcat('.', intToString(frac))), ' MB')
+            formatSizePrecise := uiConcat(uiConcat(uiInt(whole), uiConcat('.', uiInt(frac))), ' MB')
         else
-            formatSizePrecise := stringConcat(intToString(whole), ' MB');
+            formatSizePrecise := uiConcat(uiInt(whole), ' MB');
     end else if bytes >= 1024 then begin
         whole := bytes div 1024;
-        formatSizePrecise := stringConcat(intToString(whole), ' KB');
+        formatSizePrecise := uiConcat(uiInt(whole), ' KB');
     end else
-        formatSizePrecise := stringConcat(intToString(bytes), ' B');
+        formatSizePrecise := uiConcat(uiInt(bytes), ' B');
 end;
 
 function controllerStr(ct: TControllerType): pchar;
@@ -123,6 +194,53 @@ function boolStr(b: boolean): pchar;
 begin
     if b then boolStr := 'Yes'
     else boolStr := 'No';
+end;
+
+function formatErrorName(err : TError) : pchar;
+begin
+    case err of
+        eNone: formatErrorName := 'eNone';
+        eUnknown: formatErrorName := 'eUnknown';
+        eNotSupported: formatErrorName := 'eNotSupported';
+        eOutOfMemory: formatErrorName := 'eOutOfMemory';
+        eInvalidArgument: formatErrorName := 'eInvalidArgument';
+        eFileInUse: formatErrorName := 'eFileInUse';
+        eFileDoesNotExist: formatErrorName := 'eFileDoesNotExist';
+        eInvalidFileName: formatErrorName := 'eInvalidFileName';
+        eInvalidFileExtension: formatErrorName := 'eInvalidFileExtension';
+        eFilenameTooLong: formatErrorName := 'eFilenameTooLong';
+        eDirectoryDoesNotExist: formatErrorName := 'eDirectoryDoesNotExist';
+        eDirectoryAlreadyExists: formatErrorName := 'eDirectoryAlreadyExists';
+        eDirectoryNotEmpty: formatErrorName := 'eDirectoryNotEmpty';
+        eDirectoryFull: formatErrorName := 'eDirectoryFull';
+        eNotADirectory: formatErrorName := 'eNotADirectory';
+        eWriteOnly: formatErrorName := 'eWriteOnly';
+        eReadOnly: formatErrorName := 'eReadOnly';
+        ePermissionDenied: formatErrorName := 'ePermissionDenied';
+        eInvalidPath: formatErrorName := 'eInvalidPath';
+        eTooManyOpenFiles: formatErrorName := 'eTooManyOpenFiles';
+        eInvalidHandle: formatErrorName := 'eInvalidHandle';
+        eFileNotLoaded: formatErrorName := 'eFileNotLoaded';
+        eAlreadyExists: formatErrorName := 'eAlreadyExists';
+        eDiskFull: formatErrorName := 'eDiskFull';
+        eIOError: formatErrorName := 'eIOError';
+        eIOTimeout: formatErrorName := 'eIOTimeout';
+        eIOCancelled: formatErrorName := 'eIOCancelled';
+        eDeviceNotReady: formatErrorName := 'eDeviceNotReady';
+        eCorruptFilesystem: formatErrorName := 'eCorruptFilesystem';
+        eBadSector: formatErrorName := 'eBadSector';
+        eAlreadyMounted: formatErrorName := 'eAlreadyMounted';
+        eNotMounted: formatErrorName := 'eNotMounted';
+        eUnsupportedFilesystem: formatErrorName := 'eUnsupportedFilesystem';
+        eDeviceNotFound: formatErrorName := 'eDeviceNotFound';
+        eDeviceRemoved: formatErrorName := 'eDeviceRemoved';
+        eQueueFull: formatErrorName := 'eQueueFull';
+        eNoFreeSlot: formatErrorName := 'eNoFreeSlot';
+        eInvalidPartitionTable: formatErrorName := 'eInvalidPartitionTable';
+        eVolumeNotFound: formatErrorName := 'eVolumeNotFound';
+    else
+        formatErrorName := 'eUnknown';
+    end;
 end;
 
 { Check if a pchar string contains only digits }
@@ -246,7 +364,7 @@ begin
 end;
 
 { Add a usage bar (colored bar showing used vs total) }
-procedure addUsageBar(parent: Plv_obj; row_w: sint32; used, total: uint32);
+procedure addUsageBar(parent: Plv_obj; row_w: sint32; used, total: uint64);
 var
     bar : Plv_obj;
     pct : sint32;
@@ -282,75 +400,32 @@ end;
                 Returns 0 on invalid input.
   ============================================================ }
 function parseSize(s: pchar; sectorSize: uint32): uint32;
-var
-    len    : uint32;
-    last   : char;
-    prev   : char;
-    numEnd : uint32;
-    value  : uint32;
-    bytes  : uint32;
+var i, digit : uint32; value, limit, multiplier, bytes : uint64;
 begin
     parseSize := 0;
-    if s = nil then exit;
-    len := stringSize(s);
-    if len = 0 then exit;
-
-    last := s[len - 1];
-
-    if (last = 'B') or (last = 'b') then begin
-        if len >= 3 then
-            prev := s[len - 2]
-        else
-            prev := #0;
-
-        if (prev = 'G') or (prev = 'g') then begin
-            numEnd := len - 2;
-            s[numEnd] := #0;
-            if not isNumericStr(s) then begin s[numEnd] := prev; exit; end;
-            value := stringToInt(s);
-            s[numEnd] := prev;
-            if value = 0 then exit;
-            bytes := value * 1073741824;
-        end else if (prev = 'M') or (prev = 'm') then begin
-            numEnd := len - 2;
-            s[numEnd] := #0;
-            if not isNumericStr(s) then begin s[numEnd] := prev; exit; end;
-            value := stringToInt(s);
-            s[numEnd] := prev;
-            if value = 0 then exit;
-            bytes := value * 1048576;
-        end else if (prev = 'K') or (prev = 'k') then begin
-            numEnd := len - 2;
-            s[numEnd] := #0;
-            if not isNumericStr(s) then begin s[numEnd] := prev; exit; end;
-            value := stringToInt(s);
-            s[numEnd] := prev;
-            if value = 0 then exit;
-            bytes := value * 1024;
-        end else begin
-            { Just 'B' suffix — plain bytes }
-            numEnd := len - 1;
-            s[numEnd] := #0;
-            if not isNumericStr(s) then begin s[numEnd] := last; exit; end;
-            value := stringToInt(s);
-            s[numEnd] := last;
-            if value = 0 then exit;
-            bytes := value;
-        end;
-    end else begin
-        { Plain number (bytes) }
-        if not isNumericStr(s) then exit;
-        bytes := stringToInt(s);
-        if bytes = 0 then exit;
+    if (s = nil) or (sectorSize = 0) then exit;
+    limit := uint64($FFFFFFFF) * sectorSize;
+    i := 0; value := 0;
+    while (s[i] >= '0') and (s[i] <= '9') do begin
+        digit := ord(s[i])-ord('0');
+        if value > (limit-digit) div 10 then exit;
+        value := value*10+digit; Inc(i);
     end;
-
-    if sectorSize = 0 then exit;
-    parseSize := bytes div sectorSize;
+    if (i = 0) or (value = 0) then exit;
+    multiplier := 1;
+    case s[i] of
+        'K','k': begin multiplier := 1024; Inc(i); end;
+        'M','m': begin multiplier := 1048576; Inc(i); end;
+        'G','g': begin multiplier := 1073741824; Inc(i); end;
+    end;
+    if (s[i] = 'B') or (s[i] = 'b') then Inc(i);
+    if s[i] <> #0 then exit;
+    if value > limit div multiplier then exit;
+    bytes := value*multiplier;
+    if (bytes mod sectorSize) <> 0 then exit;
+    parseSize := uint32(bytes div sectorSize);
 end;
 
-{ ============================================================
-  Close any active message box
-  ============================================================ }
 procedure closeMsgBox;
 begin
     if active_mbox <> nil then begin
@@ -360,6 +435,84 @@ begin
     add_textarea := nil;
     add_err_lbl := nil;
     fmt_dropdown := nil;
+    fmt_param_area := nil;
+    fmt_cluster_input := nil;
+    fmt_filecount_input := nil;
+    fmt_label_input := nil;
+    fmt_param_error_lbl := nil;
+end;
+
+procedure set_fmt_param_error(text : pchar);
+begin
+    if fmt_param_area = nil then exit;
+    if fmt_param_error_lbl = nil then begin
+        fmt_param_error_lbl := lv_label_create(fmt_param_area);
+        lv_obj_set_style_text_color(fmt_param_error_lbl, lv_color_make(230, 80, 80), 0);
+        lv_obj_set_style_text_font(fmt_param_error_lbl, @lv_font_montserrat_14, 0);
+    end;
+    lv_label_set_text(fmt_param_error_lbl, text);
+end;
+
+procedure rebuild_fmt_param_ui(fs : PFilesystem);
+var
+    lbl : Plv_obj;
+begin
+    if fmt_param_area = nil then exit;
+    fmt_cluster_input := nil;
+    fmt_filecount_input := nil;
+    fmt_label_input := nil;
+    fmt_param_error_lbl := nil;
+    lv_obj_clean(fmt_param_area);
+
+    if fs = nil then exit;
+    if fs^.formatParamFlags = 0 then begin
+        addStatusLabel(fmt_param_area, 'No filesystem-specific format options.', 140, 150, 170);
+        exit;
+    end;
+
+    if (fs^.formatParamFlags and FS_FORMAT_PARAM_CLUSTER_SIZE) <> 0 then begin
+        lbl := lv_label_create(fmt_param_area);
+        lv_label_set_text(lbl, 'Sectors per cluster (blank = auto, power of 2)');
+        lv_obj_set_style_text_color(lbl, lv_color_make(180, 190, 210), 0);
+        lv_obj_set_style_text_font(lbl, @lv_font_montserrat_14, 0);
+        fmt_cluster_input := lv_textarea_create(fmt_param_area);
+        lv_textarea_set_one_line(fmt_cluster_input, true);
+        lv_textarea_set_placeholder_text(fmt_cluster_input, 'Auto');
+        lv_obj_set_width(fmt_cluster_input, 220);
+    end;
+
+    if (fs^.formatParamFlags and FS_FORMAT_PARAM_FILE_COUNT) <> 0 then begin
+        lbl := lv_label_create(fmt_param_area);
+        lv_label_set_text(lbl, 'Directory/file table entry count');
+        lv_obj_set_style_text_color(lbl, lv_color_make(180, 190, 210), 0);
+        lv_obj_set_style_text_font(lbl, @lv_font_montserrat_14, 0);
+        fmt_filecount_input := lv_textarea_create(fmt_param_area);
+        lv_textarea_set_one_line(fmt_filecount_input, true);
+        lv_textarea_set_placeholder_text(fmt_filecount_input, '1000');
+        lv_obj_set_width(fmt_filecount_input, 220);
+    end;
+    if (fs^.formatParamFlags and FS_FORMAT_PARAM_LABEL) <> 0 then begin
+        lbl := lv_label_create(fmt_param_area);
+        lv_label_set_text(lbl, 'Volume label (up to 11 ASCII characters)');
+        fmt_label_input := lv_textarea_create(fmt_param_area);
+        lv_textarea_set_one_line(fmt_label_input,true);
+        lv_textarea_set_max_length(fmt_label_input,11);
+        lv_textarea_set_placeholder_text(fmt_label_input,'Optional');
+        lv_obj_set_width(fmt_label_input,260);
+    end;
+end;
+
+procedure fmt_fs_change_cb(e: Plv_event); cdecl;
+var
+    code   : uint32;
+    selIdx : uint32;
+    fs     : PFilesystem;
+begin
+    code := lv_event_get_code(e);
+    if code <> LV_EVENT_VALUE_CHANGED then exit;
+    selIdx := lv_dropdown_get_selected(fmt_dropdown);
+    fs := driver.storage.fs.mgr.get_filesystem(selIdx);
+    rebuild_fmt_param_ui(fs);
 end;
 
 { ============================================================
@@ -377,6 +530,7 @@ var
     part    : TPartition_table;
     mbr_rec : PMaster_Boot_Record;
     needsInit : boolean;
+    cbCtx : PFmtUICallbackCtx;
 begin
     code := lv_event_get_code(e);
     if code <> LV_EVENT_CLICKED then exit;
@@ -431,8 +585,7 @@ begin
 
     { If disk needs init, do it now (async write, but cache updated synchronously) }
     if needsInit then begin
-        driver.storage.vol.mgr.init_disk_async(device, nil, nil);
-        { Cache is now fresh mbr with $AA55 signature, all slots empty }
+        { Blank MBR and first partition are committed in one worker write. }
         slot := 0;
         lba := 1;
     end else begin
@@ -453,12 +606,11 @@ begin
         end;
     end;
 
+    memset(uint32(@part), 0, sizeof(TPartition_table));
     driver.storage.vol.mbr.setup_partition(@part, lba, sectors);
-    driver.storage.vol.mgr.add_partition_async(device, uint32(slot), part, nil, nil);
-
-    closeMsgBox;
-    refreshSidebar;
-    showDeviceDetail(sel_dev_idx);
+    cbCtx := begin_partition_ui(1);
+    if cbCtx = nil then exit;
+    driver.storage.vol.mgr.add_partition_async(device, uint32(slot), part, @operation_done, cbCtx);
 end;
 
 procedure add_part_cancel_cb(e: Plv_event); cdecl;
@@ -473,22 +625,16 @@ end;
   Dialog callbacks — Delete Partition
   ============================================================ }
 procedure del_part_ok_cb(e: Plv_event); cdecl;
-var
-    code   : uint32;
-    device : PStorage_Device;
+var device : PStorage_Device; cbCtx : PFmtUICallbackCtx; slot : uint32;
 begin
-    code := lv_event_get_code(e);
-    if code <> LV_EVENT_CLICKED then exit;
-
+    if lv_event_get_code(e) <> LV_EVENT_CLICKED then exit;
+    if operation_pending then exit;
     device := driver.storage.mgr.get_device(sel_dev_idx);
-    if device = nil then begin closeMsgBox; exit; end;
-
-    if (pending_del_slot >= 0) and (pending_del_slot <= 3) then
-        driver.storage.vol.mgr.remove_partition_async(device, uint32(pending_del_slot), nil, nil);
-
-    closeMsgBox;
-    refreshSidebar;
-    showDeviceDetail(sel_dev_idx);
+    if (device = nil) or (pending_del_slot < 0) or (pending_del_slot > 3) then exit;
+    slot := uint32(pending_del_slot);
+    cbCtx := begin_partition_ui(2);
+    if cbCtx = nil then exit;
+    driver.storage.vol.mgr.remove_partition_async(device, slot, @operation_done, cbCtx);
 end;
 
 procedure del_part_cancel_cb(e: Plv_event); cdecl;
@@ -518,7 +664,7 @@ begin
     slot := uint32(lv_event_get_user_data(e));
     pending_del_slot := sint32(slot);
 
-    txt := stringConcat('Delete partition in slot ', intToString(slot));
+    txt := uiConcat('Delete partition in slot ', uiInt(slot));
 
     device := driver.storage.mgr.get_device(sel_dev_idx);
     if device <> nil then begin
@@ -526,13 +672,13 @@ begin
         if mbr_rec <> nil then begin
             part := mbr_rec^.partition[slot];
             if part.sector_count > 0 then begin
-                txt := stringConcat(txt, ' (');
-                txt := stringConcat(txt, formatSizeStr(part.sector_count * device^.sectorSize));
-                txt := stringConcat(txt, ')');
+                txt := uiConcat(txt, ' (');
+                txt := uiConcat(txt, formatSizeStr(uint64(part.sector_count) * device^.sectorSize));
+                txt := uiConcat(txt, ')');
             end;
         end;
     end;
-    txt := stringConcat(txt, '?');
+    txt := uiConcat(txt, '?');
 
     closeMsgBox;
     mbox := lv_msgbox_create(lv_layer_top);
@@ -552,12 +698,98 @@ end;
   ============================================================ }
 
 { Async completion callback — fired from ISR context when format finishes.
-  Safe to touch LVGL here because LVGL and driver.storage.ctl.ahci ISRs are naturally
-  serialised (both run with IF=0). }
-procedure fmt_done_cb(error : TError; userdata : pointer);
+  Only sets completion flags; LVGL work happens later on the UI poll timer. }
+procedure operation_done(error : TError; userdata : pointer);
+var
+    ctx : PFmtUICallbackCtx;
+    flags : uint32;
 begin
+    ctx := PFmtUICallbackCtx(userdata);
+    if ctx <> nil then begin
+        asm pushfd; cli; pop flags end;
+        if ctx^.SessionID = ui_session_id then begin
+            fmt_done_error := error;
+            fmt_done_vol_idx := ctx^.VolumeIdx;
+            done_kind := ctx^.Kind; done_device := ctx^.DeviceIdx;
+            puint32(@fmt_done_flag)^ := 1;
+        end;
+        if (flags and $200) <> 0 then asm sti end;
+        kfree(void(ctx));
+    end;
+end;
+
+procedure diskutil_storage_event(event : TStorageLifecycleEvent; device : PStorage_Device; volume : PStorage_Volume; error : TError; userdata : pointer);
+begin
+    puint32(@storage_dirty_flag)^ := 1;
+end;
+
+procedure fmt_poll_cb(tmr: Plv_timer); cdecl;
+var
+    mbox : Plv_obj;
+begin
+    releaseTextTemps;
+    if puint32(@storage_dirty_flag)^ <> 0 then begin
+        puint32(@storage_dirty_flag)^ := 0;
+        refreshSidebar;
+        if sel_mode = SEL_VOLUME then begin
+            if driver.storage.vol.mgr.get_volume(sel_vol_idx) <> nil then
+                showVolumeDetail(sel_vol_idx)
+            else
+                clearDetail;
+        end else if sel_mode = SEL_DEVICE then begin
+            if driver.storage.mgr.get_device(sel_dev_idx) <> nil then
+                showDeviceDetail(sel_dev_idx)
+            else
+                clearDetail;
+        end;
+    end;
+
+    if puint32(@fmt_done_flag)^ <> 1 then exit;
+    puint32(@fmt_done_flag)^ := 0;
+
+    closeMsgBox;
     refreshSidebar;
-    showVolumeDetail(sel_vol_idx);
+    operation_pending := false;
+    if done_kind = 0 then showVolumeDetail(fmt_done_vol_idx)
+    else showDeviceDetail(done_device);
+
+    if fmt_done_error <> eNone then begin
+        mbox := lv_msgbox_create(lv_layer_top);
+        active_mbox := mbox;
+        lv_msgbox_add_title(mbox, 'Storage Operation Failed');
+        lv_msgbox_add_text(mbox, 'The operation did not complete. Check the error before retrying.');
+        lv_msgbox_add_text(mbox, formatErrorName(fmt_done_error));
+        lv_obj_add_event_cb(lv_msgbox_add_footer_button(mbox, 'OK'), @add_part_cancel_cb, LV_EVENT_CLICKED, nil);
+    end else begin
+        mbox := lv_msgbox_create(lv_layer_top);
+        active_mbox := mbox;
+        lv_msgbox_add_title(mbox, 'Storage Operation Complete');
+        lv_msgbox_add_text(mbox, 'The requested changes have been written successfully.');
+        lv_obj_add_event_cb(lv_msgbox_add_footer_button(mbox, 'OK'), @add_part_cancel_cb, LV_EVENT_CLICKED, nil);
+    end;
+end;
+
+function begin_partition_ui(kind : uint32) : PFmtUICallbackCtx;
+var ctx : PFmtUICallbackCtx;
+begin
+    begin_partition_ui := nil;
+    if operation_pending then exit;
+    ctx := PFmtUICallbackCtx(kalloc(sizeof(TFmtUICallbackCtx)));
+    if ctx = nil then begin
+        closeMsgBox;
+        active_mbox := lv_msgbox_create(lv_layer_top);
+        lv_msgbox_add_title(active_mbox, 'Out of memory');
+        lv_obj_add_event_cb(lv_msgbox_add_footer_button(active_mbox, 'OK'), @add_part_cancel_cb, LV_EVENT_CLICKED, nil);
+        exit;
+    end;
+    ctx^.SessionID := ui_session_id; ctx^.VolumeIdx := sel_vol_idx;
+    ctx^.Kind := kind; ctx^.DeviceIdx := sel_dev_idx;
+    closeMsgBox;
+    active_mbox := lv_msgbox_create(lv_layer_top);
+    lv_msgbox_add_title(active_mbox, 'Updating partition table');
+    lv_msgbox_add_text(active_mbox, 'The operation is running in the background.');
+    operation_pending := true;
+    begin_partition_ui := ctx;
 end;
 
 procedure fmt_ok_cb(e: Plv_event); cdecl;
@@ -566,22 +798,115 @@ var
     selIdx : uint32;
     fs     : PFilesystem;
     vol    : PStorage_Volume;
+    cbCtx  : PFmtUICallbackCtx;
+    params : TFSFormatParams;
+    paramPtr : PFSFormatParams;
+    text   : pchar;
+    value  : uint32;
+    normalized : TVolumeLabel;
 begin
+    if operation_pending then exit;
     code := lv_event_get_code(e);
     if code <> LV_EVENT_CLICKED then exit;
 
     vol := driver.storage.vol.mgr.get_volume(sel_vol_idx);
     if vol = nil then begin closeMsgBox; exit; end;
+    if driver.storage.vol.mgr.volume_is_busy(vol) then begin
+        closeMsgBox;
+        active_mbox := lv_msgbox_create(lv_layer_top);
+        lv_msgbox_add_title(active_mbox, 'Format Busy');
+        lv_msgbox_add_text(active_mbox, 'This volume is busy. Wait for the current operation to finish.');
+        lv_obj_add_event_cb(lv_msgbox_add_footer_button(active_mbox, 'OK'), @add_part_cancel_cb, LV_EVENT_CLICKED, nil);
+        exit;
+    end;
 
     selIdx := lv_dropdown_get_selected(fmt_dropdown);
     fs := driver.storage.fs.mgr.get_filesystem(selIdx);
     if fs = nil then begin closeMsgBox; exit; end;
 
+    memset(uint32(@params), 0, sizeof(TFSFormatParams));
+    params.Version := FS_FORMAT_PARAMS_VERSION_1;
+    paramPtr := nil;
+
+    if (fs^.formatParamFlags and FS_FORMAT_PARAM_CLUSTER_SIZE) <> 0 then begin
+        if fmt_cluster_input <> nil then begin
+            text := lv_textarea_get_text(fmt_cluster_input);
+            if (text <> nil) and (text^ <> #0) then begin
+                if (stringSize(text) > 5) or (not isNumericStr(text)) then begin
+                    set_fmt_param_error('Cluster size must be a number.');
+                    exit;
+                end;
+                value := stringToInt(text);
+                if (value = 0) or (value > 128) or ((value and (value - 1)) <> 0) then begin
+                    set_fmt_param_error('Cluster size must be a power of two from 1 to 128.');
+                    exit;
+                end;
+                params.Flags := params.Flags or FS_FORMAT_PARAM_CLUSTER_SIZE;
+                params.ClusterSize := value;
+                paramPtr := @params;
+            end;
+        end;
+    end;
+
+    if (fs^.formatParamFlags and FS_FORMAT_PARAM_FILE_COUNT) <> 0 then begin
+        if fmt_filecount_input <> nil then begin
+            text := lv_textarea_get_text(fmt_filecount_input);
+            if (text <> nil) and (text^ <> #0) then begin
+                if (stringSize(text) > 5) or (not isNumericStr(text)) then begin
+                    set_fmt_param_error('File count must be a number.');
+                    exit;
+                end;
+                value := stringToInt(text);
+                if (value = 0) or (value > 65535) then begin
+                    set_fmt_param_error('File count must be from 1 to 65535.');
+                    exit;
+                end;
+                params.Flags := params.Flags or FS_FORMAT_PARAM_FILE_COUNT;
+                params.FileCount := value;
+                paramPtr := @params;
+            end;
+        end;
+    end;
+
+    if (fmt_label_input <> nil) and ((fs^.formatParamFlags and FS_FORMAT_PARAM_LABEL) <> 0) then begin
+        text := lv_textarea_get_text(fmt_label_input);
+        if (fs^.validateLabelCallback = nil) then exit;
+        if fs^.validateLabelCallback(text,normalized) <> eNone then begin
+            set_fmt_param_error('Use up to 11 ASCII characters without punctuation such as / or :'); exit;
+        end;
+        memcpy(uint32(@normalized[0]),uint32(@params.LabelText[0]),12);
+        params.Flags := params.Flags or FS_FORMAT_PARAM_LABEL; paramPtr := @params;
+    end;
+
     closeMsgBox;
 
-    { Submit async format — returns immediately, fmt_done_cb fires on completion }
-    driver.storage.vol.mgr.format_volume_async(vol^.device, sel_vol_idx, fs^.sName, nil,
-        @fmt_done_cb, nil);
+    cbCtx := PFmtUICallbackCtx(kalloc(sizeof(TFmtUICallbackCtx)));
+    if cbCtx = nil then begin
+        active_mbox := lv_msgbox_create(lv_layer_top);
+        lv_msgbox_add_title(active_mbox, 'Out of memory');
+        lv_obj_add_event_cb(lv_msgbox_add_footer_button(active_mbox, 'OK'), @add_part_cancel_cb, LV_EVENT_CLICKED, nil);
+        exit;
+    end;
+    cbCtx^.SessionID := ui_session_id;
+    cbCtx^.VolumeIdx := sel_vol_idx;
+    cbCtx^.Kind := 0; cbCtx^.DeviceIdx := sel_dev_idx;
+
+    { Submit async format — returns immediately, fmt_done_cb only flips a flag. }
+    if not driver.storage.vol.mgr.format_volume_async(vol^.device, sel_vol_idx, fs^.sName, paramPtr,
+        @operation_done, cbCtx) then begin
+        kfree(void(cbCtx));
+        closeMsgBox;
+        active_mbox := lv_msgbox_create(lv_layer_top);
+        lv_msgbox_add_title(active_mbox, 'Format Failed');
+        lv_msgbox_add_text(active_mbox, 'Cannot start: device busy, unsupported geometry/options, or insufficient memory.');
+        lv_obj_add_event_cb(lv_msgbox_add_footer_button(active_mbox, 'OK'), @add_part_cancel_cb, LV_EVENT_CLICKED, nil);
+    end else begin
+        operation_pending := true;
+        active_mbox := lv_msgbox_create(lv_layer_top);
+        lv_msgbox_add_title(active_mbox, 'Formatting');
+        lv_msgbox_add_text(active_mbox, 'Formatting is running in the background.');
+        lv_msgbox_add_text(active_mbox, 'The volume will remount automatically when complete.');
+    end;
 end;
 
 procedure fmt_cancel_cb(e: Plv_event); cdecl;
@@ -668,9 +993,9 @@ begin
     active_mbox := mbox;
     lv_msgbox_add_title(mbox, 'Add Partition');
 
-    infoTxt := stringConcat('Free space: ', formatSizePrecise(freeSec * device^.sectorSize));
-    infoTxt := stringConcat(infoTxt, '   |   Free slots: ');
-    infoTxt := stringConcat(infoTxt, intToString(freeSlotCnt));
+    infoTxt := uiConcat('Free space: ', formatSizePrecise(uint64(freeSec) * device^.sectorSize));
+    infoTxt := uiConcat(infoTxt, '   |   Free slots: ');
+    infoTxt := uiConcat(infoTxt, uiInt(freeSlotCnt));
 
     lv_msgbox_add_text(mbox, infoTxt);
     lv_msgbox_add_text(mbox, 'Enter size (e.g. 100MB, 2GB) or leave blank for all free space:');
@@ -678,7 +1003,7 @@ begin
     body := lv_msgbox_get_content(mbox);
     add_textarea := lv_textarea_create(body);
     lv_textarea_set_one_line(add_textarea, true);
-    lv_textarea_set_placeholder_text(add_textarea, formatSizeStr(freeSec * device^.sectorSize));
+    lv_textarea_set_placeholder_text(add_textarea, formatSizeStr(uint64(freeSec) * device^.sectorSize));
     lv_obj_set_width(add_textarea, 280);
     add_err_lbl := nil;
 
@@ -709,6 +1034,15 @@ begin
 
     vol := driver.storage.vol.mgr.get_volume(sel_vol_idx);
     if vol = nil then exit;
+    if driver.storage.vol.mgr.volume_is_busy(vol) then begin
+        mbox := lv_msgbox_create(lv_layer_top);
+        active_mbox := mbox;
+        lv_msgbox_add_title(mbox, 'Cannot Format');
+        lv_msgbox_add_text(mbox, 'This volume is busy or already being formatted.');
+        btn_no := lv_msgbox_add_footer_button(mbox, 'OK');
+        lv_obj_add_event_cb(btn_no, @fmt_cancel_cb, LV_EVENT_CLICKED, nil);
+        exit;
+    end;
 
     { Check writable }
     if (vol^.device <> nil) and (not vol^.device^.writable) then begin
@@ -739,7 +1073,7 @@ begin
 
     body := lv_msgbox_get_content(mbox);
     addStatusLabel(body,
-        stringConcat('Volume size: ', formatSizePrecise(vol^.sectorCount * vol^.sectorSize)),
+        uiConcat('Volume size: ', formatSizePrecise(uint64(vol^.sectorCount) * vol^.sectorSize)),
         160, 170, 190);
 
     { Build newline-separated options for dropdown }
@@ -750,8 +1084,8 @@ begin
             if opts = nil then
                 opts := fs^.sName
             else begin
-                opts := stringConcat(opts, #10);
-                opts := stringConcat(opts, fs^.sName);
+                opts := uiConcat(opts, #10);
+                opts := uiConcat(opts, fs^.sName);
             end;
         end;
     end;
@@ -760,6 +1094,18 @@ begin
     lv_obj_set_width(fmt_dropdown, 280);
     if opts <> nil then
         lv_dropdown_set_options(fmt_dropdown, opts);
+    lv_obj_add_event_cb(fmt_dropdown, @fmt_fs_change_cb, LV_EVENT_VALUE_CHANGED, nil);
+
+    fmt_param_area := lv_obj_create(body);
+    lv_obj_remove_style_all(fmt_param_area);
+    lv_obj_set_width(fmt_param_area, 300);
+    lv_obj_set_style_layout(fmt_param_area, LV_LAYOUT_FLEX, 0);
+    lv_obj_set_flex_flow(fmt_param_area, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_style_pad_row(fmt_param_area, 4, 0);
+    lv_obj_set_style_pad_all(fmt_param_area, 0, 0);
+    lv_obj_remove_flag(fmt_param_area, LV_OBJ_FLAG_SCROLLABLE);
+    fs := driver.storage.fs.mgr.get_filesystem(lv_dropdown_get_selected(fmt_dropdown));
+    rebuild_fmt_param_ui(fs);
 
     btn_ok := lv_msgbox_add_footer_button(mbox, 'Format');
     lv_obj_add_event_cb(btn_ok, @fmt_ok_cb, LV_EVENT_CLICKED, nil);
@@ -775,7 +1121,6 @@ begin
     if detail <> nil then
         lv_obj_clean(detail);
     sel_mode := SEL_NONE;
-    pending_del_slot := -1;
 end;
 
 { Find the volume that corresponds to a partition on a device }
@@ -787,7 +1132,7 @@ var
 begin
     findVolumeForPartition := nil;
     volCnt := driver.storage.vol.mgr.get_volume_count();
-    for i := 0 to volCnt - 1 do begin
+    if volCnt > 0 then for i := 0 to volCnt - 1 do begin
         vol := driver.storage.vol.mgr.get_volume(i);
         if vol = nil then continue;
         if (vol^.device = device) and (vol^.sectorStart = lbaStart) then begin
@@ -811,8 +1156,8 @@ var
     sizeStr : pchar;
     vol     : PStorage_Volume;
     freeStr : pchar;
-    totalB  : uint32;
-    freeB   : uint32;
+    totalB  : uint64;
+    freeB   : uint64;
 begin
     row := lv_obj_create(parent);
     lv_obj_remove_style_all(row);
@@ -830,20 +1175,20 @@ begin
 
     { Slot number badge }
     lbl := lv_label_create(row);
-    lv_label_set_text(lbl, intToString(slot));
+    lv_label_set_text(lbl, uiInt(slot));
     lv_obj_set_style_text_color(lbl, lv_color_make(100, 160, 255), 0);
     lv_obj_set_style_text_font(lbl, @lv_font_montserrat_14, 0);
     lv_obj_set_width(lbl, 20);
 
     { System ID }
     lbl := lv_label_create(row);
-    lv_label_set_text(lbl, stringConcat('ID:', intToString(part.system_id)));
+    lv_label_set_text(lbl, uiConcat('ID:', uiInt(part.system_id)));
     lv_obj_set_style_text_color(lbl, lv_color_make(160, 170, 190), 0);
     lv_obj_set_style_text_font(lbl, @lv_font_montserrat_14, 0);
     lv_obj_set_width(lbl, 55);
 
     { Size }
-    totalB := part.sector_count * sectorSize;
+    totalB := uint64(part.sector_count) * sectorSize;
     sizeStr := formatSizeStr(totalB);
     lbl := lv_label_create(row);
     lv_label_set_text(lbl, sizeStr);
@@ -854,8 +1199,9 @@ begin
     { Free space — look up the corresponding volume }
     vol := findVolumeForPartition(device, part.LBA_start);
     if vol <> nil then begin
-        freeB := vol^.freeSectors * vol^.sectorSize;
-        freeStr := stringConcat(formatSizeStr(freeB), ' free');
+        freeB := uint64(vol^.freeSectors) * vol^.sectorSize;
+        if (vol^.lifecycleFlags and STORAGE_VOLUME_FLAG_FREE_UNKNOWN) <> 0 then freeStr := 'Free: unknown'
+        else freeStr := uiConcat(formatSizeStr(freeB), ' free');
         lbl := lv_label_create(row);
         lv_label_set_text(lbl, freeStr);
         lv_obj_set_style_text_color(lbl, lv_color_make(100, 180, 130), 0);
@@ -894,9 +1240,8 @@ var
     btn         : Plv_obj;
     dw          : sint32;
     i           : uint32;
-    totalBytes  : uint32;
-    usedSectors : uint32;
-    freeBytes   : uint32;
+    totalBytes  : uint64;
+    freeBytes   : uint64;
     volCnt      : uint32;
     devVolCnt   : uint32;
     vol         : PStorage_Volume;
@@ -905,8 +1250,8 @@ var
     lbl         : Plv_obj;
     sizeStr     : pchar;
     freeStr     : pchar;
-    totalB      : uint32;
-    freeB       : uint32;
+    totalB      : uint64;
+    freeB       : uint64;
 begin
     clearDetail;
     sel_mode := SEL_DEVICE;
@@ -922,30 +1267,26 @@ begin
 
     { ---- Device Info ---- }
     addSectionHeader(detail, 'Device Info');
-    addInfoRow(detail, dw, 'Device Index', intToString(devIdx));
+    addInfoRow(detail, dw, 'Device Index', uiInt(devIdx));
     addInfoRow(detail, dw, 'Controller', controllerStr(device^.controller));
     addInfoRow(detail, dw, 'Writable', boolStr(device^.writable));
-    addInfoRow(detail, dw, 'Sector Size', stringConcat(intToString(device^.sectorSize), ' bytes'));
-    totalBytes := device^.maxSectorCount * device^.sectorSize;
+    addInfoRow(detail, dw, 'Sector Size', uiConcat(uiInt(device^.sectorSize), ' bytes'));
+    totalBytes := uint64(device^.maxSectorCount) * device^.sectorSize;
     addInfoRow(detail, dw, 'Total Size', formatSizePrecise(totalBytes));
 
-    { Compute free space from in-memory volume data (no I/O) }
-    usedSectors := 0;
+    { Use the same cached partition geometry as Add Partition. Volumes may
+      still be undergoing filesystem probing after the device is published. }
     devVolCnt := 0;
     volCnt := driver.storage.vol.mgr.get_volume_count();
-    for i := 0 to volCnt - 1 do begin
+    if volCnt > 0 then for i := 0 to volCnt - 1 do begin
         vol := driver.storage.vol.mgr.get_volume(i);
         if (vol <> nil) and (vol^.device = device) then begin
             devVolCnt := devVolCnt + 1;
-            usedSectors := usedSectors + vol^.sectorCount;
         end;
     end;
-    if device^.maxSectorCount > usedSectors then
-        freeBytes := (device^.maxSectorCount - usedSectors) * device^.sectorSize
-    else
-        freeBytes := 0;
-    addInfoRow(detail, dw, 'Free Space', formatSizePrecise(freeBytes));
-    addInfoRow(detail, dw, 'Volumes', intToString(devVolCnt));
+    freeBytes := uint64(driver.storage.vol.mgr.get_free_sector_count(device)) * device^.sectorSize;
+    addInfoRow(detail, dw, 'Unallocated Space', formatSizePrecise(freeBytes));
+    addInfoRow(detail, dw, 'Volumes', uiInt(devVolCnt));
 
     { Usage bar }
     if totalBytes > 0 then
@@ -959,7 +1300,7 @@ begin
     if devVolCnt = 0 then
         addStatusLabel(detail, 'No volumes found.', 120, 125, 145)
     else begin
-        for i := 0 to volCnt - 1 do begin
+        if volCnt > 0 then for i := 0 to volCnt - 1 do begin
             vol := driver.storage.vol.mgr.get_volume(i);
             if (vol = nil) or (vol^.device <> device) then continue;
 
@@ -983,20 +1324,21 @@ begin
             else
                 fsName := 'Unknown';
             lbl := lv_label_create(row);
-            lv_label_set_text(lbl, fsName);
+            if vol^.labelText[0] <> #0 then lv_label_set_text(lbl,@vol^.labelText[0])
+            else lv_label_set_text(lbl, fsName);
             lv_obj_set_style_text_color(lbl, lv_color_make(100, 160, 255), 0);
             lv_obj_set_style_text_font(lbl, @lv_font_montserrat_14, 0);
             lv_obj_set_width(lbl, 70);
 
             { LBA start }
             lbl := lv_label_create(row);
-            lv_label_set_text(lbl, stringConcat('LBA:', intToString(vol^.sectorStart)));
+            lv_label_set_text(lbl, uiConcat('LBA:', uiInt(vol^.sectorStart)));
             lv_obj_set_style_text_color(lbl, lv_color_make(160, 170, 190), 0);
             lv_obj_set_style_text_font(lbl, @lv_font_montserrat_14, 0);
             lv_obj_set_width(lbl, 80);
 
             { Size }
-            totalB := vol^.sectorCount * vol^.sectorSize;
+            totalB := uint64(vol^.sectorCount) * vol^.sectorSize;
             sizeStr := formatSizeStr(totalB);
             lbl := lv_label_create(row);
             lv_label_set_text(lbl, sizeStr);
@@ -1005,8 +1347,9 @@ begin
             lv_obj_set_width(lbl, 70);
 
             { Free space }
-            freeB := vol^.freeSectors * vol^.sectorSize;
-            freeStr := stringConcat(formatSizeStr(freeB), ' free');
+            freeB := uint64(vol^.freeSectors) * vol^.sectorSize;
+            if (vol^.lifecycleFlags and STORAGE_VOLUME_FLAG_FREE_UNKNOWN) <> 0 then freeStr := 'Free: unknown'
+            else freeStr := uiConcat(formatSizeStr(freeB), ' free');
             lbl := lv_label_create(row);
             lv_label_set_text(lbl, freeStr);
             lv_obj_set_style_text_color(lbl, lv_color_make(100, 180, 130), 0);
@@ -1038,13 +1381,65 @@ end;
 { ============================================================
   Show volume detail — volume info + format action
   ============================================================ }
+procedure label_save_cb(e : Plv_event); cdecl;
+var vol : PStorage_Volume; ctx : PFmtUICallbackCtx; value : TVolumeLabel; err : TError;
+begin
+    if (lv_event_get_code(e) <> LV_EVENT_CLICKED) or operation_pending then exit;
+    vol := driver.storage.vol.mgr.get_volume(label_target_index);
+    if (vol = nil) or (vol^.id <> label_target_id) or (vol^.filesystem = nil) then begin
+        lv_label_set_text(add_err_lbl,'The selected volume is no longer available.'); exit;
+    end;
+    if vol^.filesystem^.validateLabelCallback = nil then exit;
+    err := vol^.filesystem^.validateLabelCallback(lv_textarea_get_text(fmt_label_input),value);
+    if err <> eNone then begin
+        lv_label_set_text(add_err_lbl,'Invalid label. Use ASCII letters, digits, spaces, _ or -.'); exit;
+    end;
+    ctx := PFmtUICallbackCtx(kalloc(sizeof(TFmtUICallbackCtx)));
+    if ctx = nil then begin lv_label_set_text(add_err_lbl,'Out of memory.'); exit; end;
+    ctx^.SessionID := ui_session_id; ctx^.VolumeIdx := label_target_index;
+    ctx^.Kind := 0; ctx^.DeviceIdx := sel_dev_idx;
+    err := driver.storage.vol.mgr.set_volume_label_async(vol^.device,label_target_index,@value[0],@operation_done,ctx);
+    if err <> eNone then begin
+        kfree(void(ctx)); lv_label_set_text(add_err_lbl,formatErrorName(err)); exit;
+    end;
+    operation_pending := true;
+    closeMsgBox;
+    active_mbox := lv_msgbox_create(lv_layer_top);
+    lv_msgbox_add_title(active_mbox,'Saving volume label');
+    lv_msgbox_add_text(active_mbox,'Updating the label on disk.');
+end;
+
+procedure label_edit_cb(e : Plv_event); cdecl;
+var vol : PStorage_Volume; content : Plv_obj;
+begin
+    if (lv_event_get_code(e) <> LV_EVENT_CLICKED) or operation_pending then exit;
+    vol := driver.storage.vol.mgr.get_volume(sel_vol_idx);
+    if (vol = nil) or (vol^.filesystem = nil) then exit;
+    if vol^.filesystem^.setLabelCallback = nil then exit;
+    closeMsgBox;
+    label_target_id := vol^.id; label_target_index := sel_vol_idx;
+    active_mbox := lv_msgbox_create(lv_layer_top);
+    lv_msgbox_add_title(active_mbox,'Rename Volume');
+    lv_msgbox_add_text(active_mbox,'Up to 11 ASCII characters, stored in uppercase. Leave blank to remove the label.');
+    content := lv_msgbox_get_content(active_mbox);
+    fmt_label_input := lv_textarea_create(content);
+    lv_textarea_set_one_line(fmt_label_input,true);
+    lv_textarea_set_max_length(fmt_label_input,11);
+    lv_textarea_set_text(fmt_label_input,@vol^.labelText[0]);
+    lv_obj_set_width(fmt_label_input,300);
+    add_err_lbl := lv_label_create(content); lv_label_set_text(add_err_lbl,'');
+    lv_obj_set_style_text_color(add_err_lbl,lv_color_make(230,80,80),0);
+    lv_obj_add_event_cb(lv_msgbox_add_footer_button(active_mbox,'Save'),@label_save_cb,LV_EVENT_CLICKED,nil);
+    lv_obj_add_event_cb(lv_msgbox_add_footer_button(active_mbox,'Cancel'),@add_part_cancel_cb,LV_EVENT_CLICKED,nil);
+end;
+
 procedure showVolumeDetail(volIdx: uint32);
 var
     vol        : PStorage_Volume;
     dw         : sint32;
-    totalBytes : uint32;
-    freeBytes  : uint32;
-    usedBytes  : uint32;
+    totalBytes : uint64;
+    freeBytes  : uint64;
+    usedBytes  : uint64;
     fsName     : pchar;
     btn_row    : Plv_obj;
     btn        : Plv_obj;
@@ -1065,17 +1460,20 @@ begin
     dw := WIN_W - SIDEBAR_W - 20;
 
     addSectionHeader(detail, 'Volume Info');
-    addInfoRow(detail, dw, 'Volume Index', intToString(volIdx));
+    addInfoRow(detail, dw, 'Volume Index', uiInt(volIdx));
+    if vol^.labelText[0] <> #0 then addInfoRow(detail,dw,'Label',@vol^.labelText[0])
+    else addInfoRow(detail,dw,'Label','Unlabelled');
 
     { Find parent device index }
     devIdx := 0;
+    if driver.storage.mgr.get_device_count() > 0 then
     for i := 0 to driver.storage.mgr.get_device_count() - 1 do begin
         if driver.storage.mgr.get_device(i) = vol^.device then begin
             devIdx := i;
             break;
         end;
     end;
-    addInfoRow(detail, dw, 'Parent Device', stringConcat('Disk ', intToString(devIdx)));
+    addInfoRow(detail, dw, 'Parent Device', uiConcat('Disk ', uiInt(devIdx)));
 
     if vol^.filesystem <> nil then
         fsName := vol^.filesystem^.sName
@@ -1083,22 +1481,28 @@ begin
         fsName := 'Unknown';
 
     addInfoRow(detail, dw, 'Filesystem', fsName);
-    addInfoRow(detail, dw, 'Sector Start', intToString(vol^.sectorStart));
-    addInfoRow(detail, dw, 'Sector Count', intToString(vol^.sectorCount));
-    addInfoRow(detail, dw, 'Sector Size', stringConcat(intToString(vol^.sectorSize), ' bytes'));
+    addInfoRow(detail, dw, 'Sector Start', uiInt(vol^.sectorStart));
+    addInfoRow(detail, dw, 'Sector Count', uiInt(vol^.sectorCount));
+    addInfoRow(detail, dw, 'Sector Size', uiConcat(uiInt(vol^.sectorSize), ' bytes'));
 
-    totalBytes := vol^.sectorCount * vol^.sectorSize;
-    freeBytes := vol^.freeSectors * vol^.sectorSize;
+    totalBytes := uint64(vol^.sectorCount) * vol^.sectorSize;
+    freeBytes := uint64(vol^.freeSectors) * vol^.sectorSize;
+    if freeBytes > totalBytes then freeBytes := totalBytes;
     usedBytes := totalBytes - freeBytes;
 
     addInfoRow(detail, dw, 'Total Size', formatSizePrecise(totalBytes));
+    if (vol^.lifecycleFlags and STORAGE_VOLUME_FLAG_FREE_UNKNOWN) <> 0 then begin
+        addInfoRow(detail, dw, 'Free Space', 'Unknown');
+        addInfoRow(detail, dw, 'Used Space', 'Unknown');
+    end else begin
     addInfoRow(detail, dw, 'Free Space', formatSizePrecise(freeBytes));
     addInfoRow(detail, dw, 'Used Space', formatSizePrecise(usedBytes));
 
     if totalBytes > 0 then begin
         pctUsed := (usedBytes * 100) div totalBytes;
-        addInfoRow(detail, dw, 'Usage', stringConcat(intToString(pctUsed), '%'));
+        addInfoRow(detail, dw, 'Usage', uiConcat(uiInt(pctUsed), '%'));
         addUsageBar(detail, dw, usedBytes, totalBytes);
+    end;
     end;
 
     addInfoRow(detail, dw, 'Boot Drive', boolStr(vol^.isBootDrive));
@@ -1116,8 +1520,16 @@ begin
     lv_obj_set_flex_align(btn_row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
     if (vol^.device <> nil) and vol^.device^.writable then begin
-        btn := makeButton(btn_row, 'Format', 100);
-        lv_obj_add_event_cb(btn, @btn_format_cb, LV_EVENT_CLICKED, nil);
+        if driver.storage.vol.mgr.volume_is_formatting(vol) then
+            addStatusLabel(detail, 'Format in progress. The volume will remount when complete.', 210, 180, 110)
+        else begin
+            btn := makeButton(btn_row, 'Format', 100);
+            lv_obj_add_event_cb(btn, @btn_format_cb, LV_EVENT_CLICKED, nil);
+            if vol^.filesystem <> nil then if vol^.filesystem^.setLabelCallback <> nil then begin
+                btn := makeButton(btn_row,'Rename Volume',150);
+                lv_obj_add_event_cb(btn,@label_edit_cb,LV_EVENT_CLICKED,nil);
+            end;
+        end;
     end else begin
         addStatusLabel(detail, 'Device is read-only. Format disabled.', 160, 150, 130);
     end;
@@ -1177,8 +1589,8 @@ var
     sizeStr : pchar;
 begin
     if sidebar = nil then exit;
-    lv_obj_clean(sidebar);
     active_sidebar_btn := nil;
+    lv_obj_clean(sidebar);
 
     { Sidebar title }
     hdr := lv_label_create(sidebar);
@@ -1187,12 +1599,12 @@ begin
     lv_obj_set_style_text_font(hdr, @lv_font_montserrat_14, 0);
 
     devCnt := driver.storage.mgr.get_device_count();
-    for i := 0 to devCnt - 1 do begin
+    if devCnt > 0 then for i := 0 to devCnt - 1 do begin
         device := driver.storage.mgr.get_device(i);
         if device = nil then continue;
 
         { Section label for this device }
-        addSectionHeader(sidebar, stringConcat('Disk ', intToString(i)));
+        addSectionHeader(sidebar, uiConcat('Disk ', uiInt(i)));
 
         { Clickable device row }
         btn := lv_button_create(sidebar);
@@ -1213,7 +1625,7 @@ begin
         lv_obj_set_style_text_color(lbl, lv_color_make(210, 215, 230), 0);
         lv_obj_set_style_text_font(lbl, @lv_font_montserrat_14, 0);
 
-        sizeStr := formatSizeStr(device^.maxSectorCount * device^.sectorSize);
+        sizeStr := formatSizeStr(uint64(device^.maxSectorCount) * device^.sectorSize);
         lbl := lv_label_create(btn);
         lv_label_set_text(lbl, sizeStr);
         lv_obj_set_style_text_color(lbl, lv_color_make(140, 150, 170), 0);
@@ -1227,7 +1639,7 @@ begin
 
         { List volumes that belong to this device }
         volCnt := driver.storage.vol.mgr.get_volume_count();
-        for j := 0 to volCnt - 1 do begin
+        if volCnt > 0 then for j := 0 to volCnt - 1 do begin
             vol := driver.storage.vol.mgr.get_volume(j);
             if vol = nil then continue;
             if vol^.device <> device then continue;
@@ -1246,14 +1658,16 @@ begin
             lv_obj_set_flex_align(btn, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
             lbl := lv_label_create(btn);
-            if vol^.filesystem <> nil then
+            if vol^.labelText[0] <> #0 then
+                lv_label_set_text(lbl,@vol^.labelText[0])
+            else if vol^.filesystem <> nil then
                 lv_label_set_text(lbl, vol^.filesystem^.sName)
             else
                 lv_label_set_text(lbl, 'Volume');
             lv_obj_set_style_text_color(lbl, lv_color_make(185, 195, 215), 0);
             lv_obj_set_style_text_font(lbl, @lv_font_montserrat_14, 0);
 
-            sizeStr := formatSizeStr(vol^.sectorCount * vol^.sectorSize);
+            sizeStr := formatSizeStr(uint64(vol^.sectorCount) * vol^.sectorSize);
             lbl := lv_label_create(btn);
             lv_label_set_text(lbl, sizeStr);
             lv_obj_set_style_text_color(lbl, lv_color_make(120, 130, 150), 0);
@@ -1292,6 +1706,19 @@ procedure onClose(wid: uint32);
 begin
     debug.tracer.push_trace('diskutil.onClose');
     closeMsgBox;
+    releaseTextTemps;
+    operation_pending := false;
+    ui_session_id := ui_session_id + 1;
+    puint32(@fmt_done_flag)^ := 0;
+    puint32(@storage_dirty_flag)^ := 0;
+    if fmt_poll_timer <> nil then begin
+        lv_timer_delete(fmt_poll_timer);
+        fmt_poll_timer := nil;
+    end;
+    if storage_watch_id <> 0 then begin
+        driver.storage.vol.mgr.unwatch_lifecycle(storage_watch_id);
+        storage_watch_id := 0;
+    end;
     if proc_pid <> 0 then begin
         proc.mgr.kill(proc_pid);
         proc_pid := 0;
@@ -1390,15 +1817,28 @@ begin
     lv_obj_set_style_text_font(lbl, @lv_font_montserrat_14, 0);
 
     { Reset state }
+    operation_pending := false;
     sel_mode := SEL_NONE;
     sel_dev_idx := 0;
     sel_vol_idx := 0;
     pending_del_slot := -1;
     active_mbox := nil;
     fmt_dropdown := nil;
+    fmt_param_area := nil;
+    fmt_cluster_input := nil;
+    fmt_filecount_input := nil;
+    fmt_label_input := nil;
+    fmt_param_error_lbl := nil;
     add_textarea := nil;
     add_err_lbl := nil;
     active_sidebar_btn := nil;
+    fmt_done_flag := 0;
+    fmt_done_error := eNone;
+    fmt_done_vol_idx := 0;
+    storage_dirty_flag := 0;
+    fmt_poll_timer := lv_timer_create(@fmt_poll_cb, 50, nil);
+    if fmt_poll_timer = nil then begin onClose(win_id); exit; end;
+    storage_watch_id := driver.storage.vol.mgr.watch_lifecycle(@diskutil_storage_event, nil);
 
     refreshSidebar;
 
@@ -1415,6 +1855,31 @@ end;
 { ============================================================
   Init — register with the driver.video.desktop program launcher
   ============================================================ }
+procedure UnitTest;
+var passed, failed, sectors, sectorSize : uint32;
+    procedure Assert(ok : boolean; name : pchar);
+    begin
+        if ok then Inc(passed) else begin Inc(failed); io.syslog.logln('DISKUTIL FAIL', name); end;
+    end;
+begin
+    passed := 0; failed := 0;
+    sectors := 8388608; sectorSize := 512;
+    Assert(stringEquals(formatSizeStr(uint64(sectors)*sectorSize),'4 GB'),'4GB label');
+    sectors := 10485760;
+    Assert(stringEquals(formatSizePrecise(uint64(sectors)*sectorSize),'5 GB'),'5GB label');
+    releaseTextTemps;
+    Assert(TextTemps = nil,'temporary labels released');
+    Assert(parseSize('4GB',512) = 8388608, '4GB does not wrap to zero');
+    Assert(parseSize('5GB',512) = 10485760, '5GB does not wrap to 1GB');
+    Assert(parseSize('999999999999999999999GB',512) = 0, 'reject decimal overflow');
+    Assert(parseSize('2097152GB',512) = 0, 'reject LBA overflow');
+    Assert(parseSize('513B',512) = 0, 'reject fractional sectors');
+    Assert(parseSize('512B',0) = 0, 'reject zero sector size');
+    Assert(parseSize('',512) = 0, 'reject empty size');
+    io.syslog.log('DISKUTIL', 'Passed: '); io.syslog.writeint(passed);
+    io.syslog.writestring(' Failed: '); io.syslog.writeintln(failed);
+end;
+
 procedure init();
 begin
     debug.tracer.push_trace('diskutil.init');
@@ -1428,9 +1893,21 @@ begin
     pending_del_slot := -1;
     active_mbox := nil;
     fmt_dropdown := nil;
+    fmt_param_area := nil;
+    fmt_cluster_input := nil;
+    fmt_filecount_input := nil;
+    fmt_label_input := nil;
+    fmt_param_error_lbl := nil;
     add_textarea := nil;
     add_err_lbl := nil;
     active_sidebar_btn := nil;
+    fmt_poll_timer := nil;
+    fmt_done_flag := 0;
+    fmt_done_error := eNone;
+    fmt_done_vol_idx := 0;
+    storage_dirty_flag := 0;
+    storage_watch_id := 0;
+    ui_session_id := 1;
     driver.video.desktop.registerProgram('Disk Utility', @launch);
     debug.tracer.pop_trace;
 end;

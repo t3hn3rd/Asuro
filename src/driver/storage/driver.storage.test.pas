@@ -46,7 +46,7 @@ uses
     core.strings,
     io.syslog,
     debug.tracer,
-    core.util, arch.x86.util,
+    core.util, arch.x86.util, arch.x86.bda,
     driver.storage.vfs,
     driver.storage.vol.mgr;
 
@@ -476,7 +476,7 @@ begin
 end;
 
 { ============================================================
-  init — register the STORTEST and DISKTEST terminal commands
+  init — register the storage terminal commands
   ============================================================ }
 procedure init;
 begin

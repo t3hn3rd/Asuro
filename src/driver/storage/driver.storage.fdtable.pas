@@ -37,17 +37,17 @@ type
     PFileDescriptor = ^TFileDescriptor;
     TFileDescriptor = record
         InUse       : boolean;
+        AsyncRefs   : uint32;      { in-flight async ops using this descriptor }
         Volume      : PStorage_Volume;
         Directory   : pchar;       { directory path within the volume }
         FileName    : pchar;       { filename within that directory }
         VFSDir      : pchar;       { full VFS parent directory path, e.g. '/sys' }
         OpenMode    : uint8;       { TOpenMode ordinal — avoids VFS type dependency }
-        DataBuffer  : puint32;     { pre-loaded data for small files, nil otherwise }
-        DataSize    : uint32;      { size of pre-loaded data in bytes }
-        Loaded      : boolean;     { true if pre-loaded into DataBuffer }
-        StreamOff   : uint32;      { current byte offset for streaming / on-demand reads }
+        DataSize    : uint32;      { cached file size in bytes (from fileSizeCallback) }
         DeviceOps   : pointer;     { PVFSDeviceOps — non-nil for device FDs }
         DeviceData  : pointer;     { opaque data passed to device callbacks }
+        FSPrivate   : pointer;     { opaque FS-level per-file metadata (from openFileCallback) }
+        FSCloseHook : pointer;     { procedure(pointer) — frees FSPrivate on close }
     end;
 
     PFDTable = ^TFDTable;
@@ -71,6 +71,9 @@ function  fd_alloc(table : PFDTable) : uint32;
 { Get a pointer to the descriptor for a 1-based handle.
   Returns nil if handle is out of range or the slot is not in use. }
 function  fd_get(table : PFDTable; handle : uint32) : PFileDescriptor;
+function  fd_begin_async(entry : PFileDescriptor) : boolean;
+procedure fd_end_async(entry : PFileDescriptor);
+function  fd_has_async(entry : PFileDescriptor) : boolean;
 
 { Close a single file descriptor: free its buffers and core.strings,
   mark the slot as not-in-use.
@@ -80,6 +83,10 @@ function  fd_close(table : PFDTable; handle : uint32) : boolean;
 { Close ALL open file descriptors in the table.
   Used during process cleanup. }
 procedure fd_close_all(table : PFDTable);
+
+{ Close all file descriptors in the table that reference a specific volume.
+  Called when a volume is removed to prevent dangling pointers. }
+procedure fd_close_for_volume(table : PFDTable; vol : PStorage_Volume);
 
 implementation
 
@@ -93,15 +100,20 @@ begin
     fd_table_new := tbl;
 end;
 
+type
+    TFSPrivateClose = procedure(data : pointer);
+
 procedure fd_free_entry(entry : PFileDescriptor);
 begin
     if entry = nil then exit;
     if not entry^.InUse then exit;
 
-    if entry^.DataBuffer <> nil then begin
-        kfree(entry^.DataBuffer);
-        entry^.DataBuffer := nil;
-    end;
+    { Free FS-level per-file metadata first }
+    if (entry^.FSPrivate <> nil) and (entry^.FSCloseHook <> nil) then
+        TFSPrivateClose(entry^.FSCloseHook)(entry^.FSPrivate);
+    entry^.FSPrivate := nil;
+    entry^.FSCloseHook := nil;
+
     if entry^.Directory <> nil then begin
         kfree(void(entry^.Directory));
         entry^.Directory := nil;
@@ -116,9 +128,8 @@ begin
     end;
 
     entry^.InUse := false;
-    entry^.Loaded := false;
+    entry^.AsyncRefs := 0;
     entry^.DataSize := 0;
-    entry^.StreamOff := 0;
     entry^.DeviceOps := nil;
     entry^.DeviceData := nil;
 end;
@@ -153,6 +164,34 @@ begin
     fd_get := @table^.Entries[handle - 1];
 end;
 
+function fd_begin_async(entry : PFileDescriptor) : boolean;
+begin
+    fd_begin_async := false;
+    if entry = nil then exit;
+    asm pushf; cli end;
+    if entry^.InUse then begin
+        entry^.AsyncRefs := entry^.AsyncRefs + 1;
+        fd_begin_async := true;
+    end;
+    asm popf end;
+end;
+
+procedure fd_end_async(entry : PFileDescriptor);
+begin
+    if entry = nil then exit;
+    asm pushf; cli end;
+    if entry^.AsyncRefs > 0 then
+        entry^.AsyncRefs := entry^.AsyncRefs - 1;
+    asm popf end;
+end;
+
+function fd_has_async(entry : PFileDescriptor) : boolean;
+begin
+    fd_has_async := false;
+    if entry = nil then exit;
+    fd_has_async := entry^.AsyncRefs > 0;
+end;
+
 function fd_close(table : PFDTable; handle : uint32) : boolean;
 begin
     fd_close := false;
@@ -170,6 +209,18 @@ begin
     if table = nil then exit;
     for i := 0 to MAX_FDS - 1 do begin
         if table^.Entries[i].InUse then
+            fd_free_entry(@table^.Entries[i]);
+    end;
+end;
+
+procedure fd_close_for_volume(table : PFDTable; vol : PStorage_Volume);
+var
+    i : uint32;
+begin
+    if table = nil then exit;
+    if vol = nil then exit;
+    for i := 0 to MAX_FDS - 1 do begin
+        if table^.Entries[i].InUse and (table^.Entries[i].Volume = vol) then
             fd_free_entry(@table^.Entries[i]);
     end;
 end;

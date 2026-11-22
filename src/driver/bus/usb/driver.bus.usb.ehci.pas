@@ -1,3 +1,17 @@
+//  Copyright 2026 Kieron Morris
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//  http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+
 {
     Driver->Bus->driver.bus.usb->driver.bus.usb.ehci - Enhanced Host Controller Interface Driver.
 
@@ -8,6 +22,7 @@
     driver.bus.usb.ehci also handles companion controller (driver.bus.usb.uhci/driver.bus.usb.ohci) routing for
     full/low-speed devices via the CONFIGFLAG and PORTSC port-owner bits.
 
+    @author(Aaron Hance <ah@aaronhance.me>)
     @author(Kieron Morris <kjm@kieronmorris.me>)
 }
 unit driver.bus.usb.ehci;
@@ -415,37 +430,17 @@ end;
   driver.bus.usb.ehci qTDs use up to 5 page pointers (each 4KB-aligned) plus
   the offset in the first page. }
 procedure ehci_fill_qtd_buffers(qtd : PEHCI_qTD; buf : Pointer; len : uint32);
-var
-    phys    : uint32;
-    pg      : uint32;
-    remain  : uint32;
+var address, span, page : uint32;
 begin
-    if (buf = nil) or (len = 0) then exit;
-    phys := vtop(uint32(buf));
-    qtd^.Buffer[0] := phys;
-    { Remaining pages }
-    remain := len;
-    { Bytes left on first page }
-    pg := 4096 - (phys AND $FFF);
-    if pg >= remain then exit;
-    remain := remain - pg;
-    phys := (phys AND $FFFFF000) + 4096;
-    if remain > 0 then begin
-        qtd^.Buffer[1] := phys;
-        if remain > 4096 then begin
-            phys := phys + 4096;
-            remain := remain - 4096;
-            qtd^.Buffer[2] := phys;
-            if remain > 4096 then begin
-                phys := phys + 4096;
-                remain := remain - 4096;
-                qtd^.Buffer[3] := phys;
-                if remain > 4096 then begin
-                    phys := phys + 4096;
-                    qtd^.Buffer[4] := phys;
-                end;
-            end;
-        end;
+    address := uint32(buf);
+    page := 0;
+    while (len <> 0) and (page < 5) do begin
+        qtd^.Buffer[page] := vtop(address);
+        span := 4096 - (address and $FFF);
+        if span >= len then exit;
+        inc(address, span);
+        dec(len, span);
+        inc(page);
     end;
 end;
 
@@ -970,6 +965,8 @@ end;
 
 { ========================= Submit Transfer ========================= }
 
+procedure ehci_free_qtd_chain(first : PEHCI_qTD); forward;
+
 function ehci_submit_control(hc : PUSBHCDriver; transfer : PUSBTransfer) : boolean;
 var
     priv     : PEHCI_PrivData;
@@ -1011,7 +1008,7 @@ begin
 
     { SETUP qTD }
     qtd := ehci_alloc_qtd;
-    if qtd = nil then begin pop_trace; exit; end;
+    if qtd = nil then begin ehci_free_qtd_chain(firstqTD); pop_trace; exit; end;
     firstqTD := qtd;
     qtd^.Token := ehci_make_qtd_token(EHCI_QTD_PID_SETUP, false, 8, false, 3);
     ehci_fill_qtd_buffers(qtd, @transfer^.Setup, 8);
@@ -1028,7 +1025,7 @@ begin
 
     while remaining > 0 do begin
         qtd := ehci_alloc_qtd;
-        if qtd = nil then begin pop_trace; exit; end;
+        if qtd = nil then begin ehci_free_qtd_chain(firstqTD); pop_trace; exit; end;
 
         if remaining > maxPkt then
             pktLen := maxPkt
@@ -1041,6 +1038,7 @@ begin
             pid := EHCI_QTD_PID_OUT;
 
         qtd^.Token := ehci_make_qtd_token(pid, toggle, pktLen, false, 3);
+        qtd^.SWPad0 := pktLen; { Original data length, excluding SETUP/status }
         ehci_fill_qtd_buffers(qtd, Pointer(uint32(transfer^.Buffer) + offset), pktLen);
         qtd^.NextqTD    := EHCI_QTD_T;
         qtd^.AltNextqTD := EHCI_QTD_T;
@@ -1059,7 +1057,7 @@ begin
 
     { STATUS qTD (opposite direction, DATA1) }
     qtd := ehci_alloc_qtd;
-    if qtd = nil then begin pop_trace; exit; end;
+    if qtd = nil then begin ehci_free_qtd_chain(firstqTD); pop_trace; exit; end;
 
     if (transfer^.Setup.bmRequestType AND $80) <> 0 then
         pid := EHCI_QTD_PID_OUT
@@ -1077,7 +1075,7 @@ begin
 
     { Build QH }
     qh := ehci_alloc_qh;
-    if qh = nil then begin pop_trace; exit; end;
+    if qh = nil then begin ehci_free_qtd_chain(firstqTD); pop_trace; exit; end;
 
     qh^.EPChars  := ehci_make_qh_epchars(devAddr, 0, speedBits, maxPkt,
                                            true, false, isCtrlEP, 4);
@@ -1159,18 +1157,17 @@ begin
 
     repeat
         qtd := ehci_alloc_qtd;
-        if qtd = nil then begin pop_trace; exit; end;
+        if qtd = nil then begin ehci_free_qtd_chain(firstqTD); pop_trace; exit; end;
 
         if firstqTD = nil then firstqTD := qtd;
 
-        if remaining > maxPkt then
-            pktLen := maxPkt
-        else if remaining > 0 then
-            pktLen := remaining
-        else
-            pktLen := 0;
+        pktLen := maxPkt;
+        if transfer^.PipeType = ptBulk then
+            pktLen := 16384 - (16384 mod maxPkt);
+        if remaining < pktLen then pktLen := remaining;
 
         qtd^.Token := ehci_make_qtd_token(pid, toggle, pktLen, false, 3);
+        qtd^.SWPad0 := pktLen; { Original data length, excluding SETUP/status }
         if pktLen > 0 then
             ehci_fill_qtd_buffers(qtd, Pointer(uint32(transfer^.Buffer) + offset), pktLen);
         qtd^.NextqTD    := EHCI_QTD_T;
@@ -1184,15 +1181,10 @@ begin
         end;
         prevqTD := qtd;
 
-        toggle := NOT toggle;
-
-        if remaining > maxPkt then begin
-            offset := offset + maxPkt;
-            remaining := remaining - maxPkt;
-        end else begin
-            offset := offset + remaining;
-            remaining := 0;
-        end;
+        if (pktLen = 0) or (((pktLen + maxPkt - 1) div maxPkt) and 1 <> 0) then
+            toggle := not toggle;
+        inc(offset, pktLen);
+        dec(remaining, pktLen);
     until remaining = 0;
 
     { Mark last qTD with IOC }
@@ -1207,7 +1199,7 @@ begin
 
     { Build QH }
     qh := ehci_alloc_qh;
-    if qh = nil then begin pop_trace; exit; end;
+    if qh = nil then begin ehci_free_qtd_chain(firstqTD); pop_trace; exit; end;
 
     qh^.EPChars := ehci_make_qh_epchars(devAddr, epNum, speedBits, maxPkt,
                                           true, false, false, 4);
@@ -1252,6 +1244,15 @@ begin
 
     ehci_submit_async := true;
     pop_trace;
+end;
+
+{ Largest safe bulk submission; class drivers do not know descriptor geometry. }
+function ehci_bulk_limit(hc : PUSBHCDriver; ep : PUSBEndpoint; buffer : pointer; length : uint32) : uint32;
+var limit : uint32;
+begin
+    limit := hc^.BulkWindowBytes;
+    if limit > length then limit := length;
+    ehci_bulk_limit := limit;
 end;
 
 function ehci_submit(hc : PUSBHCDriver; transfer : PUSBTransfer) : boolean;
@@ -1303,6 +1304,11 @@ begin
         if (status AND EHCI_QTD_STS_HALTED) <> 0 then begin
             ehci_transfer_done := true;
             exit;
+        end;
+        if (qh^.SWTransfer <> nil) and
+           (PUSBTransfer(qh^.SWTransfer)^.PipeType = ptBulk) and
+           (((qtd^.Token SHR 16) AND $7FFF) <> 0) then begin
+            ehci_transfer_done := true; exit;
         end;
         qtd := qtd^.SWNext;
     end;
@@ -1392,6 +1398,8 @@ var
     transfer : PUSBTransfer;
     head     : PEHCI_QH;
     listIdx  : uint32;
+    qtd      : PEHCI_qTD;
+    residual : uint32;
 begin
     if (hc = nil) or (hc^.PrivData = nil) then exit;
     priv := PEHCI_PrivData(hc^.PrivData);
@@ -1429,7 +1437,15 @@ begin
                 if transfer^.Status = tsInProgress then begin
                     if ehci_transfer_done(qh) then begin
                         transfer^.Status := ehci_transfer_status(qh);
-                        transfer^.ActualLen := transfer^.BufferLen;
+                        transfer^.ActualLen := 0;
+                        qtd := qh^.SWFirstqTD;
+                        while qtd <> nil do begin
+                            if (qtd^.Token AND EHCI_QTD_STS_ACTIVE) <> 0 then break;
+                            residual := (qtd^.Token SHR 16) AND $7FFF;
+                            if (qtd^.SWPad0 > 0) and (residual <= qtd^.SWPad0) then
+                                inc(transfer^.ActualLen, qtd^.SWPad0 - residual);
+                            qtd := qtd^.SWNext;
+                        end;
                         { Remove QH from schedule and free qTD chain }
                         if listIdx = 0 then
                             ehci_remove_async_qh(priv, qh)
@@ -1562,6 +1578,8 @@ begin
         hc.fnStart      := TUSBHCStart(@ehci_start);
         hc.fnStop       := TUSBHCStop(@ehci_stop);
         hc.fnSubmit     := TUSBHCSubmit(@ehci_submit);
+        hc.fnBulkLimit  := @ehci_bulk_limit;
+        hc.BulkWindowBytes := 1024 * 1024; { 64 qTDs on a high-speed bulk endpoint. }
         hc.fnPoll       := TUSBHCPoll(@ehci_poll);
         hc.fnPortReset  := TUSBHCPortReset(@ehci_port_reset);
         hc.fnPortStatus := TUSBHCPortStatus(@ehci_port_status);

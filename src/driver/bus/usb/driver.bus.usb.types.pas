@@ -1,6 +1,21 @@
+//  Copyright 2026 Kieron Morris
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//  http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+
 {
     Driver->Bus->driver.bus.usb->USBTypes - Shared driver.bus.usb Types, Constants & HC Abstraction.
 
+    @author(Aaron Hance <ah@aaronhance.me>)
     @author(Kieron Morris <kjm@kieronmorris.me>)
 }
 unit driver.bus.usb.types;
@@ -249,6 +264,8 @@ type
         Endpoints    : array[0..USB_MAX_ENDPOINTS-1] of TUSBEndpoint;
         NumEndpoints : uint8;
         Configured   : boolean;
+        InterfaceNumber : uint8;   { First interface, alternate setting zero }
+        InterfaceCount  : uint8;   { Class drivers may reject composite devices }
         fnDisconnect : TUSBDisconnectCallback; { Called before device is freed on unplug }
     end;
 
@@ -258,6 +275,7 @@ type
     TUSBHCStart      = function(hc : PUSBHCDriver) : boolean;
     TUSBHCStop       = procedure(hc : PUSBHCDriver);
     TUSBHCSubmit     = function(hc : PUSBHCDriver; transfer : PUSBTransfer) : boolean;
+    TUSBBulkLimit = function(hc : PUSBHCDriver; ep : PUSBEndpoint; buffer : pointer; length : uint32) : uint32;
     TUSBHCPoll       = procedure(hc : PUSBHCDriver);
     TUSBHCPortReset  = function(hc : PUSBHCDriver; port : uint8) : boolean;
     TUSBHCPortStatus = function(hc : PUSBHCDriver; port : uint8) : uint32;
@@ -282,6 +300,8 @@ type
         fnStart      : TUSBHCStart;
         fnStop       : TUSBHCStop;
         fnSubmit     : TUSBHCSubmit;
+        fnBulkLimit  : TUSBBulkLimit;
+        BulkWindowBytes : uint32; { Preferred DMA window, zero uses class default. }
         fnPoll       : TUSBHCPoll;
         fnPortReset  : TUSBHCPortReset;
         fnPortStatus : TUSBHCPortStatus;
@@ -429,6 +449,8 @@ begin
         hc^.fnStart     := nil;
         hc^.fnStop      := nil;
         hc^.fnSubmit    := nil;
+        hc^.fnBulkLimit := nil;
+        hc^.BulkWindowBytes := 0;
         hc^.fnPoll      := nil;
         hc^.fnPortReset := nil;
         hc^.fnPortStatus := nil;

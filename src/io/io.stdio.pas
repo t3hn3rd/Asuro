@@ -486,6 +486,10 @@ var
 begin
     search := params;
     for i := 0 to index do begin
+        if search = nil then begin
+            getParam := nil;
+            exit;
+        end;
         if search^.next = nil then begin
             getParam := nil;
             exit;

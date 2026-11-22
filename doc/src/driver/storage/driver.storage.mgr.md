@@ -1,3 +1,20 @@
+<!--
+Copyright 2026 Aaron Hance
+Author: Aaron Hance <ah@aaronhance.me>
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+
 # driver.storage.mgr
 
 Physical storage device registry and I/O dispatch manager.
@@ -14,7 +31,7 @@ The I/O model operates as follows:
 - `storage_read` / `storage_write` are convenience wrappers that build a stack-local `TIORequest` and call `submit_io_wait`.
 - `storage_read_async` / `storage_write_async` build and submit a request with a caller-supplied callback, returning immediately.
 
-Legacy `storage_read_legacy` / `storage_write_legacy` procedure wrappers are retained for callers not yet migrated to the function-returning API.
+Blocking callers use `storage_read` / `storage_write` and check the returned `TError`.
 
 ## Dependencies
 
@@ -205,17 +222,42 @@ function storage_write_async(device : PStorage_Device; addr : uint32; sectors : 
 
 Non-blocking write. Analogous to `storage_read_async`.
 
-### storage_read_legacy / storage_write_legacy
-
-```pascal
-procedure storage_read_legacy(device : PStorage_Device; addr : uint32; sectors : uint32; buffer : puint32);
-procedure storage_write_legacy(device : PStorage_Device; addr : uint32; sectors : uint32; buffer : puint32);
-```
-
-Drop-in procedure replacements for callers using the old void-returning API. Forward to `storage_read` / `storage_write` and discard the error code. Marked for removal once all callers are migrated.
-
 ## Notes
 
 - `dispatch_next` is an internal procedure called with interrupts disabled. It dequeues the head of the CFIFO, allocates a heap copy via `ioreq_copy` (for ISR safety), and invokes the appropriate `dispatchRead` or `dispatchWrite` on the device. If neither dispatch pointer is set, the request is failed with `eDeviceNotFound`.
 - The blocking path relies on pointer-dereferenced spin (`puint32(@wait.Done)^`) to prevent FPC from caching the `Done` flag in a register across the `hlt` instruction.
 - Devices without `dispatchRead`/`dispatchWrite` set (i.e., drivers not yet migrated to Phase 2) will have `submit_io` return `eDeviceNotFound`. Legacy drivers must be migrated before they can use the new I/O path.
+
+
+## Bounded performance path
+
+The manager merges up to 32 consecutive queued requests when operation, device,
+LBA range, and virtual buffer range are contiguous. It never searches past the
+queue head or delays a lone request to create a merge. Drivers opt in through
+`mergeMaxSectors`; SATA AHCI advertises 65,536 sectors, while other drivers default
+to zero (disabled). A merged command delivers one completion to each original
+request, in FIFO order. A command error fails every member conservatively.
+
+`storage_get_stats` takes an interrupt-protected snapshot of the device counters.
+`DISK info <index>` displays accepted/completed/failed logical requests, hardware
+commands, merged requests, queue-full rejections, queue and active high-water
+marks, successful read/write sectors, request-size buckets, queue/service ticks,
+and FAT metadata cache hits/misses. Queue ticks are accumulated per logical
+request; service ticks are accumulated per hardware command. Tick values use
+`Counters.c32`, not milliseconds. Counters are unsigned 32-bit values, start at
+device registration, and wrap; use snapshot differences over bounded benchmark
+intervals. Size buckets are <=8, 9..256, and >256 sectors.
+
+FAT32 blocking and async reads share a pooled transfer engine with batches of up
+to four outstanding reads, capped by device queue depth. Destination slices are
+disjoint. On any error, the engine drains every accepted request before releasing
+its context and reports only the contiguous successful byte prefix. Unaligned
+edges and odd DMA addresses use the context's private scratch sector. Writes
+remain sequential. Run maps store cumulative file-cluster offsets; an open-file
+cursor handles sequential locality and binary search handles random seeks.
+
+`STORPERF` runs memory-backed regression checks (also included in boot unit tests)
+for reverse completion order, failures, unaligned reads, run lookup, queue
+rejection, merging limits, and callback accounting. It does not access real disks
+or measure hardware throughput. Compare counters alongside `STORBENCH` and file
+benchmarks on contiguous and fragmented files for actual performance validation.

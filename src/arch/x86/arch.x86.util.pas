@@ -44,6 +44,7 @@ function inl(port : uint16) : uint32;
 procedure io_wait;
 
 procedure __SSE_128_memcpy(source : uint32; dest : uint32);
+procedure __REP_MOVSB_memcpy(source : uint32; dest : uint32; size : uint32);
 
 procedure halt_and_catch_fire();
 procedure halt_and_dont_catch_fire();
@@ -111,6 +112,19 @@ asm
     MOVAPS XMM1, [EAX]
     MOV EAX, Dest
     MOVAPS [EAX], XMM1
+end;
+
+procedure __REP_MOVSB_memcpy(source : uint32; dest : uint32; size : uint32); assembler;
+asm
+    push esi
+    push edi
+    cld
+    mov esi, source
+    mov edi, dest
+    mov ecx, size
+    rep movsb
+    pop edi
+    pop esi
 end;
 
 function getESP : uint32;

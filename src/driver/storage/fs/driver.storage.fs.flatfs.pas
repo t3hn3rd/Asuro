@@ -34,6 +34,7 @@ uses
     io.syslog,
     debug.tracer,
     core.util, arch.x86.util,
+    driver.storage.vol.mbr,
     driver.storage.vol.mgr;
 
 type
@@ -62,7 +63,7 @@ var
 
 
 procedure init;
-procedure create_volume(volume : PStorage_Volume; sectors : uint32; start : uint32; config : puint32);
+function create_volume(volume : PStorage_Volume; sectors : uint32; start : uint32; config : PFSFormatParams) : TError;
 procedure detect_volumes(disk : PStorage_Device);
 function read_directory(volume : PStorage_Volume; directory : pchar; status : PuInt32) : PLinkedListBase;
 procedure write_directory(volume : PStorage_Volume; directory : pchar; status : PuInt32);
@@ -71,84 +72,55 @@ procedure read_file(volume : PStorage_Volume; fileName : pchar; data : PuInt32; 
 
 implementation
 
-procedure create_volume(volume : PStorage_Volume; sectors : uint32; start : uint32; config : puint32);
-var
-    info : PDisk_Info;
-    entryTable : PFile_Entry;
-    i : uint32;
-
-    directories : PLinkedListBase;
-    status : PuInt32;
-
-    data : pchar;
-
-const
-    asuroArray : array[0..7] of char = 'ASURO';
-    systemArray : array[0..6] of char = '/system';
-    programsArray : array[0..8] of char = '/programs';
-    userArray : array[0..4] of char = '/user';
-
-    testArray : array[0..23] of char = 'ASURO TEST DATA ARRAY';
+function validate_format(volume : PStorage_Volume; sectors, start : uint32; config : PFSFormatParams) : TError;
 begin
-
-    info := PDisk_Info(Kalloc(512));
-    memset(uint32(info), 0, 512);
-
-    info^.jmp2boot := $0;
-    info^.OEMName := asuroArray;
-    info^.version := 1;
-    info^.sectorCount := sectors;
-    info^.fileCount := 1000;
-    info^.signature := $0B00B1E5;
-
-    if config^ <> 0 then begin
-        info^.fileCount := config^;
+    validate_format := eInvalidArgument;
+    if (volume = nil) or (volume^.device = nil) then exit;
+    if not volume^.device^.writable then begin validate_format := eReadOnly; exit; end;
+    { Legacy FlatFS readers use 512-byte sectors and exactly 1000 entries. }
+    if (volume^.device^.sectorSize <> 512) or (sectors > 65535) or
+       (sectors <= 126) or (start <> volume^.sectorStart) or
+       (sectors <> volume^.sectorCount) or (start >= volume^.device^.maxSectorCount) or
+       (sectors > volume^.device^.maxSectorCount-start) then exit;
+    if config <> nil then begin
+        if (config^.Version <> FS_FORMAT_PARAMS_VERSION_1) or
+           ((config^.Flags and (not FS_FORMAT_PARAM_FILE_COUNT)) <> 0) then exit;
+        if ((config^.Flags and FS_FORMAT_PARAM_FILE_COUNT) <> 0) and
+           (config^.FileCount <> 1000) then exit;
     end;
+    validate_format := eNone;
+end;
 
-    driver.storage.mgr.storage_write(volume^.device, start, 1, PuInt32(info));// what happens if buffer is smaller than 512?
-    
-    // create file table
-    entryTable := PFile_Entry(Kalloc(126 * 512));
-    memset(uint32(entryTable), 0, 126 * 512);
-
-    //create system folders
-    entryTable[0].attribues := $10;
-    memcpy(uint32(@systemArray), uint32(@entryTable[0].name), 7);
-    entryTable[0].size := 0;
-    entryTable[0].start := 0;
-
-    entryTable[1].attribues := $10;
-    memcpy(uint32(@programsArray), uint32(@entryTable[1].name), 9);
-    entryTable[1].size := 0;
-    entryTable[1].start := 0;
-
-    entryTable[2].attribues := $10;
-    memcpy(uint32(@userArray), uint32(@entryTable[2].name), 5);
-    entryTable[2].size := 0;
-    entryTable[2].start := 0;
-
-    //write file table
-    driver.storage.mgr.storage_write(volume^.device, start + 1, ((sizeof(TFile_Entry) * info^.fileCount) div 512), puint32(entryTable));
-    //volume^.device^.writeCallback(volume^.device, start + 1, 1, puint32(entryTable));
-
-    //temp read
-    status := PuInt32(Kalloc(sizeof(uint32)));
-    // directories := read_directory(volume, '/', status);
-
-    data := stringNew(1024);
-    memset(uint32(data), 0, 513);
-    memcpy(uint32(@testArray), uint32(data), 23);
-    
-    write_directory(volume, '/logs', status);
-    write_directory(volume, '/logs/test', status);
-    write_file(volume, '/logs/log.txt', PuInt32(data), 1, status);
-    write_file(volume, '/logs/log2.txt', PuInt32(data), 1, status);
-    write_file(volume, '/logs/log3.txt', PuInt32(data), 1, status);
-    read_directory(volume, '/logs', status);
-
-    kfree(puint32(data));
-
-    read_file(volume, '/logs/log.txt', PuInt32(data), status);
+function create_volume(volume : PStorage_Volume; sectors : uint32; start : uint32; config : PFSFormatParams) : TError;
+var info : PDisk_Info; entries : PFile_Entry; err : TError;
+begin
+    create_volume := validate_format(volume, sectors, start, config);
+    if create_volume <> eNone then exit;
+    info := PDisk_Info(kalloc(512)); entries := PFile_Entry(kalloc(125*512));
+    if (info = nil) or (entries = nil) then begin
+        if info <> nil then kfree(void(info));
+        if entries <> nil then kfree(void(entries));
+        create_volume := eOutOfMemory; exit;
+    end;
+    memset(uint32(info), 0, 512); memset(uint32(entries), 0, 125*512);
+    err := storage_write(volume^.device, start, 1, puint32(info));
+    if err = eNone then begin
+        entries[0].attribues := $10;
+        memcpy(uint32(pchar('/system')), uint32(@entries[0].name[0]), 7);
+        entries[1].attribues := $10;
+        memcpy(uint32(pchar('/programs')), uint32(@entries[1].name[0]), 9);
+        entries[2].attribues := $10;
+        memcpy(uint32(pchar('/user')), uint32(@entries[2].name[0]), 5);
+        err := storage_write(volume^.device, start+1, 125, puint32(entries));
+    end;
+    if err = eNone then begin
+        memcpy(uint32(pchar('ASURO   ')), uint32(@info^.OEMName[0]), 8);
+        info^.version := 1; info^.sectorCount := sectors; info^.fileCount := 1000;
+        info^.signature := $0B00B1E5;
+        err := storage_write(volume^.device, start, 1, puint32(info));
+    end;
+    kfree(void(entries)); kfree(void(info));
+    create_volume := err;
 end;
 
 procedure write_directory(volume : PStorage_Volume; directory : pchar; status : PuInt32);
@@ -763,12 +735,37 @@ end;
 
 function identify_volume(volume : PStorage_Volume) : boolean;
 var
-    buffer  : puint32;
-    bufSize : uint32;
+    buffer   : puint32;
+    bufSize  : uint32;
+    mbr      : PMaster_Boot_Record;
+    freeMbr  : boolean;
+    slot     : sint32;
+    i        : uint32;
 begin
     push_trace('driver.storage.fs.flatfs.identify_volume');
     identify_volume := false;
     if volume^.device^.dispatchRead = nil then exit;
+
+    mbr := driver.storage.mgr.get_cached_mbr(volume^.device);
+    freeMbr := false;
+    if mbr = nil then begin
+        mbr := driver.storage.mgr.read_mbr(volume^.device);
+        freeMbr := mbr <> nil;
+    end;
+
+    slot := -1;
+    if mbr <> nil then begin
+        for i := 0 to 3 do begin
+            if mbr^.partition[i].LBA_start = volume^.sectorStart then begin
+                slot := sint32(i);
+                break;
+            end;
+        end;
+        if (slot >= 0) and (mbr^.partition[slot].system_id <> filesystem.system_id) then begin
+            if freeMbr then kfree(void(mbr));
+            exit;
+        end;
+    end;
 
     bufSize := volume^.device^.sectorSize;
     if bufSize < 512 then bufSize := 512;
@@ -783,6 +780,7 @@ begin
     end;
 
     kfree(buffer);
+    if freeMbr then kfree(void(mbr));
 end;
 
 function readDirectoryEntries(volume : PStorage_Volume; directory : pchar; status : PuInt32) : PLinkedListBase;
@@ -843,16 +841,113 @@ begin
     readDirectoryEntries := entries;
 end;
 
+function getFileSize(volume : PStorage_Volume; directory : pchar; fileName : pchar) : uint32;
+var
+    fileEntries : PFile_Entry;
+    fileCount   : uint32;
+    i           : uint32;
+begin
+    getFileSize := 0;
+    fileCount := 1000;
+    fileEntries := PFile_Entry(kalloc(sizeof(TFile_Entry) * fileCount + 512));
+    memset(uint32(fileEntries), 0, sizeof(TFile_Entry) * fileCount);
+    driver.storage.mgr.storage_read(volume^.device, volume^.sectorStart + 1,
+        sizeof(TFile_Entry) * fileCount div 512, puint32(fileEntries));
+
+    for i := 0 to fileCount - 1 do begin
+        if fileEntries[i].attribues = 0 then break;
+        if stringEquals(fileEntries[i].name, fileName) then begin
+            getFileSize := fileEntries[i].size;
+            break;
+        end;
+    end;
+
+    kfree(puint32(fileEntries));
+end;
+
+function readFileAtOffset(volume : PStorage_Volume; directory : pchar;
+                          fileName : pchar; offset : uint32;
+                          buffer : puint32; byteCount : uint32;
+                          ctx : pointer) : uint32;
+var
+    fileEntries  : PFile_Entry;
+    fileCount    : uint32;
+    i            : uint32;
+    fileStart    : uint32;
+    fileSize     : uint32;
+    remaining    : uint32;
+    secOff       : uint32;
+    curSec       : uint32;
+    destPos      : uint32;
+    bytesToCopy  : uint32;
+    secBuf       : puint32;
+    found        : boolean;
+begin
+    readFileAtOffset := 0;
+    fileCount := 1000;
+    found := false;
+
+    fileEntries := PFile_Entry(kalloc(sizeof(TFile_Entry) * fileCount + 512));
+    memset(uint32(fileEntries), 0, sizeof(TFile_Entry) * fileCount);
+    driver.storage.mgr.storage_read(volume^.device, volume^.sectorStart + 1,
+        sizeof(TFile_Entry) * fileCount div 512, puint32(fileEntries));
+
+    for i := 0 to fileCount - 1 do begin
+        if fileEntries[i].attribues = 0 then break;
+        if stringEquals(fileEntries[i].name, fileName) then begin
+            fileStart := fileEntries[i].start;
+            fileSize  := fileEntries[i].size;
+            found := true;
+            break;
+        end;
+    end;
+
+    kfree(puint32(fileEntries));
+    if not found then exit;
+
+    { Clamp to EOF }
+    if offset >= fileSize then exit;
+    remaining := fileSize - offset;
+    if byteCount < remaining then remaining := byteCount;
+
+    secBuf := puint32(kalloc(512));
+    if secBuf = nil then exit;
+
+    destPos := 0;
+    curSec  := fileStart + (offset div 512);
+    secOff  := offset mod 512;
+
+    while remaining > 0 do begin
+        driver.storage.mgr.storage_read(volume^.device, curSec, 1, secBuf);
+
+        bytesToCopy := 512 - secOff;
+        if bytesToCopy > remaining then bytesToCopy := remaining;
+        core.util.memcpy(uint32(secBuf) + secOff, uint32(buffer) + destPos, bytesToCopy);
+
+        destPos   := destPos + bytesToCopy;
+        remaining := remaining - bytesToCopy;
+        secOff    := 0;
+        curSec    := curSec + 1;
+    end;
+
+    kfree(secBuf);
+    readFileAtOffset := destPos;
+end;
+
 procedure init();
 begin
     push_trace('driver.storage.fs.flatfs.init()');
     filesystem.sName:= 'driver.storage.fs.flatfs'; 
     filesystem.system_id:= $02; 
     filesystem.readDirCallback:= @readDirectoryEntries;
+    filesystem.fileSizeCallback:= @getFileSize;
+    filesystem.readOffsetCallback:= @readFileAtOffset;
     // filesystem.createDirCallback:= @writeDirectoryGen;
     filesystem.createcallback:= @create_volume;
+    filesystem.validateFormat := @validate_format;
     filesystem.detectcallback:= @detect_volumes;
     filesystem.identifyCallback:= @identify_volume;
+    filesystem.formatParamFlags := 0; { fixed 1000-entry legacy format }
     // filesystem.writecallback:= @writeFile;
     // filesystem.readcallback := @readFile;
 

@@ -1,3 +1,17 @@
+//  Copyright 2026 Kieron Morris
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//  http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+
 {
     ProcessManager - Preemptive process management for the Asuro kernel.
 
@@ -102,15 +116,33 @@ begin
     dest[i] := #0;
 end;
 
+{ Only for unpublished contexts: release each successfully acquired allocation. }
+procedure failProcessCreation(ctx : PProcessContext; message : pchar);
+begin
+    io.syslog.logln('PROCMGR', message);
+    if ctx <> nil then begin
+        if ctx^.StackBase <> nil then
+            kfree(ctx^.StackBase);
+        if ctx^.Cwd <> nil then
+            kfree(void(ctx^.Cwd));
+        if ctx^.FDTable <> nil then
+            fd_table_free(PFDTable(ctx^.FDTable));
+        if ctx^.Resources <> nil then
+            DL_Free(PDList(ctx^.Resources));
+        kfree(void(ctx));
+    end;
+    pop_trace;
+end;
+
 { Forward declaration for process_trampoline (used in create) }
 procedure process_trampoline; forward;
 
 { ---- Process creation ---- }
 
-function create(name : pchar;
+function createInternal(name : pchar;
                 entry : TProcessEntryPoint;
                 localData : void;
-                priority : uint8) : PProcessContext;
+                priority : uint8; runnable : boolean) : PProcessContext;
 var
     ctx      : PProcessContext;
     slotPtr  : ^uint32;
@@ -119,11 +151,16 @@ var
     prio     : uint8;
 begin
     push_trace('proc.mgr.create');
+    createInternal := nil;
 
     if priority = 0 then prio := 1 else prio := priority;
 
     { Allocate process context }
     ctx := PProcessContext(kalloc(SizeOf(TProcessContext)));
+    if ctx = nil then begin
+        failProcessCreation(ctx, 'Failed to allocate process context.');
+        exit;
+    end;
     memset(uint32(ctx), 0, SizeOf(TProcessContext));
 
     { Identity }
@@ -134,7 +171,7 @@ begin
         ctx^.ParentID := CurrentProcess^.ProcessID;
 
     { State }
-    ctx^.State := psCreated;
+    ctx^.State := psSuspended;
     ctx^.ExitCode := 0;
 
     { Entry point }
@@ -154,15 +191,31 @@ begin
 
     { Resources }
     ctx^.Resources := void(DL_New(SizeOf(TResourceBinding)));
+    if ctx^.Resources = nil then begin
+        failProcessCreation(ctx, 'Failed to allocate resource list.');
+        exit;
+    end;
 
     { Per-process file descriptor table }
     ctx^.FDTable := void(fd_table_new);
+    if ctx^.FDTable = nil then begin
+        failProcessCreation(ctx, 'Failed to allocate FD table.');
+        exit;
+    end;
 
     { Per-process working directory }
     ctx^.Cwd := stringCopy('/');
+    if ctx^.Cwd = nil then begin
+        failProcessCreation(ctx, 'Failed to allocate working directory.');
+        exit;
+    end;
 
     { Allocate per-process core.version stack }
     stack := kalloc(PROCESS_STACK_SIZE);
+    if stack = nil then begin
+        failProcessCreation(ctx, 'Failed to allocate process stack.');
+        exit;
+    end;
     ctx^.StackBase := stack;
     ctx^.StackTop := uint32(stack) + PROCESS_STACK_SIZE;
 
@@ -215,17 +268,30 @@ begin
     { Add to process table }
     asm pushf; cli end;
     slotPtr := DL_Add(Processes);
+    if slotPtr = nil then begin
+        asm popf end;
+        failProcessCreation(ctx, 'Failed to allocate process table slot.');
+        exit;
+    end;
     slotPtr^ := uint32(ctx);
 
     { Mark as ready for scheduling }
-    ctx^.State := psReady;
+    if runnable then ctx^.State := psReady;
     asm popf end;
 
     io.syslog.log('PROCMGR', 'Created process: ');
     io.syslog.writestringln(name);
 
     pop_trace;
-    create := ctx;
+    createInternal := ctx;
+end;
+
+{ Public creation retains its ready-on-return behavior. Commands need their
+  arguments and streams installed before the scheduler may enter them. }
+function create(name : pchar; entry : TProcessEntryPoint;
+                localData : void; priority : uint8) : PProcessContext;
+begin
+    create := createInternal(name, entry, localData, priority, true);
 end;
 
 { ---- Process trampoline ---- }
@@ -492,12 +558,17 @@ function runCommand(name : pchar; method : TCommandMethod; params : PParamList;
 var
     ctx : PProcessContext;
 begin
-    ctx := create(name, @legacy_entry, void(method), 1);
+    ctx := createInternal(name, @legacy_entry, void(method), 1, false);
     if ctx <> nil then begin
         ctx^.MsgData := void(params);
         ctx^.StdIn := stdin_buf;
         ctx^.StdOut := stdout_buf;
         ctx^.StdErr := stderr_buf;
+        { Publish only after all fields read by legacy_entry are initialized.
+          psCreated is also runnable, so creation must use psSuspended. }
+        asm pushf; cli end;
+        ctx^.State := psReady;
+        asm popf end;
     end;
     runCommand := ctx;
 end;
