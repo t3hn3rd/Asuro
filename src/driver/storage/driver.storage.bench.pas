@@ -6,7 +6,7 @@ procedure UnitTest;
 implementation
 uses boot.mgr, io.stdio, io.syslog, core.strings, core.util, arch.x86.util,
      arch.x86.bda, arch.x86.isr.tmr0, memory.heap, proc.mgr, proc.types,
-     driver.storage.types, driver.storage.mgr, core.ds.cfifo, driver.storage.bench.clock, test.harness;
+     driver.storage.types, driver.storage.mgr, core.ds.cfifo, core.clock, test.harness;
 const
     MAX_DEPTH = 32;
     DEFAULT_MIB = 128;
@@ -47,7 +47,7 @@ type
     end;
 
 function nowTick : uint64;
-begin nowTick := driver.storage.bench.clock.nowUS; end;
+begin nowTick := core.clock.nowUS; end;
 
 { Reject overflow before multiplication; CLI parsing must never wrap. }
 function parseNumber(text : pchar; limit : uint32; var value : uint32) : boolean;
@@ -500,11 +500,11 @@ begin
             if not parseNumber(getParam(base+5,params),$FFFFFFFF,start) then begin usage(stderr_buf); exit; end;
         end;
     end;
-    if not driver.storage.bench.clock.prepare then begin
+    if not core.clock.prepare then begin
         bufWriteStr(stderr_buf,'Benchmark clock unavailable: ');
-        bufWriteStrLn(stderr_buf,driver.storage.bench.clock.errorReason); exit;
+        bufWriteStrLn(stderr_buf,core.clock.errorReason); exit;
     end;
-    bufWriteStr(stdout_buf,'Clock: '); bufWriteStrLn(stdout_buf,driver.storage.bench.clock.sourceName);
+    bufWriteStr(stdout_buf,'Clock: '); bufWriteStrLn(stdout_buf,core.clock.sourceName);
     if mode<>bmManual then begin runSuite(device,disk,mib,mode=bmAuto,stdout_buf,stderr_buf); exit; end;
     writeValue(stdout_buf,'Disk ',disk); writeValue(stdout_buf,', sector bytes=',device^.sectorSize);
     writeValue(stdout_buf,', hardware depth=',device^.maxActive); bufWriteNewLine(stdout_buf);

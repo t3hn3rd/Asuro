@@ -9,13 +9,14 @@
       - Mouse cursor
 
     @author(Kieron Morris <kjm@kieronmorris.me>)
+    @author(Aaron Hance <ah@aaronhance.me>)
 }
 unit driver.video.desktop;
 
 interface
 
 uses
-    driver.video.lvgl, driver.video, driver.video.gpu, driver.timer.rtc, core.strings, core.util, arch.platform.cpu, debug.tracer, boot.multiboot, driver.io.serial, driver.video.windows, core.version;
+    driver.video.lvgl, driver.video, driver.video.gpu, driver.timer.rtc, core.strings, core.util, arch.platform.cpu, debug.tracer, arch.platform.memory, driver.io.serial, driver.video.windows, core.version;
 
 type
     TProgLaunchProc = procedure;
@@ -91,6 +92,8 @@ var
 
     { Clock }
     last_minute   : uint8;
+    last_clock_poll: uint32;
+    clock_polled: boolean;
 
     { Search active state }
     search_active : boolean;
@@ -117,27 +120,25 @@ end;
   ============================================================ }
 procedure updateClockText;
 var
-    dt     : TDateTime;
-    h_str  : pchar;
-    m_str  : pchar;
-    txt    : pchar;
+    dt: TDateTime;
+    now_ms: uint32;
+    txt: array[0..5] of char;
 begin
+    now_ms := lvgl_get_ticks;
+    if clock_polled and (uint32(now_ms - last_clock_poll) < 1000) then exit;
+    last_clock_poll := now_ms;
     dt := driver.timer.rtc.getDateTime;
-    if dt.Minutes = last_minute then exit;
+    if clock_polled and (dt.Minutes = last_minute) then exit;
+    clock_polled := true;
     last_minute := dt.Minutes;
 
-    if dt.Hours < 10 then
-        h_str := stringConcat('0', intToString(dt.Hours))
-    else
-        h_str := intToString(dt.Hours);
-
-    if dt.Minutes < 10 then
-        m_str := stringConcat('0', intToString(dt.Minutes))
-    else
-        m_str := intToString(dt.Minutes);
-
-    txt := stringConcat(h_str, stringConcat(':', m_str));
-    lv_label_set_text(clock_label, txt);
+    txt[0] := char(ord('0') + dt.Hours div 10);
+    txt[1] := char(ord('0') + dt.Hours mod 10);
+    txt[2] := ':';
+    txt[3] := char(ord('0') + dt.Minutes div 10);
+    txt[4] := char(ord('0') + dt.Minutes mod 10);
+    txt[5] := #0;
+    lv_label_set_text(clock_label, @txt[0]);
 end;
 
 { ============================================================
@@ -245,8 +246,6 @@ var
     instr_box    : Plv_obj;
     mem_str, res_str, cpu_str, clk_str : pchar;
     frame        : Plv_obj;
-    cw           : sint32;
-    badge_h      : sint32;
     registers, features: TCPURegisters;
     vendor: array[0..12] of char;
     maxLeaf: uint32;
@@ -284,15 +283,16 @@ begin
     vendor[12] := #0;
     cpu_str := @vendor[0];
     queryCPU(1, 0, features);
-    addInfoRow(content, cw, 'CPU Vendor', cpu_str);
+    addInfoRow(content, 'CPU Vendor', cpu_str);
     clk_str := 'Not reported';
     if maxLeaf >= $16 then begin
         queryCPU($16, 0, registers);
         if registers.eax <> 0 then clk_str := stringConcat(intToString(registers.eax), ' MHz');
     end;
-    addInfoRow(content, cw, 'CPU Clock', clk_str);
-    mem_str := stringConcat(intToString(((multibootinfo^.mem_upper + 1000) div 1024) + 1), ' MB');
-    addInfoRow(content, 'Memory', mem_str);
+    addInfoRow(content, 'CPU Clock', clk_str);
+    mem_str := intToString(arch.platform.memory.totalPhysicalBytes div (1024 * 1024));
+    addInfoRow(content, 'Memory (MiB)', mem_str);
+    kfree(void(mem_str));
     res_str := stringConcat(intToString(driver.video.frontBufferWidth), 'x');
     res_str := stringConcat(res_str, intToString(driver.video.frontBufferHeight));
     res_str := stringConcat(res_str, 'x');

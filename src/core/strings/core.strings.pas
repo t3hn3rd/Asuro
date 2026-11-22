@@ -850,7 +850,7 @@ begin
     test.harness.Assert(@context, stringSize(nil) = 0, 'stringSize(nil)=0');
 
     { === stringNew === }
-    Assert(stringNew(high(uint32)) = nil, 'stringNew rejects terminator overflow');
+    test.harness.Assert(@context, stringNew(high(uint32)) = nil, 'stringNew rejects terminator overflow');
     s:= stringNew(0);
     test.harness.Assert(@context, stringSize(s) = 0, 'stringNew(0) is empty');
     kfree(void(s));
@@ -1082,13 +1082,13 @@ begin
     kfree(void(s));
 
     s:= int64ToString(low(int64));
-    Assert(stringEquals(s, '-9223372036854775808'), 'int64ToString minimum');
+    test.harness.Assert(@context, stringEquals(s, '-9223372036854775808'), 'int64ToString minimum');
     kfree(void(s));
     s:= stringSub('ABC', 1, high(uint32));
-    Assert(stringEquals(s, 'BC'), 'substring size cannot wrap');
+    test.harness.Assert(@context, stringEquals(s, 'BC'), 'substring size cannot wrap');
     kfree(void(s));
-    Assert(not stringMatchAt('ABC', high(uint32), 'BC'), 'match position cannot wrap');
-    Assert((Trunc(-3.75) = -3) and (Trunc(3.75) = 3), 'Trunc rounds toward zero');
+    test.harness.Assert(@context, not stringMatchAt('ABC', high(uint32), 'BC'), 'match position cannot wrap');
+    test.harness.Assert(@context, (Trunc(-3.75) = -3) and (Trunc(3.75) = 3), 'Trunc rounds toward zero');
 
     { === doubleToStr === }
     s:= doubleToStr(0.0);

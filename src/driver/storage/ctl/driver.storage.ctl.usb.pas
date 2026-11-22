@@ -29,7 +29,7 @@ procedure UnitTest;
 
 implementation
 
-uses boot.mgr, driver.mgr, memory.heap, driver.storage.types,
+uses driver.mgr, memory.heap, driver.storage.types,
      driver.storage.mgr, driver.bus.usb.core, driver.bus.usb.types,
      proc.mgr, proc.types, arch.common.legacyirq, arch.platform.process, arch.platform.interrupts,
      core.util, arch.platform.cpu, io.syslog, io.stdio, core.strings,
@@ -45,6 +45,7 @@ const
     TRANSFER_TICKS = (PIT_INPUT_HZ div PIT_DIVISOR) * 5;
 
 type
+    PUSBVolumeSlot = ^PStorage_Volume;
     TCBW = packed record
         Signature, Tag, DataLength : uint32;
         Flags, Lun, CommandLength : uint8;
@@ -740,7 +741,7 @@ begin
     if c^.Disk^.volumes = nil then exit;
     i := 0;
     while i < DL_Size(c^.Disk^.volumes) do begin
-        v := PStorage_Volume(PPtrUInt(DL_Get(c^.Disk^.volumes, i))^);
+        v := PUSBVolumeSlot(DL_Get(c^.Disk^.volumes, i))^;
         if (v <> nil) and ((v^.lifecycleFlags and STORAGE_VOLUME_FLAG_MOUNTED) <> 0) then begin
             if driver.storage.vol.mgr.volume_is_busy(v) then detach_volumes := false
             else if not driver.storage.vfs.InvalidateVolume(v) then detach_volumes := false;
@@ -1226,6 +1227,5 @@ begin
     driver.mgr.register_driver('USB Mass Storage', @id, @load);
 end;
 
-initialization
-    boot.mgr.registerBoot('driver.storage.ctl.usb', @init, 'USB Mass Storage Driver', BOOT_MGR_BARRIER_DEVICE);
+
 end.

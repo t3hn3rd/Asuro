@@ -1,4 +1,5 @@
 //  Copyright 2021 Kieron Morris
+//  Copyright 2026 Aaron Hance
 //
 //  Licensed under the Apache License, Version 2.0 (the "License");
 //  you may not use this file except in compliance with the License.
@@ -26,6 +27,7 @@ uses
 
 //Init the driver, and register with the driver.video interface in a state ready for execution.
 procedure init(Register : FRegisterDriver);
+procedure FlushRect(FrontBuffer, BackBuffer: PVideoBuffer; x, y, width, height: uint32);
 
 implementation
 
@@ -61,20 +63,36 @@ begin
     debug.tracer.push_trace('driver.video.doublebuffer.initBackBuffer.exit');
 end;
 
-procedure Flush(FrontBuffer : PVideoBuffer; BackBuffer : PVideoBuffer);
+procedure FlushRect(FrontBuffer, BackBuffer: PVideoBuffer; x, y, width, height: uint32);
 var
-    row, bytes : uint32;
+    row, bytes, pixelBytes: uint32;
+    source, dest: PtrUInt;
 begin
     if not (FrontBuffer^.Initialized and BackBuffer^.Initialized) then exit;
     if (BackBuffer^.Width > FrontBuffer^.Width) or
        (BackBuffer^.Height > FrontBuffer^.Height) or
        (BackBuffer^.BitsPerPixel <> FrontBuffer^.BitsPerPixel) then exit;
-    bytes := BackBuffer^.Pitch;
-    if (bytes = 0) or (bytes > FrontBuffer^.Pitch) or
-       (BackBuffer^.Height = 0) then exit;
-    for row := 0 to BackBuffer^.Height - 1 do
-        memcpy(BackBuffer^.Location + SizeUInt(row) * bytes,
-            FrontBuffer^.Location + SizeUInt(row) * FrontBuffer^.Pitch, bytes);
+    if (width = 0) or (height = 0) or
+       (x >= BackBuffer^.Width) or (y >= BackBuffer^.Height) then exit;
+    if width > BackBuffer^.Width - x then width := BackBuffer^.Width - x;
+    if height > BackBuffer^.Height - y then height := BackBuffer^.Height - y;
+    pixelBytes := BackBuffer^.BitsPerPixel div 8;
+    if (pixelBytes = 0) or (BackBuffer^.BitsPerPixel mod 8 <> 0) then exit;
+    if (uint64(x + width) * pixelBytes > BackBuffer^.Pitch) or
+       (uint64(x + width) * pixelBytes > FrontBuffer^.Pitch) then exit;
+    bytes := width * pixelBytes;
+    source := BackBuffer^.Location + SizeUInt(y) * BackBuffer^.Pitch + SizeUInt(x) * pixelBytes;
+    dest := FrontBuffer^.Location + SizeUInt(y) * FrontBuffer^.Pitch + SizeUInt(x) * pixelBytes;
+    for row := 0 to height - 1 do begin
+        memcpy(source, dest, bytes);
+        inc(source, BackBuffer^.Pitch);
+        inc(dest, FrontBuffer^.Pitch);
+    end;
+end;
+
+procedure Flush(FrontBuffer : PVideoBuffer; BackBuffer : PVideoBuffer);
+begin
+    FlushRect(FrontBuffer, BackBuffer, 0, 0, BackBuffer^.Width, BackBuffer^.Height);
 end;
 
 function enable(VideoInterface : PVideoInterface) : boolean;

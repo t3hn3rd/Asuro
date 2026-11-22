@@ -28,3 +28,7 @@ type
         eax, ebx, ecx, edx: uint32;
     end;
 procedure queryCPU(leaf, subleaf: uint32; var registers: TCPURegisters);
+function readMSR(index: uint32): uint64;
+function readTimestamp: uint64;
+
+procedure resetSystem;

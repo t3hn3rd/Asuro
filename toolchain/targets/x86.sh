@@ -25,8 +25,14 @@ LINKER_SCRIPT=toolchain/linker.script
 LINK_OPTIONS=(-s)
 LINK_COMPILER_RUNTIME=true
 ASM_SHARED_ROOTS=(src/boot)
-BUILD_STEPS=(stub vergen lvgl icons wasuro sources initcalls link isogen docs)
+BUILD_STEPS=(stub vergen lvgl icons wasuro dangling sources initcalls link isogen docs)
 FINISH_SCRIPT=compile_finish.sh
 LVGL_CACHE_NAME=liblvgl.a
 
 KERNEL_VALIDATOR=(grub-file --is-x86-multiboot)
+
+if [[ "${COMPLEX_TESTS:-0}" == "1" ]]; then
+    PASCAL_OPTIONS+=(-dUNIT_TESTS -dUNIT_TESTS_COMPLEX)
+elif [[ "${UNIT_TESTS:-0}" == "1" ]]; then
+    PASCAL_OPTIONS+=(-dUNIT_TESTS)
+fi

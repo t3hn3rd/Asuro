@@ -60,7 +60,7 @@ uses
     driver.storage.vfs,
     driver.storage.test,
     driver.storage.bench,
-    driver.storage.bench.clock,
+    core.clock,
     driver.storage.metatest,
     driver.storage.perftest,
     driver.storage.ctl.ahci,
@@ -132,7 +132,7 @@ begin
     { Run complex unit tests }
     core.fmt.json.UnitTest;
     core.fmt.cbor.tests.UnitTest;
-    driver.storage.bench.clock.UnitTest;
+    core.clock.UnitTest;
     driver.storage.bench.UnitTest;
     driver.storage.metatest.UnitTest;
     driver.storage.perftest.UnitTest;
