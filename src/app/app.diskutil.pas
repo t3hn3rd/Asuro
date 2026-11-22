@@ -34,7 +34,7 @@ uses
     driver.video,
     driver.storage.vol.mgr,
     driver.video.windows,
-    core.util, arch.x86.util;
+    core.util, arch.x86.util, test.harness;
 
 const
     WIN_W = 740;
@@ -1856,28 +1856,24 @@ end;
   Init — register with the driver.video.desktop program launcher
   ============================================================ }
 procedure UnitTest;
-var passed, failed, sectors, sectorSize : uint32;
-    procedure Assert(ok : boolean; name : pchar);
-    begin
-        if ok then Inc(passed) else begin Inc(failed); io.syslog.logln('DISKUTIL FAIL', name); end;
-    end;
+var sectors, sectorSize : uint32;
+    context : TTestContext;
 begin
-    passed := 0; failed := 0;
+    test.harness.Start(@context, 'app.diskutil');
     sectors := 8388608; sectorSize := 512;
-    Assert(stringEquals(formatSizeStr(uint64(sectors)*sectorSize),'4 GB'),'4GB label');
+    test.harness.Assert(@context, stringEquals(formatSizeStr(uint64(sectors)*sectorSize),'4 GB'),'4GB label');
     sectors := 10485760;
-    Assert(stringEquals(formatSizePrecise(uint64(sectors)*sectorSize),'5 GB'),'5GB label');
+    test.harness.Assert(@context, stringEquals(formatSizePrecise(uint64(sectors)*sectorSize),'5 GB'),'5GB label');
     releaseTextTemps;
-    Assert(TextTemps = nil,'temporary labels released');
-    Assert(parseSize('4GB',512) = 8388608, '4GB does not wrap to zero');
-    Assert(parseSize('5GB',512) = 10485760, '5GB does not wrap to 1GB');
-    Assert(parseSize('999999999999999999999GB',512) = 0, 'reject decimal overflow');
-    Assert(parseSize('2097152GB',512) = 0, 'reject LBA overflow');
-    Assert(parseSize('513B',512) = 0, 'reject fractional sectors');
-    Assert(parseSize('512B',0) = 0, 'reject zero sector size');
-    Assert(parseSize('',512) = 0, 'reject empty size');
-    io.syslog.log('DISKUTIL', 'Passed: '); io.syslog.writeint(passed);
-    io.syslog.writestring(' Failed: '); io.syslog.writeintln(failed);
+    test.harness.Assert(@context, TextTemps = nil,'temporary labels released');
+    test.harness.Assert(@context, parseSize('4GB',512) = 8388608, '4GB does not wrap to zero');
+    test.harness.Assert(@context, parseSize('5GB',512) = 10485760, '5GB does not wrap to 1GB');
+    test.harness.Assert(@context, parseSize('999999999999999999999GB',512) = 0, 'reject decimal overflow');
+    test.harness.Assert(@context, parseSize('2097152GB',512) = 0, 'reject LBA overflow');
+    test.harness.Assert(@context, parseSize('513B',512) = 0, 'reject fractional sectors');
+    test.harness.Assert(@context, parseSize('512B',0) = 0, 'reject zero sector size');
+    test.harness.Assert(@context, parseSize('',512) = 0, 'reject empty size');
+    test.harness.Finish(@context);
 end;
 
 procedure init();

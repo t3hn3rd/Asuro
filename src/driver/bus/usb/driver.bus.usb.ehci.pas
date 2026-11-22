@@ -50,6 +50,9 @@ procedure UnitTest;
 
 implementation
 
+uses
+    test.harness;
+
 { ========================= driver.bus.usb.ehci Capability Register Offsets ========================= }
 
 const
@@ -1639,183 +1642,149 @@ end;
 
 procedure UnitTest;
 var
-    passed, failed : uint32;
-
-    procedure Assert(condition : boolean; testName : pchar);
-    var
-        msg : pchar;
-    begin
-        if condition then begin
-            inc(passed);
-        end else begin
-            inc(failed);
-            msg := stringConcat('FAIL: ', testName);
-            io.syslog.logln('driver.bus.usb.ehci', msg);
-            kfree(void(msg));
-        end;
-    end;
-
-    procedure PrintSummary;
-    var
-        pStr, fStr, msg, tmp : pchar;
-    begin
-        pStr := intToString(passed);
-        fStr := intToString(failed);
-        msg := stringConcat(pStr, ' passed, ');
-        tmp := stringConcat(msg, fStr);
-        kfree(void(msg));
-        msg := stringConcat(tmp, ' failed.');
-        kfree(void(tmp));
-        io.syslog.logln('driver.bus.usb.ehci', msg);
-        kfree(void(msg));
-        kfree(void(pStr));
-        kfree(void(fStr));
-    end;
-
-var
+    context : TTestContext;
     epchars  : uint32;
     epcaps   : uint32;
     token    : uint32;
     qh       : PEHCI_QH;
     qtd      : PEHCI_qTD;
+
 begin
-    passed := 0;
-    failed := 0;
-    io.syslog.logln('driver.bus.usb.ehci', 'Unit tests starting...');
+    test.harness.Start(@context, 'driver.bus.usb.ehci');
 
     { --- Structure Size Tests --- }
-    Assert(sizeof(TEHCI_qTD) = 48, 'sizeof qTD=48');
-    Assert(sizeof(TEHCI_QH) = 64, 'sizeof QH=64');
+    test.harness.Assert(@context, sizeof(TEHCI_qTD) = 48, 'sizeof qTD=48');
+    test.harness.Assert(@context, sizeof(TEHCI_QH) = 64, 'sizeof QH=64');
 
     { --- QH EPChars Construction Tests --- }
     epchars := ehci_make_qh_epchars(0, 0, EHCI_QH_EPS_HIGH, 64, true, true, false, 4);
-    Assert((epchars AND EHCI_QH_DEVADDR_MASK) = 0, 'qh addr=0');
-    Assert(((epchars SHR EHCI_QH_ENDPT_SHIFT) AND $0F) = 0, 'qh ep=0');
-    Assert((epchars AND EHCI_QH_EPS_MASK) = EHCI_QH_EPS_HIGH, 'qh speed=HIGH');
-    Assert(((epchars SHR EHCI_QH_MPL_SHIFT) AND $7FF) = 64, 'qh mpl=64');
-    Assert((epchars AND EHCI_QH_DTC) <> 0, 'qh DTC set');
-    Assert((epchars AND EHCI_QH_H) <> 0, 'qh H set');
-    Assert((epchars AND EHCI_QH_C) = 0, 'qh C not set');
-    Assert(((epchars SHR EHCI_QH_RL_SHIFT) AND $0F) = 4, 'qh RL=4');
+    test.harness.Assert(@context, (epchars AND EHCI_QH_DEVADDR_MASK) = 0, 'qh addr=0');
+    test.harness.Assert(@context, ((epchars SHR EHCI_QH_ENDPT_SHIFT) AND $0F) = 0, 'qh ep=0');
+    test.harness.Assert(@context, (epchars AND EHCI_QH_EPS_MASK) = EHCI_QH_EPS_HIGH, 'qh speed=HIGH');
+    test.harness.Assert(@context, ((epchars SHR EHCI_QH_MPL_SHIFT) AND $7FF) = 64, 'qh mpl=64');
+    test.harness.Assert(@context, (epchars AND EHCI_QH_DTC) <> 0, 'qh DTC set');
+    test.harness.Assert(@context, (epchars AND EHCI_QH_H) <> 0, 'qh H set');
+    test.harness.Assert(@context, (epchars AND EHCI_QH_C) = 0, 'qh C not set');
+    test.harness.Assert(@context, ((epchars SHR EHCI_QH_RL_SHIFT) AND $0F) = 4, 'qh RL=4');
 
     epchars := ehci_make_qh_epchars(5, 3, EHCI_QH_EPS_FULL, 8, false, false, true, 0);
-    Assert((epchars AND EHCI_QH_DEVADDR_MASK) = 5, 'qh addr=5');
-    Assert(((epchars SHR EHCI_QH_ENDPT_SHIFT) AND $0F) = 3, 'qh ep=3');
-    Assert((epchars AND EHCI_QH_EPS_MASK) = EHCI_QH_EPS_FULL, 'qh speed=FULL');
-    Assert(((epchars SHR EHCI_QH_MPL_SHIFT) AND $7FF) = 8, 'qh mpl=8');
-    Assert((epchars AND EHCI_QH_DTC) = 0, 'qh DTC not set');
-    Assert((epchars AND EHCI_QH_H) = 0, 'qh H not set');
-    Assert((epchars AND EHCI_QH_C) <> 0, 'qh C set');
+    test.harness.Assert(@context, (epchars AND EHCI_QH_DEVADDR_MASK) = 5, 'qh addr=5');
+    test.harness.Assert(@context, ((epchars SHR EHCI_QH_ENDPT_SHIFT) AND $0F) = 3, 'qh ep=3');
+    test.harness.Assert(@context, (epchars AND EHCI_QH_EPS_MASK) = EHCI_QH_EPS_FULL, 'qh speed=FULL');
+    test.harness.Assert(@context, ((epchars SHR EHCI_QH_MPL_SHIFT) AND $7FF) = 8, 'qh mpl=8');
+    test.harness.Assert(@context, (epchars AND EHCI_QH_DTC) = 0, 'qh DTC not set');
+    test.harness.Assert(@context, (epchars AND EHCI_QH_H) = 0, 'qh H not set');
+    test.harness.Assert(@context, (epchars AND EHCI_QH_C) <> 0, 'qh C set');
 
     epchars := ehci_make_qh_epchars(127, 15, EHCI_QH_EPS_LOW, 1023, true, false, false, 15);
-    Assert((epchars AND EHCI_QH_DEVADDR_MASK) = 127, 'qh addr=127');
-    Assert(((epchars SHR EHCI_QH_ENDPT_SHIFT) AND $0F) = 15, 'qh ep=15');
-    Assert((epchars AND EHCI_QH_EPS_MASK) = EHCI_QH_EPS_LOW, 'qh speed=LOW');
-    Assert(((epchars SHR EHCI_QH_MPL_SHIFT) AND $7FF) = 1023, 'qh mpl=1023');
-    Assert(((epchars SHR EHCI_QH_RL_SHIFT) AND $0F) = 15, 'qh RL=15');
+    test.harness.Assert(@context, (epchars AND EHCI_QH_DEVADDR_MASK) = 127, 'qh addr=127');
+    test.harness.Assert(@context, ((epchars SHR EHCI_QH_ENDPT_SHIFT) AND $0F) = 15, 'qh ep=15');
+    test.harness.Assert(@context, (epchars AND EHCI_QH_EPS_MASK) = EHCI_QH_EPS_LOW, 'qh speed=LOW');
+    test.harness.Assert(@context, ((epchars SHR EHCI_QH_MPL_SHIFT) AND $7FF) = 1023, 'qh mpl=1023');
+    test.harness.Assert(@context, ((epchars SHR EHCI_QH_RL_SHIFT) AND $0F) = 15, 'qh RL=15');
 
     { --- QH EPCaps Construction Tests --- }
     epcaps := ehci_make_qh_epcaps($01, $1C, 2, 3, 1);
-    Assert((epcaps AND EHCI_QH_SMASK_MASK) = $01, 'qh smask=$01');
-    Assert(((epcaps SHR EHCI_QH_CMASK_SHIFT) AND $FF) = $1C, 'qh cmask=$1C');
-    Assert(((epcaps SHR EHCI_QH_HUBADDR_SHIFT) AND $7F) = 2, 'qh hubaddr=2');
-    Assert(((epcaps SHR EHCI_QH_HUBPORT_SHIFT) AND $3F) = 3, 'qh hubport=3');
-    Assert(((epcaps SHR EHCI_QH_MULT_SHIFT) AND $03) = 1, 'qh mult=1');
+    test.harness.Assert(@context, (epcaps AND EHCI_QH_SMASK_MASK) = $01, 'qh smask=$01');
+    test.harness.Assert(@context, ((epcaps SHR EHCI_QH_CMASK_SHIFT) AND $FF) = $1C, 'qh cmask=$1C');
+    test.harness.Assert(@context, ((epcaps SHR EHCI_QH_HUBADDR_SHIFT) AND $7F) = 2, 'qh hubaddr=2');
+    test.harness.Assert(@context, ((epcaps SHR EHCI_QH_HUBPORT_SHIFT) AND $3F) = 3, 'qh hubport=3');
+    test.harness.Assert(@context, ((epcaps SHR EHCI_QH_MULT_SHIFT) AND $03) = 1, 'qh mult=1');
 
     epcaps := ehci_make_qh_epcaps(0, 0, 0, 0, 3);
-    Assert((epcaps AND EHCI_QH_SMASK_MASK) = 0, 'qh smask=0');
-    Assert(((epcaps SHR EHCI_QH_MULT_SHIFT) AND $03) = 3, 'qh mult=3');
+    test.harness.Assert(@context, (epcaps AND EHCI_QH_SMASK_MASK) = 0, 'qh smask=0');
+    test.harness.Assert(@context, ((epcaps SHR EHCI_QH_MULT_SHIFT) AND $03) = 3, 'qh mult=3');
 
     { --- qTD Token Construction Tests --- }
     token := ehci_make_qtd_token(EHCI_QTD_PID_SETUP, false, 8, false, 3);
-    Assert((token AND EHCI_QTD_STS_ACTIVE) <> 0, 'qtd active set');
-    Assert((token AND EHCI_QTD_PID_MASK) = EHCI_QTD_PID_SETUP, 'qtd pid=SETUP');
-    Assert((token AND EHCI_QTD_DT) = 0, 'qtd DT=0 (DATA0)');
-    Assert(((token SHR EHCI_QTD_TOTALBYTES_SHIFT) AND $7FFF) = 8, 'qtd bytes=8');
-    Assert((token AND EHCI_QTD_IOC) = 0, 'qtd IOC not set');
-    Assert(((token SHR EHCI_QTD_CERR_SHIFT) AND $03) = 3, 'qtd cerr=3');
+    test.harness.Assert(@context, (token AND EHCI_QTD_STS_ACTIVE) <> 0, 'qtd active set');
+    test.harness.Assert(@context, (token AND EHCI_QTD_PID_MASK) = EHCI_QTD_PID_SETUP, 'qtd pid=SETUP');
+    test.harness.Assert(@context, (token AND EHCI_QTD_DT) = 0, 'qtd DT=0 (DATA0)');
+    test.harness.Assert(@context, ((token SHR EHCI_QTD_TOTALBYTES_SHIFT) AND $7FFF) = 8, 'qtd bytes=8');
+    test.harness.Assert(@context, (token AND EHCI_QTD_IOC) = 0, 'qtd IOC not set');
+    test.harness.Assert(@context, ((token SHR EHCI_QTD_CERR_SHIFT) AND $03) = 3, 'qtd cerr=3');
 
     token := ehci_make_qtd_token(EHCI_QTD_PID_IN, true, 512, true, 2);
-    Assert((token AND EHCI_QTD_PID_MASK) = EHCI_QTD_PID_IN, 'qtd pid=IN');
-    Assert((token AND EHCI_QTD_DT) <> 0, 'qtd DT=1 (DATA1)');
-    Assert(((token SHR EHCI_QTD_TOTALBYTES_SHIFT) AND $7FFF) = 512, 'qtd bytes=512');
-    Assert((token AND EHCI_QTD_IOC) <> 0, 'qtd IOC set');
-    Assert(((token SHR EHCI_QTD_CERR_SHIFT) AND $03) = 2, 'qtd cerr=2');
+    test.harness.Assert(@context, (token AND EHCI_QTD_PID_MASK) = EHCI_QTD_PID_IN, 'qtd pid=IN');
+    test.harness.Assert(@context, (token AND EHCI_QTD_DT) <> 0, 'qtd DT=1 (DATA1)');
+    test.harness.Assert(@context, ((token SHR EHCI_QTD_TOTALBYTES_SHIFT) AND $7FFF) = 512, 'qtd bytes=512');
+    test.harness.Assert(@context, (token AND EHCI_QTD_IOC) <> 0, 'qtd IOC set');
+    test.harness.Assert(@context, ((token SHR EHCI_QTD_CERR_SHIFT) AND $03) = 2, 'qtd cerr=2');
 
     token := ehci_make_qtd_token(EHCI_QTD_PID_OUT, true, 0, true, 0);
-    Assert((token AND EHCI_QTD_PID_MASK) = EHCI_QTD_PID_OUT, 'qtd pid=OUT');
-    Assert(((token SHR EHCI_QTD_TOTALBYTES_SHIFT) AND $7FFF) = 0, 'qtd bytes=0');
+    test.harness.Assert(@context, (token AND EHCI_QTD_PID_MASK) = EHCI_QTD_PID_OUT, 'qtd pid=OUT');
+    test.harness.Assert(@context, ((token SHR EHCI_QTD_TOTALBYTES_SHIFT) AND $7FFF) = 0, 'qtd bytes=0');
 
     { --- Status Mapping Tests --- }
-    Assert(ehci_status_to_usb(EHCI_QTD_STS_ACTIVE) = tsInProgress, 'sts ACTIVE->tsInProgress');
-    Assert(ehci_status_to_usb(EHCI_QTD_STS_HALTED) = tsStall, 'sts HALTED->tsStall');
-    Assert(ehci_status_to_usb(EHCI_QTD_STS_HALTED OR EHCI_QTD_STS_BABBLE) = tsBabble, 'sts BABBLE->tsBabble');
-    Assert(ehci_status_to_usb(EHCI_QTD_STS_HALTED OR EHCI_QTD_STS_BUFERR) = tsDataBufferError, 'sts BUFERR->tsDataBufferError');
-    Assert(ehci_status_to_usb(EHCI_QTD_STS_HALTED OR EHCI_QTD_STS_XACTERR) = tsCRCError, 'sts XACTERR->tsCRCError');
-    Assert(ehci_status_to_usb(0) = tsSuccess, 'sts 0->tsSuccess');
+    test.harness.Assert(@context, ehci_status_to_usb(EHCI_QTD_STS_ACTIVE) = tsInProgress, 'sts ACTIVE->tsInProgress');
+    test.harness.Assert(@context, ehci_status_to_usb(EHCI_QTD_STS_HALTED) = tsStall, 'sts HALTED->tsStall');
+    test.harness.Assert(@context, ehci_status_to_usb(EHCI_QTD_STS_HALTED OR EHCI_QTD_STS_BABBLE) = tsBabble, 'sts BABBLE->tsBabble');
+    test.harness.Assert(@context, ehci_status_to_usb(EHCI_QTD_STS_HALTED OR EHCI_QTD_STS_BUFERR) = tsDataBufferError, 'sts BUFERR->tsDataBufferError');
+    test.harness.Assert(@context, ehci_status_to_usb(EHCI_QTD_STS_HALTED OR EHCI_QTD_STS_XACTERR) = tsCRCError, 'sts XACTERR->tsCRCError');
+    test.harness.Assert(@context, ehci_status_to_usb(0) = tsSuccess, 'sts 0->tsSuccess');
 
     { --- Allocation / Alignment Tests --- }
     qh := ehci_alloc_qh;
-    Assert(qh <> nil, 'alloc_qh not nil');
-    Assert((uint32(qh) AND $1F) = 0, 'alloc_qh 32-byte aligned');
-    Assert(qh^.HorizLink = 0, 'alloc_qh zeroed HorizLink');
-    Assert(qh^.EPChars = 0, 'alloc_qh zeroed EPChars');
-    Assert(qh^.OvlToken = 0, 'alloc_qh zeroed OvlToken');
+    test.harness.Assert(@context, qh <> nil, 'alloc_qh not nil');
+    test.harness.Assert(@context, (uint32(qh) AND $1F) = 0, 'alloc_qh 32-byte aligned');
+    test.harness.Assert(@context, qh^.HorizLink = 0, 'alloc_qh zeroed HorizLink');
+    test.harness.Assert(@context, qh^.EPChars = 0, 'alloc_qh zeroed EPChars');
+    test.harness.Assert(@context, qh^.OvlToken = 0, 'alloc_qh zeroed OvlToken');
     ehci_free_qh(qh);
 
     qtd := ehci_alloc_qtd;
-    Assert(qtd <> nil, 'alloc_qtd not nil');
-    Assert((uint32(qtd) AND $1F) = 0, 'alloc_qtd 32-byte aligned');
-    Assert(qtd^.Token = 0, 'alloc_qtd zeroed Token');
-    Assert(qtd^.NextqTD = 0, 'alloc_qtd zeroed NextqTD');
-    Assert(qtd^.Buffer[0] = 0, 'alloc_qtd zeroed Buffer[0]');
+    test.harness.Assert(@context, qtd <> nil, 'alloc_qtd not nil');
+    test.harness.Assert(@context, (uint32(qtd) AND $1F) = 0, 'alloc_qtd 32-byte aligned');
+    test.harness.Assert(@context, qtd^.Token = 0, 'alloc_qtd zeroed Token');
+    test.harness.Assert(@context, qtd^.NextqTD = 0, 'alloc_qtd zeroed NextqTD');
+    test.harness.Assert(@context, qtd^.Buffer[0] = 0, 'alloc_qtd zeroed Buffer[0]');
     ehci_free_qtd(qtd);
 
     { --- Register Offset Constant Tests --- }
-    Assert(EHCI_CAP_CAPLENGTH = $00, 'CAP_CAPLENGTH=$00');
-    Assert(EHCI_CAP_HCSPARAMS = $04, 'CAP_HCSPARAMS=$04');
-    Assert(EHCI_CAP_HCCPARAMS = $08, 'CAP_HCCPARAMS=$08');
-    Assert(EHCI_OP_USBCMD = $00, 'OP_USBCMD=$00');
-    Assert(EHCI_OP_USBSTS = $04, 'OP_USBSTS=$04');
-    Assert(EHCI_OP_PERIODICLISTBASE = $14, 'OP_PERIODICLISTBASE=$14');
-    Assert(EHCI_OP_ASYNCLISTADDR = $18, 'OP_ASYNCLISTADDR=$18');
-    Assert(EHCI_OP_CONFIGFLAG = $40, 'OP_CONFIGFLAG=$40');
-    Assert(EHCI_OP_PORTSC = $44, 'OP_PORTSC=$44');
+    test.harness.Assert(@context, EHCI_CAP_CAPLENGTH = $00, 'CAP_CAPLENGTH=$00');
+    test.harness.Assert(@context, EHCI_CAP_HCSPARAMS = $04, 'CAP_HCSPARAMS=$04');
+    test.harness.Assert(@context, EHCI_CAP_HCCPARAMS = $08, 'CAP_HCCPARAMS=$08');
+    test.harness.Assert(@context, EHCI_OP_USBCMD = $00, 'OP_USBCMD=$00');
+    test.harness.Assert(@context, EHCI_OP_USBSTS = $04, 'OP_USBSTS=$04');
+    test.harness.Assert(@context, EHCI_OP_PERIODICLISTBASE = $14, 'OP_PERIODICLISTBASE=$14');
+    test.harness.Assert(@context, EHCI_OP_ASYNCLISTADDR = $18, 'OP_ASYNCLISTADDR=$18');
+    test.harness.Assert(@context, EHCI_OP_CONFIGFLAG = $40, 'OP_CONFIGFLAG=$40');
+    test.harness.Assert(@context, EHCI_OP_PORTSC = $44, 'OP_PORTSC=$44');
 
     { --- Command / Status Bit Tests --- }
-    Assert(EHCI_CMD_RS = $01, 'CMD_RS=$01');
-    Assert(EHCI_CMD_HCRESET = $02, 'CMD_HCRESET=$02');
-    Assert(EHCI_CMD_ASE = $20, 'CMD_ASE=$20');
-    Assert(EHCI_CMD_PSE = $10, 'CMD_PSE=$10');
-    Assert(EHCI_STS_HCHALTED = $1000, 'STS_HCHALTED=$1000');
-    Assert(EHCI_STS_USBINT = $01, 'STS_USBINT=$01');
-    Assert(EHCI_STS_HSE = $10, 'STS_HSE=$10');
+    test.harness.Assert(@context, EHCI_CMD_RS = $01, 'CMD_RS=$01');
+    test.harness.Assert(@context, EHCI_CMD_HCRESET = $02, 'CMD_HCRESET=$02');
+    test.harness.Assert(@context, EHCI_CMD_ASE = $20, 'CMD_ASE=$20');
+    test.harness.Assert(@context, EHCI_CMD_PSE = $10, 'CMD_PSE=$10');
+    test.harness.Assert(@context, EHCI_STS_HCHALTED = $1000, 'STS_HCHALTED=$1000');
+    test.harness.Assert(@context, EHCI_STS_USBINT = $01, 'STS_USBINT=$01');
+    test.harness.Assert(@context, EHCI_STS_HSE = $10, 'STS_HSE=$10');
 
     { --- Port Status Bit Tests --- }
-    Assert(EHCI_PORTSC_CCS = $01, 'PORTSC_CCS=$01');
-    Assert(EHCI_PORTSC_PE = $04, 'PORTSC_PE=$04');
-    Assert(EHCI_PORTSC_PRST = $100, 'PORTSC_PRST=$100');
-    Assert(EHCI_PORTSC_PP = $1000, 'PORTSC_PP=$1000');
-    Assert(EHCI_PORTSC_PO = $2000, 'PORTSC_PO=$2000');
+    test.harness.Assert(@context, EHCI_PORTSC_CCS = $01, 'PORTSC_CCS=$01');
+    test.harness.Assert(@context, EHCI_PORTSC_PE = $04, 'PORTSC_PE=$04');
+    test.harness.Assert(@context, EHCI_PORTSC_PRST = $100, 'PORTSC_PRST=$100');
+    test.harness.Assert(@context, EHCI_PORTSC_PP = $1000, 'PORTSC_PP=$1000');
+    test.harness.Assert(@context, EHCI_PORTSC_PO = $2000, 'PORTSC_PO=$2000');
 
     { --- Frame List / qTD / QH Constants --- }
-    Assert(EHCI_FL_SIZE = 1024, 'FL_SIZE=1024');
-    Assert(EHCI_FL_BYTES = 4096, 'FL_BYTES=4096');
-    Assert(EHCI_FL_T = $01, 'FL_T=$01');
-    Assert(EHCI_FL_TYPE_QH = $02, 'FL_TYPE_QH=$02');
-    Assert(EHCI_QTD_T = $01, 'QTD_T=$01');
-    Assert(EHCI_QH_ALIGN = 32, 'QH_ALIGN=32');
-    Assert(EHCI_QTD_ALIGN = 32, 'QTD_ALIGN=32');
+    test.harness.Assert(@context, EHCI_FL_SIZE = 1024, 'FL_SIZE=1024');
+    test.harness.Assert(@context, EHCI_FL_BYTES = 4096, 'FL_BYTES=4096');
+    test.harness.Assert(@context, EHCI_FL_T = $01, 'FL_T=$01');
+    test.harness.Assert(@context, EHCI_FL_TYPE_QH = $02, 'FL_TYPE_QH=$02');
+    test.harness.Assert(@context, EHCI_QTD_T = $01, 'QTD_T=$01');
+    test.harness.Assert(@context, EHCI_QH_ALIGN = 32, 'QH_ALIGN=32');
+    test.harness.Assert(@context, EHCI_QTD_ALIGN = 32, 'QTD_ALIGN=32');
 
     { --- HCSPARAMS Extraction Tests --- }
-    Assert((EHCI_HCS_N_PORTS_MASK AND $0F) = $0F, 'HCS N_PORTS mask');
-    Assert(EHCI_HCS_N_CC_SHIFT = 12, 'HCS N_CC shift=12');
-    Assert(EHCI_HCS_N_PCC_SHIFT = 8, 'HCS N_PCC shift=8');
+    test.harness.Assert(@context, (EHCI_HCS_N_PORTS_MASK AND $0F) = $0F, 'HCS N_PORTS mask');
+    test.harness.Assert(@context, EHCI_HCS_N_CC_SHIFT = 12, 'HCS N_CC shift=12');
+    test.harness.Assert(@context, EHCI_HCS_N_PCC_SHIFT = 8, 'HCS N_PCC shift=8');
 
     { --- CONFIGFLAG --- }
-    Assert(EHCI_CF_FLAG = $01, 'CF_FLAG=$01');
+    test.harness.Assert(@context, EHCI_CF_FLAG = $01, 'CF_FLAG=$01');
 
-    PrintSummary;
+    test.harness.Finish(@context);
 end;
 
 end.

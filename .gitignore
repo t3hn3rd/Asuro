@@ -25,3 +25,4 @@ site/*
 /lib/dangling/
 .moderne
 CLAUDE.md
+commit-standard.md

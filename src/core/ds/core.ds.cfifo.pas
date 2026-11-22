@@ -93,6 +93,7 @@ uses
 implementation
 
 uses
+    test.harness,
     io.syslog, core.strings;
 
 { ---------------------------------------------------------------------------- }
@@ -235,50 +236,17 @@ var
     ok   : boolean;
     p    : void;
     i    : uint32;
-    passed, failed : uint32;
-
-    procedure Assert(condition : boolean; testName : pchar);
-    var
-        msg : pchar;
-    begin
-        if condition then begin
-            inc(passed);
-        end else begin
-            inc(failed);
-            msg := stringConcat('FAIL: ', testName);
-            io.syslog.logln('CFIFO', msg);
-            kfree(void(msg));
-        end;
-    end;
-
-    procedure PrintSummary;
-    var
-        pStr, fStr, msg, tmp : pchar;
-    begin
-        pStr := intToString(passed);
-        fStr := intToString(failed);
-        msg := stringConcat(pStr, ' passed, ');
-        tmp := stringConcat(msg, fStr);
-        kfree(void(msg));
-        msg := stringConcat(tmp, ' failed.');
-        kfree(void(tmp));
-        io.syslog.logln('CFIFO', msg);
-        kfree(void(msg));
-        kfree(void(pStr));
-        kfree(void(fStr));
-    end;
+    context : TTestContext;
 
 begin
-    passed := 0;
-    failed := 0;
-    io.syslog.logln('CFIFO', 'Unit tests starting...');
+    test.harness.Start(@context, 'core.ds.cfifo');
 
     { === New / Empty / Size / Capacity === }
     q := CFIFO_New(sizeof(uint32), 4);
-    Assert(q <> nil, 'New returns non-nil');
-    Assert(CFIFO_IsEmpty(q), 'Initially empty');
-    Assert(CFIFO_Size(q) = 0, 'Initial size is 0');
-    Assert(CFIFO_Capacity(q) = 4, 'Initial capacity is 4');
+    test.harness.Assert(@context, q <> nil, 'New returns non-nil');
+    test.harness.Assert(@context, CFIFO_IsEmpty(q), 'Initially empty');
+    test.harness.Assert(@context, CFIFO_Size(q) = 0, 'Initial size is 0');
+    test.harness.Assert(@context, CFIFO_Capacity(q) = 4, 'Initial capacity is 4');
 
     { === Fill initial capacity === }
     for i := 1 to 4 do
@@ -286,16 +254,16 @@ begin
         v := i * 10;
         CFIFO_Enqueue(q, @v);
     end;
-    Assert(CFIFO_Size(q) = 4, 'Size after 4 enqueues');
+    test.harness.Assert(@context, CFIFO_Size(q) = 4, 'Size after 4 enqueues');
 
     { === Dequeue first two to advance Head === }
     ok := CFIFO_Dequeue(q, @r);
-    Assert(ok, 'Dequeue 1 succeeds');
-    Assert(r = 10, 'Dequeue 1 value');
+    test.harness.Assert(@context, ok, 'Dequeue 1 succeeds');
+    test.harness.Assert(@context, r = 10, 'Dequeue 1 value');
     ok := CFIFO_Dequeue(q, @r);
-    Assert(ok, 'Dequeue 2 succeeds');
-    Assert(r = 20, 'Dequeue 2 value');
-    Assert(CFIFO_Size(q) = 2, 'Size after 2 dequeues');
+    test.harness.Assert(@context, ok, 'Dequeue 2 succeeds');
+    test.harness.Assert(@context, r = 20, 'Dequeue 2 value');
+    test.harness.Assert(@context, CFIFO_Size(q) = 2, 'Size after 2 dequeues');
 
     { === Enqueue more to trigger compaction/growth === }
     for i := 5 to 8 do
@@ -303,26 +271,26 @@ begin
         v := i * 10;
         CFIFO_Enqueue(q, @v);
     end;
-    Assert(CFIFO_Size(q) = 6, 'Size after grow');
+    test.harness.Assert(@context, CFIFO_Size(q) = 6, 'Size after grow');
 
     { === Verify FIFO order: 30,40,50,60,70,80 === }
-    ok := CFIFO_Dequeue(q, @r); Assert(r = 30, 'Order 30');
-    ok := CFIFO_Dequeue(q, @r); Assert(r = 40, 'Order 40');
-    ok := CFIFO_Dequeue(q, @r); Assert(r = 50, 'Order 50');
-    ok := CFIFO_Dequeue(q, @r); Assert(r = 60, 'Order 60');
-    ok := CFIFO_Dequeue(q, @r); Assert(r = 70, 'Order 70');
-    ok := CFIFO_Dequeue(q, @r); Assert(r = 80, 'Order 80');
-    Assert(CFIFO_IsEmpty(q), 'Empty after drain');
+    ok := CFIFO_Dequeue(q, @r); test.harness.Assert(@context, r = 30, 'Order 30');
+    ok := CFIFO_Dequeue(q, @r); test.harness.Assert(@context, r = 40, 'Order 40');
+    ok := CFIFO_Dequeue(q, @r); test.harness.Assert(@context, r = 50, 'Order 50');
+    ok := CFIFO_Dequeue(q, @r); test.harness.Assert(@context, r = 60, 'Order 60');
+    ok := CFIFO_Dequeue(q, @r); test.harness.Assert(@context, r = 70, 'Order 70');
+    ok := CFIFO_Dequeue(q, @r); test.harness.Assert(@context, r = 80, 'Order 80');
+    test.harness.Assert(@context, CFIFO_IsEmpty(q), 'Empty after drain');
 
     { === Edge: peek/dequeue on empty === }
     p := CFIFO_Peek(q);
-    Assert(p = nil, 'Peek on empty returns nil');
+    test.harness.Assert(@context, p = nil, 'Peek on empty returns nil');
     ok := CFIFO_Dequeue(q, @r);
-    Assert(not ok, 'Dequeue on empty returns false');
+    test.harness.Assert(@context, not ok, 'Dequeue on empty returns false');
 
     CFIFO_Free(q);
 
-    PrintSummary;
+    test.harness.Finish(@context);
 end;
 
 end.

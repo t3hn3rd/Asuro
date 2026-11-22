@@ -9,7 +9,7 @@ function sourceName : pchar;
 function errorReason : pchar;
 procedure UnitTest;
 implementation
-uses arch.x86.util, io.syslog;
+uses arch.x86.util, io.syslog, test.harness;
 var clockReady, clockBusy, referenceClock : boolean;
     failure : pchar;
     frequency, epoch : uint64;
@@ -244,41 +244,39 @@ begin
     end;
 end;
 procedure UnitTest;
-var hz, first, last : uint64; passed, failed, flags, i : uint32;
-    procedure Assert(ok : boolean; name : pchar);
-    begin if ok then Inc(passed) else begin Inc(failed); io.syslog.logln('BENCHCLOCK FAIL',name); end; end;
+var hz, first, last : uint64; flags, i : uint32;
+    context : TTestContext;
 begin
-    passed:=0;failed:=0;
-    Assert(referenceAvailable($80000000,$20,$40000006,$31237648,$AF2),'VBox Hv#1 reference clock');
-    Assert(not referenceAvailable(0,$20,$40000006,$31237648,$AF2),'no hypervisor no MSR');
-    Assert(not referenceAvailable($80000000,0,$40000006,$31237648,$AF2),'no RDMSR support');
-    Assert(not referenceAvailable($80000000,$20,$40000002,$31237648,$AF2),'missing feature leaf');
-    Assert(not referenceAvailable($80000000,$20,$40000006,0,$AF2),'different hypervisor interface');
-    Assert(not referenceAvailable($80000000,$20,$40000006,$31237648,$AF0),'missing reference privilege');
-    Assert(referenceUS(10000000)=1000000,'100 ns ticks to microseconds');
-    Assert(referenceUS(50000000000)=5000000000,'reference conversion beyond uint32');
-    Assert(referenceUS(9)=0,'reference sub-microsecond truncation');
+    test.harness.Start(@context, 'driver.storage.bench.clock');
+    test.harness.Assert(@context, referenceAvailable($80000000,$20,$40000006,$31237648,$AF2),'VBox Hv#1 reference clock');
+    test.harness.Assert(@context, not referenceAvailable(0,$20,$40000006,$31237648,$AF2),'no hypervisor no MSR');
+    test.harness.Assert(@context, not referenceAvailable($80000000,0,$40000006,$31237648,$AF2),'no RDMSR support');
+    test.harness.Assert(@context, not referenceAvailable($80000000,$20,$40000002,$31237648,$AF2),'missing feature leaf');
+    test.harness.Assert(@context, not referenceAvailable($80000000,$20,$40000006,0,$AF2),'different hypervisor interface');
+    test.harness.Assert(@context, not referenceAvailable($80000000,$20,$40000006,$31237648,$AF0),'missing reference privilege');
+    test.harness.Assert(@context, referenceUS(10000000)=1000000,'100 ns ticks to microseconds');
+    test.harness.Assert(@context, referenceUS(50000000000)=5000000000,'reference conversion beyond uint32');
+    test.harness.Assert(@context, referenceUS(9)=0,'reference sub-microsecond truncation');
     { Safe hardware smoke test only when CPUID explicitly grants MSR access.
       No disk I/O and no RTC calibration occurs during boot tests. }
     if referenceSupported then begin
-        Assert(prepare,'VM reference clock initialization');
+        test.harness.Assert(@context, prepare,'VM reference clock initialization');
         if ready then begin
             asm pushfd; cli; pop flags end;
             first:=nowUS; last:=first;
             for i:=1 to 10000 do begin last:=nowUS; if last>first then break; end;
             if (flags and $200)<>0 then asm sti end;
-            Assert(last>first,'VM clock advances with interrupts masked');
+            test.harness.Assert(@context, last>first,'VM clock advances with interrupts masked');
         end;
     end;
-    Assert(acceptSamples(4291845105,4291845105,hz) and (hz=4291845105),'near uint32 frequency boundary');
-    Assert(acceptSamples(5000000000,5000000000,hz) and (hz=5000000000),'frequency above uint32');
-    Assert(not acceptSamples(5000000000,5100000000,hz),'reject unstable calibration');
-    Assert(not acceptSamples(0,0,hz),'reject missing clock');
-    Assert(toUS(10000000000,5000000000)=2000000,'64-bit elapsed conversion');
-    Assert(toUS(5000002500,5000000000)=1000000,'fractional microsecond truncation');
-    Assert(toUS(18000000000000,5000000000)=3600000000,'one hour does not overflow');
-    Assert(toUS(123,0)=0,'invalid divisor');
-    io.syslog.log('BENCHCLOCK','Passed: '); io.syslog.writeint(passed);
-    io.syslog.writestring(' Failed: '); io.syslog.writeintln(failed);
+    test.harness.Assert(@context, acceptSamples(4291845105,4291845105,hz) and (hz=4291845105),'near uint32 frequency boundary');
+    test.harness.Assert(@context, acceptSamples(5000000000,5000000000,hz) and (hz=5000000000),'frequency above uint32');
+    test.harness.Assert(@context, not acceptSamples(5000000000,5100000000,hz),'reject unstable calibration');
+    test.harness.Assert(@context, not acceptSamples(0,0,hz),'reject missing clock');
+    test.harness.Assert(@context, toUS(10000000000,5000000000)=2000000,'64-bit elapsed conversion');
+    test.harness.Assert(@context, toUS(5000002500,5000000000)=1000000,'fractional microsecond truncation');
+    test.harness.Assert(@context, toUS(18000000000000,5000000000)=3600000000,'one hour does not overflow');
+    test.harness.Assert(@context, toUS(123,0)=0,'invalid divisor');
+    test.harness.Finish(@context);
 end;
 end.

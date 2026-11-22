@@ -69,7 +69,7 @@ function send_read_capacity(device : PAHCI_Device; sectorCount : puint32; blockS
 
 implementation
 
-uses arch.x86.bda, arch.x86.isr.tmr0, core.panic, io.stdio, core.strings;
+uses arch.x86.bda, arch.x86.isr.tmr0, core.panic, io.stdio, core.strings, test.harness;
 
 const
     AHCI_ENABLE_NCQ = true;
@@ -922,12 +922,16 @@ begin
     Inc(PTestCompletion(data)^.Count); PTestCompletion(data)^.Error := error;
 end;
 
-procedure run_ahci_tests(stdout_buf : POutBuf);
+procedure run_ahci_tests(context : PTestContext; stdout_buf : POutBuf);
 var device : PAHCI_Device; port : PHBA_Port; table : PHBA_CMD_TABLE;
     buffer : pointer; aligned, entries, first, second, passed, failed : uint32;
     result : TError; completed : TTestCompletion; msg, number : pchar;
     procedure Assert(ok : boolean; name : pchar);
     begin
+        if context <> nil then begin
+            test.harness.Assert(context, ok, name);
+            exit;
+        end;
         if ok then Inc(passed) else begin
             Inc(failed); io.syslog.log('AHCITEST','FAIL: '); io.syslog.writestringln(name);
             if stdout_buf <> nil then begin
@@ -1010,6 +1014,7 @@ begin
     port^.cmd := 0;
     Assert(wait_register(@port^.cmd,1,0,0),'cleared reset succeeds');
     kfree(buffer); kfree(void(device^.command_table)); kfree(void(device^.command_list)); kfree(void(port)); kfree(void(device));
+    if context <> nil then exit;
     number := intToString(passed); msg := stringConcat(number,' passed, '); kfree(void(number));
     number := intToString(failed); buffer := msg; msg := stringConcat(msg,number); kfree(buffer); kfree(void(number));
     buffer := msg; msg := stringConcat(msg,' failed'); kfree(buffer);
@@ -1019,9 +1024,14 @@ begin
 end;
 
 procedure UnitTest;
-begin run_ahci_tests(nil); end;
+var context : TTestContext;
+begin
+    test.harness.Start(@context, 'driver.storage.ctl.ahci');
+    run_ahci_tests(@context, nil);
+    test.harness.Finish(@context);
+end;
 procedure cmd_ahcitest(params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
-begin run_ahci_tests(stdout_buf); end;
+begin run_ahci_tests(nil, stdout_buf); end;
 
 Initialization
     boot.mgr.registerBoot('driver.storage.ctl.ahci', @init, 'AHCI Controller', 'driver.storage.fs.*');

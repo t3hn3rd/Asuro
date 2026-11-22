@@ -31,6 +31,9 @@ procedure UnitTest;
 
 implementation
 
+uses
+    test.harness;
+
 { ========================= Constants ========================= }
 
 const
@@ -400,81 +403,47 @@ end;
 
 procedure UnitTest;
 var
-    passed, failed : uint32;
-
-    procedure Assert(condition : boolean; testName : pchar);
-    var
-        msg : pchar;
-    begin
-        if condition then begin
-            inc(passed);
-        end else begin
-            inc(failed);
-            msg := stringConcat('FAIL: ', testName);
-            io.syslog.logln('USBMouse', msg);
-            kfree(void(msg));
-        end;
-    end;
-
-    procedure PrintSummary;
-    var
-        pStr, fStr, msg, tmp : pchar;
-    begin
-        pStr := intToString(passed);
-        fStr := intToString(failed);
-        msg := stringConcat(pStr, ' passed, ');
-        tmp := stringConcat(msg, fStr);
-        kfree(void(msg));
-        msg := stringConcat(tmp, ' failed.');
-        kfree(void(tmp));
-        io.syslog.logln('USBMouse', msg);
-        kfree(void(msg));
-        kfree(void(pStr));
-        kfree(void(fStr));
-    end;
-
-var
+    context : TTestContext;
     report : array[0..3] of uint8;
     dx, dy, sc : sint32;
     btns   : uint8;
+
 begin
-    passed := 0;
-    failed := 0;
-    io.syslog.logln('USBMouse', 'Unit tests starting...');
+    test.harness.Start(@context, 'driver.hid.usb.mouse');
 
     { === Constants === }
-    Assert(MOUSE_BTN_LEFT = $01, 'BTN_LEFT bit');
-    Assert(MOUSE_BTN_RIGHT = $02, 'BTN_RIGHT bit');
-    Assert(MOUSE_BTN_MIDDLE = $04, 'BTN_MIDDLE bit');
-    Assert(MOUSE_REPORT_SIZE = 4, 'report size');
-    Assert(HID_REQ_SET_PROTOCOL = $0B, 'SET_PROTOCOL code');
-    Assert(HID_PROTOCOL_BOOT = 0, 'BOOT protocol');
+    test.harness.Assert(@context, MOUSE_BTN_LEFT = $01, 'BTN_LEFT bit');
+    test.harness.Assert(@context, MOUSE_BTN_RIGHT = $02, 'BTN_RIGHT bit');
+    test.harness.Assert(@context, MOUSE_BTN_MIDDLE = $04, 'BTN_MIDDLE bit');
+    test.harness.Assert(@context, MOUSE_REPORT_SIZE = 4, 'report size');
+    test.harness.Assert(@context, HID_REQ_SET_PROTOCOL = $0B, 'SET_PROTOCOL code');
+    test.harness.Assert(@context, HID_PROTOCOL_BOOT = 0, 'BOOT protocol');
 
     { === Delta X extraction === }
     { Positive X }
     report[0] := 0; report[1] := 10; report[2] := 0; report[3] := 0;
     dx := mouse_delta_x(@report[0]);
-    Assert(dx = 10, 'delta_x positive 10');
+    test.harness.Assert(@context, dx = 10, 'delta_x positive 10');
 
     { Negative X (-5 = 251 unsigned) }
     report[1] := 251;
     dx := mouse_delta_x(@report[0]);
-    Assert(dx = -5, 'delta_x negative -5');
+    test.harness.Assert(@context, dx = -5, 'delta_x negative -5');
 
     { Zero X }
     report[1] := 0;
     dx := mouse_delta_x(@report[0]);
-    Assert(dx = 0, 'delta_x zero');
+    test.harness.Assert(@context, dx = 0, 'delta_x zero');
 
     { Max positive X (127) }
     report[1] := 127;
     dx := mouse_delta_x(@report[0]);
-    Assert(dx = 127, 'delta_x max positive');
+    test.harness.Assert(@context, dx = 127, 'delta_x max positive');
 
     { Max negative X (-128 = 128 unsigned) }
     report[1] := 128;
     dx := mouse_delta_x(@report[0]);
-    Assert(dx = -128, 'delta_x max negative');
+    test.harness.Assert(@context, dx = -128, 'delta_x max negative');
 
     { === Delta Y extraction === }
     report[1] := 0;
@@ -482,64 +451,64 @@ begin
     { Positive Y }
     report[2] := 20;
     dy := mouse_delta_y(@report[0]);
-    Assert(dy = 20, 'delta_y positive 20');
+    test.harness.Assert(@context, dy = 20, 'delta_y positive 20');
 
     { Negative Y (-10 = 246 unsigned) }
     report[2] := 246;
     dy := mouse_delta_y(@report[0]);
-    Assert(dy = -10, 'delta_y negative -10');
+    test.harness.Assert(@context, dy = -10, 'delta_y negative -10');
 
     { Zero Y }
     report[2] := 0;
     dy := mouse_delta_y(@report[0]);
-    Assert(dy = 0, 'delta_y zero');
+    test.harness.Assert(@context, dy = 0, 'delta_y zero');
 
     { === Scroll extraction === }
     { Scroll up (+1) }
     report[3] := 1;
     sc := mouse_scroll(@report[0], 4);
-    Assert(sc = 1, 'scroll up +1');
+    test.harness.Assert(@context, sc = 1, 'scroll up +1');
 
     { Scroll down (-1 = 255 unsigned) }
     report[3] := 255;
     sc := mouse_scroll(@report[0], 4);
-    Assert(sc = -1, 'scroll down -1');
+    test.harness.Assert(@context, sc = -1, 'scroll down -1');
 
     { No scroll byte (3-byte report) }
     sc := mouse_scroll(@report[0], 3);
-    Assert(sc = 0, 'scroll 3-byte report = 0');
+    test.harness.Assert(@context, sc = 0, 'scroll 3-byte report = 0');
 
     { Zero scroll }
     report[3] := 0;
     sc := mouse_scroll(@report[0], 4);
-    Assert(sc = 0, 'scroll zero');
+    test.harness.Assert(@context, sc = 0, 'scroll zero');
 
     { === Button extraction === }
     report[0] := MOUSE_BTN_LEFT;
     btns := mouse_buttons(@report[0]);
-    Assert((btns AND MOUSE_BTN_LEFT) <> 0, 'LMB set');
-    Assert((btns AND MOUSE_BTN_RIGHT) = 0, 'RMB clear');
-    Assert((btns AND MOUSE_BTN_MIDDLE) = 0, 'MMB clear');
+    test.harness.Assert(@context, (btns AND MOUSE_BTN_LEFT) <> 0, 'LMB set');
+    test.harness.Assert(@context, (btns AND MOUSE_BTN_RIGHT) = 0, 'RMB clear');
+    test.harness.Assert(@context, (btns AND MOUSE_BTN_MIDDLE) = 0, 'MMB clear');
 
     report[0] := MOUSE_BTN_LEFT OR MOUSE_BTN_RIGHT;
     btns := mouse_buttons(@report[0]);
-    Assert((btns AND MOUSE_BTN_LEFT) <> 0, 'LMB+RMB: LMB set');
-    Assert((btns AND MOUSE_BTN_RIGHT) <> 0, 'LMB+RMB: RMB set');
+    test.harness.Assert(@context, (btns AND MOUSE_BTN_LEFT) <> 0, 'LMB+RMB: LMB set');
+    test.harness.Assert(@context, (btns AND MOUSE_BTN_RIGHT) <> 0, 'LMB+RMB: RMB set');
 
     report[0] := MOUSE_BTN_MIDDLE;
     btns := mouse_buttons(@report[0]);
-    Assert((btns AND MOUSE_BTN_MIDDLE) <> 0, 'MMB set');
-    Assert((btns AND MOUSE_BTN_LEFT) = 0, 'MMB: LMB clear');
+    test.harness.Assert(@context, (btns AND MOUSE_BTN_MIDDLE) <> 0, 'MMB set');
+    test.harness.Assert(@context, (btns AND MOUSE_BTN_LEFT) = 0, 'MMB: LMB clear');
 
     report[0] := $07; { all buttons }
     btns := mouse_buttons(@report[0]);
-    Assert((btns AND MOUSE_BTN_LEFT) <> 0, 'all: LMB set');
-    Assert((btns AND MOUSE_BTN_RIGHT) <> 0, 'all: RMB set');
-    Assert((btns AND MOUSE_BTN_MIDDLE) <> 0, 'all: MMB set');
+    test.harness.Assert(@context, (btns AND MOUSE_BTN_LEFT) <> 0, 'all: LMB set');
+    test.harness.Assert(@context, (btns AND MOUSE_BTN_RIGHT) <> 0, 'all: RMB set');
+    test.harness.Assert(@context, (btns AND MOUSE_BTN_MIDDLE) <> 0, 'all: MMB set');
 
     report[0] := 0;
     btns := mouse_buttons(@report[0]);
-    Assert(btns = 0, 'no buttons');
+    test.harness.Assert(@context, btns = 0, 'no buttons');
 
     { === Combined report === }
     report[0] := MOUSE_BTN_LEFT; report[1] := 5; report[2] := 250; report[3] := 1;
@@ -547,12 +516,12 @@ begin
     dx := mouse_delta_x(@report[0]);
     dy := mouse_delta_y(@report[0]);
     sc := mouse_scroll(@report[0], 4);
-    Assert((btns AND MOUSE_BTN_LEFT) <> 0, 'combined: LMB');
-    Assert(dx = 5, 'combined: dx=5');
-    Assert(dy = -6, 'combined: dy=-6');
-    Assert(sc = 1, 'combined: scroll=1');
+    test.harness.Assert(@context, (btns AND MOUSE_BTN_LEFT) <> 0, 'combined: LMB');
+    test.harness.Assert(@context, dx = 5, 'combined: dx=5');
+    test.harness.Assert(@context, dy = -6, 'combined: dy=-6');
+    test.harness.Assert(@context, sc = 1, 'combined: scroll=1');
 
-    PrintSummary;
+    test.harness.Finish(@context);
 end;
 
 initialization

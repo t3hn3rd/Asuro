@@ -31,6 +31,9 @@ procedure UnitTest;
 
 implementation
 
+uses
+    test.harness;
+
 { ========================= Hub Constants ========================= }
 
 const
@@ -631,124 +634,91 @@ end;
 
 procedure UnitTest;
 var
-    passed, failed : uint32;
+    context : TTestContext;
     ps : TUSBHubPortStatus;
 
-    procedure Assert(condition : boolean; testName : pchar);
-    var
-        msg : pchar;
-    begin
-        if condition then begin
-            inc(passed);
-        end else begin
-            inc(failed);
-            msg := stringConcat('FAIL: ', testName);
-            io.syslog.logln('USBHub', msg);
-            kfree(void(msg));
-        end;
-    end;
-
-    procedure PrintSummary;
-    var
-        pStr, fStr, msg, tmp : pchar;
-    begin
-        pStr := intToString(passed);
-        fStr := intToString(failed);
-        msg := stringConcat(pStr, ' passed, ');
-        tmp := stringConcat(msg, fStr);
-        kfree(void(msg));
-        msg := stringConcat(tmp, ' failed.');
-        kfree(void(tmp));
-        io.syslog.logln('USBHub', msg);
-        kfree(void(msg));
-        kfree(void(pStr));
-        kfree(void(fStr));
-    end;
-
 begin
-    passed := 0;
-    failed := 0;
-    io.syslog.logln('USBHub', 'Unit tests starting...');
+    test.harness.Start(@context, 'driver.bus.usb.hub');
 
     { === Structure Sizes === }
-    Assert(sizeof(TUSBHubDescriptor) = 7, 'sizeof HubDesc=7');
-    Assert(sizeof(TUSBHubPortStatus) = 4, 'sizeof HubPortStatus=4');
+    test.harness.Assert(@context, sizeof(TUSBHubDescriptor) = 7, 'sizeof HubDesc=7');
+    test.harness.Assert(@context, sizeof(TUSBHubPortStatus) = 4, 'sizeof HubPortStatus=4');
 
     { === Port Feature Constants === }
-    Assert(HUB_FEAT_PORT_CONNECTION = 0, 'FEAT_PORT_CONNECTION=0');
-    Assert(HUB_FEAT_PORT_ENABLE = 1, 'FEAT_PORT_ENABLE=1');
-    Assert(HUB_FEAT_PORT_RESET = 4, 'FEAT_PORT_RESET=4');
-    Assert(HUB_FEAT_PORT_POWER = 8, 'FEAT_PORT_POWER=8');
-    Assert(HUB_FEAT_PORT_LOW_SPEED = 9, 'FEAT_PORT_LOW_SPEED=9');
-    Assert(HUB_FEAT_C_PORT_CONNECTION = 16, 'FEAT_C_PORT_CONNECTION=16');
-    Assert(HUB_FEAT_C_PORT_ENABLE = 17, 'FEAT_C_PORT_ENABLE=17');
-    Assert(HUB_FEAT_C_PORT_RESET = 20, 'FEAT_C_PORT_RESET=20');
+    test.harness.Assert(@context, HUB_FEAT_PORT_CONNECTION = 0, 'FEAT_PORT_CONNECTION=0');
+    test.harness.Assert(@context, HUB_FEAT_PORT_ENABLE = 1, 'FEAT_PORT_ENABLE=1');
+    test.harness.Assert(@context, HUB_FEAT_PORT_RESET = 4, 'FEAT_PORT_RESET=4');
+    test.harness.Assert(@context, HUB_FEAT_PORT_POWER = 8, 'FEAT_PORT_POWER=8');
+    test.harness.Assert(@context, HUB_FEAT_PORT_LOW_SPEED = 9, 'FEAT_PORT_LOW_SPEED=9');
+    test.harness.Assert(@context, HUB_FEAT_C_PORT_CONNECTION = 16, 'FEAT_C_PORT_CONNECTION=16');
+    test.harness.Assert(@context, HUB_FEAT_C_PORT_ENABLE = 17, 'FEAT_C_PORT_ENABLE=17');
+    test.harness.Assert(@context, HUB_FEAT_C_PORT_RESET = 20, 'FEAT_C_PORT_RESET=20');
 
     { === Port Status Bit Constants === }
-    Assert(HUB_PORT_STAT_CONNECTION = $0001, 'PORT_STAT_CONNECTION=$0001');
-    Assert(HUB_PORT_STAT_ENABLE = $0002, 'PORT_STAT_ENABLE=$0002');
-    Assert(HUB_PORT_STAT_SUSPEND = $0004, 'PORT_STAT_SUSPEND=$0004');
-    Assert(HUB_PORT_STAT_OVER_CURRENT = $0008, 'PORT_STAT_OVER_CURRENT=$0008');
-    Assert(HUB_PORT_STAT_RESET = $0010, 'PORT_STAT_RESET=$0010');
-    Assert(HUB_PORT_STAT_POWER = $0100, 'PORT_STAT_POWER=$0100');
-    Assert(HUB_PORT_STAT_LOW_SPEED = $0200, 'PORT_STAT_LOW_SPEED=$0200');
-    Assert(HUB_PORT_STAT_HIGH_SPEED = $0400, 'PORT_STAT_HIGH_SPEED=$0400');
+    test.harness.Assert(@context, HUB_PORT_STAT_CONNECTION = $0001, 'PORT_STAT_CONNECTION=$0001');
+    test.harness.Assert(@context, HUB_PORT_STAT_ENABLE = $0002, 'PORT_STAT_ENABLE=$0002');
+    test.harness.Assert(@context, HUB_PORT_STAT_SUSPEND = $0004, 'PORT_STAT_SUSPEND=$0004');
+    test.harness.Assert(@context, HUB_PORT_STAT_OVER_CURRENT = $0008, 'PORT_STAT_OVER_CURRENT=$0008');
+    test.harness.Assert(@context, HUB_PORT_STAT_RESET = $0010, 'PORT_STAT_RESET=$0010');
+    test.harness.Assert(@context, HUB_PORT_STAT_POWER = $0100, 'PORT_STAT_POWER=$0100');
+    test.harness.Assert(@context, HUB_PORT_STAT_LOW_SPEED = $0200, 'PORT_STAT_LOW_SPEED=$0200');
+    test.harness.Assert(@context, HUB_PORT_STAT_HIGH_SPEED = $0400, 'PORT_STAT_HIGH_SPEED=$0400');
 
     { === Port Change Bit Constants === }
-    Assert(HUB_PORT_STAT_C_CONNECTION = $0001, 'PORT_C_CONNECTION=$0001');
-    Assert(HUB_PORT_STAT_C_ENABLE = $0002, 'PORT_C_ENABLE=$0002');
-    Assert(HUB_PORT_STAT_C_SUSPEND = $0004, 'PORT_C_SUSPEND=$0004');
-    Assert(HUB_PORT_STAT_C_OVER_CURRENT = $0008, 'PORT_C_OVER_CURRENT=$0008');
-    Assert(HUB_PORT_STAT_C_RESET = $0010, 'PORT_C_RESET=$0010');
+    test.harness.Assert(@context, HUB_PORT_STAT_C_CONNECTION = $0001, 'PORT_C_CONNECTION=$0001');
+    test.harness.Assert(@context, HUB_PORT_STAT_C_ENABLE = $0002, 'PORT_C_ENABLE=$0002');
+    test.harness.Assert(@context, HUB_PORT_STAT_C_SUSPEND = $0004, 'PORT_C_SUSPEND=$0004');
+    test.harness.Assert(@context, HUB_PORT_STAT_C_OVER_CURRENT = $0008, 'PORT_C_OVER_CURRENT=$0008');
+    test.harness.Assert(@context, HUB_PORT_STAT_C_RESET = $0010, 'PORT_C_RESET=$0010');
 
     { === Hub Request Constants === }
-    Assert(HUB_REQ_GET_STATUS = $00, 'REQ_GET_STATUS=$00');
-    Assert(HUB_REQ_CLEAR_FEATURE = $01, 'REQ_CLEAR_FEATURE=$01');
-    Assert(HUB_REQ_SET_FEATURE = $03, 'REQ_SET_FEATURE=$03');
-    Assert(HUB_REQ_GET_DESCRIPTOR = $06, 'REQ_GET_DESCRIPTOR=$06');
+    test.harness.Assert(@context, HUB_REQ_GET_STATUS = $00, 'REQ_GET_STATUS=$00');
+    test.harness.Assert(@context, HUB_REQ_CLEAR_FEATURE = $01, 'REQ_CLEAR_FEATURE=$01');
+    test.harness.Assert(@context, HUB_REQ_SET_FEATURE = $03, 'REQ_SET_FEATURE=$03');
+    test.harness.Assert(@context, HUB_REQ_GET_DESCRIPTOR = $06, 'REQ_GET_DESCRIPTOR=$06');
 
     { === Hub Limits === }
-    Assert(HUB_MAX_DEPTH = 5, 'MAX_DEPTH=5');
-    Assert(HUB_MAX_PORTS = 15, 'MAX_PORTS=15');
+    test.harness.Assert(@context, HUB_MAX_DEPTH = 5, 'MAX_DEPTH=5');
+    test.harness.Assert(@context, HUB_MAX_PORTS = 15, 'MAX_PORTS=15');
 
     { === Speed Detection from Port Status === }
     ps.wPortStatus := HUB_PORT_STAT_CONNECTION OR HUB_PORT_STAT_ENABLE OR HUB_PORT_STAT_POWER;
     ps.wPortChange := 0;
-    Assert(hub_port_speed(ps) = USB_SPEED_FULL, 'speed full-speed');
+    test.harness.Assert(@context, hub_port_speed(ps) = USB_SPEED_FULL, 'speed full-speed');
 
     ps.wPortStatus := HUB_PORT_STAT_CONNECTION OR HUB_PORT_STAT_ENABLE OR
                       HUB_PORT_STAT_POWER OR HUB_PORT_STAT_LOW_SPEED;
-    Assert(hub_port_speed(ps) = USB_SPEED_LOW, 'speed low-speed');
+    test.harness.Assert(@context, hub_port_speed(ps) = USB_SPEED_LOW, 'speed low-speed');
 
     ps.wPortStatus := HUB_PORT_STAT_CONNECTION OR HUB_PORT_STAT_ENABLE OR
                       HUB_PORT_STAT_POWER OR HUB_PORT_STAT_HIGH_SPEED;
-    Assert(hub_port_speed(ps) = USB_SPEED_HIGH, 'speed high-speed');
+    test.harness.Assert(@context, hub_port_speed(ps) = USB_SPEED_HIGH, 'speed high-speed');
 
     { === Hub Descriptor Type Constant === }
-    Assert(USB_DESC_HUB = $29, 'USB_DESC_HUB=$29');
-    Assert(USB_CLASS_HUB = $09, 'USB_CLASS_HUB=$09');
+    test.harness.Assert(@context, USB_DESC_HUB = $29, 'USB_DESC_HUB=$29');
+    test.harness.Assert(@context, USB_CLASS_HUB = $09, 'USB_CLASS_HUB=$09');
 
     { === Port Status Parsing === }
     { Simulate: connected, enabled, powered, full speed, with connection change }
     ps.wPortStatus := HUB_PORT_STAT_CONNECTION OR HUB_PORT_STAT_ENABLE OR HUB_PORT_STAT_POWER;
     ps.wPortChange := HUB_PORT_STAT_C_CONNECTION;
-    Assert((ps.wPortStatus AND HUB_PORT_STAT_CONNECTION) <> 0, 'parse: connected');
-    Assert((ps.wPortStatus AND HUB_PORT_STAT_ENABLE) <> 0, 'parse: enabled');
-    Assert((ps.wPortStatus AND HUB_PORT_STAT_POWER) <> 0, 'parse: powered');
-    Assert((ps.wPortStatus AND HUB_PORT_STAT_LOW_SPEED) = 0, 'parse: not low-speed');
-    Assert((ps.wPortStatus AND HUB_PORT_STAT_HIGH_SPEED) = 0, 'parse: not high-speed');
-    Assert((ps.wPortChange AND HUB_PORT_STAT_C_CONNECTION) <> 0, 'parse: C_CONNECTION set');
-    Assert((ps.wPortChange AND HUB_PORT_STAT_C_RESET) = 0, 'parse: C_RESET not set');
+    test.harness.Assert(@context, (ps.wPortStatus AND HUB_PORT_STAT_CONNECTION) <> 0, 'parse: connected');
+    test.harness.Assert(@context, (ps.wPortStatus AND HUB_PORT_STAT_ENABLE) <> 0, 'parse: enabled');
+    test.harness.Assert(@context, (ps.wPortStatus AND HUB_PORT_STAT_POWER) <> 0, 'parse: powered');
+    test.harness.Assert(@context, (ps.wPortStatus AND HUB_PORT_STAT_LOW_SPEED) = 0, 'parse: not low-speed');
+    test.harness.Assert(@context, (ps.wPortStatus AND HUB_PORT_STAT_HIGH_SPEED) = 0, 'parse: not high-speed');
+    test.harness.Assert(@context, (ps.wPortChange AND HUB_PORT_STAT_C_CONNECTION) <> 0, 'parse: C_CONNECTION set');
+    test.harness.Assert(@context, (ps.wPortChange AND HUB_PORT_STAT_C_RESET) = 0, 'parse: C_RESET not set');
 
     { Simulate: not connected, powered, overcurrent change }
     ps.wPortStatus := HUB_PORT_STAT_POWER OR HUB_PORT_STAT_OVER_CURRENT;
     ps.wPortChange := HUB_PORT_STAT_C_OVER_CURRENT;
-    Assert((ps.wPortStatus AND HUB_PORT_STAT_CONNECTION) = 0, 'parse: disconnected');
-    Assert((ps.wPortStatus AND HUB_PORT_STAT_OVER_CURRENT) <> 0, 'parse: overcurrent');
-    Assert((ps.wPortChange AND HUB_PORT_STAT_C_OVER_CURRENT) <> 0, 'parse: C_OVER_CURRENT set');
+    test.harness.Assert(@context, (ps.wPortStatus AND HUB_PORT_STAT_CONNECTION) = 0, 'parse: disconnected');
+    test.harness.Assert(@context, (ps.wPortStatus AND HUB_PORT_STAT_OVER_CURRENT) <> 0, 'parse: overcurrent');
+    test.harness.Assert(@context, (ps.wPortChange AND HUB_PORT_STAT_C_OVER_CURRENT) <> 0, 'parse: C_OVER_CURRENT set');
 
     { Print summary }
-    PrintSummary;
+    test.harness.Finish(@context);
 end;
 
 end.

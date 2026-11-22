@@ -24,7 +24,12 @@ steps:
       - git fetch --tags
       - find . -type f -print0 | xargs -0 dos2unix
       - chmod +x /drone/src/toolchain/*.sh
-      - /drone/src/toolchain/compile.sh
+      - |
+        if [ "$DRONE_BRANCH" = "master" ]; then
+          UNIT_TESTS=0 COMPLEX_TESTS=0 /drone/src/toolchain/compile.sh
+        else
+          UNIT_TESTS=1 COMPLEX_TESTS=1 /drone/src/toolchain/compile.sh
+        fi
       
   - name: deploy-docs
     image: alpine:latest

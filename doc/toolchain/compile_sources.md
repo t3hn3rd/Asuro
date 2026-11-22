@@ -22,6 +22,21 @@ Compiles the Asuro kernel Pascal sources with Free Pascal.
 | `wasuro/**/*.pas` | Wasuro WASM runtime units (pulled by `compile_wasuro.sh`). |
 | `compat/**/*.pas` | Compatibility layer units. |
 
+## Test build modes
+
+Pass options as per-run environment variables. Compose forwards explicit
+`-e` values to the builder.
+
+```powershell
+docker compose run builder
+docker compose run -e UNIT_TESTS=1 builder
+docker compose run -e COMPLEX_TESTS=1 builder
+```
+
+The default build leaves boot tests disabled. `UNIT_TESTS=1` enables the
+regular suite. `COMPLEX_TESTS=1` enables both suites by passing
+`-dUNIT_TESTS` and `-dUNIT_TESTS_COMPLEX` to Free Pascal.
+
 ## Outputs
 
 | File | Description |

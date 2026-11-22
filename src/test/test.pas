@@ -20,7 +20,9 @@ unit test;
 interface
 
 uses
-    boot.mgr;
+    boot.mgr,
+    io.syslog,
+    test.harness;
 
 procedure init();
 procedure runAllTests();
@@ -29,6 +31,7 @@ implementation
 
 uses
     core.strings,
+    core.strings.helpers,
     app.diskutil,
     driver.bus.usb.types,
     driver.bus.usb.core,
@@ -51,6 +54,7 @@ uses
     driver.storage.vfs,
     driver.storage.test,
     driver.storage.bench,
+    driver.storage.bench.clock,
     driver.storage.metatest,
     driver.storage.perftest,
     driver.storage.ctl.ahci,
@@ -58,17 +62,21 @@ uses
     core.enc.fnv1a,
     core.enc.djb2,
     core.ds.bloom,
-    core.fmt.json;   
+    core.fmt.json;
 
 procedure init();
 begin
-    { Stub for now }
+    { Initialize the test harness }
+    test.harness.init;
 end;
 
 procedure runAllTests();
 begin
+    io.syslog.logln('test', 'Running all standard unit tests...');
+
     { Run unit tests }
     core.strings.UnitTest;
+    core.strings.helpers.UnitTest;
     app.diskutil.UnitTest;
     driver.bus.usb.types.UnitTest;
     driver.bus.usb.core.UnitTest;
@@ -90,19 +98,42 @@ begin
     core.ds.prio.UnitTest;
     driver.storage.vfs.UnitTest;
     driver.storage.test.UnitTest;
-    driver.storage.bench.UnitTest;
-    driver.storage.metatest.UnitTest;
-    driver.storage.perftest.UnitTest;
     driver.storage.ctl.ahci.UnitTest;
     driver.storage.ctl.usb.UnitTest;
     core.enc.fnv1a.UnitTest;
     core.enc.djb2.UnitTest;
     core.ds.bloom.UnitTest;
+end;
+
+procedure runComplexTests();
+begin
+    io.syslog.logln('test', 'Running complex unit tests...');
+
+    { Run complex unit tests }
     core.fmt.json.UnitTest;
+    driver.storage.bench.clock.UnitTest;
+    driver.storage.bench.UnitTest;
+    driver.storage.metatest.UnitTest;
+    driver.storage.perftest.UnitTest;
+end;
+
+procedure finish();
+begin
+    { Finished }
+    io.syslog.logln('test', 'Unit tests finished.');
+
+    { Print the test harness results }
+    test.harness.print;
 end;
 
 initialization
-    boot.mgr.registerBoot('asuro.test.init', @init, 'Initialize Test Framework', BOOT_MGR_BARRIER_MID);
-    boot.mgr.registerBoot('asuro.test.run', @runAllTests, 'Run Unit Tests', BOOT_MGR_BARRIER_LATE);
+    {$IFDEF UNIT_TESTS}
+        boot.mgr.registerBoot('asuro.test.init', @init, 'Initialize Test Framework', BOOT_MGR_BARRIER_MID);
+        boot.mgr.registerBoot('asuro.test.run.standard', @runAllTests, 'Run Unit Tests', BOOT_MGR_BARRIER_LATE);
+        {$IFDEF UNIT_TESTS_COMPLEX}
+            boot.mgr.registerBoot('asuro.test.run.complex', @runComplexTests, 'Run Complex Unit Tests', 'asuro.test.run.standard');
+        {$ENDIF}
+        boot.mgr.registerBoot('asuro.test.finish', @finish, 'Finish Unit Tests', 'asuro.test.run.*');
+    {$ENDIF}
 
 end.

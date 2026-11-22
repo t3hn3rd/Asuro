@@ -85,6 +85,7 @@ uses
 implementation
 
 uses
+    test.harness,
     io.syslog, core.strings;
 
 function FIFO_New(ElementSize : uint32) : PFIFOQueue;
@@ -174,86 +175,53 @@ var
     v, r : uint32;
     ok   : boolean;
     p    : void;
-    passed, failed : uint32;
-
-    procedure Assert(condition : boolean; testName : pchar);
-    var
-        msg : pchar;
-    begin
-        if condition then begin
-            inc(passed);
-        end else begin
-            inc(failed);
-            msg := stringConcat('FAIL: ', testName);
-            io.syslog.logln('FIFO', msg);
-            kfree(void(msg));
-        end;
-    end;
-
-    procedure PrintSummary;
-    var
-        pStr, fStr, msg, tmp : pchar;
-    begin
-        pStr := intToString(passed);
-        fStr := intToString(failed);
-        msg := stringConcat(pStr, ' passed, ');
-        tmp := stringConcat(msg, fStr);
-        kfree(void(msg));
-        msg := stringConcat(tmp, ' failed.');
-        kfree(void(tmp));
-        io.syslog.logln('FIFO', msg);
-        kfree(void(msg));
-        kfree(void(pStr));
-        kfree(void(fStr));
-    end;
+    context : TTestContext;
 
 begin
-    passed := 0;
-    failed := 0;
-    io.syslog.logln('FIFO', 'Unit tests starting...');
+    test.harness.Start(@context, 'core.ds.fifo');
 
     { === New / Empty / Size === }
     q := FIFO_New(sizeof(uint32));
-    Assert(q <> nil, 'New returns non-nil');
-    Assert(FIFO_IsEmpty(q), 'Initially empty');
-    Assert(FIFO_Size(q) = 0, 'Initial size is 0');
+    test.harness.Assert(@context, q <> nil, 'New returns non-nil');
+    test.harness.Assert(@context, FIFO_IsEmpty(q), 'Initially empty');
+    test.harness.Assert(@context, FIFO_Size(q) = 0, 'Initial size is 0');
 
     { === Enqueue / Size === }
     v := 10; FIFO_Enqueue(q, @v);
     v := 20; FIFO_Enqueue(q, @v);
     v := 30; FIFO_Enqueue(q, @v);
-    Assert(FIFO_Size(q) = 3, 'Size after 3 enqueues');
-    Assert(not FIFO_IsEmpty(q), 'Not empty after enqueue');
+    test.harness.Assert(@context, FIFO_Size(q) = 3, 'Size after 3 enqueues');
+    test.harness.Assert(@context, not FIFO_IsEmpty(q), 'Not empty after enqueue');
 
     { === Peek === }
     p := FIFO_Peek(q);
-    Assert(p <> nil, 'Peek non-nil');
-    Assert(uint32(p^) = 10, 'Peek returns first enqueued');
+    test.harness.Assert(@context, p <> nil, 'Peek non-nil');
+    test.harness.Assert(@context, uint32(p^) = 10, 'Peek returns first enqueued');
 
     { === Dequeue order === }
     ok := FIFO_Dequeue(q, @r);
-    Assert(ok, 'Dequeue 1 succeeds');
-    Assert(r = 10, 'Dequeue 1 value');
+    test.harness.Assert(@context, ok, 'Dequeue 1 succeeds');
+    test.harness.Assert(@context, r = 10, 'Dequeue 1 value');
 
     ok := FIFO_Dequeue(q, @r);
-    Assert(ok, 'Dequeue 2 succeeds');
-    Assert(r = 20, 'Dequeue 2 value');
+    test.harness.Assert(@context, ok, 'Dequeue 2 succeeds');
+    test.harness.Assert(@context, r = 20, 'Dequeue 2 value');
 
     ok := FIFO_Dequeue(q, @r);
-    Assert(ok, 'Dequeue 3 succeeds');
-    Assert(r = 30, 'Dequeue 3 value');
+    test.harness.Assert(@context, ok, 'Dequeue 3 succeeds');
+    test.harness.Assert(@context, r = 30, 'Dequeue 3 value');
 
-    Assert(FIFO_IsEmpty(q), 'Empty after all dequeued');
+    test.harness.Assert(@context, FIFO_IsEmpty(q), 'Empty after all dequeued');
 
     { === Edge: dequeue/peek on empty === }
     ok := FIFO_Dequeue(q, @r);
-    Assert(not ok, 'Dequeue on empty returns false');
+    test.harness.Assert(@context, not ok, 'Dequeue on empty returns false');
     p := FIFO_Peek(q);
-    Assert(p = nil, 'Peek on empty returns nil');
+    test.harness.Assert(@context, p = nil, 'Peek on empty returns nil');
 
     FIFO_Free(q);
 
-    PrintSummary;
+    test.harness.Finish(@context);
 end;
 
 end.

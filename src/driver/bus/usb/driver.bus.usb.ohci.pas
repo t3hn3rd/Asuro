@@ -47,6 +47,9 @@ procedure UnitTest;
 
 implementation
 
+uses
+    test.harness;
+
 { ========================= driver.bus.usb.ohci Register Offsets (from MMIO Base) ========================= }
 
 const
@@ -1388,194 +1391,160 @@ end;
 
 procedure UnitTest;
 var
-    passed, failed : uint32;
-
-    procedure Assert(condition : boolean; testName : pchar);
-    var
-        msg : pchar;
-    begin
-        if condition then begin
-            inc(passed);
-        end else begin
-            inc(failed);
-            msg := stringConcat('FAIL: ', testName);
-            io.syslog.logln('driver.bus.usb.ohci', msg);
-            kfree(void(msg));
-        end;
-    end;
-
-    procedure PrintSummary;
-    var
-        pStr, fStr, msg, tmp : pchar;
-    begin
-        pStr := intToString(passed);
-        fStr := intToString(failed);
-        msg := stringConcat(pStr, ' passed, ');
-        tmp := stringConcat(msg, fStr);
-        kfree(void(msg));
-        msg := stringConcat(tmp, ' failed.');
-        kfree(void(tmp));
-        io.syslog.logln('driver.bus.usb.ohci', msg);
-        kfree(void(msg));
-        kfree(void(pStr));
-        kfree(void(fStr));
-    end;
-
-var
+    context : TTestContext;
     edCtrl : uint32;
     tdCtrl : uint32;
     ed     : POHCI_ED;
     td     : POHCI_TD;
     hcca   : POHCI_HCCA;
+
 begin
-    passed := 0;
-    failed := 0;
-    io.syslog.logln('driver.bus.usb.ohci', 'Unit tests starting...');
+    test.harness.Start(@context, 'driver.bus.usb.ohci');
 
     { === Structure Sizes === }
-    Assert(sizeof(TOHCI_HCCA) = 256, 'sizeof HCCA=256');
-    Assert(sizeof(TOHCI_ED) = 32, 'sizeof ED=32');
-    Assert(sizeof(TOHCI_TD) = 32, 'sizeof TD=32');
+    test.harness.Assert(@context, sizeof(TOHCI_HCCA) = 256, 'sizeof HCCA=256');
+    test.harness.Assert(@context, sizeof(TOHCI_ED) = 32, 'sizeof ED=32');
+    test.harness.Assert(@context, sizeof(TOHCI_TD) = 32, 'sizeof TD=32');
 
     { === ED Control Building === }
     { Addr 0, EP0, direction from TD, full speed, maxPkt 8, general }
     edCtrl := ohci_make_ed_control(0, 0, OHCI_ED_DIR_FROM_TD, OHCI_ED_SPEED_FULL, 8, false);
-    Assert((edCtrl AND $7F) = 0, 'ed addr=0');
-    Assert(((edCtrl SHR 7) AND $0F) = 0, 'ed ep=0');
-    Assert((edCtrl AND OHCI_ED_DIR_MASK) = OHCI_ED_DIR_FROM_TD, 'ed dir=FROM_TD');
-    Assert((edCtrl AND OHCI_ED_SPEED_LOW) = 0, 'ed speed=full');
-    Assert(((edCtrl SHR OHCI_ED_MPS_SHIFT) AND $7FF) = 8, 'ed mps=8');
-    Assert((edCtrl AND OHCI_ED_FORMAT_ISO) = 0, 'ed format=general');
+    test.harness.Assert(@context, (edCtrl AND $7F) = 0, 'ed addr=0');
+    test.harness.Assert(@context, ((edCtrl SHR 7) AND $0F) = 0, 'ed ep=0');
+    test.harness.Assert(@context, (edCtrl AND OHCI_ED_DIR_MASK) = OHCI_ED_DIR_FROM_TD, 'ed dir=FROM_TD');
+    test.harness.Assert(@context, (edCtrl AND OHCI_ED_SPEED_LOW) = 0, 'ed speed=full');
+    test.harness.Assert(@context, ((edCtrl SHR OHCI_ED_MPS_SHIFT) AND $7FF) = 8, 'ed mps=8');
+    test.harness.Assert(@context, (edCtrl AND OHCI_ED_FORMAT_ISO) = 0, 'ed format=general');
 
     { Addr 5, EP3, IN, low speed, maxPkt 64 }
     edCtrl := ohci_make_ed_control(5, 3, OHCI_ED_DIR_IN, OHCI_ED_SPEED_LOW, 64, false);
-    Assert((edCtrl AND $7F) = 5, 'ed addr=5');
-    Assert(((edCtrl SHR 7) AND $0F) = 3, 'ed ep=3');
-    Assert((edCtrl AND OHCI_ED_DIR_MASK) = OHCI_ED_DIR_IN, 'ed dir=IN');
-    Assert((edCtrl AND OHCI_ED_SPEED_LOW) <> 0, 'ed speed=low');
-    Assert(((edCtrl SHR OHCI_ED_MPS_SHIFT) AND $7FF) = 64, 'ed mps=64');
+    test.harness.Assert(@context, (edCtrl AND $7F) = 5, 'ed addr=5');
+    test.harness.Assert(@context, ((edCtrl SHR 7) AND $0F) = 3, 'ed ep=3');
+    test.harness.Assert(@context, (edCtrl AND OHCI_ED_DIR_MASK) = OHCI_ED_DIR_IN, 'ed dir=IN');
+    test.harness.Assert(@context, (edCtrl AND OHCI_ED_SPEED_LOW) <> 0, 'ed speed=low');
+    test.harness.Assert(@context, ((edCtrl SHR OHCI_ED_MPS_SHIFT) AND $7FF) = 64, 'ed mps=64');
 
     { Addr 127, EP15, OUT, full speed, maxPkt 1023, isochronous }
     edCtrl := ohci_make_ed_control(127, 15, OHCI_ED_DIR_OUT, OHCI_ED_SPEED_FULL, 1023, true);
-    Assert((edCtrl AND $7F) = 127, 'ed addr=127');
-    Assert(((edCtrl SHR 7) AND $0F) = 15, 'ed ep=15');
-    Assert((edCtrl AND OHCI_ED_DIR_MASK) = OHCI_ED_DIR_OUT, 'ed dir=OUT');
-    Assert(((edCtrl SHR OHCI_ED_MPS_SHIFT) AND $7FF) = 1023, 'ed mps=1023');
-    Assert((edCtrl AND OHCI_ED_FORMAT_ISO) <> 0, 'ed format=iso');
+    test.harness.Assert(@context, (edCtrl AND $7F) = 127, 'ed addr=127');
+    test.harness.Assert(@context, ((edCtrl SHR 7) AND $0F) = 15, 'ed ep=15');
+    test.harness.Assert(@context, (edCtrl AND OHCI_ED_DIR_MASK) = OHCI_ED_DIR_OUT, 'ed dir=OUT');
+    test.harness.Assert(@context, ((edCtrl SHR OHCI_ED_MPS_SHIFT) AND $7FF) = 1023, 'ed mps=1023');
+    test.harness.Assert(@context, (edCtrl AND OHCI_ED_FORMAT_ISO) <> 0, 'ed format=iso');
 
     { === TD Control Building === }
     { SETUP, DATA0, no interrupt, no rounding }
     tdCtrl := ohci_make_td_control(OHCI_TD_DP_SETUP, OHCI_TD_DT_DATA0,
                                     OHCI_TD_DI_NONE, false);
-    Assert((tdCtrl AND OHCI_TD_DP_MASK) = OHCI_TD_DP_SETUP, 'td dp=SETUP');
-    Assert((tdCtrl AND OHCI_TD_DT_MASK) = OHCI_TD_DT_DATA0, 'td dt=DATA0');
-    Assert((tdCtrl AND OHCI_TD_DI_MASK) = OHCI_TD_DI_NONE, 'td di=NONE');
-    Assert((tdCtrl AND OHCI_TD_R) = 0, 'td rounding=off');
-    Assert(((tdCtrl SHR OHCI_TD_CC_SHIFT) AND $F) = OHCI_CC_NOT_ACCESSED, 'td cc=NOT_ACCESSED');
+    test.harness.Assert(@context, (tdCtrl AND OHCI_TD_DP_MASK) = OHCI_TD_DP_SETUP, 'td dp=SETUP');
+    test.harness.Assert(@context, (tdCtrl AND OHCI_TD_DT_MASK) = OHCI_TD_DT_DATA0, 'td dt=DATA0');
+    test.harness.Assert(@context, (tdCtrl AND OHCI_TD_DI_MASK) = OHCI_TD_DI_NONE, 'td di=NONE');
+    test.harness.Assert(@context, (tdCtrl AND OHCI_TD_R) = 0, 'td rounding=off');
+    test.harness.Assert(@context, ((tdCtrl SHR OHCI_TD_CC_SHIFT) AND $F) = OHCI_CC_NOT_ACCESSED, 'td cc=NOT_ACCESSED');
 
     { IN, DATA1, immediate interrupt, rounding }
     tdCtrl := ohci_make_td_control(OHCI_TD_DP_IN, OHCI_TD_DT_DATA1,
                                     OHCI_TD_DI_IMMEDIATE, true);
-    Assert((tdCtrl AND OHCI_TD_DP_MASK) = OHCI_TD_DP_IN, 'td dp=IN');
-    Assert((tdCtrl AND OHCI_TD_DT_MASK) = OHCI_TD_DT_DATA1, 'td dt=DATA1');
-    Assert((tdCtrl AND OHCI_TD_DI_MASK) = OHCI_TD_DI_IMMEDIATE, 'td di=IMMEDIATE');
-    Assert((tdCtrl AND OHCI_TD_R) <> 0, 'td rounding=on');
+    test.harness.Assert(@context, (tdCtrl AND OHCI_TD_DP_MASK) = OHCI_TD_DP_IN, 'td dp=IN');
+    test.harness.Assert(@context, (tdCtrl AND OHCI_TD_DT_MASK) = OHCI_TD_DT_DATA1, 'td dt=DATA1');
+    test.harness.Assert(@context, (tdCtrl AND OHCI_TD_DI_MASK) = OHCI_TD_DI_IMMEDIATE, 'td di=IMMEDIATE');
+    test.harness.Assert(@context, (tdCtrl AND OHCI_TD_R) <> 0, 'td rounding=on');
 
     { OUT, from ED toggle, no interrupt, no rounding }
     tdCtrl := ohci_make_td_control(OHCI_TD_DP_OUT, OHCI_TD_DT_FROM_ED,
                                     OHCI_TD_DI_NONE, false);
-    Assert((tdCtrl AND OHCI_TD_DP_MASK) = OHCI_TD_DP_OUT, 'td dp=OUT');
-    Assert((tdCtrl AND OHCI_TD_DT_MASK) = OHCI_TD_DT_FROM_ED, 'td dt=FROM_ED');
+    test.harness.Assert(@context, (tdCtrl AND OHCI_TD_DP_MASK) = OHCI_TD_DP_OUT, 'td dp=OUT');
+    test.harness.Assert(@context, (tdCtrl AND OHCI_TD_DT_MASK) = OHCI_TD_DT_FROM_ED, 'td dt=FROM_ED');
 
-    Assert(ohci_async_length(4096,64,true)=4096, 'bulk page uses one TD, not 64');
-    Assert(ohci_async_length(8192,64,true)=4096, 'bulk TD bounded to two pages');
-    Assert(ohci_async_length(31,64,true)=31, 'bulk CBW retains short length');
-    Assert(ohci_async_length(0,64,true)=0, 'bulk zero length packet');
-    Assert(ohci_async_length(4096,64,false)=64, 'interrupt packet sizing unchanged');
+    test.harness.Assert(@context, ohci_async_length(4096,64,true)=4096, 'bulk page uses one TD, not 64');
+    test.harness.Assert(@context, ohci_async_length(8192,64,true)=4096, 'bulk TD bounded to two pages');
+    test.harness.Assert(@context, ohci_async_length(31,64,true)=31, 'bulk CBW retains short length');
+    test.harness.Assert(@context, ohci_async_length(0,64,true)=0, 'bulk zero length packet');
+    test.harness.Assert(@context, ohci_async_length(4096,64,false)=64, 'interrupt packet sizing unchanged');
 
     { === Condition Code Mapping === }
-    Assert(ohci_cc_to_status(OHCI_CC_NO_ERROR) = tsSuccess, 'cc NO_ERROR->tsSuccess');
-    Assert(ohci_cc_to_status(OHCI_CC_CRC) = tsCRCError, 'cc CRC->tsCRCError');
-    Assert(ohci_cc_to_status(OHCI_CC_BIT_STUFFING) = tsBitStuffError, 'cc BITSTUFF->tsBitStuffError');
-    Assert(ohci_cc_to_status(OHCI_CC_STALL) = tsStall, 'cc STALL->tsStall');
-    Assert(ohci_cc_to_status(OHCI_CC_DEVICE_NOT_RESP) = tsTimeout, 'cc DNR->tsTimeout');
-    Assert(ohci_cc_to_status(OHCI_CC_DATA_OVERRUN) = tsDataBufferError, 'cc OVERRUN->tsDataBufferError');
-    Assert(ohci_cc_to_status(OHCI_CC_DATA_UNDERRUN) = tsSuccess, 'cc UNDERRUN->tsSuccess');
-    Assert(ohci_cc_to_status(OHCI_CC_NOT_ACCESSED) = tsInProgress, 'cc NOT_ACCESSED->tsInProgress');
+    test.harness.Assert(@context, ohci_cc_to_status(OHCI_CC_NO_ERROR) = tsSuccess, 'cc NO_ERROR->tsSuccess');
+    test.harness.Assert(@context, ohci_cc_to_status(OHCI_CC_CRC) = tsCRCError, 'cc CRC->tsCRCError');
+    test.harness.Assert(@context, ohci_cc_to_status(OHCI_CC_BIT_STUFFING) = tsBitStuffError, 'cc BITSTUFF->tsBitStuffError');
+    test.harness.Assert(@context, ohci_cc_to_status(OHCI_CC_STALL) = tsStall, 'cc STALL->tsStall');
+    test.harness.Assert(@context, ohci_cc_to_status(OHCI_CC_DEVICE_NOT_RESP) = tsTimeout, 'cc DNR->tsTimeout');
+    test.harness.Assert(@context, ohci_cc_to_status(OHCI_CC_DATA_OVERRUN) = tsDataBufferError, 'cc OVERRUN->tsDataBufferError');
+    test.harness.Assert(@context, ohci_cc_to_status(OHCI_CC_DATA_UNDERRUN) = tsSuccess, 'cc UNDERRUN->tsSuccess');
+    test.harness.Assert(@context, ohci_cc_to_status(OHCI_CC_NOT_ACCESSED) = tsInProgress, 'cc NOT_ACCESSED->tsInProgress');
 
     { === ED Allocation & Alignment === }
     ed := ohci_alloc_ed;
-    Assert(ed <> nil, 'alloc_ed not nil');
-    Assert((uint32(ed) AND $0F) = 0, 'alloc_ed 16-byte aligned');
-    Assert(ed^.Control = 0, 'alloc_ed zeroed control');
-    Assert(ed^.TailP = 0, 'alloc_ed zeroed tailp');
-    Assert(ed^.HeadP = 0, 'alloc_ed zeroed headp');
-    Assert(ed^.NextED = 0, 'alloc_ed zeroed nexted');
+    test.harness.Assert(@context, ed <> nil, 'alloc_ed not nil');
+    test.harness.Assert(@context, (uint32(ed) AND $0F) = 0, 'alloc_ed 16-byte aligned');
+    test.harness.Assert(@context, ed^.Control = 0, 'alloc_ed zeroed control');
+    test.harness.Assert(@context, ed^.TailP = 0, 'alloc_ed zeroed tailp');
+    test.harness.Assert(@context, ed^.HeadP = 0, 'alloc_ed zeroed headp');
+    test.harness.Assert(@context, ed^.NextED = 0, 'alloc_ed zeroed nexted');
     ohci_free_ed(ed);
 
     { === TD Allocation & Alignment === }
     td := ohci_alloc_td;
-    Assert(td <> nil, 'alloc_td not nil');
-    Assert((uint32(td) AND $0F) = 0, 'alloc_td 16-byte aligned');
-    Assert(td^.Control = 0, 'alloc_td zeroed control');
-    Assert(td^.CBP = 0, 'alloc_td zeroed cbp');
-    Assert(td^.NextTD = 0, 'alloc_td zeroed nexttd');
-    Assert(td^.BE = 0, 'alloc_td zeroed be');
+    test.harness.Assert(@context, td <> nil, 'alloc_td not nil');
+    test.harness.Assert(@context, (uint32(td) AND $0F) = 0, 'alloc_td 16-byte aligned');
+    test.harness.Assert(@context, td^.Control = 0, 'alloc_td zeroed control');
+    test.harness.Assert(@context, td^.CBP = 0, 'alloc_td zeroed cbp');
+    test.harness.Assert(@context, td^.NextTD = 0, 'alloc_td zeroed nexttd');
+    test.harness.Assert(@context, td^.BE = 0, 'alloc_td zeroed be');
     td^.SWPad := 4096;
     td^.Control := OHCI_CC_NO_ERROR shl OHCI_TD_CC_SHIFT;
-    Assert(ohci_td_data_length(td)=4096, 'multi-packet TD complete length');
+    test.harness.Assert(@context, ohci_td_data_length(td)=4096, 'multi-packet TD complete length');
     td^.Control := OHCI_CC_DATA_UNDERRUN shl OHCI_TD_CC_SHIFT;
     td^.CBP := $1200; td^.BE := $1FFF;
-    Assert(ohci_td_data_length(td)=512, 'multi-packet TD short read length');
+    test.harness.Assert(@context, ohci_td_data_length(td)=512, 'multi-packet TD short read length');
     td^.CBP := $1F00; td^.BE := $8EFF;
-    Assert(ohci_td_data_length(td)=0, 'two noncontiguous pages residual');
+    test.harness.Assert(@context, ohci_td_data_length(td)=0, 'two noncontiguous pages residual');
     td^.CBP := $8100;
-    Assert(ohci_td_data_length(td)=512, 'short read across physical page boundary');
+    test.harness.Assert(@context, ohci_td_data_length(td)=512, 'short read across physical page boundary');
     ohci_free_td(td);
 
     { === HCCA Size / Alignment === }
-    Assert(OHCI_HCCA_SIZE = 256, 'HCCA_SIZE=256');
-    Assert(OHCI_HCCA_ALIGN = 256, 'HCCA_ALIGN=256');
+    test.harness.Assert(@context, OHCI_HCCA_SIZE = 256, 'HCCA_SIZE=256');
+    test.harness.Assert(@context, OHCI_HCCA_ALIGN = 256, 'HCCA_ALIGN=256');
     hcca := POHCI_HCCA(kalloc_aligned(OHCI_HCCA_SIZE, OHCI_HCCA_ALIGN));
-    Assert(hcca <> nil, 'hcca alloc not nil');
-    Assert((uint32(hcca) AND $FF) = 0, 'hcca 256-byte aligned');
+    test.harness.Assert(@context, hcca <> nil, 'hcca alloc not nil');
+    test.harness.Assert(@context, (uint32(hcca) AND $FF) = 0, 'hcca 256-byte aligned');
     kfree_aligned(hcca);
 
     { === Register offset constants === }
-    Assert(OHCI_REG_REVISION = $00, 'REG_REVISION=$00');
-    Assert(OHCI_REG_CONTROL = $04, 'REG_CONTROL=$04');
-    Assert(OHCI_REG_CMDSTATUS = $08, 'REG_CMDSTATUS=$08');
-    Assert(OHCI_REG_HCCA = $18, 'REG_HCCA=$18');
-    Assert(OHCI_REG_CONTROL_HEAD_ED = $20, 'REG_CONTROL_HEAD_ED=$20');
-    Assert(OHCI_REG_BULK_HEAD_ED = $28, 'REG_BULK_HEAD_ED=$28');
-    Assert(OHCI_REG_RH_DESCRIPTORA = $48, 'REG_RH_DESCRIPTORA=$48');
-    Assert(OHCI_REG_RH_STATUS = $50, 'REG_RH_STATUS=$50');
-    Assert(OHCI_REG_RH_PORT_STATUS = $54, 'REG_RH_PORT_STATUS=$54');
+    test.harness.Assert(@context, OHCI_REG_REVISION = $00, 'REG_REVISION=$00');
+    test.harness.Assert(@context, OHCI_REG_CONTROL = $04, 'REG_CONTROL=$04');
+    test.harness.Assert(@context, OHCI_REG_CMDSTATUS = $08, 'REG_CMDSTATUS=$08');
+    test.harness.Assert(@context, OHCI_REG_HCCA = $18, 'REG_HCCA=$18');
+    test.harness.Assert(@context, OHCI_REG_CONTROL_HEAD_ED = $20, 'REG_CONTROL_HEAD_ED=$20');
+    test.harness.Assert(@context, OHCI_REG_BULK_HEAD_ED = $28, 'REG_BULK_HEAD_ED=$28');
+    test.harness.Assert(@context, OHCI_REG_RH_DESCRIPTORA = $48, 'REG_RH_DESCRIPTORA=$48');
+    test.harness.Assert(@context, OHCI_REG_RH_STATUS = $50, 'REG_RH_STATUS=$50');
+    test.harness.Assert(@context, OHCI_REG_RH_PORT_STATUS = $54, 'REG_RH_PORT_STATUS=$54');
 
     { === HcControl bits === }
-    Assert(OHCI_CTRL_HCFS_RESET = $00, 'CTRL_HCFS_RESET=$00');
-    Assert(OHCI_CTRL_HCFS_OPERATIONAL = $80, 'CTRL_HCFS_OPERATIONAL=$80');
-    Assert(OHCI_CTRL_CLE = $10, 'CTRL_CLE=$10');
-    Assert(OHCI_CTRL_BLE = $20, 'CTRL_BLE=$20');
-    Assert(OHCI_CTRL_PLE = $04, 'CTRL_PLE=$04');
+    test.harness.Assert(@context, OHCI_CTRL_HCFS_RESET = $00, 'CTRL_HCFS_RESET=$00');
+    test.harness.Assert(@context, OHCI_CTRL_HCFS_OPERATIONAL = $80, 'CTRL_HCFS_OPERATIONAL=$80');
+    test.harness.Assert(@context, OHCI_CTRL_CLE = $10, 'CTRL_CLE=$10');
+    test.harness.Assert(@context, OHCI_CTRL_BLE = $20, 'CTRL_BLE=$20');
+    test.harness.Assert(@context, OHCI_CTRL_PLE = $04, 'CTRL_PLE=$04');
 
     { === Port status bits === }
-    Assert(OHCI_PORT_CCS = $00000001, 'PORT_CCS=$01');
-    Assert(OHCI_PORT_PES = $00000002, 'PORT_PES=$02');
-    Assert(OHCI_PORT_PRS = $00000010, 'PORT_PRS=$10');
-    Assert(OHCI_PORT_PPS = $00000100, 'PORT_PPS=$100');
-    Assert(OHCI_PORT_LSDA = $00000200, 'PORT_LSDA=$200');
-    Assert(OHCI_PORT_PRSC = $00100000, 'PORT_PRSC=$100000');
+    test.harness.Assert(@context, OHCI_PORT_CCS = $00000001, 'PORT_CCS=$01');
+    test.harness.Assert(@context, OHCI_PORT_PES = $00000002, 'PORT_PES=$02');
+    test.harness.Assert(@context, OHCI_PORT_PRS = $00000010, 'PORT_PRS=$10');
+    test.harness.Assert(@context, OHCI_PORT_PPS = $00000100, 'PORT_PPS=$100');
+    test.harness.Assert(@context, OHCI_PORT_LSDA = $00000200, 'PORT_LSDA=$200');
+    test.harness.Assert(@context, OHCI_PORT_PRSC = $00100000, 'PORT_PRSC=$100000');
 
     { === ED skip bit === }
-    Assert(OHCI_ED_SKIP = $00004000, 'ED_SKIP=$4000');
+    test.harness.Assert(@context, OHCI_ED_SKIP = $00004000, 'ED_SKIP=$4000');
 
     { === CommandStatus bits === }
-    Assert(OHCI_CMD_HCR = $01, 'CMD_HCR=$01');
-    Assert(OHCI_CMD_CLF = $02, 'CMD_CLF=$02');
-    Assert(OHCI_CMD_BLF = $04, 'CMD_BLF=$04');
+    test.harness.Assert(@context, OHCI_CMD_HCR = $01, 'CMD_HCR=$01');
+    test.harness.Assert(@context, OHCI_CMD_CLF = $02, 'CMD_CLF=$02');
+    test.harness.Assert(@context, OHCI_CMD_BLF = $04, 'CMD_BLF=$04');
 
-    PrintSummary;
+    test.harness.Finish(@context);
 end;
 
 end.

@@ -178,6 +178,9 @@ procedure terminal_command_usb(params : PParamList; stdin_buf, stdout_buf, stder
 
 implementation
 
+uses
+    test.harness;
+
 { ========================= Globals ========================= }
 
 const
@@ -1154,51 +1157,17 @@ end;
 
 procedure UnitTest;
 var
-    passed, failed : uint32;
-
-    procedure Assert(condition : boolean; testName : pchar);
-    var
-        msg : pchar;
-    begin
-        if condition then begin
-            inc(passed);
-        end else begin
-            inc(failed);
-            msg := stringConcat('FAIL: ', testName);
-            io.syslog.logln('USBCORE', msg);
-            kfree(void(msg));
-        end;
-    end;
-
-    procedure PrintSummary;
-    var
-        pStr, fStr, msg, tmp : pchar;
-    begin
-        pStr := intToString(passed);
-        fStr := intToString(failed);
-        msg := stringConcat(pStr, ' passed, ');
-        tmp := stringConcat(msg, fStr);
-        kfree(void(msg));
-        msg := stringConcat(tmp, ' failed.');
-        kfree(void(tmp));
-        io.syslog.logln('USBCORE', msg);
-        kfree(void(msg));
-        kfree(void(pStr));
-        kfree(void(fStr));
-    end;
-
-var
+    context : TTestContext;
     setup  : TUSBSetupPacket;
     cfgBuf : Pointer;
     ifDesc : PUSBInterfaceDescriptor;
     epDesc : PUSBEndpointDescriptor;
+
 begin
-    passed := 0;
-    failed := 0;
-    io.syslog.logln('USBCORE', 'Unit tests starting...');
+    test.harness.Start(@context, 'driver.bus.usb.core');
 
     { === HC list management === }
-    Assert(get_hc_count >= 0, 'hc_count non-negative');
+    test.harness.Assert(@context, get_hc_count >= 0, 'hc_count non-negative');
 
     { === Control message setup packet building (via make_setup_packet) === }
     { GET_DESCRIPTOR for device descriptor }
@@ -1209,11 +1178,11 @@ begin
         0,
         18
     );
-    Assert(setup.bmRequestType = $80, 'get_desc bmRequestType=$80');
-    Assert(setup.bRequest = $06, 'get_desc bRequest=$06');
-    Assert(setup.wValue = $0100, 'get_desc wValue=$0100');
-    Assert(setup.wIndex = 0, 'get_desc wIndex=0');
-    Assert(setup.wLength = 18, 'get_desc wLength=18');
+    test.harness.Assert(@context, setup.bmRequestType = $80, 'get_desc bmRequestType=$80');
+    test.harness.Assert(@context, setup.bRequest = $06, 'get_desc bRequest=$06');
+    test.harness.Assert(@context, setup.wValue = $0100, 'get_desc wValue=$0100');
+    test.harness.Assert(@context, setup.wIndex = 0, 'get_desc wIndex=0');
+    test.harness.Assert(@context, setup.wLength = 18, 'get_desc wLength=18');
 
     { GET_DESCRIPTOR for configuration descriptor }
     setup := make_setup_packet(
@@ -1223,7 +1192,7 @@ begin
         0,
         9
     );
-    Assert(setup.wValue = $0200, 'get_config_desc wValue=$0200');
+    test.harness.Assert(@context, setup.wValue = $0200, 'get_config_desc wValue=$0200');
 
     { SET_ADDRESS }
     setup := make_setup_packet(
@@ -1233,9 +1202,9 @@ begin
         0,
         0
     );
-    Assert(setup.bmRequestType = $00, 'set_addr bmRequestType=$00');
-    Assert(setup.bRequest = $05, 'set_addr bRequest=$05');
-    Assert(setup.wValue = 5, 'set_addr wValue=5');
+    test.harness.Assert(@context, setup.bmRequestType = $00, 'set_addr bmRequestType=$00');
+    test.harness.Assert(@context, setup.bRequest = $05, 'set_addr bRequest=$05');
+    test.harness.Assert(@context, setup.wValue = 5, 'set_addr wValue=5');
 
     { SET_CONFIGURATION }
     setup := make_setup_packet(
@@ -1245,9 +1214,9 @@ begin
         0,
         0
     );
-    Assert(setup.bmRequestType = $00, 'set_config bmRequestType=$00');
-    Assert(setup.bRequest = $09, 'set_config bRequest=$09');
-    Assert(setup.wValue = 1, 'set_config wValue=1');
+    test.harness.Assert(@context, setup.bmRequestType = $00, 'set_config bmRequestType=$00');
+    test.harness.Assert(@context, setup.bRequest = $09, 'set_config bRequest=$09');
+    test.harness.Assert(@context, setup.wValue = 1, 'set_config wValue=1');
 
     { HID SET_PROTOCOL (class request to interface) }
     setup := make_setup_packet(
@@ -1257,9 +1226,9 @@ begin
         0,   { Interface 0 }
         0
     );
-    Assert(setup.bmRequestType = $21, 'set_protocol bmRequestType=$21');
-    Assert(setup.bRequest = $0B, 'set_protocol bRequest=$0B');
-    Assert(setup.wValue = 0, 'set_protocol wValue=0 (boot)');
+    test.harness.Assert(@context, setup.bmRequestType = $21, 'set_protocol bmRequestType=$21');
+    test.harness.Assert(@context, setup.bRequest = $0B, 'set_protocol bRequest=$0B');
+    test.harness.Assert(@context, setup.wValue = 0, 'set_protocol wValue=0 (boot)');
 
     { CLEAR_FEATURE ENDPOINT_HALT }
     setup := make_setup_packet(
@@ -1269,10 +1238,10 @@ begin
         $81, { EP1 IN }
         0
     );
-    Assert(setup.bmRequestType = $02, 'clear_halt bmRequestType=$02');
-    Assert(setup.bRequest = $01, 'clear_halt bRequest=$01');
-    Assert(setup.wValue = 0, 'clear_halt wValue=0 (ENDPOINT_HALT)');
-    Assert(setup.wIndex = $81, 'clear_halt wIndex=$81 (EP1 IN)');
+    test.harness.Assert(@context, setup.bmRequestType = $02, 'clear_halt bmRequestType=$02');
+    test.harness.Assert(@context, setup.bRequest = $01, 'clear_halt bRequest=$01');
+    test.harness.Assert(@context, setup.wValue = 0, 'clear_halt wValue=0 (ENDPOINT_HALT)');
+    test.harness.Assert(@context, setup.wIndex = $81, 'clear_halt wIndex=$81 (EP1 IN)');
 
     { === Descriptor Parsing Helpers === }
     { Build a synthetic config descriptor buffer:
@@ -1334,62 +1303,62 @@ begin
 
     { --- usb_find_interface (first interface) --- }
     ifDesc := usb_find_interface(cfgBuf, 48);
-    Assert(ifDesc <> nil, 'find_iface not nil');
-    Assert(ifDesc^.bInterfaceNumber = 0, 'find_iface num=0');
-    Assert(ifDesc^.bInterfaceClass = USB_CLASS_HID, 'find_iface class=HID');
-    Assert(ifDesc^.bNumEndpoints = 2, 'find_iface numEPs=2');
+    test.harness.Assert(@context, ifDesc <> nil, 'find_iface not nil');
+    test.harness.Assert(@context, ifDesc^.bInterfaceNumber = 0, 'find_iface num=0');
+    test.harness.Assert(@context, ifDesc^.bInterfaceClass = USB_CLASS_HID, 'find_iface class=HID');
+    test.harness.Assert(@context, ifDesc^.bNumEndpoints = 2, 'find_iface numEPs=2');
 
     { --- usb_find_interface_n (second interface) --- }
     ifDesc := usb_find_interface_n(cfgBuf, 48, 1);
-    Assert(ifDesc <> nil, 'find_iface_n(1) not nil');
-    Assert(ifDesc^.bInterfaceNumber = 1, 'find_iface_n(1) num=1');
-    Assert(ifDesc^.bInterfaceClass = USB_CLASS_MASS_STORAGE, 'find_iface_n(1) class=MSC');
+    test.harness.Assert(@context, ifDesc <> nil, 'find_iface_n(1) not nil');
+    test.harness.Assert(@context, ifDesc^.bInterfaceNumber = 1, 'find_iface_n(1) num=1');
+    test.harness.Assert(@context, ifDesc^.bInterfaceClass = USB_CLASS_MASS_STORAGE, 'find_iface_n(1) class=MSC');
 
     { --- usb_find_interface_n out of range --- }
     ifDesc := usb_find_interface_n(cfgBuf, 48, 2);
-    Assert(ifDesc = nil, 'find_iface_n(2) nil (OOB)');
+    test.harness.Assert(@context, ifDesc = nil, 'find_iface_n(2) nil (OOB)');
 
     { --- usb_count_endpoints for interface 0 at offset 9 --- }
-    Assert(usb_count_endpoints(cfgBuf, 48, 9) = 2, 'count_eps iface0=2');
+    test.harness.Assert(@context, usb_count_endpoints(cfgBuf, 48, 9) = 2, 'count_eps iface0=2');
 
     { --- usb_count_endpoints for interface 1 at offset 32 --- }
-    Assert(usb_count_endpoints(cfgBuf, 48, 32) = 1, 'count_eps iface1=1');
+    test.harness.Assert(@context, usb_count_endpoints(cfgBuf, 48, 32) = 1, 'count_eps iface1=1');
 
     { --- usb_find_endpoint: iface 0, EP index 0 (EP1 IN INT) --- }
     epDesc := usb_find_endpoint(cfgBuf, 48, 9, 0);
-    Assert(epDesc <> nil, 'find_ep(0,0) not nil');
-    Assert(epDesc^.bEndpointAddress = $81, 'find_ep(0,0) addr=$81');
-    Assert(epDesc^.bmAttributes = USB_EP_ATTR_INTERRUPT, 'find_ep(0,0) attr=INT');
-    Assert(epDesc^.wMaxPacketSize = 8, 'find_ep(0,0) maxpkt=8');
-    Assert(epDesc^.bInterval = 10, 'find_ep(0,0) interval=10');
+    test.harness.Assert(@context, epDesc <> nil, 'find_ep(0,0) not nil');
+    test.harness.Assert(@context, epDesc^.bEndpointAddress = $81, 'find_ep(0,0) addr=$81');
+    test.harness.Assert(@context, epDesc^.bmAttributes = USB_EP_ATTR_INTERRUPT, 'find_ep(0,0) attr=INT');
+    test.harness.Assert(@context, epDesc^.wMaxPacketSize = 8, 'find_ep(0,0) maxpkt=8');
+    test.harness.Assert(@context, epDesc^.bInterval = 10, 'find_ep(0,0) interval=10');
 
     { --- usb_find_endpoint: iface 0, EP index 1 (EP2 OUT BULK) --- }
     epDesc := usb_find_endpoint(cfgBuf, 48, 9, 1);
-    Assert(epDesc <> nil, 'find_ep(0,1) not nil');
-    Assert(epDesc^.bEndpointAddress = $02, 'find_ep(0,1) addr=$02');
-    Assert(epDesc^.bmAttributes = USB_EP_ATTR_BULK, 'find_ep(0,1) attr=BULK');
-    Assert(epDesc^.wMaxPacketSize = 64, 'find_ep(0,1) maxpkt=64');
+    test.harness.Assert(@context, epDesc <> nil, 'find_ep(0,1) not nil');
+    test.harness.Assert(@context, epDesc^.bEndpointAddress = $02, 'find_ep(0,1) addr=$02');
+    test.harness.Assert(@context, epDesc^.bmAttributes = USB_EP_ATTR_BULK, 'find_ep(0,1) attr=BULK');
+    test.harness.Assert(@context, epDesc^.wMaxPacketSize = 64, 'find_ep(0,1) maxpkt=64');
 
     { --- usb_find_endpoint: iface 0, EP index 2 (out of range) --- }
     epDesc := usb_find_endpoint(cfgBuf, 48, 9, 2);
-    Assert(epDesc = nil, 'find_ep(0,2) nil (OOB)');
+    test.harness.Assert(@context, epDesc = nil, 'find_ep(0,2) nil (OOB)');
 
     { --- usb_find_endpoint: iface 1, EP index 0 (EP3 IN BULK) --- }
     epDesc := usb_find_endpoint(cfgBuf, 48, 32, 0);
-    Assert(epDesc <> nil, 'find_ep(1,0) not nil');
-    Assert(epDesc^.bEndpointAddress = $83, 'find_ep(1,0) addr=$83');
-    Assert(epDesc^.bmAttributes = USB_EP_ATTR_BULK, 'find_ep(1,0) attr=BULK');
-    Assert(epDesc^.wMaxPacketSize = 512, 'find_ep(1,0) maxpkt=512');
+    test.harness.Assert(@context, epDesc <> nil, 'find_ep(1,0) not nil');
+    test.harness.Assert(@context, epDesc^.bEndpointAddress = $83, 'find_ep(1,0) addr=$83');
+    test.harness.Assert(@context, epDesc^.bmAttributes = USB_EP_ATTR_BULK, 'find_ep(1,0) attr=BULK');
+    test.harness.Assert(@context, epDesc^.wMaxPacketSize = 512, 'find_ep(1,0) maxpkt=512');
 
     { --- nil buffer safety --- }
-    Assert(usb_find_interface(nil, 48) = nil, 'find_iface nil buf');
-    Assert(usb_count_endpoints(nil, 48, 9) = 0, 'count_eps nil buf');
-    Assert(usb_find_endpoint(nil, 48, 9, 0) = nil, 'find_ep nil buf');
+    test.harness.Assert(@context, usb_find_interface(nil, 48) = nil, 'find_iface nil buf');
+    test.harness.Assert(@context, usb_count_endpoints(nil, 48, 9) = 0, 'count_eps nil buf');
+    test.harness.Assert(@context, usb_find_endpoint(nil, 48, 9, 0) = nil, 'find_ep nil buf');
 
     kfree(void(cfgBuf));
 
     { Print summary }
-    PrintSummary;
+    test.harness.Finish(@context);
 end;
 
 end.

@@ -31,6 +31,9 @@ procedure UnitTest;
 
 implementation
 
+uses
+    test.harness;
+
 { ========================= driver.bus.usb.uhci Register Offsets (from I/O Base) ========================= }
 
 const
@@ -1043,130 +1046,96 @@ end;
 
 procedure UnitTest;
 var
-    passed, failed : uint32;
-
-    procedure Assert(condition : boolean; testName : pchar);
-    var
-        msg : pchar;
-    begin
-        if condition then begin
-            inc(passed);
-        end else begin
-            inc(failed);
-            msg := stringConcat('FAIL: ', testName);
-            io.syslog.logln('driver.bus.usb.uhci', msg);
-            kfree(void(msg));
-        end;
-    end;
-
-    procedure PrintSummary;
-    var
-        pStr, fStr, msg, tmp : pchar;
-    begin
-        pStr := intToString(passed);
-        fStr := intToString(failed);
-        msg := stringConcat(pStr, ' passed, ');
-        tmp := stringConcat(msg, fStr);
-        kfree(void(msg));
-        msg := stringConcat(tmp, ' failed.');
-        kfree(void(tmp));
-        io.syslog.logln('driver.bus.usb.uhci', msg);
-        kfree(void(msg));
-        kfree(void(pStr));
-        kfree(void(fStr));
-    end;
-
-var
+    context : TTestContext;
     token  : uint32;
     ctrl   : uint32;
     td     : PUHCI_TD;
     qh     : PUHCI_QH;
+
 begin
-    passed := 0;
-    failed := 0;
-    io.syslog.logln('driver.bus.usb.uhci', 'Unit tests starting...');
+    test.harness.Start(@context, 'driver.bus.usb.uhci');
 
     { === TD/QH Size and Alignment === }
-    Assert(sizeof(TUHCI_TD) = 32, 'sizeof TD=32');
-    Assert(sizeof(TUHCI_QH) = 16, 'sizeof QH=16');
+    test.harness.Assert(@context, sizeof(TUHCI_TD) = 32, 'sizeof TD=32');
+    test.harness.Assert(@context, sizeof(TUHCI_QH) = 16, 'sizeof QH=16');
 
     { === Token Building === }
     { SETUP to addr 0, EP0, toggle 0, 8 bytes }
     token := uhci_make_token(UHCI_TD_PID_SETUP, 0, 0, 0, 8);
-    Assert((token AND $FF) = UHCI_TD_PID_SETUP, 'token PID=SETUP');
-    Assert(((token SHR UHCI_TD_TOKEN_ADDR_SHIFT) AND $7F) = 0, 'token addr=0');
-    Assert(((token SHR UHCI_TD_TOKEN_EP_SHIFT) AND $0F) = 0, 'token ep=0');
-    Assert(((token SHR UHCI_TD_TOKEN_D_SHIFT) AND $01) = 0, 'token toggle=0');
-    Assert(((token SHR UHCI_TD_TOKEN_MAXLEN_SHIFT) AND $7FF) = 7, 'token maxlen=7 (8 bytes)');
+    test.harness.Assert(@context, (token AND $FF) = UHCI_TD_PID_SETUP, 'token PID=SETUP');
+    test.harness.Assert(@context, ((token SHR UHCI_TD_TOKEN_ADDR_SHIFT) AND $7F) = 0, 'token addr=0');
+    test.harness.Assert(@context, ((token SHR UHCI_TD_TOKEN_EP_SHIFT) AND $0F) = 0, 'token ep=0');
+    test.harness.Assert(@context, ((token SHR UHCI_TD_TOKEN_D_SHIFT) AND $01) = 0, 'token toggle=0');
+    test.harness.Assert(@context, ((token SHR UHCI_TD_TOKEN_MAXLEN_SHIFT) AND $7FF) = 7, 'token maxlen=7 (8 bytes)');
 
     { IN to addr 5, EP1, toggle 1, 64 bytes }
     token := uhci_make_token(UHCI_TD_PID_IN, 5, 1, 1, 64);
-    Assert((token AND $FF) = UHCI_TD_PID_IN, 'token PID=IN');
-    Assert(((token SHR UHCI_TD_TOKEN_ADDR_SHIFT) AND $7F) = 5, 'token addr=5');
-    Assert(((token SHR UHCI_TD_TOKEN_EP_SHIFT) AND $0F) = 1, 'token ep=1');
-    Assert(((token SHR UHCI_TD_TOKEN_D_SHIFT) AND $01) = 1, 'token toggle=1');
-    Assert(((token SHR UHCI_TD_TOKEN_MAXLEN_SHIFT) AND $7FF) = 63, 'token maxlen=63 (64 bytes)');
+    test.harness.Assert(@context, (token AND $FF) = UHCI_TD_PID_IN, 'token PID=IN');
+    test.harness.Assert(@context, ((token SHR UHCI_TD_TOKEN_ADDR_SHIFT) AND $7F) = 5, 'token addr=5');
+    test.harness.Assert(@context, ((token SHR UHCI_TD_TOKEN_EP_SHIFT) AND $0F) = 1, 'token ep=1');
+    test.harness.Assert(@context, ((token SHR UHCI_TD_TOKEN_D_SHIFT) AND $01) = 1, 'token toggle=1');
+    test.harness.Assert(@context, ((token SHR UHCI_TD_TOKEN_MAXLEN_SHIFT) AND $7FF) = 63, 'token maxlen=63 (64 bytes)');
 
     { OUT to addr 127, EP15, toggle 0, 0 bytes (status stage) }
     token := uhci_make_token(UHCI_TD_PID_OUT, 127, 15, 0, 0);
-    Assert((token AND $FF) = UHCI_TD_PID_OUT, 'token PID=OUT');
-    Assert(((token SHR UHCI_TD_TOKEN_ADDR_SHIFT) AND $7F) = 127, 'token addr=127');
-    Assert(((token SHR UHCI_TD_TOKEN_EP_SHIFT) AND $0F) = 15, 'token ep=15');
-    Assert(((token SHR UHCI_TD_TOKEN_MAXLEN_SHIFT) AND $7FF) = $7FF, 'token maxlen=$7FF (0 bytes)');
+    test.harness.Assert(@context, (token AND $FF) = UHCI_TD_PID_OUT, 'token PID=OUT');
+    test.harness.Assert(@context, ((token SHR UHCI_TD_TOKEN_ADDR_SHIFT) AND $7F) = 127, 'token addr=127');
+    test.harness.Assert(@context, ((token SHR UHCI_TD_TOKEN_EP_SHIFT) AND $0F) = 15, 'token ep=15');
+    test.harness.Assert(@context, ((token SHR UHCI_TD_TOKEN_MAXLEN_SHIFT) AND $7FF) = $7FF, 'token maxlen=$7FF (0 bytes)');
 
     { === Control/Status Building === }
     { Full speed, no IOC, 3 retries }
     ctrl := uhci_make_control(false, false, 3);
-    Assert((ctrl AND UHCI_TD_ACTIVE) <> 0, 'ctrl active set');
-    Assert((ctrl AND UHCI_TD_LS) = 0, 'ctrl not low-speed');
-    Assert((ctrl AND UHCI_TD_IOC) = 0, 'ctrl no IOC');
-    Assert(((ctrl SHR UHCI_TD_CERR_SHIFT) AND $03) = 3, 'ctrl cerr=3');
+    test.harness.Assert(@context, (ctrl AND UHCI_TD_ACTIVE) <> 0, 'ctrl active set');
+    test.harness.Assert(@context, (ctrl AND UHCI_TD_LS) = 0, 'ctrl not low-speed');
+    test.harness.Assert(@context, (ctrl AND UHCI_TD_IOC) = 0, 'ctrl no IOC');
+    test.harness.Assert(@context, ((ctrl SHR UHCI_TD_CERR_SHIFT) AND $03) = 3, 'ctrl cerr=3');
 
     { Low speed, with IOC, 1 retry }
     ctrl := uhci_make_control(true, true, 1);
-    Assert((ctrl AND UHCI_TD_ACTIVE) <> 0, 'ctrl_ls active set');
-    Assert((ctrl AND UHCI_TD_LS) <> 0, 'ctrl_ls low-speed set');
-    Assert((ctrl AND UHCI_TD_IOC) <> 0, 'ctrl_ls IOC set');
-    Assert(((ctrl SHR UHCI_TD_CERR_SHIFT) AND $03) = 1, 'ctrl_ls cerr=1');
+    test.harness.Assert(@context, (ctrl AND UHCI_TD_ACTIVE) <> 0, 'ctrl_ls active set');
+    test.harness.Assert(@context, (ctrl AND UHCI_TD_LS) <> 0, 'ctrl_ls low-speed set');
+    test.harness.Assert(@context, (ctrl AND UHCI_TD_IOC) <> 0, 'ctrl_ls IOC set');
+    test.harness.Assert(@context, ((ctrl SHR UHCI_TD_CERR_SHIFT) AND $03) = 1, 'ctrl_ls cerr=1');
 
     { === TD Allocation & Alignment === }
     td := uhci_alloc_td;
-    Assert(td <> nil, 'alloc_td not nil');
-    Assert((uint32(td) AND $0F) = 0, 'alloc_td 16-byte aligned');
-    Assert(td^.LinkPointer = 0, 'alloc_td zeroed link');
-    Assert(td^.ControlStatus = 0, 'alloc_td zeroed ctrl');
-    Assert(td^.Token = 0, 'alloc_td zeroed token');
-    Assert(td^.BufferPointer = 0, 'alloc_td zeroed buffer');
+    test.harness.Assert(@context, td <> nil, 'alloc_td not nil');
+    test.harness.Assert(@context, (uint32(td) AND $0F) = 0, 'alloc_td 16-byte aligned');
+    test.harness.Assert(@context, td^.LinkPointer = 0, 'alloc_td zeroed link');
+    test.harness.Assert(@context, td^.ControlStatus = 0, 'alloc_td zeroed ctrl');
+    test.harness.Assert(@context, td^.Token = 0, 'alloc_td zeroed token');
+    test.harness.Assert(@context, td^.BufferPointer = 0, 'alloc_td zeroed buffer');
     uhci_free_td(td);
 
     { === QH Allocation & Alignment === }
     qh := uhci_alloc_qh;
-    Assert(qh <> nil, 'alloc_qh not nil');
-    Assert((uint32(qh) AND $0F) = 0, 'alloc_qh 16-byte aligned');
-    Assert(qh^.HeadLink = 0, 'alloc_qh zeroed head');
-    Assert(qh^.ElementLink = 0, 'alloc_qh zeroed elem');
+    test.harness.Assert(@context, qh <> nil, 'alloc_qh not nil');
+    test.harness.Assert(@context, (uint32(qh) AND $0F) = 0, 'alloc_qh 16-byte aligned');
+    test.harness.Assert(@context, qh^.HeadLink = 0, 'alloc_qh zeroed head');
+    test.harness.Assert(@context, qh^.ElementLink = 0, 'alloc_qh zeroed elem');
     uhci_free_qh(qh);
 
     { === Link Pointer Constants === }
-    Assert(UHCI_LP_TERMINATE = $01, 'LP_TERMINATE=$01');
-    Assert(UHCI_LP_QH = $02, 'LP_QH=$02');
-    Assert(UHCI_FL_PTR_TERMINATE = $01, 'FL_PTR_TERMINATE=$01');
-    Assert(UHCI_FL_PTR_QH = $02, 'FL_PTR_QH=$02');
+    test.harness.Assert(@context, UHCI_LP_TERMINATE = $01, 'LP_TERMINATE=$01');
+    test.harness.Assert(@context, UHCI_LP_QH = $02, 'LP_QH=$02');
+    test.harness.Assert(@context, UHCI_FL_PTR_TERMINATE = $01, 'FL_PTR_TERMINATE=$01');
+    test.harness.Assert(@context, UHCI_FL_PTR_QH = $02, 'FL_PTR_QH=$02');
 
     { === Register offset sanity === }
-    Assert(UHCI_REG_USBCMD = $00, 'REG_USBCMD=$00');
-    Assert(UHCI_REG_USBSTS = $02, 'REG_USBSTS=$02');
-    Assert(UHCI_REG_FRBASEADD = $08, 'REG_FRBASEADD=$08');
-    Assert(UHCI_REG_PORTSC1 = $10, 'REG_PORTSC1=$10');
-    Assert(UHCI_REG_PORTSC2 = $12, 'REG_PORTSC2=$12');
+    test.harness.Assert(@context, UHCI_REG_USBCMD = $00, 'REG_USBCMD=$00');
+    test.harness.Assert(@context, UHCI_REG_USBSTS = $02, 'REG_USBSTS=$02');
+    test.harness.Assert(@context, UHCI_REG_FRBASEADD = $08, 'REG_FRBASEADD=$08');
+    test.harness.Assert(@context, UHCI_REG_PORTSC1 = $10, 'REG_PORTSC1=$10');
+    test.harness.Assert(@context, UHCI_REG_PORTSC2 = $12, 'REG_PORTSC2=$12');
 
     { === Port status bit constants === }
-    Assert(UHCI_PORT_CCS = $0001, 'PORT_CCS=$0001');
-    Assert(UHCI_PORT_PE = $0004, 'PORT_PE=$0004');
-    Assert(UHCI_PORT_PR = $0200, 'PORT_PR=$0200');
-    Assert(UHCI_PORT_LSDA = $0100, 'PORT_LSDA=$0100');
+    test.harness.Assert(@context, UHCI_PORT_CCS = $0001, 'PORT_CCS=$0001');
+    test.harness.Assert(@context, UHCI_PORT_PE = $0004, 'PORT_PE=$0004');
+    test.harness.Assert(@context, UHCI_PORT_PR = $0200, 'PORT_PR=$0200');
+    test.harness.Assert(@context, UHCI_PORT_LSDA = $0100, 'PORT_LSDA=$0100');
 
-    PrintSummary;
+    test.harness.Finish(@context);
 end;
 
 end.

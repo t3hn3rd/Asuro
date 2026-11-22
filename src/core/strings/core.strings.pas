@@ -62,6 +62,7 @@ procedure UnitTest;
 implementation
 
 uses
+    test.harness,
     io.syslog;
 
 function hexStringToInt(str : pchar) : uint32;
@@ -744,377 +745,344 @@ end;
 procedure UnitTest;
 var
     s, s2, s3 : pchar;
-    passed, failed : uint32;
-
-    procedure Assert(condition : boolean; testName : pchar);
-    var
-        msg : pchar;
-    begin
-        if condition then begin
-            inc(passed);
-        end else begin
-            inc(failed);
-            msg:= stringConcat('FAIL: ', testName);
-            io.syslog.logln('STRINGS', msg);
-            kfree(void(msg));
-        end;
-    end;
-
-    procedure PrintSummary;
-    var
-        pStr, fStr, msg, tmp : pchar;
-    begin
-        pStr:= intToString(passed);
-        fStr:= intToString(failed);
-        msg:= stringConcat(pStr, ' passed, ');
-        tmp:= stringConcat(msg, fStr);
-        kfree(void(msg));
-        msg:= stringConcat(tmp, ' failed.');
-        kfree(void(tmp));
-        io.syslog.logln('STRINGS', msg);
-        kfree(void(msg));
-        kfree(void(pStr));
-        kfree(void(fStr));
-    end;
+    context : TTestContext;
 
 begin
-    passed:= 0;
-    failed:= 0;
-    io.syslog.logln('STRINGS', 'Unit tests starting...');
+    test.harness.Start(@context, 'core.strings');
 
     { === stringSize === }
-    Assert(stringSize('HELLO') = 5, 'stringSize(HELLO)=5');
-    Assert(stringSize('') = 0, 'stringSize(empty)=0');
-    Assert(stringSize('A') = 1, 'stringSize(A)=1');
-    Assert(stringSize(nil) = 0, 'stringSize(nil)=0');
+    test.harness.Assert(@context, stringSize('HELLO') = 5, 'stringSize(HELLO)=5');
+    test.harness.Assert(@context, stringSize('') = 0, 'stringSize(empty)=0');
+    test.harness.Assert(@context, stringSize('A') = 1, 'stringSize(A)=1');
+    test.harness.Assert(@context, stringSize(nil) = 0, 'stringSize(nil)=0');
 
     { === stringNew === }
     s:= stringNew(0);
-    Assert(stringSize(s) = 0, 'stringNew(0) is empty');
+    test.harness.Assert(@context, stringSize(s) = 0, 'stringNew(0) is empty');
     kfree(void(s));
     s:= stringNew(5);
-    Assert(stringSize(s) = 0, 'stringNew(5) is zeroed');
+    test.harness.Assert(@context, stringSize(s) = 0, 'stringNew(5) is zeroed');
     kfree(void(s));
 
     { === stringCopy === }
     s:= stringCopy('TEST');
-    Assert(stringEquals(s, 'TEST'), 'stringCopy basic');
-    Assert(stringSize(s) = 4, 'stringCopy size');
+    test.harness.Assert(@context, stringEquals(s, 'TEST'), 'stringCopy basic');
+    test.harness.Assert(@context, stringSize(s) = 4, 'stringCopy size');
     kfree(void(s));
     s:= stringCopy('');
-    Assert(stringSize(s) = 0, 'stringCopy empty');
+    test.harness.Assert(@context, stringSize(s) = 0, 'stringCopy empty');
     kfree(void(s));
 
     { === stringEquals === }
-    Assert(stringEquals('ABC', 'ABC') = true, 'stringEquals same');
-    Assert(stringEquals('ABC', 'ABD') = false, 'stringEquals diff char');
-    Assert(stringEquals('ABC', 'AB') = false, 'stringEquals diff len');
-    Assert(stringEquals('', '') = true, 'stringEquals both empty');
-    Assert(stringEquals('A', '') = false, 'stringEquals one empty');
-    Assert(stringEquals('', 'A') = false, 'stringEquals other empty');
+    test.harness.Assert(@context, stringEquals('ABC', 'ABC') = true, 'stringEquals same');
+    test.harness.Assert(@context, stringEquals('ABC', 'ABD') = false, 'stringEquals diff char');
+    test.harness.Assert(@context, stringEquals('ABC', 'AB') = false, 'stringEquals diff len');
+    test.harness.Assert(@context, stringEquals('', '') = true, 'stringEquals both empty');
+    test.harness.Assert(@context, stringEquals('A', '') = false, 'stringEquals one empty');
+    test.harness.Assert(@context, stringEquals('', 'A') = false, 'stringEquals other empty');
 
     { === stringToUpper === }
     s:= stringToUpper('hello');
-    Assert(stringEquals(s, 'HELLO'), 'stringToUpper basic');
+    test.harness.Assert(@context, stringEquals(s, 'HELLO'), 'stringToUpper basic');
     kfree(void(s));
     s:= stringToUpper('Hello123');
-    Assert(stringEquals(s, 'HELLO123'), 'stringToUpper mixed');
+    test.harness.Assert(@context, stringEquals(s, 'HELLO123'), 'stringToUpper mixed');
     kfree(void(s));
     s:= stringToUpper('');
-    Assert(stringSize(s) = 0, 'stringToUpper empty');
+    test.harness.Assert(@context, stringSize(s) = 0, 'stringToUpper empty');
     kfree(void(s));
     s:= stringToUpper('ALREADY');
-    Assert(stringEquals(s, 'ALREADY'), 'stringToUpper already upper');
+    test.harness.Assert(@context, stringEquals(s, 'ALREADY'), 'stringToUpper already upper');
     kfree(void(s));
 
     { === stringToLower === }
     s:= stringToLower('HELLO');
-    Assert(stringEquals(s, 'hello'), 'stringToLower basic');
+    test.harness.Assert(@context, stringEquals(s, 'hello'), 'stringToLower basic');
     kfree(void(s));
     s:= stringToLower('Hello123');
-    Assert(stringEquals(s, 'hello123'), 'stringToLower mixed');
+    test.harness.Assert(@context, stringEquals(s, 'hello123'), 'stringToLower mixed');
     kfree(void(s));
     s:= stringToLower('');
-    Assert(stringSize(s) = 0, 'stringToLower empty');
+    test.harness.Assert(@context, stringSize(s) = 0, 'stringToLower empty');
     kfree(void(s));
 
     { === stringConcat === }
     s:= stringConcat('AB', 'CD');
-    Assert(stringEquals(s, 'ABCD'), 'stringConcat basic');
-    Assert(stringSize(s) = 4, 'stringConcat size');
+    test.harness.Assert(@context, stringEquals(s, 'ABCD'), 'stringConcat basic');
+    test.harness.Assert(@context, stringSize(s) = 4, 'stringConcat size');
     kfree(void(s));
     s:= stringConcat('', 'CD');
-    Assert(stringEquals(s, 'CD'), 'stringConcat empty left');
+    test.harness.Assert(@context, stringEquals(s, 'CD'), 'stringConcat empty left');
     kfree(void(s));
     s:= stringConcat('AB', '');
-    Assert(stringEquals(s, 'AB'), 'stringConcat empty right');
+    test.harness.Assert(@context, stringEquals(s, 'AB'), 'stringConcat empty right');
     kfree(void(s));
     s:= stringConcat('', '');
-    Assert(stringSize(s) = 0, 'stringConcat both empty');
+    test.harness.Assert(@context, stringSize(s) = 0, 'stringConcat both empty');
     kfree(void(s));
 
     { === stringTrim === }
     s:= stringTrim('HELLO', 3);
-    Assert(stringEquals(s, 'HEL'), 'stringTrim basic');
+    test.harness.Assert(@context, stringEquals(s, 'HEL'), 'stringTrim basic');
     kfree(void(s));
     s:= stringTrim('HELLO', 5);
-    Assert(stringEquals(s, 'HELLO'), 'stringTrim exact');
+    test.harness.Assert(@context, stringEquals(s, 'HELLO'), 'stringTrim exact');
     kfree(void(s));
     s:= stringTrim('HELLO', 10);
-    Assert(stringEquals(s, 'HELLO'), 'stringTrim over-length clamped');
+    test.harness.Assert(@context, stringEquals(s, 'HELLO'), 'stringTrim over-length clamped');
     kfree(void(s));
     s:= stringTrim('HELLO', 0);
-    Assert(stringSize(s) = 0, 'stringTrim zero');
+    test.harness.Assert(@context, stringSize(s) = 0, 'stringTrim zero');
     kfree(void(s));
     s:= stringTrim('', 5);
-    Assert(stringSize(s) = 0, 'stringTrim empty str');
+    test.harness.Assert(@context, stringSize(s) = 0, 'stringTrim empty str');
     kfree(void(s));
 
     { === stringSub === }
     s:= stringSub('HELLO', 1, 3);
-    Assert(stringEquals(s, 'ELL'), 'stringSub basic');
+    test.harness.Assert(@context, stringEquals(s, 'ELL'), 'stringSub basic');
     kfree(void(s));
     s:= stringSub('HELLO', 0, 5);
-    Assert(stringEquals(s, 'HELLO'), 'stringSub full');
+    test.harness.Assert(@context, stringEquals(s, 'HELLO'), 'stringSub full');
     kfree(void(s));
     s:= stringSub('HELLO', 4, 1);
-    Assert(stringEquals(s, 'O'), 'stringSub last char');
+    test.harness.Assert(@context, stringEquals(s, 'O'), 'stringSub last char');
     kfree(void(s));
     s:= stringSub('HELLO', 3, 10);
-    Assert(stringEquals(s, 'LO'), 'stringSub over-length clamped');
+    test.harness.Assert(@context, stringEquals(s, 'LO'), 'stringSub over-length clamped');
     kfree(void(s));
     s:= stringSub('HELLO', 10, 2);
-    Assert(stringSize(s) = 0, 'stringSub start past end');
+    test.harness.Assert(@context, stringSize(s) = 0, 'stringSub start past end');
     kfree(void(s));
     s:= stringSub('', 0, 5);
-    Assert(stringSize(s) = 0, 'stringSub empty str');
+    test.harness.Assert(@context, stringSize(s) = 0, 'stringSub empty str');
     kfree(void(s));
 
     { === stringIndexOf === }
-    Assert(stringIndexOf('HELLO WORLD', 'WORLD') = 6, 'stringIndexOf found');
-    Assert(stringIndexOf('HELLO WORLD', 'HELLO') = 0, 'stringIndexOf at start');
-    Assert(stringIndexOf('HELLO WORLD', 'D') = 10, 'stringIndexOf at end');
-    Assert(stringIndexOf('HELLO WORLD', 'XYZ') = -1, 'stringIndexOf not found');
-    Assert(stringIndexOf('HELLO', 'HELLO WORLD') = -1, 'stringIndexOf find longer than str');
-    Assert(stringIndexOf('HELLO', '') = 0, 'stringIndexOf empty find');
-    Assert(stringIndexOf('', 'A') = -1, 'stringIndexOf empty str');
-    Assert(stringIndexOf('', '') = 0, 'stringIndexOf both empty');
-    Assert(stringIndexOf('AABAA', 'AB') = 1, 'stringIndexOf mid-string');
-    Assert(stringIndexOf('AAAA', 'AA') = 0, 'stringIndexOf overlapping');
+    test.harness.Assert(@context, stringIndexOf('HELLO WORLD', 'WORLD') = 6, 'stringIndexOf found');
+    test.harness.Assert(@context, stringIndexOf('HELLO WORLD', 'HELLO') = 0, 'stringIndexOf at start');
+    test.harness.Assert(@context, stringIndexOf('HELLO WORLD', 'D') = 10, 'stringIndexOf at end');
+    test.harness.Assert(@context, stringIndexOf('HELLO WORLD', 'XYZ') = -1, 'stringIndexOf not found');
+    test.harness.Assert(@context, stringIndexOf('HELLO', 'HELLO WORLD') = -1, 'stringIndexOf find longer than str');
+    test.harness.Assert(@context, stringIndexOf('HELLO', '') = 0, 'stringIndexOf empty find');
+    test.harness.Assert(@context, stringIndexOf('', 'A') = -1, 'stringIndexOf empty str');
+    test.harness.Assert(@context, stringIndexOf('', '') = 0, 'stringIndexOf both empty');
+    test.harness.Assert(@context, stringIndexOf('AABAA', 'AB') = 1, 'stringIndexOf mid-string');
+    test.harness.Assert(@context, stringIndexOf('AAAA', 'AA') = 0, 'stringIndexOf overlapping');
 
     { === stringContains === }
-    Assert(stringContains('HELLO WORLD', 'WORLD') = true, 'stringContains found');
-    Assert(stringContains('HELLO WORLD', 'XYZ') = false, 'stringContains not found');
-    Assert(stringContains('HELLO', 'HELLO') = true, 'stringContains exact match');
-    Assert(stringContains('HELLO', '') = true, 'stringContains empty sub');
-    Assert(stringContains('', '') = true, 'stringContains both empty');
-    Assert(stringContains('', 'A') = false, 'stringContains empty str');
-    Assert(stringContains('AB', 'ABC') = false, 'stringContains sub longer');
+    test.harness.Assert(@context, stringContains('HELLO WORLD', 'WORLD') = true, 'stringContains found');
+    test.harness.Assert(@context, stringContains('HELLO WORLD', 'XYZ') = false, 'stringContains not found');
+    test.harness.Assert(@context, stringContains('HELLO', 'HELLO') = true, 'stringContains exact match');
+    test.harness.Assert(@context, stringContains('HELLO', '') = true, 'stringContains empty sub');
+    test.harness.Assert(@context, stringContains('', '') = true, 'stringContains both empty');
+    test.harness.Assert(@context, stringContains('', 'A') = false, 'stringContains empty str');
+    test.harness.Assert(@context, stringContains('AB', 'ABC') = false, 'stringContains sub longer');
 
     { === stringReplace === }
     s:= stringReplace('HELLO WORLD', 'WORLD', 'EARTH');
-    Assert(stringEquals(s, 'HELLO EARTH'), 'stringReplace basic');
+    test.harness.Assert(@context, stringEquals(s, 'HELLO EARTH'), 'stringReplace basic');
     kfree(void(s));
     s:= stringReplace('HELLO WORLD', 'HELLO', 'HI');
-    Assert(stringEquals(s, 'HI WORLD'), 'stringReplace at start');
+    test.harness.Assert(@context, stringEquals(s, 'HI WORLD'), 'stringReplace at start');
     kfree(void(s));
     s:= stringReplace('HELLO WORLD', 'D', '!');
-    Assert(stringEquals(s, 'HELLO WORL!'), 'stringReplace at end');
+    test.harness.Assert(@context, stringEquals(s, 'HELLO WORL!'), 'stringReplace at end');
     kfree(void(s));
     s:= stringReplace('HELLO', 'XYZ', 'ABC');
-    Assert(stringEquals(s, 'HELLO'), 'stringReplace not found');
+    test.harness.Assert(@context, stringEquals(s, 'HELLO'), 'stringReplace not found');
     kfree(void(s));
     s:= stringReplace('AABAA', 'A', 'X');
-    Assert(stringEquals(s, 'XABAA'), 'stringReplace first only');
+    test.harness.Assert(@context, stringEquals(s, 'XABAA'), 'stringReplace first only');
     kfree(void(s));
     s:= stringReplace('HELLO', 'HELLO', '');
-    Assert(stringSize(s) = 0, 'stringReplace to empty');
+    test.harness.Assert(@context, stringSize(s) = 0, 'stringReplace to empty');
     kfree(void(s));
     s:= stringReplace('HELLO', 'L', 'LL');
-    Assert(stringEquals(s, 'HELLLO'), 'stringReplace grow');
+    test.harness.Assert(@context, stringEquals(s, 'HELLLO'), 'stringReplace grow');
     kfree(void(s));
     s:= stringReplace('HELLO', 'LL', 'L');
-    Assert(stringEquals(s, 'HELO'), 'stringReplace shrink');
+    test.harness.Assert(@context, stringEquals(s, 'HELO'), 'stringReplace shrink');
     kfree(void(s));
     s:= stringReplace('', 'A', 'B');
-    Assert(stringSize(s) = 0, 'stringReplace empty str');
+    test.harness.Assert(@context, stringSize(s) = 0, 'stringReplace empty str');
     kfree(void(s));
 
     { === stringToInt === }
-    Assert(stringToInt('0') = 0, 'stringToInt zero');
-    Assert(stringToInt('123') = 123, 'stringToInt basic');
-    Assert(stringToInt('999') = 999, 'stringToInt 999');
-    Assert(stringToInt('1') = 1, 'stringToInt single digit');
-    Assert(stringToInt('4294967295') = 4294967295, 'stringToInt max uint32');
+    test.harness.Assert(@context, stringToInt('0') = 0, 'stringToInt zero');
+    test.harness.Assert(@context, stringToInt('123') = 123, 'stringToInt basic');
+    test.harness.Assert(@context, stringToInt('999') = 999, 'stringToInt 999');
+    test.harness.Assert(@context, stringToInt('1') = 1, 'stringToInt single digit');
+    test.harness.Assert(@context, stringToInt('4294967295') = 4294967295, 'stringToInt max uint32');
 
     { === intToString === }
     s:= intToString(0);
-    Assert(stringEquals(s, '0'), 'intToString zero');
+    test.harness.Assert(@context, stringEquals(s, '0'), 'intToString zero');
     kfree(void(s));
     s:= intToString(1);
-    Assert(stringEquals(s, '1'), 'intToString one');
+    test.harness.Assert(@context, stringEquals(s, '1'), 'intToString one');
     kfree(void(s));
     s:= intToString(123);
-    Assert(stringEquals(s, '123'), 'intToString 123');
+    test.harness.Assert(@context, stringEquals(s, '123'), 'intToString 123');
     kfree(void(s));
     s:= intToString(999);
-    Assert(stringEquals(s, '999'), 'intToString 999');
+    test.harness.Assert(@context, stringEquals(s, '999'), 'intToString 999');
     kfree(void(s));
     s:= intToString(10);
-    Assert(stringEquals(s, '10'), 'intToString 10');
+    test.harness.Assert(@context, stringEquals(s, '10'), 'intToString 10');
     kfree(void(s));
     s:= intToString(100);
-    Assert(stringEquals(s, '100'), 'intToString 100');
+    test.harness.Assert(@context, stringEquals(s, '100'), 'intToString 100');
     kfree(void(s));
 
     { === intToString / stringToInt roundtrip === }
     s:= intToString(42);
-    Assert(stringToInt(s) = 42, 'roundtrip 42');
+    test.harness.Assert(@context, stringToInt(s) = 42, 'roundtrip 42');
     kfree(void(s));
     s:= intToString(0);
-    Assert(stringToInt(s) = 0, 'roundtrip 0');
+    test.harness.Assert(@context, stringToInt(s) = 0, 'roundtrip 0');
     kfree(void(s));
 
     { === hexStringToInt === }
-    Assert(hexStringToInt('FF') = 255, 'hexStringToInt FF');
-    Assert(hexStringToInt('0') = 0, 'hexStringToInt 0');
-    Assert(hexStringToInt('10') = 16, 'hexStringToInt 10');
-    Assert(hexStringToInt('DEADBEEF') = $DEADBEEF, 'hexStringToInt DEADBEEF');
-    Assert(hexStringToInt('') = 0, 'hexStringToInt empty');
+    test.harness.Assert(@context, hexStringToInt('FF') = 255, 'hexStringToInt FF');
+    test.harness.Assert(@context, hexStringToInt('0') = 0, 'hexStringToInt 0');
+    test.harness.Assert(@context, hexStringToInt('10') = 16, 'hexStringToInt 10');
+    test.harness.Assert(@context, hexStringToInt('DEADBEEF') = $DEADBEEF, 'hexStringToInt DEADBEEF');
+    test.harness.Assert(@context, hexStringToInt('') = 0, 'hexStringToInt empty');
 
     { === boolToString === }
     s:= boolToString(true, true);
-    Assert(stringEquals(s, 'true'), 'boolToString true ext');
+    test.harness.Assert(@context, stringEquals(s, 'true'), 'boolToString true ext');
     kfree(void(s));
     s:= boolToString(false, true);
-    Assert(stringEquals(s, 'false'), 'boolToString false ext');
+    test.harness.Assert(@context, stringEquals(s, 'false'), 'boolToString false ext');
     kfree(void(s));
     s:= boolToString(true, false);
-    Assert(stringEquals(s, '1'), 'boolToString true short');
+    test.harness.Assert(@context, stringEquals(s, '1'), 'boolToString true short');
     kfree(void(s));
     s:= boolToString(false, false);
-    Assert(stringEquals(s, '0'), 'boolToString false short');
+    test.harness.Assert(@context, stringEquals(s, '0'), 'boolToString false short');
     kfree(void(s));
 
     { === stringMatchAt === }
-    Assert(stringMatchAt('HELLO', 0, 'HE') = true, 'stringMatchAt start');
-    Assert(stringMatchAt('HELLO', 3, 'LO') = true, 'stringMatchAt mid');
-    Assert(stringMatchAt('HELLO', 4, 'OX') = false, 'stringMatchAt past end');
-    Assert(stringMatchAt('HELLO', 0, '') = true, 'stringMatchAt empty find');
-    Assert(stringMatchAt('HELLO', 5, '') = true, 'stringMatchAt empty at end');
-    Assert(stringMatchAt('', 0, 'A') = false, 'stringMatchAt empty str');
-    Assert(stringMatchAt('', 0, '') = true, 'stringMatchAt both empty');
+    test.harness.Assert(@context, stringMatchAt('HELLO', 0, 'HE') = true, 'stringMatchAt start');
+    test.harness.Assert(@context, stringMatchAt('HELLO', 3, 'LO') = true, 'stringMatchAt mid');
+    test.harness.Assert(@context, stringMatchAt('HELLO', 4, 'OX') = false, 'stringMatchAt past end');
+    test.harness.Assert(@context, stringMatchAt('HELLO', 0, '') = true, 'stringMatchAt empty find');
+    test.harness.Assert(@context, stringMatchAt('HELLO', 5, '') = true, 'stringMatchAt empty at end');
+    test.harness.Assert(@context, stringMatchAt('', 0, 'A') = false, 'stringMatchAt empty str');
+    test.harness.Assert(@context, stringMatchAt('', 0, '') = true, 'stringMatchAt both empty');
 
     { === int64ToString === }
     s:= int64ToString(0);
-    Assert(stringEquals(s, '0'), 'int64ToString zero');
+    test.harness.Assert(@context, stringEquals(s, '0'), 'int64ToString zero');
     kfree(void(s));
     s:= int64ToString(123);
-    Assert(stringEquals(s, '123'), 'int64ToString positive');
+    test.harness.Assert(@context, stringEquals(s, '123'), 'int64ToString positive');
     kfree(void(s));
     s:= int64ToString(-42);
-    Assert(stringEquals(s, '-42'), 'int64ToString negative');
+    test.harness.Assert(@context, stringEquals(s, '-42'), 'int64ToString negative');
     kfree(void(s));
     s:= int64ToString(1000000);
-    Assert(stringEquals(s, '1000000'), 'int64ToString large');
+    test.harness.Assert(@context, stringEquals(s, '1000000'), 'int64ToString large');
     kfree(void(s));
 
     { === doubleToStr === }
     s:= doubleToStr(0.0);
-    Assert(stringEquals(s, '0'), 'doubleToStr zero');
+    test.harness.Assert(@context, stringEquals(s, '0'), 'doubleToStr zero');
     kfree(void(s));
     s:= doubleToStr(42.0);
-    Assert(stringEquals(s, '42'), 'doubleToStr integer');
+    test.harness.Assert(@context, stringEquals(s, '42'), 'doubleToStr integer');
     kfree(void(s));
     s:= doubleToStr(-7.0);
-    Assert(stringEquals(s, '-7'), 'doubleToStr neg integer');
+    test.harness.Assert(@context, stringEquals(s, '-7'), 'doubleToStr neg integer');
     kfree(void(s));
     s:= doubleToStr(3.14);
-    Assert(stringContains(s, '3.14'), 'doubleToStr decimal');
+    test.harness.Assert(@context, stringContains(s, '3.14'), 'doubleToStr decimal');
     kfree(void(s));
     s:= doubleToStr(-0.5);
-    Assert(stringContains(s, '-0.5'), 'doubleToStr neg decimal');
+    test.harness.Assert(@context, stringContains(s, '-0.5'), 'doubleToStr neg decimal');
     kfree(void(s));
     s:= doubleToStr(1e20);
-    Assert(stringContains(s, 'e+'), 'doubleToStr sci large');
+    test.harness.Assert(@context, stringContains(s, 'e+'), 'doubleToStr sci large');
     kfree(void(s));
 
     { === charToLower / charToUpper === }
-    Assert(charToLower('A') = 'a', 'charToLower A');
-    Assert(charToLower('Z') = 'z', 'charToLower Z');
-    Assert(charToLower('a') = 'a', 'charToLower already lower');
-    Assert(charToLower('5') = '5', 'charToLower digit');
-    Assert(charToUpper('a') = 'A', 'charToUpper a');
-    Assert(charToUpper('z') = 'Z', 'charToUpper z');
-    Assert(charToUpper('A') = 'A', 'charToUpper already upper');
-    Assert(charToUpper('5') = '5', 'charToUpper digit');
+    test.harness.Assert(@context, charToLower('A') = 'a', 'charToLower A');
+    test.harness.Assert(@context, charToLower('Z') = 'z', 'charToLower Z');
+    test.harness.Assert(@context, charToLower('a') = 'a', 'charToLower already lower');
+    test.harness.Assert(@context, charToLower('5') = '5', 'charToLower digit');
+    test.harness.Assert(@context, charToUpper('a') = 'A', 'charToUpper a');
+    test.harness.Assert(@context, charToUpper('z') = 'Z', 'charToUpper z');
+    test.harness.Assert(@context, charToUpper('A') = 'A', 'charToUpper already upper');
+    test.harness.Assert(@context, charToUpper('5') = '5', 'charToUpper digit');
 
     { === stringCompare === }
-    Assert(stringCompare('abc', 'abc') = 0, 'stringCompare equal');
-    Assert(stringCompare('abc', 'abd') = -1, 'stringCompare less');
-    Assert(stringCompare('abd', 'abc') = 1, 'stringCompare greater');
-    Assert(stringCompare('ab', 'abc') = -1, 'stringCompare shorter');
-    Assert(stringCompare('abc', 'ab') = 1, 'stringCompare longer');
-    Assert(stringCompare('', '') = 0, 'stringCompare both empty');
-    Assert(stringCompare('', 'a') = -1, 'stringCompare empty vs str');
-    Assert(stringCompare('a', '') = 1, 'stringCompare str vs empty');
-    Assert(stringCompare(nil, nil) = 0, 'stringCompare nil nil');
-    Assert(stringCompare(nil, 'a') = -1, 'stringCompare nil vs str');
-    Assert(stringCompare('a', nil) = 1, 'stringCompare str vs nil');
+    test.harness.Assert(@context, stringCompare('abc', 'abc') = 0, 'stringCompare equal');
+    test.harness.Assert(@context, stringCompare('abc', 'abd') = -1, 'stringCompare less');
+    test.harness.Assert(@context, stringCompare('abd', 'abc') = 1, 'stringCompare greater');
+    test.harness.Assert(@context, stringCompare('ab', 'abc') = -1, 'stringCompare shorter');
+    test.harness.Assert(@context, stringCompare('abc', 'ab') = 1, 'stringCompare longer');
+    test.harness.Assert(@context, stringCompare('', '') = 0, 'stringCompare both empty');
+    test.harness.Assert(@context, stringCompare('', 'a') = -1, 'stringCompare empty vs str');
+    test.harness.Assert(@context, stringCompare('a', '') = 1, 'stringCompare str vs empty');
+    test.harness.Assert(@context, stringCompare(nil, nil) = 0, 'stringCompare nil nil');
+    test.harness.Assert(@context, stringCompare(nil, 'a') = -1, 'stringCompare nil vs str');
+    test.harness.Assert(@context, stringCompare('a', nil) = 1, 'stringCompare str vs nil');
 
     { === stringCompareCI === }
-    Assert(stringCompareCI('ABC', 'abc') = 0, 'stringCompareCI equal');
-    Assert(stringCompareCI('abc', 'ABD') = -1, 'stringCompareCI less');
-    Assert(stringCompareCI('ABD', 'abc') = 1, 'stringCompareCI greater');
-    Assert(stringCompareCI('Hello', 'hello') = 0, 'stringCompareCI mixed');
+    test.harness.Assert(@context, stringCompareCI('ABC', 'abc') = 0, 'stringCompareCI equal');
+    test.harness.Assert(@context, stringCompareCI('abc', 'ABD') = -1, 'stringCompareCI less');
+    test.harness.Assert(@context, stringCompareCI('ABD', 'abc') = 1, 'stringCompareCI greater');
+    test.harness.Assert(@context, stringCompareCI('Hello', 'hello') = 0, 'stringCompareCI mixed');
 
     { === stringEqualsCI === }
-    Assert(stringEqualsCI('Hello', 'hello') = true, 'stringEqualsCI match');
-    Assert(stringEqualsCI('Hello', 'world') = false, 'stringEqualsCI no match');
-    Assert(stringEqualsCI('', '') = true, 'stringEqualsCI both empty');
+    test.harness.Assert(@context, stringEqualsCI('Hello', 'hello') = true, 'stringEqualsCI match');
+    test.harness.Assert(@context, stringEqualsCI('Hello', 'world') = false, 'stringEqualsCI no match');
+    test.harness.Assert(@context, stringEqualsCI('', '') = true, 'stringEqualsCI both empty');
 
     { === stringIndexOfCI === }
-    Assert(stringIndexOfCI('Hello World', 'world') = 6, 'stringIndexOfCI found');
-    Assert(stringIndexOfCI('Hello World', 'HELLO') = 0, 'stringIndexOfCI at start');
-    Assert(stringIndexOfCI('Hello World', 'xyz') = -1, 'stringIndexOfCI not found');
-    Assert(stringIndexOfCI('Hello', '') = 0, 'stringIndexOfCI empty find');
-    Assert(stringIndexOfCI('', 'a') = -1, 'stringIndexOfCI empty str');
+    test.harness.Assert(@context, stringIndexOfCI('Hello World', 'world') = 6, 'stringIndexOfCI found');
+    test.harness.Assert(@context, stringIndexOfCI('Hello World', 'HELLO') = 0, 'stringIndexOfCI at start');
+    test.harness.Assert(@context, stringIndexOfCI('Hello World', 'xyz') = -1, 'stringIndexOfCI not found');
+    test.harness.Assert(@context, stringIndexOfCI('Hello', '') = 0, 'stringIndexOfCI empty find');
+    test.harness.Assert(@context, stringIndexOfCI('', 'a') = -1, 'stringIndexOfCI empty str');
 
     { === stringContainsCI === }
-    Assert(stringContainsCI('Hello World', 'world') = true, 'stringContainsCI found');
-    Assert(stringContainsCI('Hello World', 'xyz') = false, 'stringContainsCI not found');
-    Assert(stringContainsCI('ABCDEF', 'cde') = true, 'stringContainsCI mid');
+    test.harness.Assert(@context, stringContainsCI('Hello World', 'world') = true, 'stringContainsCI found');
+    test.harness.Assert(@context, stringContainsCI('Hello World', 'xyz') = false, 'stringContainsCI not found');
+    test.harness.Assert(@context, stringContainsCI('ABCDEF', 'cde') = true, 'stringContainsCI mid');
 
     { === stringStartsWith === }
-    Assert(stringStartsWith('Hello', 'Hel') = true, 'stringStartsWith match');
-    Assert(stringStartsWith('Hello', 'hel') = false, 'stringStartsWith case sensitive');
-    Assert(stringStartsWith('Hello', 'Hello') = true, 'stringStartsWith exact');
-    Assert(stringStartsWith('Hello', 'HelloX') = false, 'stringStartsWith longer');
-    Assert(stringStartsWith('Hello', '') = true, 'stringStartsWith empty prefix');
-    Assert(stringStartsWith('', 'A') = false, 'stringStartsWith empty str');
+    test.harness.Assert(@context, stringStartsWith('Hello', 'Hel') = true, 'stringStartsWith match');
+    test.harness.Assert(@context, stringStartsWith('Hello', 'hel') = false, 'stringStartsWith case sensitive');
+    test.harness.Assert(@context, stringStartsWith('Hello', 'Hello') = true, 'stringStartsWith exact');
+    test.harness.Assert(@context, stringStartsWith('Hello', 'HelloX') = false, 'stringStartsWith longer');
+    test.harness.Assert(@context, stringStartsWith('Hello', '') = true, 'stringStartsWith empty prefix');
+    test.harness.Assert(@context, stringStartsWith('', 'A') = false, 'stringStartsWith empty str');
 
     { === stringStartsWithCI === }
-    Assert(stringStartsWithCI('Hello', 'hel') = true, 'stringStartsWithCI match');
-    Assert(stringStartsWithCI('Hello', 'HEL') = true, 'stringStartsWithCI upper');
-    Assert(stringStartsWithCI('Hello', 'xyz') = false, 'stringStartsWithCI no match');
+    test.harness.Assert(@context, stringStartsWithCI('Hello', 'hel') = true, 'stringStartsWithCI match');
+    test.harness.Assert(@context, stringStartsWithCI('Hello', 'HEL') = true, 'stringStartsWithCI upper');
+    test.harness.Assert(@context, stringStartsWithCI('Hello', 'xyz') = false, 'stringStartsWithCI no match');
 
     { === stringEndsWith === }
-    Assert(stringEndsWith('Hello', 'llo') = true, 'stringEndsWith match');
-    Assert(stringEndsWith('Hello', 'LLO') = false, 'stringEndsWith case sensitive');
-    Assert(stringEndsWith('Hello', 'Hello') = true, 'stringEndsWith exact');
-    Assert(stringEndsWith('Hello', 'XHello') = false, 'stringEndsWith longer');
-    Assert(stringEndsWith('Hello', '') = true, 'stringEndsWith empty suffix');
-    Assert(stringEndsWith('', 'A') = false, 'stringEndsWith empty str');
-    Assert(stringEndsWith('file.txt', '.txt') = true, 'stringEndsWith extension');
-    Assert(stringEndsWith('file.TXT', '.txt') = false, 'stringEndsWith ext case');
+    test.harness.Assert(@context, stringEndsWith('Hello', 'llo') = true, 'stringEndsWith match');
+    test.harness.Assert(@context, stringEndsWith('Hello', 'LLO') = false, 'stringEndsWith case sensitive');
+    test.harness.Assert(@context, stringEndsWith('Hello', 'Hello') = true, 'stringEndsWith exact');
+    test.harness.Assert(@context, stringEndsWith('Hello', 'XHello') = false, 'stringEndsWith longer');
+    test.harness.Assert(@context, stringEndsWith('Hello', '') = true, 'stringEndsWith empty suffix');
+    test.harness.Assert(@context, stringEndsWith('', 'A') = false, 'stringEndsWith empty str');
+    test.harness.Assert(@context, stringEndsWith('file.txt', '.txt') = true, 'stringEndsWith extension');
+    test.harness.Assert(@context, stringEndsWith('file.TXT', '.txt') = false, 'stringEndsWith ext case');
 
     { === stringEndsWithCI === }
-    Assert(stringEndsWithCI('Hello', 'LLO') = true, 'stringEndsWithCI match');
-    Assert(stringEndsWithCI('file.TXT', '.txt') = true, 'stringEndsWithCI ext');
-    Assert(stringEndsWithCI('Hello', 'xyz') = false, 'stringEndsWithCI no match');
+    test.harness.Assert(@context, stringEndsWithCI('Hello', 'LLO') = true, 'stringEndsWithCI match');
+    test.harness.Assert(@context, stringEndsWithCI('file.TXT', '.txt') = true, 'stringEndsWithCI ext');
+    test.harness.Assert(@context, stringEndsWithCI('Hello', 'xyz') = false, 'stringEndsWithCI no match');
 
     { Print summary }
-    PrintSummary;
+    test.harness.Finish(@context);
 end;
 
 end.

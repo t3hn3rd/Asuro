@@ -79,6 +79,9 @@ uses
 
 implementation
 
+uses
+  test.harness;
+
 { ---------------------------------------------------------------------------- }
 {  Internal helpers — bit access                                               }
 { ---------------------------------------------------------------------------- }
@@ -190,45 +193,12 @@ end;
 
 procedure UnitTest;
 var
-  passed, failed : uint32;
-  f              : PBloomFilter;
-  buf1, buf2     : array[0..4] of byte;
-
-  procedure Assert(condition : boolean; testName : pchar);
-  var
-    msg : pchar;
-  begin
-    if condition then
-      inc(passed)
-    else begin
-      inc(failed);
-      msg := stringConcat('FAIL: ', testName);
-      io.syslog.logln('BLOOM', msg);
-      kfree(void(msg));
-    end;
-  end;
-
-  procedure PrintSummary;
-  var
-    pStr, fStr, msg, tmp : pchar;
-  begin
-    pStr := intToString(passed);
-    fStr := intToString(failed);
-    msg  := stringConcat(pStr, ' passed, ');
-    tmp  := stringConcat(msg, fStr);
-    kfree(void(msg));
-    msg  := stringConcat(tmp, ' failed.');
-    kfree(void(tmp));
-    io.syslog.logln('BLOOM', msg);
-    kfree(void(msg));
-    kfree(void(pStr));
-    kfree(void(fStr));
-  end;
+  context         : TTestContext;
+  f               : PBloomFilter;
+  buf1, buf2      : array[0..4] of byte;
 
 begin
-  passed := 0;
-  failed := 0;
-  io.syslog.logln('BLOOM', 'Unit tests starting...');
+  test.harness.Start(@context, 'core.ds.bloom');
 
   { Two distinct 5-byte inputs: "hello" and "world" }
   buf1[0] := ord('h'); buf1[1] := ord('e'); buf1[2] := ord('l'); buf1[3] := ord('l'); buf1[4] := ord('o');
@@ -236,44 +206,44 @@ begin
 
   { === New === }
   f := Bloom_New(1024, 7);
-  Assert(f <> nil, 'Bloom_New returns non-nil');
-  Assert(f^.BitCount  = 1024, 'BitCount = 1024');
-  Assert(f^.HashCount = 7,    'HashCount = 7');
-  Assert(f^.Count     = 0,    'Initial Count = 0');
+  test.harness.Assert(@context, f <> nil, 'Bloom_New returns non-nil');
+  test.harness.Assert(@context, f^.BitCount  = 1024, 'BitCount = 1024');
+  test.harness.Assert(@context, f^.HashCount = 7,    'HashCount = 7');
+  test.harness.Assert(@context, f^.Count     = 0,    'Initial Count = 0');
 
   { === Empty filter: Test returns false === }
-  Assert(not Bloom_Test(f, void(@buf1[0]), 5), 'Test(hello) before Add = false');
-  Assert(not Bloom_Test(f, void(@buf2[0]), 5), 'Test(world) before Add = false');
+  test.harness.Assert(@context, not Bloom_Test(f, void(@buf1[0]), 5), 'Test(hello) before Add = false');
+  test.harness.Assert(@context, not Bloom_Test(f, void(@buf2[0]), 5), 'Test(world) before Add = false');
 
   { === Add then Test: should return true === }
   Bloom_Add(f, void(@buf1[0]), 5);
-  Assert(Bloom_Test(f, void(@buf1[0]), 5), 'Test(hello) after Add = true');
-  Assert(f^.Count = 1, 'Count = 1 after one Add');
+  test.harness.Assert(@context, Bloom_Test(f, void(@buf1[0]), 5), 'Test(hello) after Add = true');
+  test.harness.Assert(@context, f^.Count = 1, 'Count = 1 after one Add');
 
   { === Un-added element: should return false (1 of 1024 bits set per hash) === }
-  Assert(not Bloom_Test(f, void(@buf2[0]), 5), 'Test(world) not added = false');
+  test.harness.Assert(@context, not Bloom_Test(f, void(@buf2[0]), 5), 'Test(world) not added = false');
 
   { === Add second element === }
   Bloom_Add(f, void(@buf2[0]), 5);
-  Assert(Bloom_Test(f, void(@buf2[0]), 5), 'Test(world) after Add = true');
-  Assert(f^.Count = 2, 'Count = 2 after two Adds');
+  test.harness.Assert(@context, Bloom_Test(f, void(@buf2[0]), 5), 'Test(world) after Add = true');
+  test.harness.Assert(@context, f^.Count = 2, 'Count = 2 after two Adds');
 
   { === Both elements still present === }
-  Assert(Bloom_Test(f, void(@buf1[0]), 5), 'Test(hello) still true after second Add');
+  test.harness.Assert(@context, Bloom_Test(f, void(@buf1[0]), 5), 'Test(hello) still true after second Add');
 
   { === Clear resets all bits and count === }
   Bloom_Clear(f);
-  Assert(f^.Count = 0, 'Count = 0 after Clear');
-  Assert(not Bloom_Test(f, void(@buf1[0]), 5), 'Test(hello) after Clear = false');
-  Assert(not Bloom_Test(f, void(@buf2[0]), 5), 'Test(world) after Clear = false');
+  test.harness.Assert(@context, f^.Count = 0, 'Count = 0 after Clear');
+  test.harness.Assert(@context, not Bloom_Test(f, void(@buf1[0]), 5), 'Test(hello) after Clear = false');
+  test.harness.Assert(@context, not Bloom_Test(f, void(@buf2[0]), 5), 'Test(world) after Clear = false');
 
   { === Re-add after clear still works === }
   Bloom_Add(f, void(@buf1[0]), 5);
-  Assert(Bloom_Test(f, void(@buf1[0]), 5), 'Test(hello) after re-Add = true');
+  test.harness.Assert(@context, Bloom_Test(f, void(@buf1[0]), 5), 'Test(hello) after re-Add = true');
 
   Bloom_Free(f);
 
-  PrintSummary;
+  test.harness.finish(@context);
 end;
 
 end.

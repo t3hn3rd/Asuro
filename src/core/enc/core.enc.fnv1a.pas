@@ -47,7 +47,8 @@ interface
 implementation
 
 uses
-  io.syslog,
+  test.harness,
+    io.syslog,
   memory.heap,
   core.strings;
 
@@ -89,73 +90,40 @@ end;
 
 procedure UnitTest;
 var
-  passed, failed       : uint32;
+  context : TTestContext;
   buf1, buf2           : array[0..4] of byte;
   h32a                 : uint32;
   h64a                 : uint64;
 
-  procedure Assert(condition : boolean; testName : pchar);
-  var
-    msg : pchar;
-  begin
-    if condition then
-      inc(passed)
-    else begin
-      inc(failed);
-      msg := stringConcat('FAIL: ', testName);
-      io.syslog.logln('FNV1A', msg);
-      kfree(void(msg));
-    end;
-  end;
-
-  procedure PrintSummary;
-  var
-    pStr, fStr, msg, tmp : pchar;
-  begin
-    pStr := intToString(passed);
-    fStr := intToString(failed);
-    msg  := stringConcat(pStr, ' passed, ');
-    tmp  := stringConcat(msg, fStr);
-    kfree(void(msg));
-    msg  := stringConcat(tmp, ' failed.');
-    kfree(void(tmp));
-    io.syslog.logln('FNV1A', msg);
-    kfree(void(msg));
-    kfree(void(pStr));
-    kfree(void(fStr));
-  end;
-
 begin
-  passed := 0;
-  failed := 0;
-  io.syslog.logln('FNV1A', 'Unit tests starting...');
+  test.harness.Start(@context, 'core.enc.fnv1a');
 
   { Two distinct 5-byte inputs }
   buf1[0] := ord('h'); buf1[1] := ord('e'); buf1[2] := ord('l'); buf1[3] := ord('l'); buf1[4] := ord('o');
   buf2[0] := ord('w'); buf2[1] := ord('o'); buf2[2] := ord('r'); buf2[3] := ord('l'); buf2[4] := ord('d');
 
   { === Known basis value: zero-length input returns initial h === }
-  Assert(Hash_FNV1a32(void(@buf1[0]), 0) = $811C9DC5, 'FNV1a32 empty = basis $811C9DC5');
-  Assert(Hash_FNV1a64(void(@buf1[0]), 0) = uint64($CBF29CE484222325), 'FNV1a64 empty = basis');
+  test.harness.Assert(@context, Hash_FNV1a32(void(@buf1[0]), 0) = $811C9DC5, 'FNV1a32 empty = basis $811C9DC5');
+  test.harness.Assert(@context, Hash_FNV1a64(void(@buf1[0]), 0) = uint64($CBF29CE484222325), 'FNV1a64 empty = basis');
 
   { === Determinism === }
-  Assert(Hash_FNV1a32(void(@buf1[0]), 5) = Hash_FNV1a32(void(@buf1[0]), 5), 'FNV1a32 deterministic');
-  Assert(Hash_FNV1a64(void(@buf1[0]), 5) = Hash_FNV1a64(void(@buf1[0]), 5), 'FNV1a64 deterministic');
+  test.harness.Assert(@context, Hash_FNV1a32(void(@buf1[0]), 5) = Hash_FNV1a32(void(@buf1[0]), 5), 'FNV1a32 deterministic');
+  test.harness.Assert(@context, Hash_FNV1a64(void(@buf1[0]), 5) = Hash_FNV1a64(void(@buf1[0]), 5), 'FNV1a64 deterministic');
 
   { === Distinct inputs produce distinct hashes === }
-  Assert(Hash_FNV1a32(void(@buf1[0]), 5) <> Hash_FNV1a32(void(@buf2[0]), 5), 'FNV1a32 hello <> world');
-  Assert(Hash_FNV1a64(void(@buf1[0]), 5) <> Hash_FNV1a64(void(@buf2[0]), 5), 'FNV1a64 hello <> world');
+  test.harness.Assert(@context, Hash_FNV1a32(void(@buf1[0]), 5) <> Hash_FNV1a32(void(@buf2[0]), 5), 'FNV1a32 hello <> world');
+  test.harness.Assert(@context, Hash_FNV1a64(void(@buf1[0]), 5) <> Hash_FNV1a64(void(@buf2[0]), 5), 'FNV1a64 hello <> world');
 
   { === Length sensitivity === }
-  Assert(Hash_FNV1a32(void(@buf1[0]), 5) <> Hash_FNV1a32(void(@buf1[0]), 4), 'FNV1a32 length-sensitive');
-  Assert(Hash_FNV1a64(void(@buf1[0]), 5) <> Hash_FNV1a64(void(@buf1[0]), 4), 'FNV1a64 length-sensitive');
+  test.harness.Assert(@context, Hash_FNV1a32(void(@buf1[0]), 5) <> Hash_FNV1a32(void(@buf1[0]), 4), 'FNV1a32 length-sensitive');
+  test.harness.Assert(@context, Hash_FNV1a64(void(@buf1[0]), 5) <> Hash_FNV1a64(void(@buf1[0]), 4), 'FNV1a64 length-sensitive');
 
   { === 32-bit and 64-bit produce independent outputs === }
   h32a := Hash_FNV1a32(void(@buf1[0]), 5);
   h64a := Hash_FNV1a64(void(@buf1[0]), 5);
-  Assert(uint32(h64a) <> h32a, 'FNV1a32 != low32(FNV1a64)');
+  test.harness.Assert(@context, uint32(h64a) <> h32a, 'FNV1a32 != low32(FNV1a64)');
 
-  PrintSummary;
+  test.harness.Finish(@context);
 end;
 
 end.
