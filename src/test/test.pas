@@ -103,8 +103,18 @@ begin
     core.enc.fnv1a.UnitTest;
     core.enc.djb2.UnitTest;
     core.ds.bloom.UnitTest;
-    core.fmt.json.UnitTest;
+end;
 
+procedure runComplexTests();
+begin
+    io.syslog.logln('test', 'Running complex unit tests...');
+
+    { Run complex unit tests }
+    core.fmt.json.UnitTest;
+end;
+
+procedure finish();
+begin
     { Finished }
     io.syslog.logln('test', 'Unit tests finished.');
 
@@ -113,7 +123,13 @@ begin
 end;
 
 initialization
-    boot.mgr.registerBoot('asuro.test.init', @init, 'Initialize Test Framework', BOOT_MGR_BARRIER_MID);
-    boot.mgr.registerBoot('asuro.test.run', @runAllTests, 'Run Unit Tests', BOOT_MGR_BARRIER_LATE);
+    {$IFDEF UNIT_TESTS}
+        boot.mgr.registerBoot('asuro.test.init', @init, 'Initialize Test Framework', BOOT_MGR_BARRIER_MID);
+        boot.mgr.registerBoot('asuro.test.run.standard', @runAllTests, 'Run Unit Tests', BOOT_MGR_BARRIER_LATE);
+        {$IFDEF UNIT_TESTS_COMPLEX}
+            boot.mgr.registerBoot('asuro.test.run.complex', @runComplexTests, 'Run Complex Unit Tests', 'asuro.test.run.standard');
+        {$ENDIF}
+        boot.mgr.registerBoot('asuro.test.finish', @finish, 'Finish Unit Tests', 'asuro.test.run.*');
+    {$ENDIF}
 
 end.
