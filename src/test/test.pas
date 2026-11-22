@@ -66,7 +66,8 @@ uses
     core.enc.djb2,
     core.ds.bloom,
     core.fmt.png,
-    core.fmt.json;
+    core.fmt.json,
+    core.fmt.cbor.tests;
 
 procedure init();
 begin
@@ -119,6 +120,7 @@ begin
 
     { Run complex unit tests }
     core.fmt.json.UnitTest;
+    core.fmt.cbor.tests.UnitTest;
     driver.storage.bench.clock.UnitTest;
     driver.storage.bench.UnitTest;
     driver.storage.metatest.UnitTest;
