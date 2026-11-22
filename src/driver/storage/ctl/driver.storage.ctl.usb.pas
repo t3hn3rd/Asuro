@@ -34,7 +34,7 @@ uses boot.mgr, driver.mgr, memory.heap, driver.storage.types,
      proc.mgr, proc.types, arch.x86.bda, arch.x86.isr.tmr0,
      core.util, arch.x86.util, io.syslog, io.stdio, core.strings,
      driver.storage.vfs, driver.storage.vol.mgr, core.ds.lists,
-     driver.storage.iorequest;
+     driver.storage.iorequest, test.harness;
 
 const
     CBW_SIGNATURE = $43425355;
@@ -1020,50 +1020,45 @@ begin
 end;
 
 procedure UnitTest;
-var passed, failed, actual, sectors, size, flags, steps : uint32; buffer : pointer; other : PMock; savedWorker : PProcessContext; csw : TCSW; bytes : array[0..3] of uint8; m : PMock;
-    procedure Assert(ok : boolean; name : pchar);
-    begin
-        if ok then inc(passed) else begin
-            inc(failed); io.syslog.logln('USBMSC FAIL', name);
-        end;
-    end;
+var actual, sectors, size, flags, steps : uint32; buffer : pointer; other : PMock; savedWorker : PProcessContext; csw : TCSW; bytes : array[0..3] of uint8; m : PMock;
+    context : TTestContext;
 begin
-    passed := 0; failed := 0;
-    Assert(sizeof(TCBW) = 31, 'CBW wire size');
-    Assert(sizeof(TCSW) = 13, 'CSW wire size');
+    test.harness.Start(@context, 'driver.storage.ctl.usb');
+    test.harness.Assert(@context, sizeof(TCBW) = 31, 'CBW wire size');
+    test.harness.Assert(@context, sizeof(TCSW) = 13, 'CSW wire size');
     put32(@bytes[0], $12345678);
-    Assert((bytes[0] = $12) and (bytes[3] = $78), 'SCSI byte order');
-    Assert(be32(@bytes[0]) = $12345678, 'capacity byte order');
-    Assert(valid_capacity(0, 512), 'single sector');
-    Assert(valid_capacity($FFFFFFFE, 4096), 'largest representable sector count');
-    Assert(not valid_capacity($FFFFFFFF, 512), 'reject READ CAPACITY(16) sentinel');
-    Assert(not valid_capacity(1, 0), 'reject zero block size');
-    Assert(not valid_capacity(1, 513), 'reject non-power-of-two block size');
-    Assert(not valid_capacity(1, 8192), 'reject oversized block size');
+    test.harness.Assert(@context, (bytes[0] = $12) and (bytes[3] = $78), 'SCSI byte order');
+    test.harness.Assert(@context, be32(@bytes[0]) = $12345678, 'capacity byte order');
+    test.harness.Assert(@context, valid_capacity(0, 512), 'single sector');
+    test.harness.Assert(@context, valid_capacity($FFFFFFFE, 4096), 'largest representable sector count');
+    test.harness.Assert(@context, not valid_capacity($FFFFFFFF, 512), 'reject READ CAPACITY(16) sentinel');
+    test.harness.Assert(@context, not valid_capacity(1, 0), 'reject zero block size');
+    test.harness.Assert(@context, not valid_capacity(1, 513), 'reject non-power-of-two block size');
+    test.harness.Assert(@context, not valid_capacity(1, 8192), 'reject oversized block size');
     csw.Signature := CSW_SIGNATURE; csw.Tag := 7; csw.Residue := 0; csw.Status := 0;
-    Assert(valid_csw(@csw, 7, 512, 13), 'valid CSW');
-    Assert(not valid_csw(@csw, 8, 512, 13), 'reject stale tag');
-    Assert(not valid_csw(@csw, 7, 512, 12), 'reject short CSW');
+    test.harness.Assert(@context, valid_csw(@csw, 7, 512, 13), 'valid CSW');
+    test.harness.Assert(@context, not valid_csw(@csw, 8, 512, 13), 'reject stale tag');
+    test.harness.Assert(@context, not valid_csw(@csw, 7, 512, 12), 'reject short CSW');
     csw.Residue := 513;
-    Assert(not valid_csw(@csw, 7, 512, 13), 'reject excessive residue');
+    test.harness.Assert(@context, not valid_csw(@csw, 7, 512, 13), 'reject excessive residue');
     csw.Residue := 0; csw.Status := 3;
-    Assert(not valid_csw(@csw, 7, 512, 13), 'reject reserved status');
+    test.harness.Assert(@context, not valid_csw(@csw, 7, 512, 13), 'reject reserved status');
     csw.Status := 0; csw.Signature := 0;
-    Assert(not valid_csw(@csw, 7, 512, 13), 'reject signature');
+    test.harness.Assert(@context, not valid_csw(@csw, 7, 512, 13), 'reject signature');
     m := PMock(kalloc(sizeof(TMock)));
-    Assert(m <> nil, 'mock allocation');
+    test.harness.Assert(@context, m <> nil, 'mock allocation');
     if m <> nil then begin
         init_mock(m);
-        Assert(m^.C.Buffer <> nil, 'mock DMA scratch allocation');
+        test.harness.Assert(@context, m^.C.Buffer <> nil, 'mock DMA scratch allocation');
         if m^.C.Buffer <> nil then begin
-            Assert((uint32(m^.C.Buffer) and (BUFFER_SIZE - 1)) = 0, '64 KiB DMA alignment');
-            Assert(worker_action(@m^.C) = 0, 'idle worker can park');
+            test.harness.Assert(@context, (uint32(m^.C.Buffer) and (BUFFER_SIZE - 1)) = 0, '64 KiB DMA alignment');
+            test.harness.Assert(@context, worker_action(@m^.C) = 0, 'idle worker can park');
             m^.C.Ready := true;
             m^.C.Request := @m^.Request;
-            Assert(worker_action(@m^.C) = 1, 'queued request prevents parking');
+            test.harness.Assert(@context, worker_action(@m^.C) = 1, 'queued request prevents parking');
             m^.C.Request := nil;
             m^.C.Offline := true;
-            Assert(worker_action(@m^.C) = 2, 'disconnect cleanup keeps polling');
+            test.harness.Assert(@context, worker_action(@m^.C) = 2, 'disconnect cleanup keeps polling');
             m^.C.Offline := false;
             m^.Disk.sectorSize := 512;
             m^.Disk.maxSectorCount := 8192;
@@ -1077,86 +1072,86 @@ begin
             dispatch(@m^.Disk, @m^.Request);
             Worker := savedWorker;
             if (flags and $200) <> 0 then asm sti end;
-            Assert((m^.Process.State = psReady) and (m^.C.Request = @m^.Request),
+            test.harness.Assert(@context, (m^.Process.State = psReady) and (m^.C.Request = @m^.Request),
                    'submission publishes request and wakes parked worker');
             m^.C.Request := nil;
             m^.Commands := 0;
             m^.DataCalls := 0;
             command(@m^.C, $28, 10, BUFFER_SIZE, true);
-            Assert(execute(@m^.C, BUFFER_SIZE) = eNone, '64 KiB read');
-            Assert((m^.Commands = 1) and (m^.DataCalls = 1) and
+            test.harness.Assert(@context, execute(@m^.C, BUFFER_SIZE) = eNone, '64 KiB read');
+            test.harness.Assert(@context, (m^.Commands = 1) and (m^.DataCalls = 1) and
                    (puint8(m^.C.Buffer)[BUFFER_SIZE - 1] = $A5), 'one command and data stage for 64 KiB');
             m^.Limit := 32768;
             m^.DataCalls := 0;
             command(@m^.C, $28, 10, BUFFER_SIZE, true);
-            Assert((execute(@m^.C, BUFFER_SIZE) = eNone) and (m^.DataCalls = 2),
+            test.harness.Assert(@context, (execute(@m^.C, BUFFER_SIZE) = eNone) and (m^.DataCalls = 2),
                    'bounded data stages retain one SCSI command');
             m^.Limit := BUFFER_SIZE;
             memset(uint32(m^.C.Buffer), $5A, BUFFER_SIZE);
             command(@m^.C, $2A, 10, BUFFER_SIZE, false);
-            Assert((execute(@m^.C, BUFFER_SIZE) = eNone) and m^.GoodWrite, '64 KiB write data preserved');
-            Assert(probe(@m^.C, sectors, size) and (sectors = 8192) and (size = 512), 'probe SCSI disk');
+            test.harness.Assert(@context, (execute(@m^.C, BUFFER_SIZE) = eNone) and m^.GoodWrite, '64 KiB write data preserved');
+            test.harness.Assert(@context, probe(@m^.C, sectors, size) and (sectors = 8192) and (size = 512), 'probe SCSI disk');
             command(@m^.C, $28, 10, 512, true);
-            Assert((execute(@m^.C,512) = eNone) and (puint8(m^.C.Buffer)[511] = $A5), 'read data phase');
+            test.harness.Assert(@context, (execute(@m^.C,512) = eNone) and (puint8(m^.C.Buffer)[511] = $A5), 'read data phase');
             command(@m^.C, $2A, 10, 512, false); memset(uint32(m^.C.Buffer),$5A,512);
-            Assert((execute(@m^.C,512) = eNone) and m^.GoodWrite, 'write data phase');
+            test.harness.Assert(@context, (execute(@m^.C,512) = eNone) and m^.GoodWrite, 'write data phase');
             m^.Fault := 3; command(@m^.C, $2A, 10, 512, false);
-            Assert(execute(@m^.C,512) = eReadOnly, 'command failure requests sense');
+            test.harness.Assert(@context, execute(@m^.C,512) = eReadOnly, 'command failure requests sense');
             m^.Fault := 4; command(@m^.C, $28, 10, 512, true);
-            Assert(execute(@m^.C,512) = eIOError, 'short read is not full success');
+            test.harness.Assert(@context, execute(@m^.C,512) = eIOError, 'short read is not full success');
             m^.Fault := 5; command(@m^.C, $28, 10, 512, true);
-            Assert(execute(@m^.C,512) = eNone, 'CSW stall cleared and retried');
+            test.harness.Assert(@context, execute(@m^.C,512) = eNone, 'CSW stall cleared and retried');
             m^.Fault := 1; m^.Controls := 0; command(@m^.C, $28, 10, 512, true);
-            Assert((transport(@m^.C,actual) = 2) and (m^.Controls = 3) and m^.GoodRecovery, 'bad tag triggers ordered reset recovery');
+            test.harness.Assert(@context, (transport(@m^.C,actual) = 2) and (m^.Controls = 3) and m^.GoodRecovery, 'bad tag triggers ordered reset recovery');
             m^.Fault := 2; m^.Controls := 0; command(@m^.C, $28, 10, 512, true);
-            Assert((transport(@m^.C,actual) = 2) and m^.GoodRecovery, 'phase error reset recovery');
+            test.harness.Assert(@context, (transport(@m^.C,actual) = 2) and m^.GoodRecovery, 'phase error reset recovery');
             m^.Fault := 6; m^.Controls := 0; command(@m^.C, $28, 10, 512, true);
-            Assert((transport(@m^.C,actual) = 2) and m^.GoodRecovery, 'short CBW reset recovery');
+            test.harness.Assert(@context, (transport(@m^.C,actual) = 2) and m^.GoodRecovery, 'short CBW reset recovery');
             m^.Fault := 7; command(@m^.C, $28, 10, 512, true);
-            Assert(transport(@m^.C,actual) = 2, 'inconsistent CSW residue rejected');
+            test.harness.Assert(@context, transport(@m^.C,actual) = 2, 'inconsistent CSW residue rejected');
             m^.Fault := 8; command(@m^.C, $28, 10, 512, true);
-            Assert(transport(@m^.C,actual) = 2, 'short CSW rejected');
+            test.harness.Assert(@context, transport(@m^.C,actual) = 2, 'short CSW rejected');
             m^.Fault := 0; command(@m^.C, $35, 10, 0, false);
-            Assert(execute(@m^.C,0) = eNone, 'cache synchronization without data stage');
+            test.harness.Assert(@context, execute(@m^.C,0) = eNone, 'cache synchronization without data stage');
             m^.Fault := 3; m^.SenseKey := 3;
-            Assert(sync_cache(@m^.C) = eBadSector, 'flush media errors propagate');
-            Assert(not m^.C.SyncUnsupported, 'media error does not disable flush');
+            test.harness.Assert(@context, sync_cache(@m^.C) = eBadSector, 'flush media errors propagate');
+            test.harness.Assert(@context, not m^.C.SyncUnsupported, 'media error does not disable flush');
             m^.Fault := 3; m^.SenseKey := 5;
-            Assert(sync_cache(@m^.C) = eNone, 'unsupported flush accepts completed write');
+            test.harness.Assert(@context, sync_cache(@m^.C) = eNone, 'unsupported flush accepts completed write');
             sectors := m^.C.Tag;
-            Assert((sync_cache(@m^.C) = eNone) and (m^.C.Tag = sectors), 'unsupported flush is not repeatedly submitted');
+            test.harness.Assert(@context, (sync_cache(@m^.C) = eNone) and (m^.C.Tag = sectors), 'unsupported flush is not repeatedly submitted');
             m^.Fault := 3; command(@m^.C, $2A, 10, 512, false);
-            Assert(execute(@m^.C,512) = eNotSupported, 'unsupported data write remains a failure');
+            test.harness.Assert(@context, execute(@m^.C,512) = eNotSupported, 'unsupported data write remains a failure');
             m^.Fault := 0; m^.SenseKey := 0;
             m^.Disk.sectorSize := 512; m^.Disk.maxSectorCount := 8192;
             m^.Request.Buffer := m^.C.Buffer; m^.Request.LBA := 8191; m^.Request.SectorCount := 1;
-            Assert(valid_request(@m^.Disk,@m^.Request), 'last sector valid');
+            test.harness.Assert(@context, valid_request(@m^.Disk,@m^.Request), 'last sector valid');
             m^.Request.SectorCount := 2;
-            Assert(not valid_request(@m^.Disk,@m^.Request), 'cross-end request rejected');
+            test.harness.Assert(@context, not valid_request(@m^.Disk,@m^.Request), 'cross-end request rejected');
             m^.Request.SectorCount := 0;
-            Assert(not valid_request(@m^.Disk,@m^.Request), 'zero-sector request rejected');
+            test.harness.Assert(@context, not valid_request(@m^.Disk,@m^.Request), 'zero-sector request rejected');
             m^.Request.LBA := $FFFFFFFE; m^.Request.SectorCount := 4;
-            Assert(not valid_request(@m^.Disk,@m^.Request), 'wrapped LBA rejected');
+            test.harness.Assert(@context, not valid_request(@m^.Disk,@m^.Request), 'wrapped LBA rejected');
             m^.Request.LBA := 0; m^.Request.SectorCount := 1; m^.Request.Buffer := pointer($FFFFFF00);
-            Assert(not valid_request(@m^.Disk,@m^.Request), 'wrapped buffer rejected');
+            test.harness.Assert(@context, not valid_request(@m^.Disk,@m^.Request), 'wrapped buffer rejected');
             { Delayed device A must not prevent device B from finishing. }
             other := PMock(kalloc(sizeof(TMock)));
-            Assert(other <> nil, 'second device fixture');
+            test.harness.Assert(@context, other <> nil, 'second device fixture');
             if other <> nil then begin
                 init_mock(other);
-                Assert(other^.C.Buffer <> nil, 'second device DMA buffer');
+                test.harness.Assert(@context, other^.C.Buffer <> nil, 'second device DMA buffer');
                 if other^.C.Buffer <> nil then begin
                     m^.Hold := true;
                     command(@m^.C, $28, 10, 512, true);
                     bot_start(@m^.C);
                     bot_step(@m^.C);
-                    Assert((m^.C.Phase = bpCBW) and m^.C.InFlight, 'pending stage returns without waiting');
+                    test.harness.Assert(@context, (m^.C.Phase = bpCBW) and m^.C.InFlight, 'pending stage returns without waiting');
                     command(@other^.C, $28, 10, 512, true);
-                    Assert(execute(@other^.C, 512) = eNone, 'second disk completes while first waits');
-                    Assert(m^.C.InFlight, 'second disk does not disturb first DMA ownership');
+                    test.harness.Assert(@context, execute(@other^.C, 512) = eNone, 'second disk completes while first waits');
+                    test.harness.Assert(@context, m^.C.InFlight, 'second disk does not disturb first DMA ownership');
                     m^.C.Started := puint32(@Counters.c32)^ - TRANSFER_TICKS;
                     bot_step(@m^.C);
-                    Assert((m^.C.Phase = bpDone) and m^.C.Offline and m^.C.InFlight,
+                    test.harness.Assert(@context, (m^.C.Phase = bpDone) and m^.C.Offline and m^.C.InFlight,
                            'timeout retains in-flight transfer and private DMA');
                     m^.C.Transfer.Status := tsSuccess; { Simulated late hardware retirement. }
                     m^.C.InFlight := false;
@@ -1169,7 +1164,7 @@ begin
             end;
             { Drive the actual request pump with inline completions and a tail chunk. }
             buffer := kalloc(BUFFER_SIZE + 512);
-            Assert(buffer <> nil, 'request buffer');
+            test.harness.Assert(@context, buffer <> nil, 'request buffer');
             if buffer <> nil then begin
                 m^.Disk.sectorSize := 512;
                 m^.C.Disk := @m^.Disk;
@@ -1181,7 +1176,7 @@ begin
                 m^.HC.BulkWindowBytes := MAX_COMMAND_BYTES;
                 m^.Limit := MAX_COMMAND_BYTES;
                 m^.TestRequest := ioreq_alloc(ioRead, nil, 0, (BUFFER_SIZE div 512) + 1, buffer);
-                Assert(m^.TestRequest <> nil, 'pooled request fixture');
+                test.harness.Assert(@context, m^.TestRequest <> nil, 'pooled request fixture');
                 if m^.TestRequest <> nil then begin
                     m^.TestRequest^.Callback := @mock_complete;
                     m^.TestRequest^.CallbackData := m;
@@ -1191,10 +1186,10 @@ begin
                         process_request(@m^.C);
                         inc(steps);
                     end;
-                    Assert((m^.Completions = 1) and (m^.CompletedError = eNone) and
+                    test.harness.Assert(@context, (m^.Completions = 1) and (m^.CompletedError = eNone) and
                            (m^.CompletedBytes = BUFFER_SIZE + 512), 'request completes once across 64 KiB boundary');
-                    Assert(m^.DataCalls = 1, 'controller accepted the full data phase');
-                    Assert((m^.Commands = 1) and (puint8(buffer)[0] = $A5) and
+                    test.harness.Assert(@context, m^.DataCalls = 1, 'controller accepted the full data phase');
+                    test.harness.Assert(@context, (m^.Commands = 1) and (puint8(buffer)[0] = $A5) and
                            (puint8(buffer)[BUFFER_SIZE + 511] = $A5),
                            'tail copied under the same SCSI command');
                     if m^.C.Request <> nil then begin
@@ -1208,8 +1203,7 @@ begin
         end;
         kfree(void(m));
     end;
-    io.syslog.log('USBMSC', 'Tests passed: '); io.syslog.writeint(passed);
-    io.syslog.writestring(' failed: '); io.syslog.writeintln(failed);
+    test.harness.Finish(@context);
 end;
 
 procedure test_command(params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);

@@ -38,7 +38,7 @@ implementation
 uses
     core.strings,
     memory.heap,
-    io.syslog;
+    io.syslog, test.harness;
 
 { ============================================================
   getFileExtension
@@ -165,75 +165,42 @@ end;
   ============================================================ }
 procedure UnitTest;
 var
-    passed, failed : uint32;
     s : pchar;
     ext : pchar;
     names : array[0..4] of pchar;
     sizes : array[0..4] of uint32;
 
-    procedure Assert(condition : boolean; testName : pchar);
-    var
-        msg : pchar;
-    begin
-        if condition then begin
-            inc(passed);
-        end else begin
-            inc(failed);
-            msg := stringConcat('FAIL: ', testName);
-            io.syslog.logln('SEARCH', msg);
-            kfree(void(msg));
-        end;
-    end;
-
-    procedure PrintSummary;
-    var
-        pStr, fStr, msg, tmp : pchar;
-    begin
-        pStr := intToString(passed);
-        fStr := intToString(failed);
-        msg  := stringConcat(pStr, ' passed, ');
-        tmp  := stringConcat(msg, fStr);
-        kfree(void(msg));
-        msg := stringConcat(tmp, ' failed.');
-        kfree(void(tmp));
-        io.syslog.logln('SEARCH', msg);
-        kfree(void(msg));
-        kfree(void(pStr));
-        kfree(void(fStr));
-    end;
-
+    context : TTestContext;
 begin
-    passed := 0;
-    failed := 0;
-    io.syslog.logln('SEARCH', 'Unit tests starting...');
+    test.harness.Start(@context, 'core.strings.helpers');
 
     { === getFileExtension === }
     ext := getFileExtension('readme.txt');
-    Assert(ext <> nil, 'getFileExt txt not nil');
-    Assert(stringEquals(ext, '.txt'), 'getFileExt txt');
+    test.harness.Assert(@context, ext <> nil, 'getFileExt txt not nil');
+    test.harness.Assert(@context, stringEquals(ext, '.txt'), 'getFileExt txt');
     ext := getFileExtension('archive.tar.gz');
-    Assert(stringEquals(ext, '.gz'), 'getFileExt tar.gz');
+    test.harness.Assert(@context, stringEquals(ext, '.gz'), 'getFileExt tar.gz');
     ext := getFileExtension('noext');
-    Assert(ext = nil, 'getFileExt none');
+    test.harness.Assert(@context, ext = nil, 'getFileExt none');
     ext := getFileExtension('');
-    Assert(ext = nil, 'getFileExt empty');
+    test.harness.Assert(@context, ext = nil, 'getFileExt empty');
     ext := getFileExtension(nil);
-    Assert(ext = nil, 'getFileExt nil');
+    test.harness.Assert(@context, ext = nil, 'getFileExt nil');
     ext := getFileExtension('.hidden');
-    Assert(stringEquals(ext, '.hidden'), 'getFileExt dotfile');
+    test.harness.Assert(@context, stringEquals(ext, '.hidden'), 'getFileExt dotfile');
 
     { === fmtFileSize === }
     s := fmtFileSize(0);
-    Assert(stringEquals(s, '0 B'), 'fmtFileSize 0');
+    test.harness.Assert(@context, stringEquals(s, '0 B'), 'fmtFileSize 0');
     kfree(void(s));
     s := fmtFileSize(512);
-    Assert(stringEquals(s, '512 B'), 'fmtFileSize 512');
+    test.harness.Assert(@context, stringEquals(s, '512 B'), 'fmtFileSize 512');
     kfree(void(s));
     s := fmtFileSize(1024);
-    Assert(stringEquals(s, '1.0 KB'), 'fmtFileSize 1KB');
+    test.harness.Assert(@context, stringEquals(s, '1.0 KB'), 'fmtFileSize 1KB');
     kfree(void(s));
     s := fmtFileSize(1024 * 1024);
-    Assert(stringEquals(s, '1.0 MB'), 'fmtFileSize 1MB');
+    test.harness.Assert(@context, stringEquals(s, '1.0 MB'), 'fmtFileSize 1MB');
     kfree(void(s));
 
     { === sortStringArray === }
@@ -243,11 +210,11 @@ begin
     names[3] := 'bravo';
     names[4] := 'Echo';
     sortStringArray(@names[0], 5);
-    Assert(stringEqualsCI(names[0], 'alpha'), 'sort[0]=alpha');
-    Assert(stringEqualsCI(names[1], 'bravo'), 'sort[1]=bravo');
-    Assert(stringEqualsCI(names[2], 'Charlie'), 'sort[2]=charlie');
-    Assert(stringEqualsCI(names[3], 'delta'), 'sort[3]=delta');
-    Assert(stringEqualsCI(names[4], 'Echo'), 'sort[4]=echo');
+    test.harness.Assert(@context, stringEqualsCI(names[0], 'alpha'), 'sort[0]=alpha');
+    test.harness.Assert(@context, stringEqualsCI(names[1], 'bravo'), 'sort[1]=bravo');
+    test.harness.Assert(@context, stringEqualsCI(names[2], 'Charlie'), 'sort[2]=charlie');
+    test.harness.Assert(@context, stringEqualsCI(names[3], 'delta'), 'sort[3]=delta');
+    test.harness.Assert(@context, stringEqualsCI(names[4], 'Echo'), 'sort[4]=echo');
 
     { === sortStringArray edge cases === }
     sortStringArray(@names[0], 0);  { should not crash }
@@ -261,12 +228,12 @@ begin
     names[3] := 'bravo';  sizes[3] := 2;
     names[4] := 'Echo';   sizes[4] := 5;
     sortStringArrayWithData(@names[0], @sizes[0], 5);
-    Assert(stringEqualsCI(names[0], 'alpha'), 'sortData[0]=alpha');
-    Assert(sizes[0] = 1, 'sortData[0] data=1');
-    Assert(stringEqualsCI(names[4], 'Echo'), 'sortData[4]=echo');
-    Assert(sizes[4] = 5, 'sortData[4] data=5');
+    test.harness.Assert(@context, stringEqualsCI(names[0], 'alpha'), 'sortData[0]=alpha');
+    test.harness.Assert(@context, sizes[0] = 1, 'sortData[0] data=1');
+    test.harness.Assert(@context, stringEqualsCI(names[4], 'Echo'), 'sortData[4]=echo');
+    test.harness.Assert(@context, sizes[4] = 5, 'sortData[4] data=5');
 
-    PrintSummary;
+    test.harness.Finish(@context);
 end;
 
 end.

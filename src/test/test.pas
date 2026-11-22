@@ -31,6 +31,7 @@ implementation
 
 uses
     core.strings,
+    core.strings.helpers,
     app.diskutil,
     driver.bus.usb.types,
     driver.bus.usb.core,
@@ -53,6 +54,7 @@ uses
     driver.storage.vfs,
     driver.storage.test,
     driver.storage.bench,
+    driver.storage.bench.clock,
     driver.storage.metatest,
     driver.storage.perftest,
     driver.storage.ctl.ahci,
@@ -70,10 +72,11 @@ end;
 
 procedure runAllTests();
 begin
-    io.syslog.logln('test', 'Running all unit tests...');
+    io.syslog.logln('test', 'Running all standard unit tests...');
 
     { Run unit tests }
     core.strings.UnitTest;
+    core.strings.helpers.UnitTest;
     app.diskutil.UnitTest;
     driver.bus.usb.types.UnitTest;
     driver.bus.usb.core.UnitTest;
@@ -95,9 +98,6 @@ begin
     core.ds.prio.UnitTest;
     driver.storage.vfs.UnitTest;
     driver.storage.test.UnitTest;
-    driver.storage.bench.UnitTest;
-    driver.storage.metatest.UnitTest;
-    driver.storage.perftest.UnitTest;
     driver.storage.ctl.ahci.UnitTest;
     driver.storage.ctl.usb.UnitTest;
     core.enc.fnv1a.UnitTest;
@@ -111,6 +111,10 @@ begin
 
     { Run complex unit tests }
     core.fmt.json.UnitTest;
+    driver.storage.bench.clock.UnitTest;
+    driver.storage.bench.UnitTest;
+    driver.storage.metatest.UnitTest;
+    driver.storage.perftest.UnitTest;
 end;
 
 procedure finish();
