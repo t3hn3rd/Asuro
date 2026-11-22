@@ -824,7 +824,10 @@ begin
 
     DevID := PDeviceIdentifier(kalloc(sizeof(TDeviceIdentifier)));
     if DevID = nil then begin
-        kfree(void(cfgBuf)); kfree(void(dev)); pop_trace; exit;
+        kfree(void(cfgBuf));
+        kfree(void(dev));
+        pop_trace;
+        exit;
     end;
     DevID^.Bus := biUSB;
     DevID^.id0 := (uint32(devDesc.idVendor) SHL 16) OR devDesc.idProduct;

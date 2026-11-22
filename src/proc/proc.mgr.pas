@@ -116,6 +116,24 @@ begin
     dest[i] := #0;
 end;
 
+{ Only for unpublished contexts: release each successfully acquired allocation. }
+procedure failProcessCreation(ctx : PProcessContext; message : pchar);
+begin
+    io.syslog.logln('PROCMGR', message);
+    if ctx <> nil then begin
+        if ctx^.StackBase <> nil then
+            kfree(ctx^.StackBase);
+        if ctx^.Cwd <> nil then
+            kfree(void(ctx^.Cwd));
+        if ctx^.FDTable <> nil then
+            fd_table_free(PFDTable(ctx^.FDTable));
+        if ctx^.Resources <> nil then
+            DL_Free(PDList(ctx^.Resources));
+        kfree(void(ctx));
+    end;
+    pop_trace;
+end;
+
 { Forward declaration for process_trampoline (used in create) }
 procedure process_trampoline; forward;
 
@@ -140,8 +158,7 @@ begin
     { Allocate process context }
     ctx := PProcessContext(kalloc(SizeOf(TProcessContext)));
     if ctx = nil then begin
-        io.syslog.logln('PROCMGR', 'Failed to allocate process context.');
-        pop_trace;
+        failProcessCreation(ctx, 'Failed to allocate process context.');
         exit;
     end;
     memset(uint32(ctx), 0, SizeOf(TProcessContext));
@@ -175,42 +192,28 @@ begin
     { Resources }
     ctx^.Resources := void(DL_New(SizeOf(TResourceBinding)));
     if ctx^.Resources = nil then begin
-        io.syslog.logln('PROCMGR', 'Failed to allocate resource list.');
-        kfree(void(ctx));
-        pop_trace;
+        failProcessCreation(ctx, 'Failed to allocate resource list.');
         exit;
     end;
 
     { Per-process file descriptor table }
     ctx^.FDTable := void(fd_table_new);
     if ctx^.FDTable = nil then begin
-        io.syslog.logln('PROCMGR', 'Failed to allocate FD table.');
-        DL_Free(PDList(ctx^.Resources));
-        kfree(void(ctx));
-        pop_trace;
+        failProcessCreation(ctx, 'Failed to allocate FD table.');
         exit;
     end;
 
     { Per-process working directory }
     ctx^.Cwd := stringCopy('/');
     if ctx^.Cwd = nil then begin
-        io.syslog.logln('PROCMGR', 'Failed to allocate working directory.');
-        fd_table_free(PFDTable(ctx^.FDTable));
-        DL_Free(PDList(ctx^.Resources));
-        kfree(void(ctx));
-        pop_trace;
+        failProcessCreation(ctx, 'Failed to allocate working directory.');
         exit;
     end;
 
     { Allocate per-process core.version stack }
     stack := kalloc(PROCESS_STACK_SIZE);
     if stack = nil then begin
-        io.syslog.logln('PROCMGR', 'Failed to allocate process stack.');
-        kfree(void(ctx^.Cwd));
-        fd_table_free(PFDTable(ctx^.FDTable));
-        DL_Free(PDList(ctx^.Resources));
-        kfree(void(ctx));
-        pop_trace;
+        failProcessCreation(ctx, 'Failed to allocate process stack.');
         exit;
     end;
     ctx^.StackBase := stack;
@@ -267,17 +270,7 @@ begin
     slotPtr := DL_Add(Processes);
     if slotPtr = nil then begin
         asm popf end;
-        io.syslog.logln('PROCMGR', 'Failed to allocate process table slot.');
-        if ctx^.StackBase <> nil then
-            kfree(ctx^.StackBase);
-        if ctx^.Cwd <> nil then
-            kfree(void(ctx^.Cwd));
-        if ctx^.FDTable <> nil then
-            fd_table_free(PFDTable(ctx^.FDTable));
-        if ctx^.Resources <> nil then
-            DL_Free(PDList(ctx^.Resources));
-        kfree(void(ctx));
-        pop_trace;
+        failProcessCreation(ctx, 'Failed to allocate process table slot.');
         exit;
     end;
     slotPtr^ := uint32(ctx);

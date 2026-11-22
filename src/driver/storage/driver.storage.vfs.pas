@@ -152,8 +152,6 @@ implementation
 
 uses
     driver.storage.fs.mgr,
-    driver.storage.fs.fat32,
-    driver.storage.fs.ext2,
     proc.mgr,
     proc.types,
     io.stdio,
@@ -618,10 +616,10 @@ begin
         kfree(void(bootObj));
     end;
 
-    if (vol^.filesystem <> nil) and (stringCompare(vol^.filesystem^.sName, 'FAT32') = 0) then
-        FAT32ReleaseVolumeState(vol);
-    if (vol^.filesystem <> nil) and (stringCompare(vol^.filesystem^.sName, 'EXT2') = 0) then
-        driver.storage.fs.ext2.ReleaseVolume(vol);
+    if vol^.filesystem <> nil then begin
+        if vol^.filesystem^.releaseVolumeCallback <> nil then
+            vol^.filesystem^.releaseVolumeCallback(vol);
+    end;
 
     InvalidateVolume := true;
     debug.tracer.push_trace('driver.storage.vfs.InvalidateVolume.exit');

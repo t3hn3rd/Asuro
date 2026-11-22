@@ -430,37 +430,17 @@ end;
   driver.bus.usb.ehci qTDs use up to 5 page pointers (each 4KB-aligned) plus
   the offset in the first page. }
 procedure ehci_fill_qtd_buffers(qtd : PEHCI_qTD; buf : Pointer; len : uint32);
-var
-    phys    : uint32;
-    pg      : uint32;
-    remain  : uint32;
+var address, span, page : uint32;
 begin
-    if (buf = nil) or (len = 0) then exit;
-    phys := vtop(uint32(buf));
-    qtd^.Buffer[0] := phys;
-    { Remaining pages }
-    remain := len;
-    { Bytes left on first page }
-    pg := 4096 - (phys AND $FFF);
-    if pg >= remain then exit;
-    remain := remain - pg;
-    phys := (phys AND $FFFFF000) + 4096;
-    if remain > 0 then begin
-        qtd^.Buffer[1] := phys;
-        if remain > 4096 then begin
-            phys := phys + 4096;
-            remain := remain - 4096;
-            qtd^.Buffer[2] := phys;
-            if remain > 4096 then begin
-                phys := phys + 4096;
-                remain := remain - 4096;
-                qtd^.Buffer[3] := phys;
-                if remain > 4096 then begin
-                    phys := phys + 4096;
-                    qtd^.Buffer[4] := phys;
-                end;
-            end;
-        end;
+    address := uint32(buf);
+    page := 0;
+    while (len <> 0) and (page < 5) do begin
+        qtd^.Buffer[page] := vtop(address);
+        span := 4096 - (address and $FFF);
+        if span >= len then exit;
+        inc(address, span);
+        dec(len, span);
+        inc(page);
     end;
 end;
 
@@ -1181,12 +1161,10 @@ begin
 
         if firstqTD = nil then firstqTD := qtd;
 
-        if remaining > maxPkt then
-            pktLen := maxPkt
-        else if remaining > 0 then
-            pktLen := remaining
-        else
-            pktLen := 0;
+        pktLen := maxPkt;
+        if transfer^.PipeType = ptBulk then
+            pktLen := 16384 - (16384 mod maxPkt);
+        if remaining < pktLen then pktLen := remaining;
 
         qtd^.Token := ehci_make_qtd_token(pid, toggle, pktLen, false, 3);
         qtd^.SWPad0 := pktLen; { Original data length, excluding SETUP/status }
@@ -1203,15 +1181,10 @@ begin
         end;
         prevqTD := qtd;
 
-        toggle := NOT toggle;
-
-        if remaining > maxPkt then begin
-            offset := offset + maxPkt;
-            remaining := remaining - maxPkt;
-        end else begin
-            offset := offset + remaining;
-            remaining := 0;
-        end;
+        if (pktLen = 0) or (((pktLen + maxPkt - 1) div maxPkt) and 1 <> 0) then
+            toggle := not toggle;
+        inc(offset, pktLen);
+        dec(remaining, pktLen);
     until remaining = 0;
 
     { Mark last qTD with IOC }
@@ -1271,6 +1244,15 @@ begin
 
     ehci_submit_async := true;
     pop_trace;
+end;
+
+{ Largest safe bulk submission; class drivers do not know descriptor geometry. }
+function ehci_bulk_limit(hc : PUSBHCDriver; ep : PUSBEndpoint; buffer : pointer; length : uint32) : uint32;
+var limit : uint32;
+begin
+    limit := hc^.BulkWindowBytes;
+    if limit > length then limit := length;
+    ehci_bulk_limit := limit;
 end;
 
 function ehci_submit(hc : PUSBHCDriver; transfer : PUSBTransfer) : boolean;
@@ -1596,6 +1578,8 @@ begin
         hc.fnStart      := TUSBHCStart(@ehci_start);
         hc.fnStop       := TUSBHCStop(@ehci_stop);
         hc.fnSubmit     := TUSBHCSubmit(@ehci_submit);
+        hc.fnBulkLimit  := @ehci_bulk_limit;
+        hc.BulkWindowBytes := 1024 * 1024; { 64 qTDs on a high-speed bulk endpoint. }
         hc.fnPoll       := TUSBHCPoll(@ehci_poll);
         hc.fnPortReset  := TUSBHCPortReset(@ehci_port_reset);
         hc.fnPortStatus := TUSBHCPortStatus(@ehci_port_status);

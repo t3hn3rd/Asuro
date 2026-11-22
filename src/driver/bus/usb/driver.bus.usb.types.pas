@@ -275,6 +275,7 @@ type
     TUSBHCStart      = function(hc : PUSBHCDriver) : boolean;
     TUSBHCStop       = procedure(hc : PUSBHCDriver);
     TUSBHCSubmit     = function(hc : PUSBHCDriver; transfer : PUSBTransfer) : boolean;
+    TUSBBulkLimit = function(hc : PUSBHCDriver; ep : PUSBEndpoint; buffer : pointer; length : uint32) : uint32;
     TUSBHCPoll       = procedure(hc : PUSBHCDriver);
     TUSBHCPortReset  = function(hc : PUSBHCDriver; port : uint8) : boolean;
     TUSBHCPortStatus = function(hc : PUSBHCDriver; port : uint8) : uint32;
@@ -299,6 +300,8 @@ type
         fnStart      : TUSBHCStart;
         fnStop       : TUSBHCStop;
         fnSubmit     : TUSBHCSubmit;
+        fnBulkLimit  : TUSBBulkLimit;
+        BulkWindowBytes : uint32; { Preferred DMA window, zero uses class default. }
         fnPoll       : TUSBHCPoll;
         fnPortReset  : TUSBHCPortReset;
         fnPortStatus : TUSBHCPortStatus;
@@ -446,6 +449,8 @@ begin
         hc^.fnStart     := nil;
         hc^.fnStop      := nil;
         hc^.fnSubmit    := nil;
+        hc^.fnBulkLimit := nil;
+        hc^.BulkWindowBytes := 0;
         hc^.fnPoll      := nil;
         hc^.fnPortReset := nil;
         hc^.fnPortStatus := nil;

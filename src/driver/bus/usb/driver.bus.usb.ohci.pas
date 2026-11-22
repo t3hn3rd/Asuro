@@ -1008,6 +1008,15 @@ begin
     pop_trace;
 end;
 
+{ Largest safe bulk submission; class drivers do not know descriptor geometry. }
+function ohci_bulk_limit(hc : PUSBHCDriver; ep : PUSBEndpoint; buffer : pointer; length : uint32) : uint32;
+var limit : uint32;
+begin
+    limit := 64 * 4096; { Bounded general-TD chain, below the 128-TD poll limit. }
+    if limit > length then limit := length;
+    ohci_bulk_limit := limit;
+end;
+
 function ohci_submit(hc : PUSBHCDriver; transfer : PUSBTransfer) : boolean;
 begin
     push_trace('driver.bus.usb.ohci.ohci_submit');
@@ -1317,6 +1326,7 @@ begin
         hc.fnStart      := TUSBHCStart(@ohci_start);
         hc.fnStop       := TUSBHCStop(@ohci_stop);
         hc.fnSubmit     := TUSBHCSubmit(@ohci_submit);
+        hc.fnBulkLimit  := @ohci_bulk_limit;
         hc.fnPoll       := TUSBHCPoll(@ohci_poll);
         hc.fnPortReset  := TUSBHCPortReset(@ohci_port_reset);
         hc.fnPortStatus := TUSBHCPortStatus(@ohci_port_status);

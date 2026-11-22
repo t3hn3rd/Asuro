@@ -198,6 +198,7 @@ type
     PPDeleteDirHook  = procedure(volume : PStorage_Volume; path : pchar; status : puint32);
     PPValidateLabelHook = function(text : pchar; var normalized : TVolumeLabel) : TError;
     PPSetLabelHook = function(volume : PStorage_Volume; text : pchar) : TError;
+    PPReleaseVolumeHook = procedure(volume : PStorage_Volume);
     PPIdentifyHook   = function(volume : PStorage_Volume) : boolean;
     PPRenameFileHook = procedure(volume : PStorage_Volume; filePath : pchar; newName : pchar; status : puint32);
     { Offset-based read: reads byteCount bytes starting at byte offset into the file.
@@ -331,6 +332,8 @@ type
         formatParamFlags        : uint32;
         validateLabelCallback   : PPValidateLabelHook;
         setLabelCallback        : PPSetLabelHook;
+        { Optional teardown after handles close, before the volume is freed. }
+        releaseVolumeCallback   : PPReleaseVolumeHook;
     end;
 
     { Generic storage volume }

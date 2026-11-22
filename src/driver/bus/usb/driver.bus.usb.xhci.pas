@@ -383,6 +383,8 @@ type
         Transfer : PUSBTransfer;
         SlotID   : uint8;
         EPID     : uint8;
+        Ring     : PXHCI_Ring;
+        First, Count : uint32;
     end;
 
     { Private data for an driver.bus.usb.xhci host controller instance }
@@ -613,7 +615,7 @@ end;
 
 { Enqueue a TRB onto a command or transfer ring.
   Sets the cycle bit according to the ring's current cycle state. }
-procedure xhci_ring_enqueue(ring : PXHCI_Ring; trb : PXHCI_TRB);
+procedure xhci_ring_enqueue(ring : PXHCI_Ring; trb : PXHCI_TRB; deferOwnership : boolean);
 var
     dest    : PXHCI_TRB;
     linkTRB : PXHCI_TRB;
@@ -628,7 +630,7 @@ begin
     dest^.Status  := trb^.Status;
 
     { Set cycle bit: clear it first, then OR in the current cycle }
-    dest^.Control := (trb^.Control AND (NOT uint32(XHCI_TRB_CYCLE))) OR uint32(ring^.CycleBit);
+    dest^.Control := (trb^.Control AND (NOT uint32(XHCI_TRB_CYCLE))) OR (uint32(ring^.CycleBit) xor ord(deferOwnership));
 
     { Advance enqueue pointer }
     ring^.Enqueue := ring^.Enqueue + 1;
@@ -637,7 +639,8 @@ begin
     if ring^.Enqueue >= (ring^.Size - 1) then begin
         { Set cycle bit on the Link TRB }
         linkTRB := PXHCI_TRB(uint32(ring^.Base) + ((ring^.Size - 1) * sizeof(TXHCI_TRB)));
-        linkTRB^.Control := (linkTRB^.Control AND (NOT uint32(XHCI_TRB_CYCLE))) OR uint32(ring^.CycleBit);
+        linkTRB^.Control := (linkTRB^.Control AND (NOT uint32(XHCI_TRB_CYCLE OR XHCI_TRB_CH))) OR
+                            (trb^.Control AND XHCI_TRB_CH) OR uint32(ring^.CycleBit);
         { Toggle cycle bit and wrap to beginning }
         if ring^.CycleBit = 1 then
             ring^.CycleBit := 0
@@ -718,7 +721,7 @@ begin
     priv^.CmdComplete := false;
     priv^.CmdResultCode := 0;
     priv^.CmdSlotID := 0;
-    xhci_ring_enqueue(@priv^.CmdRing, trb);
+    xhci_ring_enqueue(@priv^.CmdRing, trb, false);
     xhci_ring_doorbell(priv, 0, 0);
 end;
 
@@ -1572,16 +1575,19 @@ begin
 end;
 
 { Add a pending transfer to track for completion }
-procedure xhci_add_pending(priv : PXHCI_PrivData; transfer : PUSBTransfer; slotID, epID : uint8);
+function xhci_add_pending(priv : PXHCI_PrivData; transfer : PUSBTransfer; slotID, epID : uint8) : PXHCI_PendingTransfer;
 var
     pend : PXHCI_PendingTransfer;
 begin
+    xhci_add_pending := nil;
     if (priv = nil) or (priv^.PendingList = nil) then exit;
     pend := PXHCI_PendingTransfer(LL_Add(priv^.PendingList));
     if pend <> nil then begin
         pend^.Transfer := transfer;
         pend^.SlotID := slotID;
         pend^.EPID := epID;
+        pend^.Ring := nil;
+        xhci_add_pending := pend;
     end;
 end;
 
@@ -1671,7 +1677,7 @@ begin
         8,  { TRB Transfer Length = 8 (setup packet) }
         (XHCI_TRB_SETUP_STAGE SHL XHCI_TRB_TYPE_SHIFT) OR XHCI_TRB_IDT OR trt
     );
-    xhci_ring_enqueue(ring, @trb);
+    xhci_ring_enqueue(ring, @trb, false);
 
     { ---- Data Stage TRB (if there's data) ---- }
     if transfer^.BufferLen > 0 then begin
@@ -1686,7 +1692,7 @@ begin
             transfer^.BufferLen,
             (XHCI_TRB_DATA_STAGE SHL XHCI_TRB_TYPE_SHIFT) OR dir
         );
-        xhci_ring_enqueue(ring, @trb);
+        xhci_ring_enqueue(ring, @trb, false);
     end;
 
     { ---- Status Stage TRB ---- }
@@ -1702,7 +1708,7 @@ begin
         0, 0, 0,
         (XHCI_TRB_STATUS_STAGE SHL XHCI_TRB_TYPE_SHIFT) OR XHCI_TRB_IOC OR dir
     );
-    xhci_ring_enqueue(ring, @trb);
+    xhci_ring_enqueue(ring, @trb, false);
 
     { Set status and track pending BEFORE ringing doorbell to avoid ISR race }
     transfer^.Status := tsInProgress;
@@ -1716,6 +1722,25 @@ begin
     pop_trace;
 end;
 
+{ A Normal TRB covers contiguous physical bytes within one 64 KiB boundary. }
+function xhci_trb_span(buffer : pointer; length : uint32) : uint32;
+var limit, base, offset : uint32;
+begin
+    base := vtop(uint32(buffer));
+    limit := 65536 - (base and $FFFF); { One Normal TRB cannot cross 64 KiB. }
+    if limit > length then limit := length;
+    offset := 4096 - (uint32(buffer) and $FFF);
+    while offset < limit do begin
+        if vtop(uint32(buffer) + offset) <> base + offset then begin
+            limit := offset;
+            break;
+        end;
+        inc(offset, 4096);
+    end;
+    if limit > length then limit := length;
+    xhci_trb_span := limit;
+end;
+
 { Submit a bulk or interrupt transfer }
 function xhci_submit_bulk_intr(hc : PUSBHCDriver; transfer : PUSBTransfer) : boolean;
 var
@@ -1726,7 +1751,10 @@ var
     dci     : uint8;
     ring    : PXHCI_Ring;
     trb     : TXHCI_TRB;
-    bufPhys : uint32;
+    offset, span, remainingPackets, maxPacket, control, flags : uint32;
+    freeSlots, count, firstIndex, firstCycle : uint32;
+    firstTRB : PXHCI_TRB;
+    pending : PXHCI_PendingTransfer;
 begin
     push_trace('driver.bus.usb.xhci.xhci_submit_bulk_intr');
     xhci_submit_bulk_intr := false;
@@ -1753,26 +1781,79 @@ begin
         end;
     end;
 
-    bufPhys := vtop(uint32(transfer^.Buffer));
+    maxPacket := transfer^.Endpoint^.MaxPacket;
+    if maxPacket = 0 then begin
+        pop_trace;
+        exit;
+    end;
+    { Count descriptors before modifying the ring. Keep one slot empty so
+      equal producer and consumer indices always mean an empty ring. }
+    count := 0;
+    offset := 0;
+    repeat
+        inc(count);
+        if count >= ring^.Size - 1 then begin
+            pop_trace;
+            exit;
+        end;
+        inc(offset, xhci_trb_span(pointer(uint32(transfer^.Buffer) + offset),
+                                  transfer^.BufferLen - offset));
+    until offset = transfer^.BufferLen;
 
-    { Normal TRB }
-    trb := xhci_make_trb(
-        bufPhys, 0,
-        transfer^.BufferLen,
-        (XHCI_TRB_NORMAL SHL XHCI_TRB_TYPE_SHIFT) OR XHCI_TRB_IOC
-    );
-    xhci_ring_enqueue(ring, @trb);
-
-    { Set status and track pending BEFORE ringing doorbell to avoid ISR race }
+    asm pushfd; cli; pop flags end;
+    freeSlots := (ring^.Dequeue + ring^.Size - 2 - ring^.Enqueue) mod (ring^.Size - 1);
+    if count > freeSlots then begin
+        if (flags and $200) <> 0 then asm sti end;
+        pop_trace;
+        exit;
+    end;
+    pending := xhci_add_pending(priv, transfer, slotID, dci);
+    if pending = nil then begin
+        if (flags and $200) <> 0 then asm sti end;
+        pop_trace;
+        exit;
+    end;
+    firstIndex := ring^.Enqueue;
+    firstCycle := ring^.CycleBit;
+    firstTRB := @ring^.Base[firstIndex];
+    pending^.Ring := ring;
+    pending^.First := firstIndex;
+    pending^.Count := count;
+    offset := 0;
+    repeat
+        span := xhci_trb_span(pointer(uint32(transfer^.Buffer) + offset), transfer^.BufferLen - offset);
+        trb.Param0 := vtop(uint32(transfer^.Buffer) + offset);
+        trb.Param1 := 0;
+        inc(offset, span);
+        remainingPackets := 0;
+        control := XHCI_TRB_NORMAL shl XHCI_TRB_TYPE_SHIFT;
+        if offset < transfer^.BufferLen then begin
+            control := control or XHCI_TRB_CH;
+            remainingPackets := (transfer^.BufferLen + maxPacket - 1) div maxPacket - offset div maxPacket;
+            if remainingPackets > 31 then remainingPackets := 31;
+        end else
+            control := control or XHCI_TRB_IOC;
+        if epIsIn then control := control or XHCI_TRB_ISP;
+        trb.Status := span or (remainingPackets shl 17);
+        trb.Control := control;
+        xhci_ring_enqueue(ring, @trb, ring^.Enqueue = firstIndex);
+    until offset = transfer^.BufferLen;
     transfer^.Status := tsInProgress;
     transfer^.HCPriv := Pointer(uint32(slotID));
-    xhci_add_pending(priv, transfer, slotID, dci);
-
-    { Ring doorbell: target = DCI }
+    { Publish the first descriptor last, after all following descriptors
+      and the completion record are visible. x86 orders these DMA stores. }
+    firstTRB^.Control := (firstTRB^.Control and not uint32(XHCI_TRB_CYCLE)) or firstCycle;
     xhci_ring_doorbell(priv, uint32(slotID), uint32(dci));
+    if (flags and $200) <> 0 then asm sti end;
 
     xhci_submit_bulk_intr := true;
     pop_trace;
+end;
+
+function xhci_bulk_limit(hc : PUSBHCDriver; ep : PUSBEndpoint; buffer : pointer; length : uint32) : uint32;
+begin
+    xhci_bulk_limit := length;
+    if length > hc^.BulkWindowBytes then xhci_bulk_limit := hc^.BulkWindowBytes;
 end;
 
 function xhci_submit(hc : PUSBHCDriver; transfer : PUSBTransfer) : boolean;
@@ -1872,6 +1953,8 @@ var
     slotID    : uint8;
     epID      : uint8;
     xferLen   : uint32;
+    index, n, bytes, span : uint32;
+    entry : PXHCI_TRB;
     i         : uint32;
     pend      : PXHCI_PendingTransfer;
     transfer  : PUSBTransfer;
@@ -1902,16 +1985,33 @@ begin
                 xferLen := evt.Status AND $00FFFFFF;
 
                 { Find matching pending transfer }
-                if priv^.PendingList <> nil then begin
+                if (priv^.PendingList <> nil) and (LL_Size(priv^.PendingList) <> 0) then begin
                     for i := 0 to LL_Size(priv^.PendingList) - 1 do begin
                         pend := PXHCI_PendingTransfer(LL_Get(priv^.PendingList, i));
                         if (pend <> nil) and (pend^.Transfer <> nil) and
                            (pend^.SlotID = slotID) and (pend^.EPID = epID) then begin
+                            bytes := 0;
+                            if pend^.Ring <> nil then begin
+                                index := pend^.First;
+                                n := 0;
+                                while n < pend^.Count do begin
+                                    entry := @pend^.Ring^.Base[index];
+                                    span := entry^.Status and $1FFFF;
+                                    if vtop(uint32(entry)) = evt.Param0 then break;
+                                    inc(bytes, span);
+                                    index := (index + 1) mod (pend^.Ring^.Size - 1);
+                                    inc(n);
+                                end;
+                                if n = pend^.Count then continue;
+                                if xferLen <= span then inc(bytes, span - xferLen);
+                                pend^.Ring^.Dequeue := (pend^.First + pend^.Count) mod (pend^.Ring^.Size - 1);
+                            end;
                             transfer := pend^.Transfer;
                             transfer^.Status := xhci_cc_to_status(cc);
                             if (cc = XHCI_CC_SUCCESS) or (cc = XHCI_CC_SHORT_PACKET) then begin
                                 { xferLen in Transfer Event is residual (remaining bytes) }
-                                if xferLen <= transfer^.BufferLen then
+                                if pend^.Ring <> nil then transfer^.ActualLen := bytes
+                                else if xferLen <= transfer^.BufferLen then
                                     transfer^.ActualLen := transfer^.BufferLen - xferLen
                                 else
                                     transfer^.ActualLen := transfer^.BufferLen;
@@ -2098,6 +2198,8 @@ begin
         hc.fnStart      := TUSBHCStart(@xhci_start);
         hc.fnStop       := TUSBHCStop(@xhci_stop);
         hc.fnSubmit     := TUSBHCSubmit(@xhci_submit);
+        hc.fnBulkLimit  := @xhci_bulk_limit;
+        hc.BulkWindowBytes := 1024 * 1024;
         hc.fnPoll       := TUSBHCPoll(@xhci_poll);
         hc.fnPortReset  := TUSBHCPortReset(@xhci_port_reset);
         hc.fnPortStatus := TUSBHCPortStatus(@xhci_port_status);
@@ -2294,7 +2396,7 @@ begin
 
     { Enqueue first TRB }
     trb := xhci_make_trb($AA, $BB, $CC, XHCI_TRB_NORMAL SHL XHCI_TRB_TYPE_SHIFT);
-    xhci_ring_enqueue(@ring, @trb);
+    xhci_ring_enqueue(@ring, @trb, false);
     Assert(ring.Enqueue = 1, 'enq after 1st=1');
     dest := PXHCI_TRB(uint32(ring.Base));
     Assert(dest^.Param0 = $AA, 'enq 1st Param0');
@@ -2302,21 +2404,28 @@ begin
 
     { Enqueue second TRB }
     trb := xhci_make_trb($DD, $EE, $FF, XHCI_TRB_NORMAL SHL XHCI_TRB_TYPE_SHIFT);
-    xhci_ring_enqueue(@ring, @trb);
+    xhci_ring_enqueue(@ring, @trb, false);
     Assert(ring.Enqueue = 2, 'enq after 2nd=2');
 
     { Enqueue third TRB => hits Link TRB, wraps to 0, toggles cycle }
-    trb := xhci_make_trb($11, $22, $33, XHCI_TRB_NORMAL SHL XHCI_TRB_TYPE_SHIFT);
-    xhci_ring_enqueue(@ring, @trb);
+    trb := xhci_make_trb($11, $22, $33, (XHCI_TRB_NORMAL SHL XHCI_TRB_TYPE_SHIFT) OR XHCI_TRB_CH);
+    xhci_ring_enqueue(@ring, @trb, true);
     Assert(ring.Enqueue = 0, 'enq wrapped to 0');
     Assert(ring.CycleBit = 0, 'enq cycle toggled to 0');
 
+    Assert((ring.Base[2].Control and XHCI_TRB_CYCLE) = 0, 'chain head stays owned by software');
+    Assert((ring.Base[3].Control and XHCI_TRB_CH) <> 0, 'link continues TD across wrap');
+
     { Enqueue one more after wrap }
     trb := xhci_make_trb($44, $55, $66, XHCI_TRB_NORMAL SHL XHCI_TRB_TYPE_SHIFT);
-    xhci_ring_enqueue(@ring, @trb);
+    xhci_ring_enqueue(@ring, @trb, false);
     Assert(ring.Enqueue = 1, 'enq after wrap=1');
     dest := PXHCI_TRB(uint32(ring.Base));
     Assert((dest^.Control AND XHCI_TRB_CYCLE) = 0, 'enq wrap cycle=0');
+
+    xhci_ring_enqueue(@ring, @trb, false);
+    xhci_ring_enqueue(@ring, @trb, false);
+    Assert((ring.Base[3].Control and XHCI_TRB_CH) = 0, 'link drops previous chain bit at TD end');
 
     xhci_free_ring(ring);
 

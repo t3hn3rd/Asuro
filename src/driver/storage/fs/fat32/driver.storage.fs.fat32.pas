@@ -1,3 +1,18 @@
+//  Copyright 2026 Aaron Hance
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//  http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+
+{ @author(Aaron Hance <ah@aaronhance.me>) }
 unit driver.storage.fs.fat32;
 
 interface
@@ -8,7 +23,6 @@ uses
     driver.storage.types;
 
 procedure init;
-procedure FAT32ReleaseVolumeState(volume : PStorage_Volume);
 
 implementation
 
@@ -23,16 +37,12 @@ uses
 var
     filesystem : TFilesystem;
 
-procedure FAT32ReleaseVolumeState(volume : PStorage_Volume);
-begin
-    FAT32ReleaseVolumeCtx(volume);
-end;
-
 procedure init;
 begin
     io.syslog.logln('FAT32', 'init: registering FAT32 filesystem');
     memset(uint32(@filesystem), 0, sizeof(TFilesystem));
     filesystem.sName := 'FAT32';
+    filesystem.releaseVolumeCallback := @FAT32ReleaseVolumeCtx;
     filesystem.system_id := $0B;
     filesystem.readDirCallback := @FAT32ReadDirectory;
     filesystem.createDirCallback := @FAT32CreateDirectory;

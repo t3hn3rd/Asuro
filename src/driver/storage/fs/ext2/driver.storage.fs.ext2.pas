@@ -1,9 +1,23 @@
+//  Copyright 2026 Aaron Hance
+//
+//  Licensed under the Apache License, Version 2.0 (the "License");
+//  you may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at
+//
+//  http://www.apache.org/licenses/LICENSE-2.0
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+
+{ @author(Aaron Hance <ah@aaronhance.me>) }
 unit driver.storage.fs.ext2;
 
 interface
 uses driver.storage.types;
 procedure init;
-procedure ReleaseVolume(volume : PStorage_Volume);
 
 implementation
 uses boot.mgr, driver.storage.fs.mgr, driver.storage.vol.mgr,
@@ -29,9 +43,6 @@ var
     worker : PProcessContext = nil;
     head, tail : PWork;
     queued : uint32;
-
-procedure ReleaseVolume(volume : PStorage_Volume);
-begin driver.storage.fs.ext2.core.ReleaseVolume(volume); end;
 
 function DoTransfer(volume : PStorage_Volume; directory, name : pchar; offset : uint32;
                     buffer : puint32; count : uint32; ctx : pointer; writing : boolean; var error : TError) : uint32;
@@ -188,6 +199,7 @@ end;
 procedure init;
 begin
     memset(uint32(@filesystem),0,sizeof(filesystem));
+    filesystem.releaseVolumeCallback := @driver.storage.fs.ext2.core.ReleaseVolume;
     filesystem.sName:='EXT2'; filesystem.system_id:=$83;
     filesystem.identifyCallback:=@Identify; filesystem.detectCallback:=@Detect;
     filesystem.validateFormat:=@ValidateFormat; filesystem.createCallback:=@FormatVolume;
