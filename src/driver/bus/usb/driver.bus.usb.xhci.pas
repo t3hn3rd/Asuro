@@ -35,6 +35,9 @@ procedure UnitTest;
 
 implementation
 
+uses
+    test.harness;
+
 { ========================= Stage 1: Constants & Types ========================= }
 
 { ---- Capability Register Offsets (from BAR0) ---- }
@@ -2253,256 +2256,222 @@ end;
 
 procedure UnitTest;
 var
-    passed, failed : uint32;
-
-    procedure Assert(condition : boolean; testName : pchar);
-    var
-        msg : pchar;
-    begin
-        if condition then begin
-            inc(passed);
-        end else begin
-            inc(failed);
-            msg := stringConcat('FAIL: ', testName);
-            io.syslog.logln('driver.bus.usb.xhci', msg);
-            kfree(void(msg));
-        end;
-    end;
-
-    procedure PrintSummary;
-    var
-        pStr, fStr, msg, tmp : pchar;
-    begin
-        pStr := intToString(passed);
-        fStr := intToString(failed);
-        msg := stringConcat(pStr, ' passed, ');
-        tmp := stringConcat(msg, fStr);
-        kfree(void(msg));
-        msg := stringConcat(tmp, ' failed.');
-        kfree(void(tmp));
-        io.syslog.logln('driver.bus.usb.xhci', msg);
-        kfree(void(msg));
-        kfree(void(pStr));
-        kfree(void(fStr));
-    end;
-
-var
+    context : TTestContext;
     trb  : TXHCI_TRB;
     ring : TXHCI_Ring;
     dest : PXHCI_TRB;
+
 begin
-    passed := 0;
-    failed := 0;
-    io.syslog.logln('driver.bus.usb.xhci', 'Unit tests starting...');
+    test.harness.Start(@context, 'driver.bus.usb.xhci');
 
     { === Structure Size Tests === }
-    Assert(sizeof(TXHCI_TRB) = 16, 'sizeof TRB=16');
-    Assert(sizeof(TXHCI_SlotCtx) = 32, 'sizeof SlotCtx=32');
-    Assert(sizeof(TXHCI_EPCtx) = 32, 'sizeof EPCtx=32');
-    Assert(sizeof(TXHCI_InputCtrlCtx) = 32, 'sizeof InputCtrlCtx=32');
-    Assert(sizeof(TXHCI_ERSTE) = 16, 'sizeof ERSTE=16');
+    test.harness.Assert(@context, sizeof(TXHCI_TRB) = 16, 'sizeof TRB=16');
+    test.harness.Assert(@context, sizeof(TXHCI_SlotCtx) = 32, 'sizeof SlotCtx=32');
+    test.harness.Assert(@context, sizeof(TXHCI_EPCtx) = 32, 'sizeof EPCtx=32');
+    test.harness.Assert(@context, sizeof(TXHCI_InputCtrlCtx) = 32, 'sizeof InputCtrlCtx=32');
+    test.harness.Assert(@context, sizeof(TXHCI_ERSTE) = 16, 'sizeof ERSTE=16');
 
     { === TRB Construction === }
     trb := xhci_make_trb($12345678, $9ABCDEF0, $AABB0000, $CC00DD00);
-    Assert(trb.Param0 = $12345678, 'trb Param0');
-    Assert(trb.Param1 = $9ABCDEF0, 'trb Param1');
-    Assert(trb.Status = $AABB0000, 'trb Status');
-    Assert(trb.Control = $CC00DD00, 'trb Control');
+    test.harness.Assert(@context, trb.Param0 = $12345678, 'trb Param0');
+    test.harness.Assert(@context, trb.Param1 = $9ABCDEF0, 'trb Param1');
+    test.harness.Assert(@context, trb.Status = $AABB0000, 'trb Status');
+    test.harness.Assert(@context, trb.Control = $CC00DD00, 'trb Control');
 
     { TRB type encoding }
     trb := xhci_make_trb(0, 0, 0, XHCI_TRB_ENABLE_SLOT SHL XHCI_TRB_TYPE_SHIFT);
-    Assert((trb.Control AND XHCI_TRB_TYPE_MASK) SHR XHCI_TRB_TYPE_SHIFT = XHCI_TRB_ENABLE_SLOT,
+    test.harness.Assert(@context, (trb.Control AND XHCI_TRB_TYPE_MASK) SHR XHCI_TRB_TYPE_SHIFT = XHCI_TRB_ENABLE_SLOT,
            'TRB type ENABLE_SLOT');
 
     trb := xhci_make_trb(0, 0, 0, XHCI_TRB_ADDRESS_DEVICE SHL XHCI_TRB_TYPE_SHIFT);
-    Assert((trb.Control AND XHCI_TRB_TYPE_MASK) SHR XHCI_TRB_TYPE_SHIFT = XHCI_TRB_ADDRESS_DEVICE,
+    test.harness.Assert(@context, (trb.Control AND XHCI_TRB_TYPE_MASK) SHR XHCI_TRB_TYPE_SHIFT = XHCI_TRB_ADDRESS_DEVICE,
            'TRB type ADDRESS_DEVICE');
 
     trb := xhci_make_trb(0, 0, 0, XHCI_TRB_SETUP_STAGE SHL XHCI_TRB_TYPE_SHIFT);
-    Assert((trb.Control AND XHCI_TRB_TYPE_MASK) SHR XHCI_TRB_TYPE_SHIFT = XHCI_TRB_SETUP_STAGE,
+    test.harness.Assert(@context, (trb.Control AND XHCI_TRB_TYPE_MASK) SHR XHCI_TRB_TYPE_SHIFT = XHCI_TRB_SETUP_STAGE,
            'TRB type SETUP_STAGE');
 
     trb := xhci_make_trb(0, 0, 0, XHCI_TRB_LINK SHL XHCI_TRB_TYPE_SHIFT);
-    Assert((trb.Control AND XHCI_TRB_TYPE_MASK) SHR XHCI_TRB_TYPE_SHIFT = XHCI_TRB_LINK,
+    test.harness.Assert(@context, (trb.Control AND XHCI_TRB_TYPE_MASK) SHR XHCI_TRB_TYPE_SHIFT = XHCI_TRB_LINK,
            'TRB type LINK');
 
     { === TRB Flag Tests === }
-    Assert(XHCI_TRB_CYCLE = $01, 'TRB_CYCLE=$01');
-    Assert(XHCI_TRB_IOC = $20, 'TRB_IOC=$20');
-    Assert(XHCI_TRB_IDT = $40, 'TRB_IDT=$40');
-    Assert(XHCI_TRB_CH = $10, 'TRB_CH=$10');
+    test.harness.Assert(@context, XHCI_TRB_CYCLE = $01, 'TRB_CYCLE=$01');
+    test.harness.Assert(@context, XHCI_TRB_IOC = $20, 'TRB_IOC=$20');
+    test.harness.Assert(@context, XHCI_TRB_IDT = $40, 'TRB_IDT=$40');
+    test.harness.Assert(@context, XHCI_TRB_CH = $10, 'TRB_CH=$10');
 
     { === Completion Code Tests === }
-    Assert(xhci_cc_to_status(XHCI_CC_SUCCESS) = tsSuccess, 'cc SUCCESS->tsSuccess');
-    Assert(xhci_cc_to_status(XHCI_CC_SHORT_PACKET) = tsSuccess, 'cc SHORT_PACKET->tsSuccess');
-    Assert(xhci_cc_to_status(XHCI_CC_STALL) = tsStall, 'cc STALL->tsStall');
-    Assert(xhci_cc_to_status(XHCI_CC_BABBLE) = tsBabble, 'cc BABBLE->tsBabble');
-    Assert(xhci_cc_to_status(XHCI_CC_DATA_BUFFER_ERROR) = tsDataBufferError, 'cc DATA_BUF');
-    Assert(xhci_cc_to_status(XHCI_CC_USB_TRANSACTION) = tsCRCError, 'cc USB_TRANSACTION');
-    Assert(xhci_cc_to_status(XHCI_CC_TRB_ERROR) = tsDataBufferError, 'cc TRB_ERROR');
-    Assert(xhci_cc_to_status(0) = tsTimeout, 'cc 0->tsTimeout');
+    test.harness.Assert(@context, xhci_cc_to_status(XHCI_CC_SUCCESS) = tsSuccess, 'cc SUCCESS->tsSuccess');
+    test.harness.Assert(@context, xhci_cc_to_status(XHCI_CC_SHORT_PACKET) = tsSuccess, 'cc SHORT_PACKET->tsSuccess');
+    test.harness.Assert(@context, xhci_cc_to_status(XHCI_CC_STALL) = tsStall, 'cc STALL->tsStall');
+    test.harness.Assert(@context, xhci_cc_to_status(XHCI_CC_BABBLE) = tsBabble, 'cc BABBLE->tsBabble');
+    test.harness.Assert(@context, xhci_cc_to_status(XHCI_CC_DATA_BUFFER_ERROR) = tsDataBufferError, 'cc DATA_BUF');
+    test.harness.Assert(@context, xhci_cc_to_status(XHCI_CC_USB_TRANSACTION) = tsCRCError, 'cc USB_TRANSACTION');
+    test.harness.Assert(@context, xhci_cc_to_status(XHCI_CC_TRB_ERROR) = tsDataBufferError, 'cc TRB_ERROR');
+    test.harness.Assert(@context, xhci_cc_to_status(0) = tsTimeout, 'cc 0->tsTimeout');
 
     { === Speed Mapping Tests === }
-    Assert(xhci_map_speed(XHCI_SPEED_FULL) = USB_SPEED_FULL, 'speed FULL');
-    Assert(xhci_map_speed(XHCI_SPEED_LOW) = USB_SPEED_LOW, 'speed LOW');
-    Assert(xhci_map_speed(XHCI_SPEED_HIGH) = USB_SPEED_HIGH, 'speed HIGH');
-    Assert(xhci_map_speed(XHCI_SPEED_SUPER) = USB_SPEED_SUPER, 'speed SUPER');
-    Assert(xhci_map_speed(0) = USB_SPEED_FULL, 'speed 0->FULL');
+    test.harness.Assert(@context, xhci_map_speed(XHCI_SPEED_FULL) = USB_SPEED_FULL, 'speed FULL');
+    test.harness.Assert(@context, xhci_map_speed(XHCI_SPEED_LOW) = USB_SPEED_LOW, 'speed LOW');
+    test.harness.Assert(@context, xhci_map_speed(XHCI_SPEED_HIGH) = USB_SPEED_HIGH, 'speed HIGH');
+    test.harness.Assert(@context, xhci_map_speed(XHCI_SPEED_SUPER) = USB_SPEED_SUPER, 'speed SUPER');
+    test.harness.Assert(@context, xhci_map_speed(0) = USB_SPEED_FULL, 'speed 0->FULL');
 
-    Assert(xhci_slot_speed(USB_SPEED_FULL) = XHCI_SPEED_FULL, 'slot_speed FULL');
-    Assert(xhci_slot_speed(USB_SPEED_LOW) = XHCI_SPEED_LOW, 'slot_speed LOW');
-    Assert(xhci_slot_speed(USB_SPEED_HIGH) = XHCI_SPEED_HIGH, 'slot_speed HIGH');
-    Assert(xhci_slot_speed(USB_SPEED_SUPER) = XHCI_SPEED_SUPER, 'slot_speed SUPER');
+    test.harness.Assert(@context, xhci_slot_speed(USB_SPEED_FULL) = XHCI_SPEED_FULL, 'slot_speed FULL');
+    test.harness.Assert(@context, xhci_slot_speed(USB_SPEED_LOW) = XHCI_SPEED_LOW, 'slot_speed LOW');
+    test.harness.Assert(@context, xhci_slot_speed(USB_SPEED_HIGH) = XHCI_SPEED_HIGH, 'slot_speed HIGH');
+    test.harness.Assert(@context, xhci_slot_speed(USB_SPEED_SUPER) = XHCI_SPEED_SUPER, 'slot_speed SUPER');
 
     { === DCI Calculation Tests === }
-    Assert(xhci_ep_to_dci(0, false) = 1, 'DCI EP0=1');
-    Assert(xhci_ep_to_dci(0, true) = 1, 'DCI EP0 IN=1');
-    Assert(xhci_ep_to_dci(1, false) = 2, 'DCI EP1 OUT=2');
-    Assert(xhci_ep_to_dci(1, true) = 3, 'DCI EP1 IN=3');
-    Assert(xhci_ep_to_dci(2, false) = 4, 'DCI EP2 OUT=4');
-    Assert(xhci_ep_to_dci(2, true) = 5, 'DCI EP2 IN=5');
-    Assert(xhci_ep_to_dci(15, true) = 31, 'DCI EP15 IN=31');
+    test.harness.Assert(@context, xhci_ep_to_dci(0, false) = 1, 'DCI EP0=1');
+    test.harness.Assert(@context, xhci_ep_to_dci(0, true) = 1, 'DCI EP0 IN=1');
+    test.harness.Assert(@context, xhci_ep_to_dci(1, false) = 2, 'DCI EP1 OUT=2');
+    test.harness.Assert(@context, xhci_ep_to_dci(1, true) = 3, 'DCI EP1 IN=3');
+    test.harness.Assert(@context, xhci_ep_to_dci(2, false) = 4, 'DCI EP2 OUT=4');
+    test.harness.Assert(@context, xhci_ep_to_dci(2, true) = 5, 'DCI EP2 IN=5');
+    test.harness.Assert(@context, xhci_ep_to_dci(15, true) = 31, 'DCI EP15 IN=31');
 
     { === Default Max Packet Tests === }
-    Assert(xhci_default_max_packet(USB_SPEED_LOW) = 8, 'maxpkt LOW=8');
-    Assert(xhci_default_max_packet(USB_SPEED_FULL) = 8, 'maxpkt FULL=8');
-    Assert(xhci_default_max_packet(USB_SPEED_HIGH) = 64, 'maxpkt HIGH=64');
-    Assert(xhci_default_max_packet(USB_SPEED_SUPER) = 512, 'maxpkt SUPER=512');
+    test.harness.Assert(@context, xhci_default_max_packet(USB_SPEED_LOW) = 8, 'maxpkt LOW=8');
+    test.harness.Assert(@context, xhci_default_max_packet(USB_SPEED_FULL) = 8, 'maxpkt FULL=8');
+    test.harness.Assert(@context, xhci_default_max_packet(USB_SPEED_HIGH) = 64, 'maxpkt HIGH=64');
+    test.harness.Assert(@context, xhci_default_max_packet(USB_SPEED_SUPER) = 512, 'maxpkt SUPER=512');
 
     { === Context Size Tests === }
-    Assert(xhci_context_entry_size(0) = 32, 'ctxsize no CSZ=32');
-    Assert(xhci_context_entry_size(XHCI_HCC1_CSZ) = 64, 'ctxsize CSZ=64');
-    Assert(xhci_context_entry_size($FFFFFFFF) = 64, 'ctxsize all bits=64');
+    test.harness.Assert(@context, xhci_context_entry_size(0) = 32, 'ctxsize no CSZ=32');
+    test.harness.Assert(@context, xhci_context_entry_size(XHCI_HCC1_CSZ) = 64, 'ctxsize CSZ=64');
+    test.harness.Assert(@context, xhci_context_entry_size($FFFFFFFF) = 64, 'ctxsize all bits=64');
 
     { === Ring Allocation Tests === }
     ring := xhci_alloc_ring(16);
-    Assert(ring.Base <> nil, 'alloc_ring not nil');
-    Assert((uint32(ring.Base) AND $FFF) = 0, 'alloc_ring page aligned');
-    Assert(ring.Size = 16, 'alloc_ring size=16');
-    Assert(ring.Enqueue = 0, 'alloc_ring enqueue=0');
-    Assert(ring.CycleBit = 1, 'alloc_ring cycle=1');
+    test.harness.Assert(@context, ring.Base <> nil, 'alloc_ring not nil');
+    test.harness.Assert(@context, (uint32(ring.Base) AND $FFF) = 0, 'alloc_ring page aligned');
+    test.harness.Assert(@context, ring.Size = 16, 'alloc_ring size=16');
+    test.harness.Assert(@context, ring.Enqueue = 0, 'alloc_ring enqueue=0');
+    test.harness.Assert(@context, ring.CycleBit = 1, 'alloc_ring cycle=1');
     { Check Link TRB at last entry }
     dest := PXHCI_TRB(uint32(ring.Base) + (15 * sizeof(TXHCI_TRB)));
-    Assert((dest^.Control AND XHCI_TRB_TYPE_MASK) SHR XHCI_TRB_TYPE_SHIFT = XHCI_TRB_LINK,
+    test.harness.Assert(@context, (dest^.Control AND XHCI_TRB_TYPE_MASK) SHR XHCI_TRB_TYPE_SHIFT = XHCI_TRB_LINK,
            'alloc_ring link TRB at end');
-    Assert((dest^.Control AND XHCI_TRB_TC) <> 0, 'alloc_ring link TC bit');
-    Assert(dest^.Param0 = vtop(uint32(ring.Base)), 'alloc_ring link->start');
+    test.harness.Assert(@context, (dest^.Control AND XHCI_TRB_TC) <> 0, 'alloc_ring link TC bit');
+    test.harness.Assert(@context, dest^.Param0 = vtop(uint32(ring.Base)), 'alloc_ring link->start');
     xhci_free_ring(ring);
 
     { === Ring Enqueue Tests === }
     ring := xhci_alloc_ring(4); { 3 usable + 1 Link }
-    Assert(ring.Enqueue = 0, 'enq initial=0');
-    Assert(ring.CycleBit = 1, 'enq initial cycle=1');
+    test.harness.Assert(@context, ring.Enqueue = 0, 'enq initial=0');
+    test.harness.Assert(@context, ring.CycleBit = 1, 'enq initial cycle=1');
 
     { Enqueue first TRB }
     trb := xhci_make_trb($AA, $BB, $CC, XHCI_TRB_NORMAL SHL XHCI_TRB_TYPE_SHIFT);
     xhci_ring_enqueue(@ring, @trb, false);
-    Assert(ring.Enqueue = 1, 'enq after 1st=1');
+    test.harness.Assert(@context, ring.Enqueue = 1, 'enq after 1st=1');
     dest := PXHCI_TRB(uint32(ring.Base));
-    Assert(dest^.Param0 = $AA, 'enq 1st Param0');
-    Assert((dest^.Control AND XHCI_TRB_CYCLE) = 1, 'enq 1st cycle=1');
+    test.harness.Assert(@context, dest^.Param0 = $AA, 'enq 1st Param0');
+    test.harness.Assert(@context, (dest^.Control AND XHCI_TRB_CYCLE) = 1, 'enq 1st cycle=1');
 
     { Enqueue second TRB }
     trb := xhci_make_trb($DD, $EE, $FF, XHCI_TRB_NORMAL SHL XHCI_TRB_TYPE_SHIFT);
     xhci_ring_enqueue(@ring, @trb, false);
-    Assert(ring.Enqueue = 2, 'enq after 2nd=2');
+    test.harness.Assert(@context, ring.Enqueue = 2, 'enq after 2nd=2');
 
     { Enqueue third TRB => hits Link TRB, wraps to 0, toggles cycle }
     trb := xhci_make_trb($11, $22, $33, (XHCI_TRB_NORMAL SHL XHCI_TRB_TYPE_SHIFT) OR XHCI_TRB_CH);
     xhci_ring_enqueue(@ring, @trb, true);
-    Assert(ring.Enqueue = 0, 'enq wrapped to 0');
-    Assert(ring.CycleBit = 0, 'enq cycle toggled to 0');
+    test.harness.Assert(@context, ring.Enqueue = 0, 'enq wrapped to 0');
+    test.harness.Assert(@context, ring.CycleBit = 0, 'enq cycle toggled to 0');
 
-    Assert((ring.Base[2].Control and XHCI_TRB_CYCLE) = 0, 'chain head stays owned by software');
-    Assert((ring.Base[3].Control and XHCI_TRB_CH) <> 0, 'link continues TD across wrap');
+    test.harness.Assert(@context, (ring.Base[2].Control and XHCI_TRB_CYCLE) = 0, 'chain head stays owned by software');
+    test.harness.Assert(@context, (ring.Base[3].Control and XHCI_TRB_CH) <> 0, 'link continues TD across wrap');
 
     { Enqueue one more after wrap }
     trb := xhci_make_trb($44, $55, $66, XHCI_TRB_NORMAL SHL XHCI_TRB_TYPE_SHIFT);
     xhci_ring_enqueue(@ring, @trb, false);
-    Assert(ring.Enqueue = 1, 'enq after wrap=1');
+    test.harness.Assert(@context, ring.Enqueue = 1, 'enq after wrap=1');
     dest := PXHCI_TRB(uint32(ring.Base));
-    Assert((dest^.Control AND XHCI_TRB_CYCLE) = 0, 'enq wrap cycle=0');
+    test.harness.Assert(@context, (dest^.Control AND XHCI_TRB_CYCLE) = 0, 'enq wrap cycle=0');
 
     xhci_ring_enqueue(@ring, @trb, false);
     xhci_ring_enqueue(@ring, @trb, false);
-    Assert((ring.Base[3].Control and XHCI_TRB_CH) = 0, 'link drops previous chain bit at TD end');
+    test.harness.Assert(@context, (ring.Base[3].Control and XHCI_TRB_CH) = 0, 'link drops previous chain bit at TD end');
 
     xhci_free_ring(ring);
 
     { === Event Ring Allocation Tests === }
     ring := xhci_alloc_event_ring(32);
-    Assert(ring.Base <> nil, 'evt_ring not nil');
-    Assert((uint32(ring.Base) AND $FFF) = 0, 'evt_ring page aligned');
-    Assert(ring.Size = 32, 'evt_ring size=32');
-    Assert(ring.CycleBit = 1, 'evt_ring cycle=1');
+    test.harness.Assert(@context, ring.Base <> nil, 'evt_ring not nil');
+    test.harness.Assert(@context, (uint32(ring.Base) AND $FFF) = 0, 'evt_ring page aligned');
+    test.harness.Assert(@context, ring.Size = 32, 'evt_ring size=32');
+    test.harness.Assert(@context, ring.CycleBit = 1, 'evt_ring cycle=1');
     xhci_free_ring(ring);
 
     { === Register Offset Constant Tests === }
-    Assert(XHCI_CAP_CAPLENGTH = $00, 'CAPLENGTH=$00');
-    Assert(XHCI_CAP_HCSPARAMS1 = $04, 'HCSPARAMS1=$04');
-    Assert(XHCI_CAP_HCSPARAMS2 = $08, 'HCSPARAMS2=$08');
-    Assert(XHCI_CAP_HCCPARAMS1 = $10, 'HCCPARAMS1=$10');
-    Assert(XHCI_CAP_DBOFF = $14, 'DBOFF=$14');
-    Assert(XHCI_CAP_RTSOFF = $18, 'RTSOFF=$18');
+    test.harness.Assert(@context, XHCI_CAP_CAPLENGTH = $00, 'CAPLENGTH=$00');
+    test.harness.Assert(@context, XHCI_CAP_HCSPARAMS1 = $04, 'HCSPARAMS1=$04');
+    test.harness.Assert(@context, XHCI_CAP_HCSPARAMS2 = $08, 'HCSPARAMS2=$08');
+    test.harness.Assert(@context, XHCI_CAP_HCCPARAMS1 = $10, 'HCCPARAMS1=$10');
+    test.harness.Assert(@context, XHCI_CAP_DBOFF = $14, 'DBOFF=$14');
+    test.harness.Assert(@context, XHCI_CAP_RTSOFF = $18, 'RTSOFF=$18');
 
-    Assert(XHCI_OP_USBCMD = $00, 'OP_USBCMD=$00');
-    Assert(XHCI_OP_USBSTS = $04, 'OP_USBSTS=$04');
-    Assert(XHCI_OP_CRCR_LO = $18, 'OP_CRCR=$18');
-    Assert(XHCI_OP_DCBAAP_LO = $30, 'OP_DCBAAP=$30');
-    Assert(XHCI_OP_CONFIG = $38, 'OP_CONFIG=$38');
-    Assert(XHCI_OP_PORTSC_BASE = $400, 'PORTSC=$400');
+    test.harness.Assert(@context, XHCI_OP_USBCMD = $00, 'OP_USBCMD=$00');
+    test.harness.Assert(@context, XHCI_OP_USBSTS = $04, 'OP_USBSTS=$04');
+    test.harness.Assert(@context, XHCI_OP_CRCR_LO = $18, 'OP_CRCR=$18');
+    test.harness.Assert(@context, XHCI_OP_DCBAAP_LO = $30, 'OP_DCBAAP=$30');
+    test.harness.Assert(@context, XHCI_OP_CONFIG = $38, 'OP_CONFIG=$38');
+    test.harness.Assert(@context, XHCI_OP_PORTSC_BASE = $400, 'PORTSC=$400');
 
     { === Bit Tests === }
-    Assert(XHCI_CMD_RS = $01, 'CMD_RS=$01');
-    Assert(XHCI_CMD_HCRST = $02, 'CMD_HCRST=$02');
-    Assert(XHCI_CMD_INTE = $04, 'CMD_INTE=$04');
-    Assert(XHCI_STS_HCH = $01, 'STS_HCH=$01');
-    Assert(XHCI_STS_CNR = $800, 'STS_CNR=$800');
-    Assert(XHCI_STS_HSE = $04, 'STS_HSE=$04');
+    test.harness.Assert(@context, XHCI_CMD_RS = $01, 'CMD_RS=$01');
+    test.harness.Assert(@context, XHCI_CMD_HCRST = $02, 'CMD_HCRST=$02');
+    test.harness.Assert(@context, XHCI_CMD_INTE = $04, 'CMD_INTE=$04');
+    test.harness.Assert(@context, XHCI_STS_HCH = $01, 'STS_HCH=$01');
+    test.harness.Assert(@context, XHCI_STS_CNR = $800, 'STS_CNR=$800');
+    test.harness.Assert(@context, XHCI_STS_HSE = $04, 'STS_HSE=$04');
 
-    Assert(XHCI_PORTSC_CCS = $01, 'PORTSC_CCS=$01');
-    Assert(XHCI_PORTSC_PED = $02, 'PORTSC_PED=$02');
-    Assert(XHCI_PORTSC_PR = $10, 'PORTSC_PR=$10');
-    Assert(XHCI_PORTSC_PP = $200, 'PORTSC_PP=$200');
-    Assert(XHCI_PORTSC_CSC = $20000, 'PORTSC_CSC');
-    Assert(XHCI_PORTSC_PRC = $200000, 'PORTSC_PRC');
+    test.harness.Assert(@context, XHCI_PORTSC_CCS = $01, 'PORTSC_CCS=$01');
+    test.harness.Assert(@context, XHCI_PORTSC_PED = $02, 'PORTSC_PED=$02');
+    test.harness.Assert(@context, XHCI_PORTSC_PR = $10, 'PORTSC_PR=$10');
+    test.harness.Assert(@context, XHCI_PORTSC_PP = $200, 'PORTSC_PP=$200');
+    test.harness.Assert(@context, XHCI_PORTSC_CSC = $20000, 'PORTSC_CSC');
+    test.harness.Assert(@context, XHCI_PORTSC_PRC = $200000, 'PORTSC_PRC');
 
     { === TRB Type Constants === }
-    Assert(XHCI_TRB_NORMAL = 1, 'TRB_NORMAL=1');
-    Assert(XHCI_TRB_SETUP_STAGE = 2, 'TRB_SETUP=2');
-    Assert(XHCI_TRB_DATA_STAGE = 3, 'TRB_DATA=3');
-    Assert(XHCI_TRB_STATUS_STAGE = 4, 'TRB_STATUS=4');
-    Assert(XHCI_TRB_LINK = 6, 'TRB_LINK=6');
-    Assert(XHCI_TRB_ENABLE_SLOT = 9, 'ENABLE_SLOT=9');
-    Assert(XHCI_TRB_ADDRESS_DEVICE = 11, 'ADDRESS_DEV=11');
-    Assert(XHCI_TRB_TRANSFER_EVENT = 32, 'XFER_EVENT=32');
-    Assert(XHCI_TRB_CMD_COMPLETION = 33, 'CMD_COMPL=33');
-    Assert(XHCI_TRB_PORT_STATUS_CHG = 34, 'PORT_CHG=34');
+    test.harness.Assert(@context, XHCI_TRB_NORMAL = 1, 'TRB_NORMAL=1');
+    test.harness.Assert(@context, XHCI_TRB_SETUP_STAGE = 2, 'TRB_SETUP=2');
+    test.harness.Assert(@context, XHCI_TRB_DATA_STAGE = 3, 'TRB_DATA=3');
+    test.harness.Assert(@context, XHCI_TRB_STATUS_STAGE = 4, 'TRB_STATUS=4');
+    test.harness.Assert(@context, XHCI_TRB_LINK = 6, 'TRB_LINK=6');
+    test.harness.Assert(@context, XHCI_TRB_ENABLE_SLOT = 9, 'ENABLE_SLOT=9');
+    test.harness.Assert(@context, XHCI_TRB_ADDRESS_DEVICE = 11, 'ADDRESS_DEV=11');
+    test.harness.Assert(@context, XHCI_TRB_TRANSFER_EVENT = 32, 'XFER_EVENT=32');
+    test.harness.Assert(@context, XHCI_TRB_CMD_COMPLETION = 33, 'CMD_COMPL=33');
+    test.harness.Assert(@context, XHCI_TRB_PORT_STATUS_CHG = 34, 'PORT_CHG=34');
 
     { === Completion Code Constants === }
-    Assert(XHCI_CC_SUCCESS = 1, 'CC_SUCCESS=1');
-    Assert(XHCI_CC_STALL = 6, 'CC_STALL=6');
-    Assert(XHCI_CC_SHORT_PACKET = 13, 'CC_SHORT=13');
-    Assert(XHCI_CC_NO_SLOTS = 9, 'CC_NO_SLOTS=9');
+    test.harness.Assert(@context, XHCI_CC_SUCCESS = 1, 'CC_SUCCESS=1');
+    test.harness.Assert(@context, XHCI_CC_STALL = 6, 'CC_STALL=6');
+    test.harness.Assert(@context, XHCI_CC_SHORT_PACKET = 13, 'CC_SHORT=13');
+    test.harness.Assert(@context, XHCI_CC_NO_SLOTS = 9, 'CC_NO_SLOTS=9');
 
     { === HCSPARAMS/HCCPARAMS field masks === }
-    Assert(XHCI_HCS1_MAXSLOTS_MASK = $FF, 'MAXSLOTS=$FF');
-    Assert(XHCI_HCS1_MAXPORTS_SHIFT = 24, 'MAXPORTS_SH=24');
-    Assert(XHCI_HCC1_XECP_SHIFT = 16, 'XECP_SH=16');
-    Assert(XHCI_HCC1_CSZ = $04, 'CSZ=$04');
+    test.harness.Assert(@context, XHCI_HCS1_MAXSLOTS_MASK = $FF, 'MAXSLOTS=$FF');
+    test.harness.Assert(@context, XHCI_HCS1_MAXPORTS_SHIFT = 24, 'MAXPORTS_SH=24');
+    test.harness.Assert(@context, XHCI_HCC1_XECP_SHIFT = 16, 'XECP_SH=16');
+    test.harness.Assert(@context, XHCI_HCC1_CSZ = $04, 'CSZ=$04');
 
     { === EP Type Constants === }
-    Assert(XHCI_EP_TYPE_CONTROL = 4, 'EP_CTRL=4');
-    Assert(XHCI_EP_TYPE_BULK_IN = 6, 'EP_BULK_IN=6');
-    Assert(XHCI_EP_TYPE_BULK_OUT = 2, 'EP_BULK_OUT=2');
-    Assert(XHCI_EP_TYPE_INTR_IN = 7, 'EP_INTR_IN=7');
-    Assert(XHCI_EP_TYPE_INTR_OUT = 3, 'EP_INTR_OUT=3');
+    test.harness.Assert(@context, XHCI_EP_TYPE_CONTROL = 4, 'EP_CTRL=4');
+    test.harness.Assert(@context, XHCI_EP_TYPE_BULK_IN = 6, 'EP_BULK_IN=6');
+    test.harness.Assert(@context, XHCI_EP_TYPE_BULK_OUT = 2, 'EP_BULK_OUT=2');
+    test.harness.Assert(@context, XHCI_EP_TYPE_INTR_IN = 7, 'EP_INTR_IN=7');
+    test.harness.Assert(@context, XHCI_EP_TYPE_INTR_OUT = 3, 'EP_INTR_OUT=3');
 
     { === IMAN Tests === }
-    Assert(XHCI_IMAN_IP = $01, 'IMAN_IP=$01');
-    Assert(XHCI_IMAN_IE = $02, 'IMAN_IE=$02');
+    test.harness.Assert(@context, XHCI_IMAN_IP = $01, 'IMAN_IP=$01');
+    test.harness.Assert(@context, XHCI_IMAN_IE = $02, 'IMAN_IE=$02');
 
-    PrintSummary;
+    test.harness.Finish(@context);
 end;
 
 end.

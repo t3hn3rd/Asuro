@@ -36,6 +36,7 @@ procedure init;
 implementation
 
 uses
+    test.harness,
     boot.mgr,
     core.ds.hashmap,
     memory.heap,
@@ -57,37 +58,27 @@ uses
   passed / failed are in/out accumulator params so the caller
   can print a combined summary.
   ============================================================ }
-procedure run_tests(var passed, failed: uint32; to_log: boolean;
+procedure run_tests(var passed, failed: uint32; context: PTestContext;
                     stdout_buf: POutBuf);
-
-    { Write a line either to io.syslog or to the terminal stdout buffer }
-    procedure emit(tag, msg: pchar);
-    var
-        line: pchar;
-    begin
-        if to_log then begin
-            io.syslog.logln(tag, msg);
-        end else begin
-            if stdout_buf <> nil then begin
-                line := stringConcat('[', tag);
-                io.stdio.bufWriteStr(stdout_buf, line);
-                kfree(void(line));
-                io.stdio.bufWriteStr(stdout_buf, '] ');
-                io.stdio.bufWriteStrLn(stdout_buf, msg);
-            end;
-        end;
-    end;
 
     procedure Assert(condition: boolean; testName: pchar);
     var
         msg: pchar;
     begin
+        if context <> nil then begin
+            test.harness.Assert(context, condition, testName);
+            exit;
+        end;
+
         if condition then begin
             inc(passed);
         end else begin
             inc(failed);
             msg := stringConcat('FAIL: ', testName);
-            emit('STORTEST', msg);
+            if stdout_buf <> nil then begin
+                io.stdio.bufWriteStr(stdout_buf, '[STORTEST] ');
+                io.stdio.bufWriteStrLn(stdout_buf, msg);
+            end;
             kfree(void(msg));
         end;
     end;
@@ -386,26 +377,14 @@ end;
   ============================================================ }
 procedure UnitTest;
 var
+    context : TTestContext;
     passed, failed : uint32;
-    pStr, fStr, msg, tmp : pchar;
 begin
     passed := 0;
     failed := 0;
-    io.syslog.logln('STORTEST', 'Unit tests starting...');
-
-    run_tests(passed, failed, true, nil);
-
-    pStr := intToString(passed);
-    fStr := intToString(failed);
-    msg  := stringConcat(pStr, ' passed, ');
-    tmp  := stringConcat(msg, fStr);
-    kfree(void(msg));
-    msg  := stringConcat(tmp, ' failed.');
-    kfree(void(tmp));
-    io.syslog.logln('STORTEST', msg);
-    kfree(void(msg));
-    kfree(void(pStr));
-    kfree(void(fStr));
+    test.harness.Start(@context, 'driver.storage.test');
+    run_tests(passed, failed, @context, nil);
+    test.harness.Finish(@context);
 end;
 
 { ============================================================
@@ -423,7 +402,7 @@ begin
     failed := 0;
     io.stdio.bufWriteStrLn(stdout_buf, '--- Storage subsystem tests ---');
 
-    run_tests(passed, failed, false, stdout_buf);
+    run_tests(passed, failed, nil, stdout_buf);
 
     { Runtime-only: test /disk listing (populated only after auto_mount_volumes) }
     map := driver.storage.vfs.GetDirectoryListingFrom('/disk', '/');

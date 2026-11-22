@@ -98,6 +98,7 @@ uses
 implementation
 
 uses
+    test.harness,
     io.syslog, core.strings;
 
 { ---------------------------------------------------------------------------- }
@@ -234,49 +235,16 @@ var
     q3   : PCFIFOQueue;
     got  : PCFIFOQueue;
     ok   : boolean;
-    passed, failed : uint32;
-
-    procedure Assert(condition : boolean; testName : pchar);
-    var
-        msg : pchar;
-    begin
-        if condition then begin
-            inc(passed);
-        end else begin
-            inc(failed);
-            msg := stringConcat('FAIL: ', testName);
-            io.syslog.logln('CFIFOLS', msg);
-            kfree(void(msg));
-        end;
-    end;
-
-    procedure PrintSummary;
-    var
-        pStr, fStr, msg, tmp : pchar;
-    begin
-        pStr := intToString(passed);
-        fStr := intToString(failed);
-        msg := stringConcat(pStr, ' passed, ');
-        tmp := stringConcat(msg, fStr);
-        kfree(void(msg));
-        msg := stringConcat(tmp, ' failed.');
-        kfree(void(tmp));
-        io.syslog.logln('CFIFOLS', msg);
-        kfree(void(msg));
-        kfree(void(pStr));
-        kfree(void(fStr));
-    end;
+    context : TTestContext;
 
 begin
-    passed := 0;
-    failed := 0;
-    io.syslog.logln('CFIFOLS', 'Unit tests starting...');
+    test.harness.Start(@context, 'core.ds.cfifols');
 
     { === New / Empty / Count === }
     ls := CFIFOLS_New(2);
-    Assert(ls <> nil, 'New returns non-nil');
-    Assert(CFIFOLS_IsEmpty(ls), 'Initially empty');
-    Assert(CFIFOLS_Count(ls) = 0, 'Initial count is 0');
+    test.harness.Assert(@context, ls <> nil, 'New returns non-nil');
+    test.harness.Assert(@context, CFIFOLS_IsEmpty(ls), 'Initially empty');
+    test.harness.Assert(@context, CFIFOLS_Count(ls) = 0, 'Initial count is 0');
 
     q1 := CFIFO_New(sizeof(uint32), 4);
     q2 := CFIFO_New(sizeof(uint32), 4);
@@ -286,25 +254,25 @@ begin
     CFIFOLS_Add(ls, q1);
     CFIFOLS_Add(ls, q2);
     CFIFOLS_Add(ls, q3);
-    Assert(CFIFOLS_Count(ls) = 3, 'Count after 3 adds');
-    Assert(CFIFOLS_Get(ls, 0) = q1, 'Get(0) returns q1');
-    Assert(CFIFOLS_Get(ls, 1) = q2, 'Get(1) returns q2');
-    Assert(CFIFOLS_Get(ls, 2) = q3, 'Get(2) returns q3');
+    test.harness.Assert(@context, CFIFOLS_Count(ls) = 3, 'Count after 3 adds');
+    test.harness.Assert(@context, CFIFOLS_Get(ls, 0) = q1, 'Get(0) returns q1');
+    test.harness.Assert(@context, CFIFOLS_Get(ls, 1) = q2, 'Get(1) returns q2');
+    test.harness.Assert(@context, CFIFOLS_Get(ls, 2) = q3, 'Get(2) returns q3');
 
     { === Out-of-bounds Get === }
     got := CFIFOLS_Get(ls, 99);
-    Assert(got = nil, 'Get out-of-bounds returns nil');
+    test.harness.Assert(@context, got = nil, 'Get out-of-bounds returns nil');
 
     { === Remove middle === }
     ok := CFIFOLS_Remove(ls, 1);
-    Assert(ok, 'Remove(1) succeeds');
-    Assert(CFIFOLS_Count(ls) = 2, 'Count after remove');
-    Assert(CFIFOLS_Get(ls, 0) = q1, 'After remove, Get(0) still q1');
-    Assert(CFIFOLS_Get(ls, 1) = q3, 'After remove, Get(1) is now q3');
+    test.harness.Assert(@context, ok, 'Remove(1) succeeds');
+    test.harness.Assert(@context, CFIFOLS_Count(ls) = 2, 'Count after remove');
+    test.harness.Assert(@context, CFIFOLS_Get(ls, 0) = q1, 'After remove, Get(0) still q1');
+    test.harness.Assert(@context, CFIFOLS_Get(ls, 1) = q3, 'After remove, Get(1) is now q3');
 
     { === Remove out-of-bounds === }
     ok := CFIFOLS_Remove(ls, 99);
-    Assert(not ok, 'Remove out-of-bounds returns false');
+    test.harness.Assert(@context, not ok, 'Remove out-of-bounds returns false');
 
     CFIFOLS_Free(ls);
     CFIFO_Free(q1);
@@ -317,7 +285,7 @@ begin
     CFIFOLS_Add(ls, CFIFO_New(sizeof(uint32), 4));
     CFIFOLS_FreeAll(ls);
 
-    PrintSummary;
+    test.harness.Finish(@context);
 end;
 
 end.

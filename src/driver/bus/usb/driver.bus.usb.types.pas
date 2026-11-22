@@ -344,6 +344,9 @@ procedure UnitTest;
 
 implementation
 
+uses
+    test.harness;
+
 { ========================= Alignment Helpers ========================= }
 
 function kalloc_aligned(size : uint32; alignment : uint32) : Pointer;
@@ -463,147 +466,114 @@ end;
 
 procedure UnitTest;
 var
-    passed, failed : uint32;
+    context : TTestContext;
     p     : Pointer;
     setup : TUSBSetupPacket;
 
-    procedure Assert(condition : boolean; testName : pchar);
-    var
-        msg : pchar;
-    begin
-        if condition then begin
-            inc(passed);
-        end else begin
-            inc(failed);
-            msg := stringConcat('FAIL: ', testName);
-            io.syslog.logln('USBTYPES', msg);
-            kfree(void(msg));
-        end;
-    end;
-
-    procedure PrintSummary;
-    var
-        pStr, fStr, msg, tmp : pchar;
-    begin
-        pStr := intToString(passed);
-        fStr := intToString(failed);
-        msg := stringConcat(pStr, ' passed, ');
-        tmp := stringConcat(msg, fStr);
-        kfree(void(msg));
-        msg := stringConcat(tmp, ' failed.');
-        kfree(void(tmp));
-        io.syslog.logln('USBTYPES', msg);
-        kfree(void(msg));
-        kfree(void(pStr));
-        kfree(void(fStr));
-    end;
-
 begin
-    passed := 0;
-    failed := 0;
-    io.syslog.logln('USBTYPES', 'Unit tests starting...');
+    test.harness.Start(@context, 'driver.bus.usb.types');
 
     { === Descriptor Size Constants === }
-    Assert(sizeof(TUSBDeviceDescriptor) = 18, 'sizeof DeviceDescriptor=18');
-    Assert(sizeof(TUSBConfigDescriptor) = 9, 'sizeof ConfigDescriptor=9');
-    Assert(sizeof(TUSBInterfaceDescriptor) = 9, 'sizeof InterfaceDescriptor=9');
-    Assert(sizeof(TUSBEndpointDescriptor) = 7, 'sizeof EndpointDescriptor=7');
-    Assert(sizeof(TUSBSetupPacket) = 8, 'sizeof SetupPacket=8');
-    Assert(sizeof(TUSBHubDescriptor) = 7, 'sizeof HubDescriptor=7');
+    test.harness.Assert(@context, sizeof(TUSBDeviceDescriptor) = 18, 'sizeof DeviceDescriptor=18');
+    test.harness.Assert(@context, sizeof(TUSBConfigDescriptor) = 9, 'sizeof ConfigDescriptor=9');
+    test.harness.Assert(@context, sizeof(TUSBInterfaceDescriptor) = 9, 'sizeof InterfaceDescriptor=9');
+    test.harness.Assert(@context, sizeof(TUSBEndpointDescriptor) = 7, 'sizeof EndpointDescriptor=7');
+    test.harness.Assert(@context, sizeof(TUSBSetupPacket) = 8, 'sizeof SetupPacket=8');
+    test.harness.Assert(@context, sizeof(TUSBHubDescriptor) = 7, 'sizeof HubDescriptor=7');
 
     { === kalloc_aligned / kfree_aligned === }
     { 16-byte alignment }
     p := kalloc_aligned(32, 16);
-    Assert(p <> nil, 'kalloc_aligned(32,16) not nil');
-    Assert((uint32(p) AND $0F) = 0, 'kalloc_aligned(32,16) aligned to 16');
+    test.harness.Assert(@context, p <> nil, 'kalloc_aligned(32,16) not nil');
+    test.harness.Assert(@context, (uint32(p) AND $0F) = 0, 'kalloc_aligned(32,16) aligned to 16');
     kfree_aligned(p);
 
     { 256-byte alignment (HCCA) }
     p := kalloc_aligned(256, 256);
-    Assert(p <> nil, 'kalloc_aligned(256,256) not nil');
-    Assert((uint32(p) AND $FF) = 0, 'kalloc_aligned(256,256) aligned to 256');
+    test.harness.Assert(@context, p <> nil, 'kalloc_aligned(256,256) not nil');
+    test.harness.Assert(@context, (uint32(p) AND $FF) = 0, 'kalloc_aligned(256,256) aligned to 256');
     kfree_aligned(p);
 
     { 4096-byte alignment (frame list) }
     p := kalloc_aligned(4096, 4096);
-    Assert(p <> nil, 'kalloc_aligned(4096,4096) not nil');
-    Assert((uint32(p) AND $FFF) = 0, 'kalloc_aligned(4096,4096) aligned to 4096');
+    test.harness.Assert(@context, p <> nil, 'kalloc_aligned(4096,4096) not nil');
+    test.harness.Assert(@context, (uint32(p) AND $FFF) = 0, 'kalloc_aligned(4096,4096) aligned to 4096');
     kfree_aligned(p);
 
     { 32-byte alignment (qTD) }
     p := kalloc_aligned(32, 32);
-    Assert(p <> nil, 'kalloc_aligned(32,32) not nil');
-    Assert((uint32(p) AND $1F) = 0, 'kalloc_aligned(32,32) aligned to 32');
+    test.harness.Assert(@context, p <> nil, 'kalloc_aligned(32,32) not nil');
+    test.harness.Assert(@context, (uint32(p) AND $1F) = 0, 'kalloc_aligned(32,32) aligned to 32');
     kfree_aligned(p);
 
     { kfree_aligned(nil) should not crash }
     kfree_aligned(nil);
-    Assert(true, 'kfree_aligned(nil) no crash');
+    test.harness.Assert(@context, true, 'kfree_aligned(nil) no crash');
 
     { === make_setup_packet === }
     setup := make_setup_packet($80, USB_REQ_GET_DESCRIPTOR, $0100, $0000, 18);
-    Assert(setup.bmRequestType = $80, 'setup bmRequestType=$80');
-    Assert(setup.bRequest = USB_REQ_GET_DESCRIPTOR, 'setup bRequest=GET_DESCRIPTOR');
-    Assert(setup.wValue = $0100, 'setup wValue=$0100');
-    Assert(setup.wIndex = $0000, 'setup wIndex=$0000');
-    Assert(setup.wLength = 18, 'setup wLength=18');
+    test.harness.Assert(@context, setup.bmRequestType = $80, 'setup bmRequestType=$80');
+    test.harness.Assert(@context, setup.bRequest = USB_REQ_GET_DESCRIPTOR, 'setup bRequest=GET_DESCRIPTOR');
+    test.harness.Assert(@context, setup.wValue = $0100, 'setup wValue=$0100');
+    test.harness.Assert(@context, setup.wIndex = $0000, 'setup wIndex=$0000');
+    test.harness.Assert(@context, setup.wLength = 18, 'setup wLength=18');
 
     { SET_ADDRESS setup packet }
     setup := make_setup_packet($00, USB_REQ_SET_ADDRESS, 5, 0, 0);
-    Assert(setup.bmRequestType = $00, 'setaddr bmRequestType=$00');
-    Assert(setup.bRequest = USB_REQ_SET_ADDRESS, 'setaddr bRequest=SET_ADDRESS');
-    Assert(setup.wValue = 5, 'setaddr wValue=5');
-    Assert(setup.wLength = 0, 'setaddr wLength=0');
+    test.harness.Assert(@context, setup.bmRequestType = $00, 'setaddr bmRequestType=$00');
+    test.harness.Assert(@context, setup.bRequest = USB_REQ_SET_ADDRESS, 'setaddr bRequest=SET_ADDRESS');
+    test.harness.Assert(@context, setup.wValue = 5, 'setaddr wValue=5');
+    test.harness.Assert(@context, setup.wLength = 0, 'setaddr wLength=0');
 
     { SET_CONFIGURATION setup packet }
     setup := make_setup_packet($00, USB_REQ_SET_CONFIGURATION, 1, 0, 0);
-    Assert(setup.bRequest = USB_REQ_SET_CONFIGURATION, 'setconfig bRequest=SET_CONFIG');
-    Assert(setup.wValue = 1, 'setconfig wValue=1');
+    test.harness.Assert(@context, setup.bRequest = USB_REQ_SET_CONFIGURATION, 'setconfig bRequest=SET_CONFIG');
+    test.harness.Assert(@context, setup.wValue = 1, 'setconfig wValue=1');
 
     { === Endpoint Helpers === }
     { EP1 IN }
-    Assert(usb_ep_number($81) = 1, 'ep_number($81)=1');
-    Assert(usb_ep_is_in($81) = true, 'ep_is_in($81)=true');
-    Assert(usb_ep_direction($81) = dirIn, 'ep_direction($81)=dirIn');
+    test.harness.Assert(@context, usb_ep_number($81) = 1, 'ep_number($81)=1');
+    test.harness.Assert(@context, usb_ep_is_in($81) = true, 'ep_is_in($81)=true');
+    test.harness.Assert(@context, usb_ep_direction($81) = dirIn, 'ep_direction($81)=dirIn');
 
     { EP2 OUT }
-    Assert(usb_ep_number($02) = 2, 'ep_number($02)=2');
-    Assert(usb_ep_is_in($02) = false, 'ep_is_in($02)=false');
-    Assert(usb_ep_direction($02) = dirOut, 'ep_direction($02)=dirOut');
+    test.harness.Assert(@context, usb_ep_number($02) = 2, 'ep_number($02)=2');
+    test.harness.Assert(@context, usb_ep_is_in($02) = false, 'ep_is_in($02)=false');
+    test.harness.Assert(@context, usb_ep_direction($02) = dirOut, 'ep_direction($02)=dirOut');
 
     { EP0 (control, both directions) }
-    Assert(usb_ep_number($00) = 0, 'ep_number($00)=0');
-    Assert(usb_ep_number($80) = 0, 'ep_number($80)=0');
+    test.harness.Assert(@context, usb_ep_number($00) = 0, 'ep_number($00)=0');
+    test.harness.Assert(@context, usb_ep_number($80) = 0, 'ep_number($80)=0');
 
     { EP15 IN (max endpoint) }
-    Assert(usb_ep_number($8F) = 15, 'ep_number($8F)=15');
+    test.harness.Assert(@context, usb_ep_number($8F) = 15, 'ep_number($8F)=15');
 
     { Transfer type extraction }
-    Assert(usb_ep_transfer_type($00) = USB_EP_ATTR_CONTROL, 'transfer_type($00)=CONTROL');
-    Assert(usb_ep_transfer_type($01) = USB_EP_ATTR_ISOCHRONOUS, 'transfer_type($01)=ISO');
-    Assert(usb_ep_transfer_type($02) = USB_EP_ATTR_BULK, 'transfer_type($02)=BULK');
-    Assert(usb_ep_transfer_type($03) = USB_EP_ATTR_INTERRUPT, 'transfer_type($03)=INT');
+    test.harness.Assert(@context, usb_ep_transfer_type($00) = USB_EP_ATTR_CONTROL, 'transfer_type($00)=CONTROL');
+    test.harness.Assert(@context, usb_ep_transfer_type($01) = USB_EP_ATTR_ISOCHRONOUS, 'transfer_type($01)=ISO');
+    test.harness.Assert(@context, usb_ep_transfer_type($02) = USB_EP_ATTR_BULK, 'transfer_type($02)=BULK');
+    test.harness.Assert(@context, usb_ep_transfer_type($03) = USB_EP_ATTR_INTERRUPT, 'transfer_type($03)=INT');
 
     { Pipe type extraction }
-    Assert(usb_ep_pipe_type($00) = ptControl, 'pipe_type($00)=ptControl');
-    Assert(usb_ep_pipe_type($01) = ptIsochronous, 'pipe_type($01)=ptIsochronous');
-    Assert(usb_ep_pipe_type($02) = ptBulk, 'pipe_type($02)=ptBulk');
-    Assert(usb_ep_pipe_type($03) = ptInterrupt, 'pipe_type($03)=ptInterrupt');
+    test.harness.Assert(@context, usb_ep_pipe_type($00) = ptControl, 'pipe_type($00)=ptControl');
+    test.harness.Assert(@context, usb_ep_pipe_type($01) = ptIsochronous, 'pipe_type($01)=ptIsochronous');
+    test.harness.Assert(@context, usb_ep_pipe_type($02) = ptBulk, 'pipe_type($02)=ptBulk');
+    test.harness.Assert(@context, usb_ep_pipe_type($03) = ptInterrupt, 'pipe_type($03)=ptInterrupt');
 
     { Transfer type with upper bits set (sync/usage for iso) }
-    Assert(usb_ep_transfer_type($0D) = USB_EP_ATTR_ISOCHRONOUS, 'transfer_type($0D)=ISO with flags');
+    test.harness.Assert(@context, usb_ep_transfer_type($0D) = USB_EP_ATTR_ISOCHRONOUS, 'transfer_type($0D)=ISO with flags');
 
     { === Constant sanity checks === }
-    Assert(USB_DESC_DEVICE = $01, 'USB_DESC_DEVICE=$01');
-    Assert(USB_DESC_CONFIGURATION = $02, 'USB_DESC_CONFIGURATION=$02');
-    Assert(USB_DESC_INTERFACE = $04, 'USB_DESC_INTERFACE=$04');
-    Assert(USB_DESC_ENDPOINT = $05, 'USB_DESC_ENDPOINT=$05');
-    Assert(USB_CLASS_HID = $03, 'USB_CLASS_HID=$03');
-    Assert(USB_CLASS_HUB = $09, 'USB_CLASS_HUB=$09');
-    Assert(USB_CLASS_MASS_STORAGE = $08, 'USB_CLASS_MASS_STORAGE=$08');
+    test.harness.Assert(@context, USB_DESC_DEVICE = $01, 'USB_DESC_DEVICE=$01');
+    test.harness.Assert(@context, USB_DESC_CONFIGURATION = $02, 'USB_DESC_CONFIGURATION=$02');
+    test.harness.Assert(@context, USB_DESC_INTERFACE = $04, 'USB_DESC_INTERFACE=$04');
+    test.harness.Assert(@context, USB_DESC_ENDPOINT = $05, 'USB_DESC_ENDPOINT=$05');
+    test.harness.Assert(@context, USB_CLASS_HID = $03, 'USB_CLASS_HID=$03');
+    test.harness.Assert(@context, USB_CLASS_HUB = $09, 'USB_CLASS_HUB=$09');
+    test.harness.Assert(@context, USB_CLASS_MASS_STORAGE = $08, 'USB_CLASS_MASS_STORAGE=$08');
 
     { Print summary }
-    PrintSummary;
+    test.harness.Finish(@context);
 end;
 
 end.

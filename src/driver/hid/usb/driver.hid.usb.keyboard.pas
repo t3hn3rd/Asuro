@@ -31,6 +31,9 @@ procedure UnitTest;
 
 implementation
 
+uses
+    test.harness;
+
 { ========================= Constants ========================= }
 
 const
@@ -615,86 +618,52 @@ end;
 
 procedure UnitTest;
 var
-    passed, failed : uint32;
-
-    procedure Assert(condition : boolean; testName : pchar);
-    var
-        msg : pchar;
-    begin
-        if condition then begin
-            inc(passed);
-        end else begin
-            inc(failed);
-            msg := stringConcat('FAIL: ', testName);
-            io.syslog.logln('USBKeyboard', msg);
-            kfree(void(msg));
-        end;
-    end;
-
-    procedure PrintSummary;
-    var
-        pStr, fStr, msg, tmp : pchar;
-    begin
-        pStr := intToString(passed);
-        fStr := intToString(failed);
-        msg := stringConcat(pStr, ' passed, ');
-        tmp := stringConcat(msg, fStr);
-        kfree(void(msg));
-        msg := stringConcat(tmp, ' failed.');
-        kfree(void(tmp));
-        io.syslog.logln('USBKeyboard', msg);
-        kfree(void(msg));
-        kfree(void(pStr));
-        kfree(void(fStr));
-    end;
-
-var
+    context : TTestContext;
     testKB : TUSBKeyboardData;
     ascii  : uint8;
     i      : uint32;
+
 begin
-    passed := 0;
-    failed := 0;
-    io.syslog.logln('USBKeyboard', 'Unit tests starting...');
+    test.harness.Start(@context, 'driver.hid.usb.keyboard');
 
     { === HID Constants === }
-    Assert(HID_REQ_SET_PROTOCOL = $0B, 'SET_PROTOCOL request code');
-    Assert(HID_REQ_SET_IDLE = $0A, 'SET_IDLE request code');
-    Assert(HID_PROTOCOL_BOOT = 0, 'BOOT protocol value');
-    Assert(KB_REPORT_SIZE = 8, 'Boot report size');
+    test.harness.Assert(@context, HID_REQ_SET_PROTOCOL = $0B, 'SET_PROTOCOL request code');
+    test.harness.Assert(@context, HID_REQ_SET_IDLE = $0A, 'SET_IDLE request code');
+    test.harness.Assert(@context, HID_PROTOCOL_BOOT = 0, 'BOOT protocol value');
+    test.harness.Assert(@context, KB_REPORT_SIZE = 8, 'Boot report size');
 
     { === Modifier bit masks === }
-    Assert(KB_MOD_LCTRL = $01, 'LCTRL bit');
-    Assert(KB_MOD_LSHIFT = $02, 'LSHIFT bit');
-    Assert(KB_MOD_LALT = $04, 'LALT bit');
-    Assert(KB_MOD_RCTRL = $10, 'RCTRL bit');
-    Assert(KB_MOD_RSHIFT = $20, 'RSHIFT bit');
-    Assert(KB_MOD_RALT = $40, 'RALT bit');
+    test.harness.Assert(@context, KB_MOD_LCTRL = $01, 'LCTRL bit');
+    test.harness.Assert(@context, KB_MOD_LSHIFT = $02, 'LSHIFT bit');
+    test.harness.Assert(@context, KB_MOD_LALT = $04, 'LALT bit');
+    test.harness.Assert(@context, KB_MOD_RCTRL = $10, 'RCTRL bit');
+    test.harness.Assert(@context, KB_MOD_RSHIFT = $20, 'RSHIFT bit');
+    test.harness.Assert(@context, KB_MOD_RALT = $40, 'RALT bit');
 
     { === HID usage to ASCII (unshifted) === }
-    Assert(hid_usage_to_ascii($04, false) = $61, 'a unshifted');
-    Assert(hid_usage_to_ascii($1D, false) = $7A, 'z unshifted');
-    Assert(hid_usage_to_ascii($1E, false) = $31, '1 unshifted');
-    Assert(hid_usage_to_ascii($27, false) = $30, '0 unshifted');
-    Assert(hid_usage_to_ascii($28, false) = $0D, 'Enter unshifted');
-    Assert(hid_usage_to_ascii($29, false) = $1B, 'Escape unshifted');
-    Assert(hid_usage_to_ascii($2A, false) = $08, 'Backspace unshifted');
-    Assert(hid_usage_to_ascii($2B, false) = $09, 'Tab unshifted');
-    Assert(hid_usage_to_ascii($2C, false) = $20, 'Space unshifted');
+    test.harness.Assert(@context, hid_usage_to_ascii($04, false) = $61, 'a unshifted');
+    test.harness.Assert(@context, hid_usage_to_ascii($1D, false) = $7A, 'z unshifted');
+    test.harness.Assert(@context, hid_usage_to_ascii($1E, false) = $31, '1 unshifted');
+    test.harness.Assert(@context, hid_usage_to_ascii($27, false) = $30, '0 unshifted');
+    test.harness.Assert(@context, hid_usage_to_ascii($28, false) = $0D, 'Enter unshifted');
+    test.harness.Assert(@context, hid_usage_to_ascii($29, false) = $1B, 'Escape unshifted');
+    test.harness.Assert(@context, hid_usage_to_ascii($2A, false) = $08, 'Backspace unshifted');
+    test.harness.Assert(@context, hid_usage_to_ascii($2B, false) = $09, 'Tab unshifted');
+    test.harness.Assert(@context, hid_usage_to_ascii($2C, false) = $20, 'Space unshifted');
 
     { === HID usage to ASCII (shifted) === }
-    Assert(hid_usage_to_ascii($04, true) = $41, 'A shifted');
-    Assert(hid_usage_to_ascii($1D, true) = $5A, 'Z shifted');
-    Assert(hid_usage_to_ascii($1E, true) = $21, '! shifted');
-    Assert(hid_usage_to_ascii($1F, true) = $40, '@ shifted');
-    Assert(hid_usage_to_ascii($20, true) = $23, '# shifted');
-    Assert(hid_usage_to_ascii($2D, true) = $5F, '_ shifted');
-    Assert(hid_usage_to_ascii($2E, true) = $2B, '+ shifted');
+    test.harness.Assert(@context, hid_usage_to_ascii($04, true) = $41, 'A shifted');
+    test.harness.Assert(@context, hid_usage_to_ascii($1D, true) = $5A, 'Z shifted');
+    test.harness.Assert(@context, hid_usage_to_ascii($1E, true) = $21, '! shifted');
+    test.harness.Assert(@context, hid_usage_to_ascii($1F, true) = $40, '@ shifted');
+    test.harness.Assert(@context, hid_usage_to_ascii($20, true) = $23, '# shifted');
+    test.harness.Assert(@context, hid_usage_to_ascii($2D, true) = $5F, '_ shifted');
+    test.harness.Assert(@context, hid_usage_to_ascii($2E, true) = $2B, '+ shifted');
 
     { === Out of range === }
-    Assert(hid_usage_to_ascii(104, false) = 0, 'usage 104 out of range');
-    Assert(hid_usage_to_ascii(200, false) = 0, 'usage 200 out of range');
-    Assert(hid_usage_to_ascii(0, false) = 0, 'usage 0 = no event');
+    test.harness.Assert(@context, hid_usage_to_ascii(104, false) = 0, 'usage 104 out of range');
+    test.harness.Assert(@context, hid_usage_to_ascii(200, false) = 0, 'usage 200 out of range');
+    test.harness.Assert(@context, hid_usage_to_ascii(0, false) = 0, 'usage 0 = no event');
 
     { === Key tracking functions === }
     for i := 0 to KB_REPORT_SIZE - 1 do begin
@@ -705,53 +674,53 @@ begin
     { Simulate: previous had key $04 (a) in slot 2, current has $05 (b) in slot 2 }
     testKB.PrevReport[2] := $04;
     testKB.ReportBuf[2]  := $05;
-    Assert(key_was_pressed(@testKB, $04) = true, 'key_was_pressed finds $04');
-    Assert(key_was_pressed(@testKB, $05) = false, 'key_was_pressed misses $05');
-    Assert(key_is_pressed(@testKB, $05) = true, 'key_is_pressed finds $05');
-    Assert(key_is_pressed(@testKB, $04) = false, 'key_is_pressed misses $04');
+    test.harness.Assert(@context, key_was_pressed(@testKB, $04) = true, 'key_was_pressed finds $04');
+    test.harness.Assert(@context, key_was_pressed(@testKB, $05) = false, 'key_was_pressed misses $05');
+    test.harness.Assert(@context, key_is_pressed(@testKB, $05) = true, 'key_is_pressed finds $05');
+    test.harness.Assert(@context, key_is_pressed(@testKB, $04) = false, 'key_is_pressed misses $04');
 
     { Multiple keys in report }
     testKB.ReportBuf[3] := $06;
     testKB.ReportBuf[4] := $07;
-    Assert(key_is_pressed(@testKB, $06) = true, 'key_is_pressed finds $06 in slot 3');
-    Assert(key_is_pressed(@testKB, $07) = true, 'key_is_pressed finds $07 in slot 4');
-    Assert(key_is_pressed(@testKB, $08) = false, 'key_is_pressed misses $08');
+    test.harness.Assert(@context, key_is_pressed(@testKB, $06) = true, 'key_is_pressed finds $06 in slot 3');
+    test.harness.Assert(@context, key_is_pressed(@testKB, $07) = true, 'key_is_pressed finds $07 in slot 4');
+    test.harness.Assert(@context, key_is_pressed(@testKB, $08) = false, 'key_is_pressed misses $08');
 
     { === Symbol keys unshifted === }
-    Assert(hid_usage_to_ascii($2D, false) = $2D, '- unshifted');
-    Assert(hid_usage_to_ascii($2E, false) = $3D, '= unshifted');
-    Assert(hid_usage_to_ascii($2F, false) = $5B, '[ unshifted');
-    Assert(hid_usage_to_ascii($30, false) = $5D, '] unshifted');
-    Assert(hid_usage_to_ascii($31, false) = $5C, 'backslash unshifted');
-    Assert(hid_usage_to_ascii($33, false) = $3B, '; unshifted');
-    Assert(hid_usage_to_ascii($34, false) = $27, 'apostrophe unshifted');
-    Assert(hid_usage_to_ascii($35, false) = $60, 'backtick unshifted');
-    Assert(hid_usage_to_ascii($36, false) = $2C, ', unshifted');
-    Assert(hid_usage_to_ascii($37, false) = $2E, '. unshifted');
-    Assert(hid_usage_to_ascii($38, false) = $2F, '/ unshifted');
+    test.harness.Assert(@context, hid_usage_to_ascii($2D, false) = $2D, '- unshifted');
+    test.harness.Assert(@context, hid_usage_to_ascii($2E, false) = $3D, '= unshifted');
+    test.harness.Assert(@context, hid_usage_to_ascii($2F, false) = $5B, '[ unshifted');
+    test.harness.Assert(@context, hid_usage_to_ascii($30, false) = $5D, '] unshifted');
+    test.harness.Assert(@context, hid_usage_to_ascii($31, false) = $5C, 'backslash unshifted');
+    test.harness.Assert(@context, hid_usage_to_ascii($33, false) = $3B, '; unshifted');
+    test.harness.Assert(@context, hid_usage_to_ascii($34, false) = $27, 'apostrophe unshifted');
+    test.harness.Assert(@context, hid_usage_to_ascii($35, false) = $60, 'backtick unshifted');
+    test.harness.Assert(@context, hid_usage_to_ascii($36, false) = $2C, ', unshifted');
+    test.harness.Assert(@context, hid_usage_to_ascii($37, false) = $2E, '. unshifted');
+    test.harness.Assert(@context, hid_usage_to_ascii($38, false) = $2F, '/ unshifted');
 
     { === Symbol keys shifted === }
-    Assert(hid_usage_to_ascii($33, true) = $3A, ': shifted');
-    Assert(hid_usage_to_ascii($34, true) = $22, 'dquote shifted');
-    Assert(hid_usage_to_ascii($35, true) = $7E, '~ shifted');
-    Assert(hid_usage_to_ascii($36, true) = $3C, '< shifted');
-    Assert(hid_usage_to_ascii($37, true) = $3E, '> shifted');
-    Assert(hid_usage_to_ascii($38, true) = $3F, '? shifted');
-    Assert(hid_usage_to_ascii($2F, true) = $7B, 'lbrace shifted');
-    Assert(hid_usage_to_ascii($30, true) = $7D, 'rbrace shifted');
-    Assert(hid_usage_to_ascii($31, true) = $7C, 'pipe shifted');
+    test.harness.Assert(@context, hid_usage_to_ascii($33, true) = $3A, ': shifted');
+    test.harness.Assert(@context, hid_usage_to_ascii($34, true) = $22, 'dquote shifted');
+    test.harness.Assert(@context, hid_usage_to_ascii($35, true) = $7E, '~ shifted');
+    test.harness.Assert(@context, hid_usage_to_ascii($36, true) = $3C, '< shifted');
+    test.harness.Assert(@context, hid_usage_to_ascii($37, true) = $3E, '> shifted');
+    test.harness.Assert(@context, hid_usage_to_ascii($38, true) = $3F, '? shifted');
+    test.harness.Assert(@context, hid_usage_to_ascii($2F, true) = $7B, 'lbrace shifted');
+    test.harness.Assert(@context, hid_usage_to_ascii($30, true) = $7D, 'rbrace shifted');
+    test.harness.Assert(@context, hid_usage_to_ascii($31, true) = $7C, 'pipe shifted');
 
     { === Function keys and special keys have no ASCII === }
-    Assert(hid_usage_to_ascii($39, false) = 0, 'CapsLock no ASCII');
-    Assert(hid_usage_to_ascii($3A, false) = 0, 'F1 no ASCII');
-    Assert(hid_usage_to_ascii($45, false) = 0, 'F12 no ASCII');
+    test.harness.Assert(@context, hid_usage_to_ascii($39, false) = 0, 'CapsLock no ASCII');
+    test.harness.Assert(@context, hid_usage_to_ascii($3A, false) = 0, 'F1 no ASCII');
+    test.harness.Assert(@context, hid_usage_to_ascii($45, false) = 0, 'F12 no ASCII');
 
     { === Keypad === }
-    Assert(hid_usage_to_ascii($58, false) = $0D, 'KP Enter');
-    Assert(hid_usage_to_ascii($54, false) = $2F, 'KP /');
-    Assert(hid_usage_to_ascii($55, false) = $2A, 'KP *');
+    test.harness.Assert(@context, hid_usage_to_ascii($58, false) = $0D, 'KP Enter');
+    test.harness.Assert(@context, hid_usage_to_ascii($54, false) = $2F, 'KP /');
+    test.harness.Assert(@context, hid_usage_to_ascii($55, false) = $2A, 'KP *');
 
-    PrintSummary;
+    test.harness.Finish(@context);
 end;
 
 initialization

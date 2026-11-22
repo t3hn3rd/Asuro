@@ -105,7 +105,8 @@ implementation
 
 uses
     core.util,
-    io.syslog;
+    io.syslog,
+    test.harness;
 
 { ============================================================================ }
 {                            Forward Declarations                              }
@@ -1165,284 +1166,254 @@ end;
 
 procedure UnitTest;
 var
+    context : TTestContext;
     v, v2  : PJSONValue;
     s      : pchar;
     passed : uint32;
     failed : uint32;
 
-    procedure Assert(condition : boolean; testName : pchar);
-    var
-        msg : pchar;
-    begin
-        if condition then begin
-            inc(passed);
-        end else begin
-            inc(failed);
-            msg:= stringConcat('FAIL: ', testName);
-            io.syslog.logln('JSON', msg);
-            kfree(void(msg));
-        end;
-    end;
-
-    procedure PrintSummary;
-    var
-        pStr, fStr, msg, tmp : pchar;
-    begin
-        pStr:= intToString(passed);
-        fStr:= intToString(failed);
-        msg:= stringConcat(pStr, ' passed, ');
-        tmp:= stringConcat(msg, fStr);
-        kfree(void(msg));
-        msg:= stringConcat(tmp, ' failed.');
-        kfree(void(tmp));
-        io.syslog.logln('JSON', msg);
-        kfree(void(msg));
-        kfree(void(pStr));
-        kfree(void(fStr));
-    end;
-
 begin
     passed:= 0;
     failed:= 0;
-    io.syslog.logln('JSON', 'Unit tests starting...');
+    test.harness.Start(@context, 'core.fmt.json');
 
     { === Literals === }
     v:= parse('null', 4);
-    Assert(v^.Kind = JSON_NULL, 'parse null');
+    test.harness.Assert(@context, v^.Kind = JSON_NULL, 'parse null');
     freeValue(v);
 
     v:= parse('true', 4);
-    Assert(v^.Kind = JSON_BOOL, 'parse true kind');
-    Assert(getBool(v) = true, 'parse true value');
+    test.harness.Assert(@context, v^.Kind = JSON_BOOL, 'parse true kind');
+    test.harness.Assert(@context, getBool(v) = true, 'parse true value');
     freeValue(v);
 
     v:= parse('false', 5);
-    Assert(v^.Kind = JSON_BOOL, 'parse false kind');
-    Assert(getBool(v) = false, 'parse false value');
+    test.harness.Assert(@context, v^.Kind = JSON_BOOL, 'parse false kind');
+    test.harness.Assert(@context, getBool(v) = false, 'parse false value');
     freeValue(v);
 
     { === Numbers === }
     v:= parse('0', 1);
-    Assert(v^.Kind = JSON_NUMBER, 'parse 0 kind');
-    Assert(getNumber(v) = 0.0, 'parse 0 value');
+    test.harness.Assert(@context, v^.Kind = JSON_NUMBER, 'parse 0 kind');
+    test.harness.Assert(@context, getNumber(v) = 0.0, 'parse 0 value');
     freeValue(v);
 
     v:= parse('42', 2);
-    Assert(getNumber(v) = 42.0, 'parse 42');
+    test.harness.Assert(@context, getNumber(v) = 42.0, 'parse 42');
     freeValue(v);
 
     v:= parse('-7', 2);
-    Assert(getNumber(v) = -7.0, 'parse -7');
+    test.harness.Assert(@context, getNumber(v) = -7.0, 'parse -7');
     freeValue(v);
 
     v:= parse('3.14', 4);
-    Assert(v^.Kind = JSON_NUMBER, 'parse 3.14 kind');
+    test.harness.Assert(@context, v^.Kind = JSON_NUMBER, 'parse 3.14 kind');
     { Check approximate equality for floating point }
-    Assert((getNumber(v) > 3.139) and (getNumber(v) < 3.141), 'parse 3.14 value');
+    test.harness.Assert(@context, (getNumber(v) > 3.139) and (getNumber(v) < 3.141), 'parse 3.14 value');
     freeValue(v);
 
     v:= parse('1e3', 3);
-    Assert(getNumber(v) = 1000.0, 'parse 1e3');
+    test.harness.Assert(@context, getNumber(v) = 1000.0, 'parse 1e3');
     freeValue(v);
 
     v:= parse('2.5e2', 5);
-    Assert(getNumber(v) = 250.0, 'parse 2.5e2');
+    test.harness.Assert(@context, getNumber(v) = 250.0, 'parse 2.5e2');
     freeValue(v);
 
     v:= parse('1E-2', 4);
-    Assert((getNumber(v) > 0.009) and (getNumber(v) < 0.011), 'parse 1E-2');
+    test.harness.Assert(@context, (getNumber(v) > 0.009) and (getNumber(v) < 0.011), 'parse 1E-2');
     freeValue(v);
 
     { Leading zeros must be rejected }
     v:= parse('01', 2);
-    Assert(v^.Kind = JSON_ERROR, 'reject leading zero');
+    test.harness.Assert(@context, v^.Kind = JSON_ERROR, 'reject leading zero');
     freeValue(v);
 
     { === Strings === }
     v:= parse('""', 2);
-    Assert(v^.Kind = JSON_STRING, 'parse empty string kind');
-    Assert(stringSize(getString(v)) = 0, 'parse empty string size');
+    test.harness.Assert(@context, v^.Kind = JSON_STRING, 'parse empty string kind');
+    test.harness.Assert(@context, stringSize(getString(v)) = 0, 'parse empty string size');
     freeValue(v);
 
     v:= parse('"hello"', 7);
-    Assert(stringEquals(getString(v), 'hello'), 'parse simple string');
+    test.harness.Assert(@context, stringEquals(getString(v), 'hello'), 'parse simple string');
     freeValue(v);
 
     v:= parse('"a\nb"', 6);
-    Assert(getString(v)[1] = char(10), 'parse \n escape');
+    test.harness.Assert(@context, getString(v)[1] = char(10), 'parse \n escape');
     freeValue(v);
 
     v:= parse('"a\tb"', 6);
-    Assert(getString(v)[1] = char(9), 'parse \t escape');
+    test.harness.Assert(@context, getString(v)[1] = char(9), 'parse \t escape');
     freeValue(v);
 
     v:= parse('"a\\b"', 6);
-    Assert(getString(v)[1] = '\', 'parse \\ escape');
+    test.harness.Assert(@context, getString(v)[1] = '\', 'parse \\ escape');
     freeValue(v);
 
     v:= parse('"a\"b"', 6);
-    Assert(getString(v)[1] = '"', 'parse \" escape');
+    test.harness.Assert(@context, getString(v)[1] = '"', 'parse \" escape');
     freeValue(v);
 
     v:= parse('"\u0041"', 8);
-    Assert(getString(v)[0] = 'A', 'parse \u0041 = A');
+    test.harness.Assert(@context, getString(v)[0] = 'A', 'parse \u0041 = A');
     freeValue(v);
 
     v:= parse('"\u00e9"', 8);
-    Assert(getString(v)[0] = '?', 'parse \u00e9 = ? (non-ASCII)');
+    test.harness.Assert(@context, getString(v)[0] = '?', 'parse \u00e9 = ? (non-ASCII)');
     freeValue(v);
 
     { === Arrays === }
     v:= parse('[]', 2);
-    Assert(v^.Kind = JSON_ARRAY, 'parse empty array kind');
-    Assert(getArraySize(v) = 0, 'parse empty array size');
+    test.harness.Assert(@context, v^.Kind = JSON_ARRAY, 'parse empty array kind');
+    test.harness.Assert(@context, getArraySize(v) = 0, 'parse empty array size');
     freeValue(v);
 
     v:= parse('[1, 2, 3]', 9);
-    Assert(getArraySize(v) = 3, 'parse array size 3');
-    Assert(getNumber(getArrayItem(v, 0)) = 1.0, 'array[0]=1');
-    Assert(getNumber(getArrayItem(v, 1)) = 2.0, 'array[1]=2');
-    Assert(getNumber(getArrayItem(v, 2)) = 3.0, 'array[2]=3');
+    test.harness.Assert(@context, getArraySize(v) = 3, 'parse array size 3');
+    test.harness.Assert(@context, getNumber(getArrayItem(v, 0)) = 1.0, 'array[0]=1');
+    test.harness.Assert(@context, getNumber(getArrayItem(v, 1)) = 2.0, 'array[1]=2');
+    test.harness.Assert(@context, getNumber(getArrayItem(v, 2)) = 3.0, 'array[2]=3');
     freeValue(v);
 
     v:= parse('[true, "hi", null]', 18);
-    Assert(getArraySize(v) = 3, 'mixed array size');
-    Assert(getBool(getArrayItem(v, 0)) = true, 'mixed array[0]=true');
-    Assert(stringEquals(getString(getArrayItem(v, 1)), 'hi'), 'mixed array[1]="hi"');
-    Assert(getType(getArrayItem(v, 2)) = JSON_NULL, 'mixed array[2]=null');
+    test.harness.Assert(@context, getArraySize(v) = 3, 'mixed array size');
+    test.harness.Assert(@context, getBool(getArrayItem(v, 0)) = true, 'mixed array[0]=true');
+    test.harness.Assert(@context, stringEquals(getString(getArrayItem(v, 1)), 'hi'), 'mixed array[1]="hi"');
+    test.harness.Assert(@context, getType(getArrayItem(v, 2)) = JSON_NULL, 'mixed array[2]=null');
     freeValue(v);
 
     { Nested arrays }
     v:= parse('[[1, 2], [3]]', 13);
-    Assert(getArraySize(v) = 2, 'nested array outer size');
-    Assert(getArraySize(getArrayItem(v, 0)) = 2, 'nested array[0] size');
-    Assert(getNumber(getArrayItem(getArrayItem(v, 0), 1)) = 2.0, 'nested array[0][1]=2');
+    test.harness.Assert(@context, getArraySize(v) = 2, 'nested array outer size');
+    test.harness.Assert(@context, getArraySize(getArrayItem(v, 0)) = 2, 'nested array[0] size');
+    test.harness.Assert(@context, getNumber(getArrayItem(getArrayItem(v, 0), 1)) = 2.0, 'nested array[0][1]=2');
     freeValue(v);
 
     // === Objects ===
     v:= parse(#123#125, 2);
-    Assert(v^.Kind = JSON_OBJECT, 'parse empty object kind');
+    test.harness.Assert(@context, v^.Kind = JSON_OBJECT, 'parse empty object kind');
     freeValue(v);
 
     v:= parse(#123'"a": 1, "b": 2'#125, 16);
-    Assert(v^.Kind = JSON_OBJECT, 'parse object kind');
-    Assert(getNumber(getObjectItem(v, 'a')) = 1.0, 'object["a"]=1');
-    Assert(getNumber(getObjectItem(v, 'b')) = 2.0, 'object["b"]=2');
-    Assert(getObjectItem(v, 'c') = nil, 'object["c"]=nil');
+    test.harness.Assert(@context, v^.Kind = JSON_OBJECT, 'parse object kind');
+    test.harness.Assert(@context, getNumber(getObjectItem(v, 'a')) = 1.0, 'object["a"]=1');
+    test.harness.Assert(@context, getNumber(getObjectItem(v, 'b')) = 2.0, 'object["b"]=2');
+    test.harness.Assert(@context, getObjectItem(v, 'c') = nil, 'object["c"]=nil');
     freeValue(v);
 
     // Nested objects
     v:= parse(#123'"x": '#123'"y": 42'#125#125, 16);
-    Assert(getNumber(getObjectItem(getObjectItem(v, 'x'), 'y')) = 42.0, 'nested obj x.y=42');
+    test.harness.Assert(@context, getNumber(getObjectItem(getObjectItem(v, 'x'), 'y')) = 42.0, 'nested obj x.y=42');
     freeValue(v);
 
     // === Path accessors ===
     v:= parse(#123'"a": '#123'"b": '#123'"c": 99'#125#125#125, 23);
-    Assert(getNumberByPath(v, 'a.b.c', 0.0) = 99.0, 'path a.b.c=99');
-    Assert(getByPath(v, 'a.b.z') = nil, 'path a.b.z=nil');
-    Assert(getNumberByPath(v, 'a.b.z', -1.0) = -1.0, 'path default -1');
+    test.harness.Assert(@context, getNumberByPath(v, 'a.b.c', 0.0) = 99.0, 'path a.b.c=99');
+    test.harness.Assert(@context, getByPath(v, 'a.b.z') = nil, 'path a.b.z=nil');
+    test.harness.Assert(@context, getNumberByPath(v, 'a.b.z', -1.0) = -1.0, 'path default -1');
     freeValue(v);
 
     v:= parse(#123'"items": [10, 20, 30]'#125, 23);
-    Assert(getNumberByPath(v, 'items[0]', 0.0) = 10.0, 'path items[0]=10');
-    Assert(getNumberByPath(v, 'items[2]', 0.0) = 30.0, 'path items[2]=30');
+    test.harness.Assert(@context, getNumberByPath(v, 'items[0]', 0.0) = 10.0, 'path items[0]=10');
+    test.harness.Assert(@context, getNumberByPath(v, 'items[2]', 0.0) = 30.0, 'path items[2]=30');
     freeValue(v);
 
     v:= parse(#123'"a": ['#123'"b": "yes"'#125']'#125, 21);
-    Assert(stringEquals(getStringByPath(v, 'a[0].b', ''), 'yes'), 'path a[0].b=yes');
+    test.harness.Assert(@context, stringEquals(getStringByPath(v, 'a[0].b', ''), 'yes'), 'path a[0].b=yes');
     freeValue(v);
 
     v:= parse(#123'"debug": true'#125, 15);
-    Assert(getBoolByPath(v, 'debug', false) = true, 'path bool true');
-    Assert(getBoolByPath(v, 'missing', false) = false, 'path bool default');
+    test.harness.Assert(@context, getBoolByPath(v, 'debug', false) = true, 'path bool true');
+    test.harness.Assert(@context, getBoolByPath(v, 'missing', false) = false, 'path bool default');
     freeValue(v);
 
     // === Error handling ===
     v:= parse('', 0);
-    Assert(v^.Kind = JSON_ERROR, 'error empty input');
+    test.harness.Assert(@context, v^.Kind = JSON_ERROR, 'error empty input');
     freeValue(v);
 
     v:= parse(#123, 1);
-    Assert(v^.Kind = JSON_ERROR, 'error unterminated object');
+    test.harness.Assert(@context, v^.Kind = JSON_ERROR, 'error unterminated object');
     freeValue(v);
 
     v:= parse('[', 1);
-    Assert(v^.Kind = JSON_ERROR, 'error unterminated array');
+    test.harness.Assert(@context, v^.Kind = JSON_ERROR, 'error unterminated array');
     freeValue(v);
 
     v:= parse('"hello', 6);
-    Assert(v^.Kind = JSON_ERROR, 'error unterminated string');
+    test.harness.Assert(@context, v^.Kind = JSON_ERROR, 'error unterminated string');
     freeValue(v);
 
     v:= parse(#123'"a" 1'#125, 7);
-    Assert(v^.Kind = JSON_ERROR, 'error missing colon');
+    test.harness.Assert(@context, v^.Kind = JSON_ERROR, 'error missing colon');
     freeValue(v);
 
     v:= parse('tru', 3);
-    Assert(v^.Kind = JSON_ERROR, 'error truncated literal');
+    test.harness.Assert(@context, v^.Kind = JSON_ERROR, 'error truncated literal');
     freeValue(v);
 
     v:= parse('1 2', 3);
-    Assert(v^.Kind = JSON_ERROR, 'error trailing content');
+    test.harness.Assert(@context, v^.Kind = JSON_ERROR, 'error trailing content');
     freeValue(v);
 
     { === Builders === }
     v:= newNull;
-    Assert(v^.Kind = JSON_NULL, 'builder null');
+    test.harness.Assert(@context, v^.Kind = JSON_NULL, 'builder null');
     freeValue(v);
 
     v:= newBool(true);
-    Assert(getBool(v) = true, 'builder bool true');
+    test.harness.Assert(@context, getBool(v) = true, 'builder bool true');
     freeValue(v);
 
     v:= newNumber(3.14);
-    Assert((getNumber(v) > 3.139) and (getNumber(v) < 3.141), 'builder number');
+    test.harness.Assert(@context, (getNumber(v) > 3.139) and (getNumber(v) < 3.141), 'builder number');
     freeValue(v);
 
     v:= newString('test');
-    Assert(stringEquals(getString(v), 'test'), 'builder string');
+    test.harness.Assert(@context, stringEquals(getString(v), 'test'), 'builder string');
     freeValue(v);
 
     v:= newArray;
     arrayAppend(v, newNumber(1.0));
     arrayAppend(v, newNumber(2.0));
-    Assert(getArraySize(v) = 2, 'builder array size');
-    Assert(getNumber(getArrayItem(v, 0)) = 1.0, 'builder array[0]');
-    Assert(getNumber(getArrayItem(v, 1)) = 2.0, 'builder array[1]');
+    test.harness.Assert(@context, getArraySize(v) = 2, 'builder array size');
+    test.harness.Assert(@context, getNumber(getArrayItem(v, 0)) = 1.0, 'builder array[0]');
+    test.harness.Assert(@context, getNumber(getArrayItem(v, 1)) = 2.0, 'builder array[1]');
     freeValue(v);
 
     v:= newObject;
     objectSet(v, 'key', newString('val'));
-    Assert(stringEquals(getString(getObjectItem(v, 'key')), 'val'), 'builder obj set/get');
+    test.harness.Assert(@context, stringEquals(getString(getObjectItem(v, 'key')), 'val'), 'builder obj set/get');
     freeValue(v);
 
     { === Stringify === }
     s:= stringify(newNull);
-    Assert(stringEquals(s, 'null'), 'stringify null');
+    test.harness.Assert(@context, stringEquals(s, 'null'), 'stringify null');
     kfree(void(s));
 
     v:= newBool(true);
     s:= stringify(v);
-    Assert(stringEquals(s, 'true'), 'stringify true');
+    test.harness.Assert(@context, stringEquals(s, 'true'), 'stringify true');
     kfree(void(s));
     freeValue(v);
 
     v:= newNumber(42.0);
     s:= stringify(v);
-    Assert(stringEquals(s, '42'), 'stringify 42');
+    test.harness.Assert(@context, stringEquals(s, '42'), 'stringify 42');
     kfree(void(s));
     freeValue(v);
 
     v:= newString('hello');
     s:= stringify(v);
-    Assert(stringEquals(s, '"hello"'), 'stringify string');
+    test.harness.Assert(@context, stringEquals(s, '"hello"'), 'stringify string');
     kfree(void(s));
     freeValue(v);
 
     { Stringify with escape characters }
     v:= newString('a"b');
     s:= stringify(v);
-    Assert(stringContains(s, '\"'), 'stringify escape quote');
+    test.harness.Assert(@context, stringContains(s, '\"'), 'stringify escape quote');
     kfree(void(s));
     freeValue(v);
 
@@ -1451,7 +1422,7 @@ begin
     arrayAppend(v, newNumber(1.0));
     arrayAppend(v, newNumber(2.0));
     s:= stringify(v);
-    Assert(stringEquals(s, '[1,2]'), 'stringify array');
+    test.harness.Assert(@context, stringEquals(s, '[1,2]'), 'stringify array');
     kfree(void(s));
     freeValue(v);
 
@@ -1459,8 +1430,8 @@ begin
     v:= newObject;
     objectSet(v, 'k', newNumber(1.0));
     s:= stringify(v);
-    Assert(stringContains(s, '"k"'), 'stringify obj has key');
-    Assert(stringContains(s, ':1'), 'stringify obj has value');
+    test.harness.Assert(@context, stringContains(s, '"k"'), 'stringify obj has key');
+    test.harness.Assert(@context, stringContains(s, ':1'), 'stringify obj has value');
     kfree(void(s));
     freeValue(v);
 
@@ -1468,12 +1439,12 @@ begin
     v:= parse('[1, true, "hi", null]', 21);
     s:= stringify(v);
     v2:= parse(s, stringSize(s));
-    Assert(v2^.Kind = JSON_ARRAY, 'roundtrip array kind');
-    Assert(getArraySize(v2) = 4, 'roundtrip array size');
-    Assert(getNumber(getArrayItem(v2, 0)) = 1.0, 'roundtrip array[0]');
-    Assert(getBool(getArrayItem(v2, 1)) = true, 'roundtrip array[1]');
-    Assert(stringEquals(getString(getArrayItem(v2, 2)), 'hi'), 'roundtrip array[2]');
-    Assert(getType(getArrayItem(v2, 3)) = JSON_NULL, 'roundtrip array[3]');
+    test.harness.Assert(@context, v2^.Kind = JSON_ARRAY, 'roundtrip array kind');
+    test.harness.Assert(@context, getArraySize(v2) = 4, 'roundtrip array size');
+    test.harness.Assert(@context, getNumber(getArrayItem(v2, 0)) = 1.0, 'roundtrip array[0]');
+    test.harness.Assert(@context, getBool(getArrayItem(v2, 1)) = true, 'roundtrip array[1]');
+    test.harness.Assert(@context, stringEquals(getString(getArrayItem(v2, 2)), 'hi'), 'roundtrip array[2]');
+    test.harness.Assert(@context, getType(getArrayItem(v2, 3)) = JSON_NULL, 'roundtrip array[3]');
     freeValue(v);
     freeValue(v2);
     kfree(void(s));
@@ -1483,11 +1454,11 @@ begin
     objectSet(v, 'arr', newArray);
     arrayAppend(getObjectItem(v, 'arr'), newObject);
     objectSet(getArrayItem(getObjectItem(v, 'arr'), 0), 'deep', newString('value'));
-    Assert(stringEquals(getStringByPath(v, 'arr[0].deep', ''), 'value'), 'deep nested path');
+    test.harness.Assert(@context, stringEquals(getStringByPath(v, 'arr[0].deep', ''), 'value'), 'deep nested path');
     freeValue(v);
 
     // Print summary
-    PrintSummary;
+    test.harness.finish(@context);
 end;
 
 end.

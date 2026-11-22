@@ -87,6 +87,7 @@ uses
 implementation
 
 uses
+    test.harness,
     io.syslog, core.strings, memory.heap;
 
 function prio_New(ElementSize : uint32; InitialCapacity : uint32) : PBinaryHeap;
@@ -130,48 +131,15 @@ var
     v, r : uint32;
     ok   : boolean;
     p    : void;
-    passed, failed : uint32;
-
-    procedure Assert(condition : boolean; testName : pchar);
-    var
-        msg : pchar;
-    begin
-        if condition then begin
-            inc(passed);
-        end else begin
-            inc(failed);
-            msg := stringConcat('FAIL: ', testName);
-            io.syslog.logln('PRIO', msg);
-            kfree(void(msg));
-        end;
-    end;
-
-    procedure PrintSummary;
-    var
-        pStr, fStr, msg, tmp : pchar;
-    begin
-        pStr := intToString(passed);
-        fStr := intToString(failed);
-        msg := stringConcat(pStr, ' passed, ');
-        tmp := stringConcat(msg, fStr);
-        kfree(void(msg));
-        msg := stringConcat(tmp, ' failed.');
-        kfree(void(tmp));
-        io.syslog.logln('PRIO', msg);
-        kfree(void(msg));
-        kfree(void(pStr));
-        kfree(void(fStr));
-    end;
+    context : TTestContext;
 
 begin
-    passed := 0;
-    failed := 0;
-    io.syslog.logln('PRIO', 'Unit tests starting...');
+    test.harness.Start(@context, 'core.ds.prio');
 
     { === New / Empty === }
     h := prio_New(sizeof(uint32), 4);
-    Assert(h <> nil, 'New returns non-nil');
-    Assert(prio_IsEmpty(h), 'Initially empty');
+    test.harness.Assert(@context, h <> nil, 'New returns non-nil');
+    test.harness.Assert(@context, prio_IsEmpty(h), 'Initially empty');
 
     { === Enqueue with varying priorities === }
     v := 300; prio_Enqueue(h, 3, @v);
@@ -179,30 +147,30 @@ begin
     v := 500; prio_Enqueue(h, 5, @v);
     v := 200; prio_Enqueue(h, 2, @v);
     v := 400; prio_Enqueue(h, 4, @v);
-    Assert(prio_Size(h) = 5, 'Size after 5 enqueues');
+    test.harness.Assert(@context, prio_Size(h) = 5, 'Size after 5 enqueues');
 
     { === Peek (highest priority = lowest value) === }
     p := prio_Peek(h);
-    Assert(p <> nil, 'Peek non-nil');
-    Assert(uint32(p^) = 100, 'Peek returns data with priority 1');
+    test.harness.Assert(@context, p <> nil, 'Peek non-nil');
+    test.harness.Assert(@context, uint32(p^) = 100, 'Peek returns data with priority 1');
 
     { === Dequeue by priority 1,2,3,4,5 === }
-    ok := prio_Dequeue(h, @r); Assert(ok, 'Dequeue 1 ok'); Assert(r = 100, 'Dequeue pri=1');
-    ok := prio_Dequeue(h, @r); Assert(ok, 'Dequeue 2 ok'); Assert(r = 200, 'Dequeue pri=2');
-    ok := prio_Dequeue(h, @r); Assert(ok, 'Dequeue 3 ok'); Assert(r = 300, 'Dequeue pri=3');
-    ok := prio_Dequeue(h, @r); Assert(ok, 'Dequeue 4 ok'); Assert(r = 400, 'Dequeue pri=4');
-    ok := prio_Dequeue(h, @r); Assert(ok, 'Dequeue 5 ok'); Assert(r = 500, 'Dequeue pri=5');
-    Assert(prio_IsEmpty(h), 'Empty after all dequeued');
+    ok := prio_Dequeue(h, @r); test.harness.Assert(@context, ok, 'Dequeue 1 ok'); test.harness.Assert(@context, r = 100, 'Dequeue pri=1');
+    ok := prio_Dequeue(h, @r); test.harness.Assert(@context, ok, 'Dequeue 2 ok'); test.harness.Assert(@context, r = 200, 'Dequeue pri=2');
+    ok := prio_Dequeue(h, @r); test.harness.Assert(@context, ok, 'Dequeue 3 ok'); test.harness.Assert(@context, r = 300, 'Dequeue pri=3');
+    ok := prio_Dequeue(h, @r); test.harness.Assert(@context, ok, 'Dequeue 4 ok'); test.harness.Assert(@context, r = 400, 'Dequeue pri=4');
+    ok := prio_Dequeue(h, @r); test.harness.Assert(@context, ok, 'Dequeue 5 ok'); test.harness.Assert(@context, r = 500, 'Dequeue pri=5');
+    test.harness.Assert(@context, prio_IsEmpty(h), 'Empty after all dequeued');
 
     { === Edge: dequeue/peek on empty === }
     ok := prio_Dequeue(h, @r);
-    Assert(not ok, 'Dequeue on empty returns false');
+    test.harness.Assert(@context, not ok, 'Dequeue on empty returns false');
     p := prio_Peek(h);
-    Assert(p = nil, 'Peek on empty returns nil');
+    test.harness.Assert(@context, p = nil, 'Peek on empty returns nil');
 
     prio_Free(h);
 
-    PrintSummary;
+    test.harness.Finish(@context);
 end;
 
 end.

@@ -66,7 +66,8 @@ interface
 implementation
 
 uses
-  io.syslog,
+  test.harness,
+    io.syslog,
   memory.heap,
   core.strings;
 
@@ -140,76 +141,43 @@ end;
 
 procedure UnitTest;
 var
-  passed, failed : uint32;
+  context : TTestContext;
   buf1, buf2     : array[0..4] of byte;
 
-  procedure Assert(condition : boolean; testName : pchar);
-  var
-    msg : pchar;
-  begin
-    if condition then
-      inc(passed)
-    else begin
-      inc(failed);
-      msg := stringConcat('FAIL: ', testName);
-      io.syslog.logln('DJB2', msg);
-      kfree(void(msg));
-    end;
-  end;
-
-  procedure PrintSummary;
-  var
-    pStr, fStr, msg, tmp : pchar;
-  begin
-    pStr := intToString(passed);
-    fStr := intToString(failed);
-    msg  := stringConcat(pStr, ' passed, ');
-    tmp  := stringConcat(msg, fStr);
-    kfree(void(msg));
-    msg  := stringConcat(tmp, ' failed.');
-    kfree(void(tmp));
-    io.syslog.logln('DJB2', msg);
-    kfree(void(msg));
-    kfree(void(pStr));
-    kfree(void(fStr));
-  end;
-
 begin
-  passed := 0;
-  failed := 0;
-  io.syslog.logln('DJB2', 'Unit tests starting...');
+  test.harness.Start(@context, 'core.enc.djb2');
 
   { Two distinct 5-byte inputs }
   buf1[0] := ord('h'); buf1[1] := ord('e'); buf1[2] := ord('l'); buf1[3] := ord('l'); buf1[4] := ord('o');
   buf2[0] := ord('w'); buf2[1] := ord('o'); buf2[2] := ord('r'); buf2[3] := ord('l'); buf2[4] := ord('d');
 
   { === Known basis: zero-length input returns initial h (5381) === }
-  Assert(Hash_DJB2_32(void(@buf1[0]),    0) = 5381, 'DJB2_32    empty = 5381');
-  Assert(Hash_DJB2_64(void(@buf1[0]),    0) = uint64(5381), 'DJB2_64    empty = 5381');
-  Assert(Hash_DJB2Add_32(void(@buf1[0]), 0) = 5381, 'DJB2Add_32 empty = 5381');
-  Assert(Hash_DJB2Add_64(void(@buf1[0]), 0) = uint64(5381), 'DJB2Add_64 empty = 5381');
+  test.harness.Assert(@context, Hash_DJB2_32(void(@buf1[0]),    0) = 5381, 'DJB2_32    empty = 5381');
+  test.harness.Assert(@context, Hash_DJB2_64(void(@buf1[0]),    0) = uint64(5381), 'DJB2_64    empty = 5381');
+  test.harness.Assert(@context, Hash_DJB2Add_32(void(@buf1[0]), 0) = 5381, 'DJB2Add_32 empty = 5381');
+  test.harness.Assert(@context, Hash_DJB2Add_64(void(@buf1[0]), 0) = uint64(5381), 'DJB2Add_64 empty = 5381');
 
   { === Determinism === }
-  Assert(Hash_DJB2_32(void(@buf1[0]), 5)    = Hash_DJB2_32(void(@buf1[0]), 5),    'DJB2_32 deterministic');
-  Assert(Hash_DJB2_64(void(@buf1[0]), 5)    = Hash_DJB2_64(void(@buf1[0]), 5),    'DJB2_64 deterministic');
-  Assert(Hash_DJB2Add_32(void(@buf1[0]), 5) = Hash_DJB2Add_32(void(@buf1[0]), 5), 'DJB2Add_32 deterministic');
-  Assert(Hash_DJB2Add_64(void(@buf1[0]), 5) = Hash_DJB2Add_64(void(@buf1[0]), 5), 'DJB2Add_64 deterministic');
+  test.harness.Assert(@context, Hash_DJB2_32(void(@buf1[0]), 5)    = Hash_DJB2_32(void(@buf1[0]), 5),    'DJB2_32 deterministic');
+  test.harness.Assert(@context, Hash_DJB2_64(void(@buf1[0]), 5)    = Hash_DJB2_64(void(@buf1[0]), 5),    'DJB2_64 deterministic');
+  test.harness.Assert(@context, Hash_DJB2Add_32(void(@buf1[0]), 5) = Hash_DJB2Add_32(void(@buf1[0]), 5), 'DJB2Add_32 deterministic');
+  test.harness.Assert(@context, Hash_DJB2Add_64(void(@buf1[0]), 5) = Hash_DJB2Add_64(void(@buf1[0]), 5), 'DJB2Add_64 deterministic');
 
   { === Distinct inputs produce distinct hashes === }
-  Assert(Hash_DJB2_32(void(@buf1[0]), 5)    <> Hash_DJB2_32(void(@buf2[0]), 5),    'DJB2_32 hello <> world');
-  Assert(Hash_DJB2_64(void(@buf1[0]), 5)    <> Hash_DJB2_64(void(@buf2[0]), 5),    'DJB2_64 hello <> world');
-  Assert(Hash_DJB2Add_32(void(@buf1[0]), 5) <> Hash_DJB2Add_32(void(@buf2[0]), 5), 'DJB2Add_32 hello <> world');
-  Assert(Hash_DJB2Add_64(void(@buf1[0]), 5) <> Hash_DJB2Add_64(void(@buf2[0]), 5), 'DJB2Add_64 hello <> world');
+  test.harness.Assert(@context, Hash_DJB2_32(void(@buf1[0]), 5)    <> Hash_DJB2_32(void(@buf2[0]), 5),    'DJB2_32 hello <> world');
+  test.harness.Assert(@context, Hash_DJB2_64(void(@buf1[0]), 5)    <> Hash_DJB2_64(void(@buf2[0]), 5),    'DJB2_64 hello <> world');
+  test.harness.Assert(@context, Hash_DJB2Add_32(void(@buf1[0]), 5) <> Hash_DJB2Add_32(void(@buf2[0]), 5), 'DJB2Add_32 hello <> world');
+  test.harness.Assert(@context, Hash_DJB2Add_64(void(@buf1[0]), 5) <> Hash_DJB2Add_64(void(@buf2[0]), 5), 'DJB2Add_64 hello <> world');
 
   { === XOR and Add variants produce different outputs for non-empty input === }
-  Assert(Hash_DJB2_32(void(@buf1[0]), 5) <> Hash_DJB2Add_32(void(@buf1[0]), 5), 'DJB2_32 <> DJB2Add_32 for hello');
-  Assert(Hash_DJB2_64(void(@buf1[0]), 5) <> Hash_DJB2Add_64(void(@buf1[0]), 5), 'DJB2_64 <> DJB2Add_64 for hello');
+  test.harness.Assert(@context, Hash_DJB2_32(void(@buf1[0]), 5) <> Hash_DJB2Add_32(void(@buf1[0]), 5), 'DJB2_32 <> DJB2Add_32 for hello');
+  test.harness.Assert(@context, Hash_DJB2_64(void(@buf1[0]), 5) <> Hash_DJB2Add_64(void(@buf1[0]), 5), 'DJB2_64 <> DJB2Add_64 for hello');
 
   { === Length sensitivity === }
-  Assert(Hash_DJB2_32(void(@buf1[0]), 5) <> Hash_DJB2_32(void(@buf1[0]), 4), 'DJB2_32 length-sensitive');
-  Assert(Hash_DJB2_64(void(@buf1[0]), 5) <> Hash_DJB2_64(void(@buf1[0]), 4), 'DJB2_64 length-sensitive');
+  test.harness.Assert(@context, Hash_DJB2_32(void(@buf1[0]), 5) <> Hash_DJB2_32(void(@buf1[0]), 4), 'DJB2_32 length-sensitive');
+  test.harness.Assert(@context, Hash_DJB2_64(void(@buf1[0]), 5) <> Hash_DJB2_64(void(@buf1[0]), 4), 'DJB2_64 length-sensitive');
 
-  PrintSummary;
+  test.harness.Finish(@context);
 end;
 
 end.

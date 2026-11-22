@@ -20,7 +20,9 @@ unit test;
 interface
 
 uses
-    boot.mgr;
+    boot.mgr,
+    io.syslog,
+    test.harness;
 
 procedure init();
 procedure runAllTests();
@@ -58,15 +60,18 @@ uses
     core.enc.fnv1a,
     core.enc.djb2,
     core.ds.bloom,
-    core.fmt.json;   
+    core.fmt.json;
 
 procedure init();
 begin
-    { Stub for now }
+    { Initialize the test harness }
+    test.harness.init;
 end;
 
 procedure runAllTests();
 begin
+    io.syslog.logln('test', 'Running all unit tests...');
+
     { Run unit tests }
     core.strings.UnitTest;
     app.diskutil.UnitTest;
@@ -99,6 +104,12 @@ begin
     core.enc.djb2.UnitTest;
     core.ds.bloom.UnitTest;
     core.fmt.json.UnitTest;
+
+    { Finished }
+    io.syslog.logln('test', 'Unit tests finished.');
+
+    { Print the test harness results }
+    test.harness.print;
 end;
 
 initialization

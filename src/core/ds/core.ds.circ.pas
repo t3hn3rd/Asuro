@@ -94,6 +94,7 @@ uses
 implementation
 
 uses
+    test.harness,
     io.syslog, core.strings;
 
 function circ_New(Capacity : uint32; ElementSize : uint32) : PCircularQueue;
@@ -174,81 +175,48 @@ var
     v, r : uint32;
     ok   : boolean;
     p    : void;
-    passed, failed : uint32;
-
-    procedure Assert(condition : boolean; testName : pchar);
-    var
-        msg : pchar;
-    begin
-        if condition then begin
-            inc(passed);
-        end else begin
-            inc(failed);
-            msg := stringConcat('FAIL: ', testName);
-            io.syslog.logln('CIRC', msg);
-            kfree(void(msg));
-        end;
-    end;
-
-    procedure PrintSummary;
-    var
-        pStr, fStr, msg, tmp : pchar;
-    begin
-        pStr := intToString(passed);
-        fStr := intToString(failed);
-        msg := stringConcat(pStr, ' passed, ');
-        tmp := stringConcat(msg, fStr);
-        kfree(void(msg));
-        msg := stringConcat(tmp, ' failed.');
-        kfree(void(tmp));
-        io.syslog.logln('CIRC', msg);
-        kfree(void(msg));
-        kfree(void(pStr));
-        kfree(void(fStr));
-    end;
+    context : TTestContext;
 
 begin
-    passed := 0;
-    failed := 0;
-    io.syslog.logln('CIRC', 'Unit tests starting...');
+    test.harness.Start(@context, 'core.ds.circ');
 
     { === New / Empty / Full / Size === }
     q := circ_New(4, sizeof(uint32));
-    Assert(q <> nil, 'New returns non-nil');
-    Assert(circ_IsEmpty(q), 'Initially empty');
-    Assert(not circ_IsFull(q), 'Initially not full');
-    Assert(circ_Size(q) = 0, 'Initial size is 0');
+    test.harness.Assert(@context, q <> nil, 'New returns non-nil');
+    test.harness.Assert(@context, circ_IsEmpty(q), 'Initially empty');
+    test.harness.Assert(@context, not circ_IsFull(q), 'Initially not full');
+    test.harness.Assert(@context, circ_Size(q) = 0, 'Initial size is 0');
 
     { === Fill to capacity === }
-    v := 100; ok := circ_Enqueue(q, @v); Assert(ok, 'Enqueue 1 ok');
-    v := 200; ok := circ_Enqueue(q, @v); Assert(ok, 'Enqueue 2 ok');
-    v := 300; ok := circ_Enqueue(q, @v); Assert(ok, 'Enqueue 3 ok');
-    v := 400; ok := circ_Enqueue(q, @v); Assert(ok, 'Enqueue 4 ok');
-    Assert(circ_IsFull(q), 'Full after 4 enqueues');
-    Assert(circ_Size(q) = 4, 'Size is 4 when full');
+    v := 100; ok := circ_Enqueue(q, @v); test.harness.Assert(@context, ok, 'Enqueue 1 ok');
+    v := 200; ok := circ_Enqueue(q, @v); test.harness.Assert(@context, ok, 'Enqueue 2 ok');
+    v := 300; ok := circ_Enqueue(q, @v); test.harness.Assert(@context, ok, 'Enqueue 3 ok');
+    v := 400; ok := circ_Enqueue(q, @v); test.harness.Assert(@context, ok, 'Enqueue 4 ok');
+    test.harness.Assert(@context, circ_IsFull(q), 'Full after 4 enqueues');
+    test.harness.Assert(@context, circ_Size(q) = 4, 'Size is 4 when full');
 
     { === Enqueue when full === }
     v := 999;
     ok := circ_Enqueue(q, @v);
-    Assert(not ok, 'Enqueue on full returns false');
+    test.harness.Assert(@context, not ok, 'Enqueue on full returns false');
 
     { === Peek === }
     p := circ_Peek(q);
-    Assert(p <> nil, 'Peek non-nil');
-    Assert(uint32(p^) = 100, 'Peek returns first enqueued');
+    test.harness.Assert(@context, p <> nil, 'Peek non-nil');
+    test.harness.Assert(@context, uint32(p^) = 100, 'Peek returns first enqueued');
 
     { === Dequeue all — FIFO order === }
-    ok := circ_Dequeue(q, @r); Assert(r = 100, 'Dequeue 1 value');
-    ok := circ_Dequeue(q, @r); Assert(r = 200, 'Dequeue 2 value');
-    ok := circ_Dequeue(q, @r); Assert(r = 300, 'Dequeue 3 value');
-    ok := circ_Dequeue(q, @r); Assert(r = 400, 'Dequeue 4 value');
-    Assert(circ_IsEmpty(q), 'Empty after all dequeued');
+    ok := circ_Dequeue(q, @r); test.harness.Assert(@context, r = 100, 'Dequeue 1 value');
+    ok := circ_Dequeue(q, @r); test.harness.Assert(@context, r = 200, 'Dequeue 2 value');
+    ok := circ_Dequeue(q, @r); test.harness.Assert(@context, r = 300, 'Dequeue 3 value');
+    ok := circ_Dequeue(q, @r); test.harness.Assert(@context, r = 400, 'Dequeue 4 value');
+    test.harness.Assert(@context, circ_IsEmpty(q), 'Empty after all dequeued');
 
     { === Edge: dequeue/peek on empty === }
     ok := circ_Dequeue(q, @r);
-    Assert(not ok, 'Dequeue on empty returns false');
+    test.harness.Assert(@context, not ok, 'Dequeue on empty returns false');
     p := circ_Peek(q);
-    Assert(p = nil, 'Peek on empty returns nil');
+    test.harness.Assert(@context, p = nil, 'Peek on empty returns nil');
 
     { === Wrap-around === }
     v := 1; circ_Enqueue(q, @v);
@@ -256,14 +224,14 @@ begin
     circ_Dequeue(q, @r);
     v := 3; circ_Enqueue(q, @v);
     v := 4; circ_Enqueue(q, @v);
-    circ_Dequeue(q, @r); Assert(r = 2, 'Wraparound order 2');
-    circ_Dequeue(q, @r); Assert(r = 3, 'Wraparound order 3');
-    circ_Dequeue(q, @r); Assert(r = 4, 'Wraparound order 4');
-    Assert(circ_IsEmpty(q), 'Empty after wraparound');
+    circ_Dequeue(q, @r); test.harness.Assert(@context, r = 2, 'Wraparound order 2');
+    circ_Dequeue(q, @r); test.harness.Assert(@context, r = 3, 'Wraparound order 3');
+    circ_Dequeue(q, @r); test.harness.Assert(@context, r = 4, 'Wraparound order 4');
+    test.harness.Assert(@context, circ_IsEmpty(q), 'Empty after wraparound');
 
     circ_Free(q);
 
-    PrintSummary;
+    test.harness.Finish(@context);
 end;
 
 end.

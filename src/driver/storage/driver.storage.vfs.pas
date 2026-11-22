@@ -151,6 +151,7 @@ procedure UnitTest;
 implementation
 
 uses
+    test.harness,
     driver.storage.fs.mgr,
     proc.mgr,
     proc.types,
@@ -3564,7 +3565,7 @@ var
     mountFS : PFilesystem;
     mountDevice : PStorage_Device;
     deleteState : TDeleteTest;
-    passed, failed : uint32;
+    context : TTestContext;
     result         : TIsPathValid;
     errCode        : TError;
     absPath        : pchar;
@@ -3584,40 +3585,8 @@ var
     devCallbackOk  : boolean;
     devOps         : TVFSDeviceOps;
 
-    procedure Assert(condition : boolean; testName : pchar);
-    var
-        msg : pchar;
-    begin
-        if condition then
-            inc(passed)
-        else begin
-            inc(failed);
-            msg := stringConcat('FAIL: ', testName);
-            io.syslog.logln('VFS', msg);
-            kfree(void(msg));
-        end;
-    end;
-
-    procedure PrintSummary;
-    var
-        pStr, fStr, msg, tmp : pchar;
-    begin
-        pStr := intToString(passed);
-        fStr := intToString(failed);
-        msg  := stringConcat(pStr, ' passed, ');
-        tmp  := stringConcat(msg, fStr);
-        kfree(void(msg));
-        msg  := stringConcat(tmp, ' failed.');
-        kfree(void(tmp));
-        io.syslog.logln('VFS', msg);
-        kfree(void(msg));
-        kfree(void(pStr));
-        kfree(void(fStr));
-    end;
-
 begin
-    passed := 0;
-    failed := 0;
+    test.harness.Start(@context, 'driver.storage.vfs');
     { Synthetic mount objects only: no filesystem callback performs disk I/O. }
     mountVolA := PStorage_Volume(kalloc(sizeof(TStorage_Volume)));
     mountVolB := PStorage_Volume(kalloc(sizeof(TStorage_Volume)));
@@ -3626,60 +3595,60 @@ begin
     mountVolA^.filesystem := mountFS; mountVolB^.filesystem := mountFS;
     mountVolA^.id := $FFFFFFFE; mountVolB^.id := $FFFFFFFD;
     tmpKey := defaultVolumeName(mountVolA);
-    Assert(stringEquals(tmpKey,'vol4294967294'),'unlabelled default mount name'); kfree(void(tmpKey));
+    test.harness.Assert(@context, stringEquals(tmpKey,'vol4294967294'),'unlabelled default mount name'); kfree(void(tmpKey));
     memcpy(uint32(pchar('MY DATA')),uint32(@mountVolA^.labelText[0]),8);
     tmpKey := defaultVolumeName(mountVolA);
-    Assert(stringEquals(tmpKey,'MY DATA'),'label spaces preserved'); kfree(void(tmpKey));
+    test.harness.Assert(@context, stringEquals(tmpKey,'MY DATA'),'label spaces preserved'); kfree(void(tmpKey));
     memset(uint32(@mountVolA^.labelText[0]),0,sizeof(mountVolA^.labelText));
     memcpy(uint32(pchar('A/B')),uint32(@mountVolA^.labelText[0]),4);
     tmpKey := defaultVolumeName(mountVolA);
-    Assert(stringEquals(tmpKey,'A_B'),'label cannot create nested mount paths'); kfree(void(tmpKey));
+    test.harness.Assert(@context, stringEquals(tmpKey,'A_B'),'label cannot create nested mount paths'); kfree(void(tmpKey));
     memset(uint32(@mountVolA^.labelText[0]),0,sizeof(mountVolA^.labelText));
     memcpy(uint32(pchar('..')),uint32(@mountVolA^.labelText[0]),3);
     tmpKey := defaultVolumeName(mountVolA);
-    Assert(stringEquals(tmpKey,'vol4294967294'),'dot-dot label falls back safely'); kfree(void(tmpKey));
+    test.harness.Assert(@context, stringEquals(tmpKey,'vol4294967294'),'dot-dot label falls back safely'); kfree(void(tmpKey));
     memcpy(uint32(pchar('__MOUNT_TEST__')),uint32(@mountVolA^.labelText[0]),15);
     mountVolB^.labelText := mountVolA^.labelText;
-    Assert(mountDefaultVolume(mountVolA) = eNone,'label mount succeeds');
+    test.harness.Assert(@context, mountDefaultVolume(mountVolA) = eNone,'label mount succeeds');
     obj := GetObjectFromPath('/disk/__MOUNT_TEST__');
-    Assert((obj <> nil) and (obj^.Reference = void(mountVolA)),'label mount points to correct volume');
+    test.harness.Assert(@context, (obj <> nil) and (obj^.Reference = void(mountVolA)),'label mount points to correct volume');
     { Exercise shared deletion against a memory-only filesystem. }
     mountDevice := PStorage_Device(kalloc(sizeof(TStorage_Device)));
     memset(uint32(mountDevice), 0, sizeof(TStorage_Device));
     memset(uint32(@deleteState), 0, sizeof(deleteState));
     mountVolA^.device := mountDevice;
     mountVolA^.fsPrivate := @deleteState;
-    Assert(DeleteFile(nil, @errCode)=eInvalidArgument, 'delete nil path');
-    Assert(errCode=eInvalidArgument, 'delete error output matches result');
-    Assert(DeleteDirectory('/disk/__MOUNT_TEST__/entry', nil)=eNotSupported, 'delete missing directory hook');
+    test.harness.Assert(@context, DeleteFile(nil, @errCode)=eInvalidArgument, 'delete nil path');
+    test.harness.Assert(@context, errCode=eInvalidArgument, 'delete error output matches result');
+    test.harness.Assert(@context, DeleteDirectory('/disk/__MOUNT_TEST__/entry', nil)=eNotSupported, 'delete missing directory hook');
     mountFS^.deleteFileCallback := @UTestDeleteFile;
     mountFS^.deleteDirCallback := @UTestDeleteDirectory;
     deleteState.ExpectedPath := 'entry';
     deleteState.ResultCode := eNone;
-    Assert(DeleteFile('/disk/__MOUNT_TEST__/entry', @errCode)=eNone, 'delete root file succeeds');
-    Assert((deleteState.Files=1) and (deleteState.Directories=0) and deleteState.PathMatches, 'delete routes file hook with relative path');
+    test.harness.Assert(@context, DeleteFile('/disk/__MOUNT_TEST__/entry', @errCode)=eNone, 'delete root file succeeds');
+    test.harness.Assert(@context, (deleteState.Files=1) and (deleteState.Directories=0) and deleteState.PathMatches, 'delete routes file hook with relative path');
     deleteState.ExpectedPath := 'nested/entry';
     deleteState.ResultCode := eReadOnly;
-    Assert(DeleteDirectory('/disk/__MOUNT_TEST__/nested/entry', @errCode)=eReadOnly, 'delete directory propagates filesystem failure');
-    Assert((errCode=eReadOnly) and (deleteState.Directories=1) and deleteState.PathMatches, 'delete directory hook receives nested path');
+    test.harness.Assert(@context, DeleteDirectory('/disk/__MOUNT_TEST__/nested/entry', @errCode)=eReadOnly, 'delete directory propagates filesystem failure');
+    test.harness.Assert(@context, (errCode=eReadOnly) and (deleteState.Directories=1) and deleteState.PathMatches, 'delete directory hook receives nested path');
     DeleteFileAsync(nil, @errCode, @UTestDeleteComplete, @deleteState);
-    Assert((deleteState.Completions=1) and (deleteState.CompletedError=eInvalidArgument) and (errCode=eInvalidArgument), 'async file rejection completes exactly once');
+    test.harness.Assert(@context, (deleteState.Completions=1) and (deleteState.CompletedError=eInvalidArgument) and (errCode=eInvalidArgument), 'async file rejection completes exactly once');
     DeleteDirectoryAsync(nil, nil, @UTestDeleteComplete, @deleteState);
-    Assert((deleteState.Completions=2) and (deleteState.CompletedError=eInvalidArgument), 'async directory rejection supports nil error output');
+    test.harness.Assert(@context, (deleteState.Completions=2) and (deleteState.CompletedError=eInvalidArgument), 'async directory rejection supports nil error output');
     mountVolA^.fsPrivate := nil;
     mountVolA^.device := nil;
     kfree(void(mountDevice));
-    Assert(mountDefaultVolume(mountVolB) = eNone,'duplicate labels both mount');
+    test.harness.Assert(@context, mountDefaultVolume(mountVolB) = eNone,'duplicate labels both mount');
     obj := GetObjectFromPath('/disk/__MOUNT_TEST__-vol4294967293');
-    Assert((obj <> nil) and (obj^.Reference = void(mountVolB)),'duplicate label gets ID suffix');
-    Assert(mountDefaultVolume(mountVolB) = eNone,'duplicate mount is idempotent');
-    Assert(InvalidateVolume(mountVolA),'remove old label mount');
+    test.harness.Assert(@context, (obj <> nil) and (obj^.Reference = void(mountVolB)),'duplicate label gets ID suffix');
+    test.harness.Assert(@context, mountDefaultVolume(mountVolB) = eNone,'duplicate mount is idempotent');
+    test.harness.Assert(@context, InvalidateVolume(mountVolA),'remove old label mount');
     memset(uint32(@mountVolA^.labelText[0]),0,sizeof(mountVolA^.labelText));
     memcpy(uint32(pchar('__RENAMED_TEST__')),uint32(@mountVolA^.labelText[0]),17);
-    Assert(mountDefaultVolume(mountVolA) = eNone,'renamed volume remounts');
-    Assert(GetObjectFromPath('/disk/__MOUNT_TEST__') = nil,'old label mount removed');
+    test.harness.Assert(@context, mountDefaultVolume(mountVolA) = eNone,'renamed volume remounts');
+    test.harness.Assert(@context, GetObjectFromPath('/disk/__MOUNT_TEST__') = nil,'old label mount removed');
     obj := GetObjectFromPath('/disk/__RENAMED_TEST__');
-    Assert((obj <> nil) and (obj^.Reference = void(mountVolA)),'renamed mount points to same volume');
+    test.harness.Assert(@context, (obj <> nil) and (obj^.Reference = void(mountVolA)),'renamed mount points to same volume');
     InvalidateVolume(mountVolA); InvalidateVolume(mountVolB);
     { Exercise real registration notifications after the boot mount pass. }
     mountDevice := PStorage_Device(kalloc(sizeof(TStorage_Device)));
@@ -3690,82 +3659,81 @@ begin
     mountVolB^.labelText := mountVolA^.labelText;
     mountVolA^.filesystem := nil;
     driver.storage.vol.mgr.register_volume(mountDevice,mountVolA);
-    Assert(GetObjectFromPath('/disk/__HOTPLUG_TEST__') = nil,'unrecognized hotplug volume is not mounted');
+    test.harness.Assert(@context, GetObjectFromPath('/disk/__HOTPLUG_TEST__') = nil,'unrecognized hotplug volume is not mounted');
     mountVolB^.filesystem := mountFS;
     driver.storage.vol.mgr.register_volume(mountDevice,mountVolB);
     obj := GetObjectFromPath('/disk/__HOTPLUG_TEST__');
-    Assert((obj <> nil) and (obj^.Reference = void(mountVolB)),'registration automatically mounts recognized volume');
-    Assert((mountVolB^.lifecycleFlags and STORAGE_VOLUME_FLAG_MOUNTED) <> 0,'hotplug mount publishes mounted state');
+    test.harness.Assert(@context, (obj <> nil) and (obj^.Reference = void(mountVolB)),'registration automatically mounts recognized volume');
+    test.harness.Assert(@context, (mountVolB^.lifecycleFlags and STORAGE_VOLUME_FLAG_MOUNTED) <> 0,'hotplug mount publishes mounted state');
     driver.storage.vol.mgr.delete_volume(mountVolA);
     driver.storage.vol.mgr.delete_volume(mountVolB);
-    Assert(GetObjectFromPath('/disk/__HOTPLUG_TEST__') = nil,'hotplug removal clears mount');
+    test.harness.Assert(@context, GetObjectFromPath('/disk/__HOTPLUG_TEST__') = nil,'hotplug removal clears mount');
     kfree(void(mountDevice)); kfree(void(mountFS));
 
     watchFired := 0;
-    io.syslog.logln('VFS', 'Unit tests starting...');
 
     { ======================================================================= }
     { Phase 1 — PathValid: virtual directories created at init                }
     { ======================================================================= }
-    Assert(PathValid('/')      = pvDirectory, 'PathValid(/) = dir');
-    Assert(PathValid('/dev')   = pvDirectory, 'PathValid(/dev) = dir');
-    Assert(PathValid('/disk')  = pvDirectory, 'PathValid(/disk) = dir');
-    Assert(PathValid('/mnt')   = pvDirectory, 'PathValid(/mnt) = dir');
+    test.harness.Assert(@context, PathValid('/')      = pvDirectory, 'PathValid(/) = dir');
+    test.harness.Assert(@context, PathValid('/dev')   = pvDirectory, 'PathValid(/dev) = dir');
+    test.harness.Assert(@context, PathValid('/disk')  = pvDirectory, 'PathValid(/disk) = dir');
+    test.harness.Assert(@context, PathValid('/mnt')   = pvDirectory, 'PathValid(/mnt) = dir');
 
     { PathValid: non-existent paths }
-    Assert(PathValid('/doesnotexist999') = pvInvalid, 'PathValid(nonexistent) = invalid');
-    Assert(PathValid('/dev/fakefile')    = pvInvalid, 'PathValid(dev/fake) = invalid');
+    test.harness.Assert(@context, PathValid('/doesnotexist999') = pvInvalid, 'PathValid(nonexistent) = invalid');
+    test.harness.Assert(@context, PathValid('/dev/fakefile')    = pvInvalid, 'PathValid(dev/fake) = invalid');
 
     { ======================================================================= }
     { Phase 1 — MakeAbsolutePath                                             }
     { ======================================================================= }
     absPath := MakeAbsolutePath('/already/abs');
-    Assert(stringEquals(absPath, '/already/abs'), 'MakeAbsolutePath absolute passthrough');
+    test.harness.Assert(@context, stringEquals(absPath, '/already/abs'), 'MakeAbsolutePath absolute passthrough');
     kfree(void(absPath));
 
     absPath := MakeAbsolutePath('/');
-    Assert(stringEquals(absPath, '/'), 'MakeAbsolutePath root');
+    test.harness.Assert(@context, stringEquals(absPath, '/'), 'MakeAbsolutePath root');
     kfree(void(absPath));
 
     absPath := MakeAbsolutePath('');
-    Assert(absPath <> nil, 'MakeAbsolutePath empty not nil');
-    Assert(absPath[0] = '/', 'MakeAbsolutePath empty returns /');
+    test.harness.Assert(@context, absPath <> nil, 'MakeAbsolutePath empty not nil');
+    test.harness.Assert(@context, absPath[0] = '/', 'MakeAbsolutePath empty returns /');
     kfree(void(absPath));
 
     { ======================================================================= }
     { Phase 1 — newVirtualDirectory + duplicate detection                     }
     { ======================================================================= }
     errCode := newVirtualDirectory('/utest_vfs');
-    Assert(errCode = eNone, 'newVirtualDirectory /utest_vfs = eNone');
-    Assert(PathValid('/utest_vfs') = pvDirectory, 'PathValid /utest_vfs after create');
+    test.harness.Assert(@context, errCode = eNone, 'newVirtualDirectory /utest_vfs = eNone');
+    test.harness.Assert(@context, PathValid('/utest_vfs') = pvDirectory, 'PathValid /utest_vfs after create');
 
     errCode := newVirtualDirectory('/utest_vfs/sub');
-    Assert(errCode = eNone, 'newVirtualDirectory /utest_vfs/sub = eNone');
-    Assert(PathValid('/utest_vfs/sub') = pvDirectory, 'PathValid /utest_vfs/sub');
+    test.harness.Assert(@context, errCode = eNone, 'newVirtualDirectory /utest_vfs/sub = eNone');
+    test.harness.Assert(@context, PathValid('/utest_vfs/sub') = pvDirectory, 'PathValid /utest_vfs/sub');
 
     errCode := newVirtualDirectory('/utest_vfs');
-    Assert(errCode <> eNone, 'newVirtualDirectory duplicate fails');
+    test.harness.Assert(@context, errCode <> eNone, 'newVirtualDirectory duplicate fails');
 
     { ======================================================================= }
     { Phase 1 — GetDirectoryListingFrom: root + subdir                        }
     { ======================================================================= }
     map := GetDirectoryListingFrom('/', '/');
-    Assert(map <> nil, 'GetDirListingFrom(/) not nil');
+    test.harness.Assert(@context, map <> nil, 'GetDirListingFrom(/) not nil');
     FreeDirectoryListing(map);
 
     map := GetDirectoryListingFrom('/utest_vfs', '/');
-    Assert(map <> nil, 'GetDirListingFrom(/utest_vfs) not nil');
+    test.harness.Assert(@context, map <> nil, 'GetDirListingFrom(/utest_vfs) not nil');
     { Verify snapshot contains 'sub' entry }
     obj := PVFSObject(core.ds.hashmap.get(map, 'sub'));
-    Assert(obj <> nil, 'listing /utest_vfs has sub entry');
+    test.harness.Assert(@context, obj <> nil, 'listing /utest_vfs has sub entry');
     if obj <> nil then
-        Assert(obj^.ObjectType = otVDIRECTORY, 'sub entry is otVDIRECTORY');
+        test.harness.Assert(@context, obj^.ObjectType = otVDIRECTORY, 'sub entry is otVDIRECTORY');
     FreeDirectoryListing(map);
 
     { Snapshot independence: two listings don't alias }
     map  := GetDirectoryListingFrom('/utest_vfs', '/');
     map2 := GetDirectoryListingFrom('/utest_vfs', '/');
-    Assert(map <> map2, 'two snapshots are distinct pointers');
+    test.harness.Assert(@context, map <> map2, 'two snapshots are distinct pointers');
     FreeDirectoryListing(map);
     FreeDirectoryListing(map2);
 
@@ -3773,29 +3741,29 @@ begin
     { Phase 4 — CreateSymlink                                                 }
     { ======================================================================= }
     { Nil args }
-    Assert(CreateSymlink(nil, '/dev') = eInvalidArgument, 'Symlink nil link = eInvalidArgument');
-    Assert(CreateSymlink('/utest_vfs/sl', nil) = eInvalidArgument, 'Symlink nil target = eInvalidArgument');
+    test.harness.Assert(@context, CreateSymlink(nil, '/dev') = eInvalidArgument, 'Symlink nil link = eInvalidArgument');
+    test.harness.Assert(@context, CreateSymlink('/utest_vfs/sl', nil) = eInvalidArgument, 'Symlink nil target = eInvalidArgument');
 
     { Create symlink pointing to /dev }
     errCode := CreateSymlink('/utest_vfs/devlink', '/dev');
-    Assert(errCode = eNone, 'CreateSymlink /utest_vfs/devlink = eNone');
+    test.harness.Assert(@context, errCode = eNone, 'CreateSymlink /utest_vfs/devlink = eNone');
 
     { Symlink resolves: PathValid through symlink to /dev which is a directory }
-    Assert(PathValid('/utest_vfs/devlink') = pvDirectory, 'PathValid through symlink = dir');
+    test.harness.Assert(@context, PathValid('/utest_vfs/devlink') = pvDirectory, 'PathValid through symlink = dir');
 
     { Duplicate symlink name }
-    Assert(CreateSymlink('/utest_vfs/devlink', '/mnt') = eAlreadyExists, 'Symlink duplicate = eAlreadyExists');
+    test.harness.Assert(@context, CreateSymlink('/utest_vfs/devlink', '/mnt') = eAlreadyExists, 'Symlink duplicate = eAlreadyExists');
 
     { Symlink in non-existent parent }
-    Assert(CreateSymlink('/utest_vfs/nosuchdir/link', '/dev') = eInvalidPath, 'Symlink bad parent = eInvalidPath');
+    test.harness.Assert(@context, CreateSymlink('/utest_vfs/nosuchdir/link', '/dev') = eInvalidPath, 'Symlink bad parent = eInvalidPath');
 
     { Verify symlink appears in listing }
     map := GetDirectoryListingFrom('/utest_vfs', '/');
-    Assert(map <> nil, 'listing after symlink not nil');
+    test.harness.Assert(@context, map <> nil, 'listing after symlink not nil');
     obj := PVFSObject(core.ds.hashmap.get(map, 'devlink'));
-    Assert(obj <> nil, 'listing has devlink entry');
+    test.harness.Assert(@context, obj <> nil, 'listing has devlink entry');
     if obj <> nil then
-        Assert(obj^.ObjectType = otSYMLINK, 'devlink entry is otSYMLINK');
+        test.harness.Assert(@context, obj^.ObjectType = otSYMLINK, 'devlink entry is otSYMLINK');
     FreeDirectoryListing(map);
 
     { ======================================================================= }
@@ -3804,43 +3772,43 @@ begin
     { Setup: create /utest_vfs/deep/child so we can symlink to /utest_vfs/deep
       and verify traversal into child works through the symlink. }
     errCode := newVirtualDirectory('/utest_vfs/deep');
-    Assert(errCode = eNone, 'newVDir /utest_vfs/deep = eNone');
+    test.harness.Assert(@context, errCode = eNone, 'newVDir /utest_vfs/deep = eNone');
     errCode := newVirtualDirectory('/utest_vfs/deep/child');
-    Assert(errCode = eNone, 'newVDir /utest_vfs/deep/child = eNone');
+    test.harness.Assert(@context, errCode = eNone, 'newVDir /utest_vfs/deep/child = eNone');
     errCode := newVirtualDirectory('/utest_vfs/deep/child/leaf');
-    Assert(errCode = eNone, 'newVDir /utest_vfs/deep/child/leaf = eNone');
+    test.harness.Assert(@context, errCode = eNone, 'newVDir /utest_vfs/deep/child/leaf = eNone');
 
     { Symlink /utest_vfs/sdeep -> /utest_vfs/deep }
     errCode := CreateSymlink('/utest_vfs/sdeep', '/utest_vfs/deep');
-    Assert(errCode = eNone, 'CreateSymlink sdeep -> deep = eNone');
+    test.harness.Assert(@context, errCode = eNone, 'CreateSymlink sdeep -> deep = eNone');
 
     { PathValid: symlink target is a directory }
-    Assert(PathValid('/utest_vfs/sdeep') = pvDirectory, 'PathValid symlink sdeep = dir');
+    test.harness.Assert(@context, PathValid('/utest_vfs/sdeep') = pvDirectory, 'PathValid symlink sdeep = dir');
 
     { PathValid: traverse INTO symlink target's children }
-    Assert(PathValid('/utest_vfs/sdeep/child') = pvDirectory, 'PathValid sdeep/child = dir');
-    Assert(PathValid('/utest_vfs/sdeep/child/leaf') = pvDirectory, 'PathValid sdeep/child/leaf = dir');
+    test.harness.Assert(@context, PathValid('/utest_vfs/sdeep/child') = pvDirectory, 'PathValid sdeep/child = dir');
+    test.harness.Assert(@context, PathValid('/utest_vfs/sdeep/child/leaf') = pvDirectory, 'PathValid sdeep/child/leaf = dir');
 
     { PathValid: non-existent child after symlink }
-    Assert(PathValid('/utest_vfs/sdeep/nope') = pvInvalid, 'PathValid sdeep/nope = invalid');
+    test.harness.Assert(@context, PathValid('/utest_vfs/sdeep/nope') = pvInvalid, 'PathValid sdeep/nope = invalid');
 
     { GetDirectoryListing through symlink shows children }
     map := GetDirectoryListing('/utest_vfs/sdeep');
-    Assert(map <> nil, 'GetDirListing through symlink not nil');
+    test.harness.Assert(@context, map <> nil, 'GetDirListing through symlink not nil');
     if map <> nil then begin
         obj := PVFSObject(core.ds.hashmap.get(map, 'child'));
-        Assert(obj <> nil, 'symlink listing has child entry');
+        test.harness.Assert(@context, obj <> nil, 'symlink listing has child entry');
         if obj <> nil then
-            Assert(obj^.ObjectType = otVDIRECTORY, 'child entry through symlink is vdir');
+            test.harness.Assert(@context, obj^.ObjectType = otVDIRECTORY, 'child entry through symlink is vdir');
         FreeDirectoryListing(map);
     end;
 
     { GetDirectoryListing deeper through symlink }
     map := GetDirectoryListing('/utest_vfs/sdeep/child');
-    Assert(map <> nil, 'GetDirListing sdeep/child not nil');
+    test.harness.Assert(@context, map <> nil, 'GetDirListing sdeep/child not nil');
     if map <> nil then begin
         obj := PVFSObject(core.ds.hashmap.get(map, 'leaf'));
-        Assert(obj <> nil, 'sdeep/child listing has leaf entry');
+        test.harness.Assert(@context, obj <> nil, 'sdeep/child listing has leaf entry');
         FreeDirectoryListing(map);
     end;
 
@@ -3849,18 +3817,18 @@ begin
     { ======================================================================= }
     { /utest_vfs/chain1 -> /utest_vfs/sdeep (which -> /utest_vfs/deep) }
     errCode := CreateSymlink('/utest_vfs/chain1', '/utest_vfs/sdeep');
-    Assert(errCode = eNone, 'CreateSymlink chain1 -> sdeep = eNone');
+    test.harness.Assert(@context, errCode = eNone, 'CreateSymlink chain1 -> sdeep = eNone');
 
     { Double-hop: chain1 -> sdeep -> deep, should resolve to /utest_vfs/deep }
-    Assert(PathValid('/utest_vfs/chain1') = pvDirectory, 'PathValid chain1 = dir');
-    Assert(PathValid('/utest_vfs/chain1/child') = pvDirectory, 'PathValid chain1/child = dir');
+    test.harness.Assert(@context, PathValid('/utest_vfs/chain1') = pvDirectory, 'PathValid chain1 = dir');
+    test.harness.Assert(@context, PathValid('/utest_vfs/chain1/child') = pvDirectory, 'PathValid chain1/child = dir');
 
     { GetDirectoryListing through chained symlink }
     map := GetDirectoryListing('/utest_vfs/chain1');
-    Assert(map <> nil, 'GetDirListing chain1 not nil');
+    test.harness.Assert(@context, map <> nil, 'GetDirListing chain1 not nil');
     if map <> nil then begin
         obj := PVFSObject(core.ds.hashmap.get(map, 'child'));
-        Assert(obj <> nil, 'chain1 listing has child');
+        test.harness.Assert(@context, obj <> nil, 'chain1 listing has child');
         FreeDirectoryListing(map);
     end;
 
@@ -3870,31 +3838,31 @@ begin
     { Create a cycle: /utest_vfs/cyc_a -> /utest_vfs/cyc_b
                       /utest_vfs/cyc_b -> /utest_vfs/cyc_a }
     errCode := CreateSymlink('/utest_vfs/cyc_a', '/utest_vfs/cyc_b');
-    Assert(errCode = eNone, 'CreateSymlink cyc_a -> cyc_b = eNone');
+    test.harness.Assert(@context, errCode = eNone, 'CreateSymlink cyc_a -> cyc_b = eNone');
     errCode := CreateSymlink('/utest_vfs/cyc_b', '/utest_vfs/cyc_a');
-    Assert(errCode = eNone, 'CreateSymlink cyc_b -> cyc_a = eNone');
+    test.harness.Assert(@context, errCode = eNone, 'CreateSymlink cyc_b -> cyc_a = eNone');
 
     { PathValid on a cycle should return pvInvalid (not hang or crash) }
-    Assert(PathValid('/utest_vfs/cyc_a') = pvInvalid, 'PathValid symlink cycle = invalid');
+    test.harness.Assert(@context, PathValid('/utest_vfs/cyc_a') = pvInvalid, 'PathValid symlink cycle = invalid');
 
     { GetDirectoryListing on a cycle returns nil }
     map := GetDirectoryListing('/utest_vfs/cyc_a');
-    Assert(map = nil, 'GetDirListing symlink cycle = nil');
+    test.harness.Assert(@context, map = nil, 'GetDirListing symlink cycle = nil');
 
     { ======================================================================= }
     { Phase 4e — Symlink to root (/) }
     { ======================================================================= }
     errCode := CreateSymlink('/utest_vfs/rootlink', '/');
-    Assert(errCode = eNone, 'CreateSymlink rootlink -> / = eNone');
-    Assert(PathValid('/utest_vfs/rootlink') = pvDirectory, 'PathValid rootlink = dir');
-    Assert(PathValid('/utest_vfs/rootlink/dev') = pvDirectory, 'PathValid rootlink/dev = dir');
-    Assert(PathValid('/utest_vfs/rootlink/dev/null') = pvFile, 'PathValid rootlink/dev/null = file');
+    test.harness.Assert(@context, errCode = eNone, 'CreateSymlink rootlink -> / = eNone');
+    test.harness.Assert(@context, PathValid('/utest_vfs/rootlink') = pvDirectory, 'PathValid rootlink = dir');
+    test.harness.Assert(@context, PathValid('/utest_vfs/rootlink/dev') = pvDirectory, 'PathValid rootlink/dev = dir');
+    test.harness.Assert(@context, PathValid('/utest_vfs/rootlink/dev/null') = pvFile, 'PathValid rootlink/dev/null = file');
 
     map := GetDirectoryListing('/utest_vfs/rootlink');
-    Assert(map <> nil, 'GetDirListing rootlink not nil');
+    test.harness.Assert(@context, map <> nil, 'GetDirListing rootlink not nil');
     if map <> nil then begin
         obj := PVFSObject(core.ds.hashmap.get(map, 'dev'));
-        Assert(obj <> nil, 'rootlink listing has dev');
+        test.harness.Assert(@context, obj <> nil, 'rootlink listing has dev');
         FreeDirectoryListing(map);
     end;
 
@@ -3902,26 +3870,26 @@ begin
     { Phase 4 — WatchDirectory / UnwatchDirectory                             }
     { ======================================================================= }
     { Nil/invalid args return 0 }
-    Assert(WatchDirectory(nil, @UTestWatchCb, nil) = 0, 'WatchDir nil path = 0');
-    Assert(WatchDirectory('/dev', nil, nil) = 0, 'WatchDir nil callback = 0');
+    test.harness.Assert(@context, WatchDirectory(nil, @UTestWatchCb, nil) = 0, 'WatchDir nil path = 0');
+    test.harness.Assert(@context, WatchDirectory('/dev', nil, nil) = 0, 'WatchDir nil callback = 0');
 
     { Register a watch on /utest_vfs }
     watchFired := 0;
     watchId := WatchDirectory('/utest_vfs', @UTestWatchCb, @watchFired);
-    Assert(watchId <> 0, 'WatchDir /utest_vfs returns nonzero ID');
+    test.harness.Assert(@context, watchId <> 0, 'WatchDir /utest_vfs returns nonzero ID');
 
     { Trigger mutation: create a symlink in watched dir }
     errCode := CreateSymlink('/utest_vfs/watchtest', '/cfg');
-    Assert(errCode = eNone, 'CreateSymlink for watch test = eNone');
+    test.harness.Assert(@context, errCode = eNone, 'CreateSymlink for watch test = eNone');
 
     { Verify callback was called }
-    Assert(watchFired = 1, 'Watch callback fired once');
+    test.harness.Assert(@context, watchFired = 1, 'Watch callback fired once');
 
     { Unwatch and trigger another mutation — should NOT fire }
     UnwatchDirectory(watchId);
     errCode := CreateSymlink('/utest_vfs/watchtest2', '/cfg');
-    Assert(errCode = eNone, 'CreateSymlink after unwatch = eNone');
-    Assert(watchFired = 1, 'Watch callback not fired after unwatch');
+    test.harness.Assert(@context, errCode = eNone, 'CreateSymlink after unwatch = eNone');
+    test.harness.Assert(@context, watchFired = 1, 'Watch callback not fired after unwatch');
 
     { Unwatch with invalid IDs — no crash }
     UnwatchDirectory(0);
@@ -3945,25 +3913,25 @@ begin
 
     { Lookup should return a valid deep copy }
     map2 := DirCache_Lookup(nil, '/cachetest');
-    Assert(map2 <> nil, 'DirCache_Lookup hit after store');
+    test.harness.Assert(@context, map2 <> nil, 'DirCache_Lookup hit after store');
     if map2 <> nil then begin
         obj := PVFSObject(core.ds.hashmap.get(map2, 'ctest'));
-        Assert(obj <> nil, 'Cache clone has ctest entry');
+        test.harness.Assert(@context, obj <> nil, 'Cache clone has ctest entry');
         if obj <> nil then
-            Assert(obj^.ObjectType = otVDIRECTORY, 'Cache ctest is otVDIRECTORY');
+            test.harness.Assert(@context, obj^.ObjectType = otVDIRECTORY, 'Cache ctest is otVDIRECTORY');
         FreeDirectoryListing(map2);
     end;
 
     { Clone is independent — freeing it doesn't break a second lookup }
     map2 := DirCache_Lookup(nil, '/cachetest');
-    Assert(map2 <> nil, 'DirCache_Lookup second hit still valid');
+    test.harness.Assert(@context, map2 <> nil, 'DirCache_Lookup second hit still valid');
     if map2 <> nil then
         FreeDirectoryListing(map2);
 
     { Invalidate and verify miss }
     DirCache_Invalidate(nil, '/cachetest');
     map2 := DirCache_Lookup(nil, '/cachetest');
-    Assert(map2 = nil, 'DirCache_Lookup miss after invalidate');
+    test.harness.Assert(@context, map2 = nil, 'DirCache_Lookup miss after invalidate');
 
     { LRU eviction: fill all 16 slots + 1 to force eviction }
     for i := 0 to DIR_CACHE_SLOTS do begin
@@ -3973,11 +3941,11 @@ begin
     end;
     { First entry (key '0') should have been evicted since it had lowest tick }
     map2 := DirCache_Lookup(nil, '0');
-    Assert(map2 = nil, 'DirCache LRU evicted oldest slot');
+    test.harness.Assert(@context, map2 = nil, 'DirCache LRU evicted oldest slot');
     { Last entry should still be cached }
     tmpKey := intToString(DIR_CACHE_SLOTS);
     map2 := DirCache_Lookup(nil, tmpKey);
-    Assert(map2 <> nil, 'DirCache LRU newest slot still cached');
+    test.harness.Assert(@context, map2 <> nil, 'DirCache LRU newest slot still cached');
     if map2 <> nil then
         FreeDirectoryListing(map2);
     kfree(void(tmpKey));
@@ -3992,108 +3960,108 @@ begin
     { ======================================================================= }
 
     { PathValid: device nodes are files }
-    Assert(PathValid('/dev/null') = pvFile, 'PathValid /dev/null = pvFile');
-    Assert(PathValid('/dev/zero') = pvFile, 'PathValid /dev/zero = pvFile');
+    test.harness.Assert(@context, PathValid('/dev/null') = pvFile, 'PathValid /dev/null = pvFile');
+    test.harness.Assert(@context, PathValid('/dev/zero') = pvFile, 'PathValid /dev/zero = pvFile');
 
     { RegisterDevice: duplicate detection }
     devOps.Read  := @DevNull_Read;
     devOps.Write := @DevNull_Write;
     devOps.Size  := @DevNull_Size;
-    Assert(RegisterDevice('/dev/null', @devOps, nil) = eAlreadyExists, 'RegisterDevice dup = eAlreadyExists');
+    test.harness.Assert(@context, RegisterDevice('/dev/null', @devOps, nil) = eAlreadyExists, 'RegisterDevice dup = eAlreadyExists');
 
     { RegisterDevice: nil args }
-    Assert(RegisterDevice(nil, @devOps, nil) = eInvalidArgument, 'RegisterDevice nil path');
-    Assert(RegisterDevice('/dev/test', nil, nil) = eInvalidArgument, 'RegisterDevice nil ops');
+    test.harness.Assert(@context, RegisterDevice(nil, @devOps, nil) = eInvalidArgument, 'RegisterDevice nil path');
+    test.harness.Assert(@context, RegisterDevice('/dev/test', nil, nil) = eInvalidArgument, 'RegisterDevice nil ops');
 
     { RegisterDevice: bad parent }
-    Assert(RegisterDevice('/nosuchdir/dev', @devOps, nil) = eDirectoryDoesNotExist, 'RegisterDevice bad parent');
+    test.harness.Assert(@context, RegisterDevice('/nosuchdir/dev', @devOps, nil) = eDirectoryDoesNotExist, 'RegisterDevice bad parent');
 
     { /dev/null — open + read returns 0 bytes (EOF) }
     devHandle := OpenFile('/dev/null', omRead, @devErr);
-    Assert((devHandle <> 0) and (devErr = eNone), 'OpenFile /dev/null ok');
+    test.harness.Assert(@context, (devHandle <> 0) and (devErr = eNone), 'OpenFile /dev/null ok');
     devBuf := puint8(kalloc(64));
     core.util.memset(uint32(devBuf), $FF, 64);
     devRead := ReadFile(devHandle, 0, devBuf, 64);
-    Assert(devRead = 0, '/dev/null read returns 0');
-    Assert(FileSizeFromHandle(devHandle) = 0, '/dev/null size = 0');
+    test.harness.Assert(@context, devRead = 0, '/dev/null read returns 0');
+    test.harness.Assert(@context, FileSizeFromHandle(devHandle) = 0, '/dev/null size = 0');
     CloseFile(devHandle);
 
     { /dev/null — open write mode, write is accepted }
     devHandle := OpenFile('/dev/null', omWrite, @devErr);
-    Assert((devHandle <> 0) and (devErr = eNone), 'OpenFile /dev/null write ok');
+    test.harness.Assert(@context, (devHandle <> 0) and (devErr = eNone), 'OpenFile /dev/null write ok');
     devRead := WriteFile(devHandle, 0, devBuf, 32);
-    Assert(devRead = 32, '/dev/null write returns length');
+    test.harness.Assert(@context, devRead = 32, '/dev/null write returns length');
     CloseFile(devHandle);
 
     { /dev/zero — open + read fills buffer with zeroes }
     core.util.memset(uint32(devBuf), $FF, 64);
     devHandle := OpenFile('/dev/zero', omRead, @devErr);
-    Assert((devHandle <> 0) and (devErr = eNone), 'OpenFile /dev/zero ok');
+    test.harness.Assert(@context, (devHandle <> 0) and (devErr = eNone), 'OpenFile /dev/zero ok');
     devRead := ReadFile(devHandle, 0, devBuf, 64);
-    Assert(devRead = 64, '/dev/zero read returns length');
-    Assert(devBuf[0] = 0, '/dev/zero byte 0 = 0');
-    Assert(devBuf[63] = 0, '/dev/zero byte 63 = 0');
+    test.harness.Assert(@context, devRead = 64, '/dev/zero read returns length');
+    test.harness.Assert(@context, devBuf[0] = 0, '/dev/zero byte 0 = 0');
+    test.harness.Assert(@context, devBuf[63] = 0, '/dev/zero byte 63 = 0');
     CloseFile(devHandle);
 
     { /dev/zero — two reads at different offsets }
     devHandle := OpenFile('/dev/zero', omRead, @devErr);
-    Assert((devHandle <> 0) and (devErr = eNone), 'OpenFile /dev/zero read2 ok');
+    test.harness.Assert(@context, (devHandle <> 0) and (devErr = eNone), 'OpenFile /dev/zero read2 ok');
     core.util.memset(uint32(devBuf), $FF, 64);
     devRead := ReadFile(devHandle, 0, devBuf, 16);
-    Assert(devRead = 16, '/dev/zero read at 0 = 16');
-    Assert(devBuf[0] = 0, '/dev/zero read at 0 byte 0 = 0');
+    test.harness.Assert(@context, devRead = 16, '/dev/zero read at 0 = 16');
+    test.harness.Assert(@context, devBuf[0] = 0, '/dev/zero read at 0 byte 0 = 0');
     devRead := ReadFile(devHandle, 16, devBuf, 16);
-    Assert(devRead = 16, '/dev/zero read at 16 = 16');
+    test.harness.Assert(@context, devRead = 16, '/dev/zero read at 16 = 16');
     CloseFile(devHandle);
 
     { /dev/zero — ReadFileAsync device dispatch }
     devHandle := OpenFile('/dev/zero', omRead, @devErr);
-    Assert((devHandle <> 0) and (devErr = eNone), 'OpenFile /dev/zero for async ok');
+    test.harness.Assert(@context, (devHandle <> 0) and (devErr = eNone), 'OpenFile /dev/zero for async ok');
     core.util.memset(uint32(devBuf), $FF, 64);
     devBytesRead := 0;
     devCallbackOk := false;
     ReadFileAsync(devHandle, 0, devBuf, 32, @devBytesRead, nil, nil);
-    Assert(devBytesRead = 32, '/dev/zero ReadFileAsync bytesRead = 32');
-    Assert(devBuf[0] = 0, '/dev/zero ReadFileAsync byte 0 = 0');
+    test.harness.Assert(@context, devBytesRead = 32, '/dev/zero ReadFileAsync bytesRead = 32');
+    test.harness.Assert(@context, devBuf[0] = 0, '/dev/zero ReadFileAsync byte 0 = 0');
     CloseFile(devHandle);
 
     { /dev/null appears in /dev listing }
     map := GetDirectoryListingFrom('/dev', '/');
-    Assert(map <> nil, 'listing /dev not nil');
+    test.harness.Assert(@context, map <> nil, 'listing /dev not nil');
     if map <> nil then begin
         obj := PVFSObject(core.ds.hashmap.get(map, 'null'));
-        Assert(obj <> nil, 'listing /dev has null entry');
+        test.harness.Assert(@context, obj <> nil, 'listing /dev has null entry');
         if obj <> nil then
-            Assert(obj^.ObjectType = otDEVICE, '/dev/null entry is otDEVICE');
+            test.harness.Assert(@context, obj^.ObjectType = otDEVICE, '/dev/null entry is otDEVICE');
         obj := PVFSObject(core.ds.hashmap.get(map, 'zero'));
-        Assert(obj <> nil, 'listing /dev has zero entry');
+        test.harness.Assert(@context, obj <> nil, 'listing /dev has zero entry');
         if obj <> nil then
-            Assert(obj^.ObjectType = otDEVICE, '/dev/zero entry is otDEVICE');
+            test.harness.Assert(@context, obj^.ObjectType = otDEVICE, '/dev/zero entry is otDEVICE');
         FreeDirectoryListing(map);
     end;
 
     { /dev/null — write: accepted }
     devHandle := OpenFile('/dev/null', omWrite, @devErr);
-    Assert((devHandle <> 0) and (devErr = eNone), 'OpenFile /dev/null write ok');
+    test.harness.Assert(@context, (devHandle <> 0) and (devErr = eNone), 'OpenFile /dev/null write ok');
     core.util.memset(uint32(devBuf), $AA, 64);
     devRead := WriteFile(devHandle, 0, devBuf, 20);
-    Assert(devRead = 20, '/dev/null write1 = 20');
+    test.harness.Assert(@context, devRead = 20, '/dev/null write1 = 20');
     devRead := WriteFile(devHandle, 20, devBuf, 12);
-    Assert(devRead = 12, '/dev/null write2 = 12');
+    test.harness.Assert(@context, devRead = 12, '/dev/null write2 = 12');
     CloseFile(devHandle);
 
     { /dev/null — write via WriteFileAsync }
     devHandle := OpenFile('/dev/null', omWrite, @devErr);
-    Assert((devHandle <> 0) and (devErr = eNone), 'OpenFile /dev/null write async ok');
+    test.harness.Assert(@context, (devHandle <> 0) and (devErr = eNone), 'OpenFile /dev/null write async ok');
     WriteFileAsync(devHandle, 0, devBuf, 16, nil, nil, nil);
     CloseFile(devHandle);
 
     { /dev/zero — write: accepted (discards data) }
     devHandle := OpenFile('/dev/zero', omWrite, @devErr);
-    Assert((devHandle <> 0) and (devErr = eNone), 'OpenFile /dev/zero write ok');
+    test.harness.Assert(@context, (devHandle <> 0) and (devErr = eNone), 'OpenFile /dev/zero write ok');
     core.util.memset(uint32(devBuf), $BB, 64);
     devRead := WriteFile(devHandle, 0, devBuf, 24);
-    Assert(devRead = 24, '/dev/zero write = 24');
+    test.harness.Assert(@context, devRead = 24, '/dev/zero write = 24');
     CloseFile(devHandle);
 
     kfree(puint32(devBuf));
@@ -4101,7 +4069,7 @@ begin
     { --- Cleanup: remove all test objects from VFS tree --- }
     RemoveVirtualTree('/utest_vfs');
 
-    PrintSummary;
+    test.harness.Finish(@context);
 end;
 
 initialization

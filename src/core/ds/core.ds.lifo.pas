@@ -85,6 +85,7 @@ uses
 implementation
 
 uses
+    test.harness,
     io.syslog, core.strings;
 
 function lifo_New(ElementSize : uint32) : PLIFOStack;
@@ -164,85 +165,52 @@ var
     v, r : uint32;
     ok   : boolean;
     p    : void;
-    passed, failed : uint32;
-
-    procedure Assert(condition : boolean; testName : pchar);
-    var
-        msg : pchar;
-    begin
-        if condition then begin
-            inc(passed);
-        end else begin
-            inc(failed);
-            msg := stringConcat('FAIL: ', testName);
-            io.syslog.logln('LIFO', msg);
-            kfree(void(msg));
-        end;
-    end;
-
-    procedure PrintSummary;
-    var
-        pStr, fStr, msg, tmp : pchar;
-    begin
-        pStr := intToString(passed);
-        fStr := intToString(failed);
-        msg := stringConcat(pStr, ' passed, ');
-        tmp := stringConcat(msg, fStr);
-        kfree(void(msg));
-        msg := stringConcat(tmp, ' failed.');
-        kfree(void(tmp));
-        io.syslog.logln('LIFO', msg);
-        kfree(void(msg));
-        kfree(void(pStr));
-        kfree(void(fStr));
-    end;
+    context : TTestContext;
 
 begin
-    passed := 0;
-    failed := 0;
-    io.syslog.logln('LIFO', 'Unit tests starting...');
+    test.harness.Start(@context, 'core.ds.lifo');
 
     { === New / Empty / Size === }
     s := lifo_New(sizeof(uint32));
-    Assert(s <> nil, 'New returns non-nil');
-    Assert(lifo_IsEmpty(s), 'Initially empty');
-    Assert(lifo_Size(s) = 0, 'Initial size is 0');
+    test.harness.Assert(@context, s <> nil, 'New returns non-nil');
+    test.harness.Assert(@context, lifo_IsEmpty(s), 'Initially empty');
+    test.harness.Assert(@context, lifo_Size(s) = 0, 'Initial size is 0');
 
     { === Push / Size === }
     v := 10; lifo_Push(s, @v);
     v := 20; lifo_Push(s, @v);
     v := 30; lifo_Push(s, @v);
-    Assert(lifo_Size(s) = 3, 'Size after 3 pushes');
+    test.harness.Assert(@context, lifo_Size(s) = 3, 'Size after 3 pushes');
 
     { === Peek (should return last pushed) === }
     p := lifo_Peek(s);
-    Assert(p <> nil, 'Peek non-nil');
-    Assert(uint32(p^) = 30, 'Peek returns last pushed');
+    test.harness.Assert(@context, p <> nil, 'Peek non-nil');
+    test.harness.Assert(@context, uint32(p^) = 30, 'Peek returns last pushed');
 
     { === Pop order (reverse) === }
     ok := lifo_Pop(s, @r);
-    Assert(ok, 'Pop 1 succeeds');
-    Assert(r = 30, 'Pop 1 value');
+    test.harness.Assert(@context, ok, 'Pop 1 succeeds');
+    test.harness.Assert(@context, r = 30, 'Pop 1 value');
 
     ok := lifo_Pop(s, @r);
-    Assert(ok, 'Pop 2 succeeds');
-    Assert(r = 20, 'Pop 2 value');
+    test.harness.Assert(@context, ok, 'Pop 2 succeeds');
+    test.harness.Assert(@context, r = 20, 'Pop 2 value');
 
     ok := lifo_Pop(s, @r);
-    Assert(ok, 'Pop 3 succeeds');
-    Assert(r = 10, 'Pop 3 value');
+    test.harness.Assert(@context, ok, 'Pop 3 succeeds');
+    test.harness.Assert(@context, r = 10, 'Pop 3 value');
 
-    Assert(lifo_IsEmpty(s), 'Empty after all popped');
+    test.harness.Assert(@context, lifo_IsEmpty(s), 'Empty after all popped');
 
     { === Edge: pop/peek on empty === }
     ok := lifo_Pop(s, @r);
-    Assert(not ok, 'Pop on empty returns false');
+    test.harness.Assert(@context, not ok, 'Pop on empty returns false');
     p := lifo_Peek(s);
-    Assert(p = nil, 'Peek on empty returns nil');
+    test.harness.Assert(@context, p = nil, 'Peek on empty returns nil');
 
     lifo_Free(s);
 
-    PrintSummary;
+    test.harness.Finish(@context);
 end;
 
 end.
