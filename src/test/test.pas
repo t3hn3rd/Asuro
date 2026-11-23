@@ -59,9 +59,13 @@ uses
     driver.storage.perftest,
     driver.storage.ctl.ahci,
     driver.storage.ctl.usb,
+    core.comp.lzw,
+    core.comp.lz4,
+    core.comp.deflate,
     core.enc.fnv1a,
     core.enc.djb2,
     core.ds.bloom,
+    core.fmt.png,
     core.fmt.json;
 
 procedure init();
@@ -100,6 +104,10 @@ begin
     driver.storage.test.UnitTest;
     driver.storage.ctl.ahci.UnitTest;
     driver.storage.ctl.usb.UnitTest;
+    core.comp.lzw.UnitTest;
+    core.comp.lz4.UnitTest;
+    core.comp.deflate.UnitTest;
+    core.fmt.png.UnitTest;
     core.enc.fnv1a.UnitTest;
     core.enc.djb2.UnitTest;
     core.ds.bloom.UnitTest;
