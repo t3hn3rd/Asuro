@@ -507,7 +507,7 @@ begin
     bar_type:= PCI_Info^.address0 AND $00000001;
     io_base := PCI_Info^.address0 and $FFFFFFFC;
     if bar_type = 0 then begin
-        mem_base := PtrUInt(mapDevice(PCI_Info^.address0 and $FFFFFFF0, $20000));
+        mem_base := PtrUInt(mapDevice(driver.bus.pci.memoryBAR(PCI_Info^.address0, PCI_Info^.address1), $20000));
         if mem_base = 0 then exit;
     end;
     if PCI_Info^.interrupt_line >= 16 then exit;

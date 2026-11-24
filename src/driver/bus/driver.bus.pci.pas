@@ -83,6 +83,7 @@ var
     bus_count : uint8 = 1;
     get_device_count : uint8;
 
+function memoryBAR(low, upper: uint32): uint64;
 procedure init();
 procedure scanBus(bus : uint8);
 function loadDeviceConfig(bus : uint8; slot : uint8; func : uint8) : boolean;
@@ -93,6 +94,14 @@ procedure setBusMaster(bus : uint8; slot : uint8; func : uint8; master : boolean
 procedure enableDevice(bus : uint8; slot : uint8; func : uint8);
 
 implementation 
+
+function memoryBAR(low, upper: uint32): uint64;
+begin
+    memoryBAR := 0;
+    if (low and 1 <> 0) or (low and 6 = 6) then exit;
+    memoryBAR := low and $FFFFFFF0;
+    if (low and 6) = 4 then memoryBAR := memoryBAR or (uint64(upper) shl 32);
+end;
 
 function load(ptr : void) : boolean;
 var
