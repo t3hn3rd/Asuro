@@ -43,7 +43,7 @@ uses
     io.syslog,
     debug.tracer,
     driver.storage.fs.mgr,
-    boot.mgr,
+    boot.services, boot.mgr,
     memory.heap,
     proc.mgr,
     io.stdio,
@@ -82,11 +82,9 @@ begin
 end;
 
 initialization
+    boot.services.registerDevices;
     boot.mgr.registerBoot('app.mgr', @initApps, 'Program Manager', BOOT_MGR_BARRIER_LATE);
     boot.mgr.registerBoot('driver.video.bga', @driver.video.bga.init, 'BGA Display Driver Initialization', 'driver.video');
-    boot.mgr.registerBoot('driver.net', @driver.net.init, 'Net Driver', BOOT_MGR_BARRIER_DEVICE);
-    boot.mgr.registerBoot('driver.hid.ps2.keyboard', @driver.hid.ps2.keyboard.init, 'PS/2 Keyboard Driver', BOOT_MGR_BARRIER_DEVICE);
-    boot.mgr.registerBoot('driver.hid.ps2.mouse', @driver.hid.ps2.mouse.init, 'PS/2 Mouse Driver', BOOT_MGR_BARRIER_DEVICE);
     boot.mgr.registerBoot('proc.desktop', @driver.video.desktop.init, 'Initialize Desktop', 'boot.splash.teardown');
     boot.mgr.registerBoot('svc.gfxd', @svc.gfxd.init, 'GFX Daemon', BOOT_MGR_BARRIER_LATE);
     boot.mgr.registerBoot('driver.timer.rtc', @driver.timer.rtc.init, 'Real Time Clock Driver', 'arch.x86.fault');
@@ -95,10 +93,6 @@ initialization
     boot.mgr.registerBoot('driver.video_late', @lateInit, 'Video Driver Late Initialization', 'driver.video.*');
     driver.video.lvgl.onDebugToggle := @app.uidebug.toggle;
     driver.hid.usb.keyboard.onAttach := @driver.hid.ps2.keyboard.disable;
-    boot.mgr.registerBoot('driver.hid.usb.keyboard', @driver.hid.usb.keyboard.init, 'USB Keyboard Driver', BOOT_MGR_BARRIER_DEVICE);
-    boot.mgr.registerBoot('driver.hid.usb.mouse', @driver.hid.usb.mouse.init, 'USB Mouse Driver', BOOT_MGR_BARRIER_DEVICE);
-    boot.mgr.registerBoot('driver.storage.ctl.usb', @driver.storage.ctl.usb.init, 'USB Mass Storage Driver', BOOT_MGR_BARRIER_DEVICE);
-    boot.mgr.registerBoot('driver.storage.bench', @driver.storage.bench.init, 'Storage Benchmark', BOOT_MGR_BARRIER_LATE);
     boot.mgr.registerBoot('driver.storage.metatest', @driver.storage.metatest.init, 'Storage Metadata Tests', BOOT_MGR_BARRIER_MID);
     boot.mgr.registerBoot('driver.mgr', @driver.mgr.init, 'Driver Manager Initialization', BOOT_MGR_BARRIER_MID);
     boot.mgr.registerBoot('driver.bus.pci', @driver.bus.pci.Init, 'PCI Bus Driver', BOOT_MGR_BARRIER_BUS_LATE);

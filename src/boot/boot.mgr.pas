@@ -67,12 +67,15 @@ procedure registerBarrier(Name: PChar; InitProc: TBootProc; Status: PChar; Depen
 { Execute all registered boot entries in dependency order.
   Updates syslog and the splash screen as each entry completes. }
 procedure run;
+function runChecked: boolean;
 
 implementation
 
 uses
-    io.syslog, boot.splash
+    io.syslog
+    {$ifndef CPUX86_64}, boot.splash
     {$INCLUDE dangling_units.inc}
+    {$endif}
     ;
 
 type
@@ -415,13 +418,14 @@ begin
     io.syslog.logln('BOOT', '--- End Boot Entries ---');
 end;
 
-procedure run;
+function execute(requireComplete: boolean): boolean;
 var
     Sorted    : uint32;
     i         : uint32;
     idx       : uint32;
 begin
     { No entries to run — exit early. }
+    execute := true;
     if EntryCount = 0 then exit;
 
     { Phase barriers form the main chain.  The "after" barriers are
@@ -442,6 +446,11 @@ begin
     { Sort entries into dependency order }
     Sorted := topoSort(SortedOrder);
 
+    if requireComplete and (Sorted <> EntryCount) then begin
+        execute := false;
+        exit;
+    end;
+
     { Execute each entry in order.
       Log AFTER calling InitProc so that io.syslog is already initialized
       by the time we first try to write through it. }
@@ -449,10 +458,22 @@ begin
         idx := SortedOrder[i];
         io.syslog.logln('BOOT', Entries[idx].Name);
         if Entries[idx].InitProc <> nil then begin
+            {$ifndef CPUX86_64}
             boot.splash.update((100 * i) div Sorted, Entries[idx].Status);
+            {$endif}
             Entries[idx].InitProc();
         end;
     end;
+end;
+
+procedure run;
+begin
+    execute(false);
+end;
+
+function runChecked: boolean;
+begin
+    runChecked := execute(true);
 end;
 
 initialization

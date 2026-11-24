@@ -163,6 +163,7 @@ try {
     & VBoxManage.exe controlvm $vm screenshotpng (Join-Path $evidence "screen-$Test-$MemoryMB.png")
     $output = Get-Content -LiteralPath $serialPath -Raw
     if ($Test -eq 'storage' -and $output.Contains('PASS: USB bulk read from sector zero matches reference reads')) {
+        $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
         while (-not ($output -match '128 KiB QD1, elapsed us=[1-9][0-9]*') -and [DateTime]::UtcNow -lt $deadline) {
             Start-Sleep -Milliseconds 200
             $output = Get-Content -LiteralPath $serialPath -Raw
@@ -177,12 +178,12 @@ try {
     if (($Test -in @('none','storage')) -and $output.Contains('HALTED:')) {
         throw 'The kernel halted after starting the desktop.'
     }
-    foreach ($unit in @('driver.storage.vfs', 'driver.storage.metatest', 'driver.storage.ctl.ahci', 'driver.bus.usb.types', 'driver.bus.usb.core', 'driver.storage.ctl.usb', 'driver.hid.usb.keyboard', 'driver.hid.usb.mouse', 'driver.bus.usb.hub', 'driver.bus.usb.ohci', 'driver.bus.usb.xhci', 'core.ds.cfifo', 'core.enc.fnv1a', 'core.strings')) {
+    foreach ($unit in @('driver.storage.vfs', 'driver.storage.metatest', 'driver.storage.ctl.ahci', 'driver.bus.usb.types', 'driver.bus.usb.core', 'driver.storage.ctl.usb', 'driver.hid.usb.keyboard', 'driver.hid.usb.mouse', 'driver.bus.usb.hub', 'driver.bus.usb.ohci', 'driver.bus.usb.xhci', 'core.ds.cfifo', 'core.ds.cfifols', 'core.ds.fifo', 'core.ds.lifo', 'core.ds.circ', 'core.ds.minh', 'core.ds.maxh', 'core.ds.prio', 'core.enc.sha1', 'core.enc.djb2', 'core.enc.fnv1a', 'core.strings')) {
         if ($output -notmatch ('\[test:' + [regex]::Escape($unit) + '\] [1-9][0-9]* passed, 0 failed\.')) {
             throw "Missing passing test summary for $unit"
         }
     }
-    foreach ($required in @('PASS: native unit initialization runs once', 'EXCEPTION_TESTS_PASSED=0000000000000002', 'EXCEPTION_TESTS_FAILED=0000000000000000',
+    foreach ($required in @('PASS: native unit initialization runs once', 'EXCEPTION_TESTS_PASSED=0000000000000003', 'EXCEPTION_TESTS_FAILED=0000000000000000',
         'PASS: VFS reads ELF64 kernel through AHCI',
         'IOREQ_TESTS_FAILED=0000000000000000', 'FSMGR_TESTS_FAILED=0000000000000000', 'PATH_TESTS_FAILED=0000000000000000', 'HASHMAP_TESTS_FAILED=0000000000000000', 'LISTS_TESTS_FAILED=0000000000000000', 'PMM_TESTS_FAILED=0000000000000000', 'VMM_TESTS_FAILED=0000000000000000',
         'HEAP_TESTS_FAILED=0000000000000000', 'IRQ_TESTS_FAILED=0000000000000000', 'CONTEXT_TESTS_FAILED=0000000000000000', 'PROCESS_TESTS_FAILED=0000000000000000', 'FD_TESTS_FAILED=0000000000000000', 'STDIO_TESTS_FAILED=0000000000000000')) {
@@ -190,6 +191,9 @@ try {
     }
     if ($Test -eq 'storage' -and $output -notmatch '\[test:driver\.storage\.bench\] [1-9][0-9]* passed, 0 failed\.') {
         throw 'Missing passing native storage benchmark test summary.'
+    }
+    if ($Test -eq 'storage' -and $output -notmatch '\[test:driver\.storage\.perftest\] [1-9][0-9]* passed, 0 failed\.') {
+        throw 'Missing passing native storage regression tests.'
     }
     $ohci = $state -contains 'usb="on"'
     $xhci = $state -contains 'xhci="on"'
@@ -238,7 +242,7 @@ try {
             throw 'Page fault did not preserve the expected CR2.'
         }
         if ($Test -eq 'df' -and (-not $output.Contains('STACK=double-fault IST1') -or
-                               -not $output.Contains('RSP=0000000100001000'))) {
+                               -not $output.Contains('FAULT=bootstrap stack guard'))) {
             throw 'Double fault did not switch from the broken stack to IST1.'
         }
     }

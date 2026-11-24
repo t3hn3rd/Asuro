@@ -19,10 +19,12 @@ procedure SHA1Init(ctx : PSHA1Context);
 procedure SHA1Update(ctx : PSHA1Context; buffer : puint8; bufferLen : uint32 );
 procedure SHA1Final(ctx : PSHA1Context; digest : PSHA1Digest);
 
+procedure UnitTest;
+
 implementation
 
 uses
-    core.util, arch.x86.util;
+    core.util, test.harness, memory.heap;
 
 procedure Invert(Source, Dest: puint8; Count: uint32);
 var
@@ -42,7 +44,7 @@ end;
 
 procedure SHA1Init(ctx : PSHA1Context);
 begin
-    memset(uint32(ctx), 0, sizeof(TSHA1Context));
+    memset(PtrUInt(ctx), 0, sizeof(TSHA1Context));
     ctx^.State[0] := $67452301;
     ctx^.State[1] := $EFCDAB89;
     ctx^.State[2] := $98BADCFE;
@@ -75,7 +77,7 @@ begin
         T:= (B and C) or (not B and D) + K20 + E;
         E:= D;
         D:= C;
-        C:= RorDWord(B, 2);
+        C:= RolDWord(B, 30);
         B:= A;
         A:= T + RolDWord(A, 5) + Data[i and 15];
         Data[i and 15]:= RolDword(Data[i and 15] xor Data[(i+2) and 15] xor Data[(i+8) and 15] xor Data[(i+13) and 15], 1);
@@ -86,7 +88,7 @@ begin
         T:= (B xor C xor D) + K40 + E;
         E:= D;
         D:= C;
-        C:= RorDWord(B, 2);
+        C:= RolDWord(B, 30);
         B:= A;
         A:= T + RolDWord(A, 5) + Data[i and 15];
         Data[i and 15]:= RolDword(Data[i and 15] xor Data[(i+2) and 15] xor Data[(i+8) and 15] xor Data[(i+13) and 15], 1);
@@ -97,7 +99,7 @@ begin
         T:= (B and C) or (B and D) or (C and D) + K60 + E;
         E:= D;
         D:= C;
-        C:= RorDWord(B, 2);
+        C:= RolDWord(B, 30);
         B:= A;
         A:= T + RolDWord(A, 5) + Data[i and 15];
         Data[i and 15]:= RolDword(Data[i and 15] xor Data[(i+2) and 15] xor Data[(i+8) and 15] xor Data[(i+13) and 15], 1);
@@ -108,7 +110,7 @@ begin
         T:= (B xor C xor D) + K80 + E;
         E:= D;
         D:= C;
-        C:= RorDWord(B, 2);
+        C:= RolDWord(B, 30);
         B:= A;
         A:= T + RolDWord(A, 5) + Data[i and 15];
         Data[i and 15]:= RolDword(Data[i and 15] xor Data[(i+2) and 15] xor Data[(i+8) and 15] xor Data[(i+13) and 15], 1);
@@ -139,7 +141,7 @@ begin
         Num:= 64 - ctx^.BufCnt;
         if Num > bufferLen then Num:= bufferLen;
         
-        Move(Src^, ctx^.Buffer[ctx^.BufCnt], Num);
+        memcpy(PtrUInt(Src), PtrUInt(@ctx^.Buffer[ctx^.BufCnt]), Num);
         Inc(ctx^.BufCnt, Num);
         Inc(Src, Num);
 
@@ -158,7 +160,7 @@ begin
 
     if Num > 0 then begin
         ctx^.BufCnt:= Num;
-        Move(Src^, ctx^.Buffer, Num);
+        memcpy(PtrUInt(Src), PtrUInt(@ctx^.Buffer), Num);
     end;
 end;
 
@@ -204,7 +206,32 @@ begin
     Invert(puint8(@ctx^.State[0]), puint8(digest), 20);
 
     { Clear context }
-    memset(uint32(ctx), 0, SizeOf(TSHA1Context));
+    memset(PtrUInt(ctx), 0, SizeOf(TSHA1Context));
+end;
+
+procedure UnitTest;
+const expected: TSHA1Digest = ($A9,$99,$3E,$36,$47,$06,$81,$6A,$BA,$3E,
+                              $25,$71,$78,$50,$C2,$6C,$9C,$D0,$D8,$9D);
+var context: TTestContext;
+    ctx: PSHA1Context;
+    digest: TSHA1Digest;
+    i: uint32;
+    matched: boolean;
+begin
+    test.harness.Start(@context, 'core.enc.sha1');
+    ctx := PSHA1Context(kalloc(sizeof(TSHA1Context)));
+    matched := ctx <> nil;
+    if matched then begin
+        SHA1Init(ctx);
+        SHA1Update(ctx, puint8(pchar('a')), 1);
+        SHA1Update(ctx, puint8(pchar('bc')), 2);
+        SHA1Final(ctx, @digest);
+        for i := 0 to 19 do
+            if digest[i] <> expected[i] then matched := false;
+        kfree(void(ctx));
+    end;
+    test.harness.Assert(@context, matched, 'SHA1 of abc with heap context and split input');
+    test.harness.Finish(@context);
 end;
 
 end.

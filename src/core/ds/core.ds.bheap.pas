@@ -26,7 +26,7 @@ interface
 uses
   core.ds.types,
   memory.heap,
-  core.util, arch.x86.util;
+  core.util;
 
   {** Creates a new BinaryHeap.
     @param ElementSize     Size (in bytes) of each data element.
@@ -67,22 +67,14 @@ implementation
 {  Internal helpers — index array                                              }
 { ---------------------------------------------------------------------------- }
 
-{** Returns a pointer to Indices[i] (the uint32 slot stored there). **}
-function BHeap_IdxPtr(Heap : PBinaryHeap; i : uint32) : void; inline;
-begin
-  BHeap_IdxPtr := void(uint32(Heap^.Indices) + i * sizeof(uint32));
-end;
-
-{** Returns the data-slot index stored at heap position i. **}
 function BHeap_IdxGet(Heap : PBinaryHeap; i : uint32) : uint32; inline;
 begin
-  BHeap_IdxGet := void(uint32(Heap^.Indices) + i * sizeof(uint32))^;
+  BHeap_IdxGet := Heap^.Indices[i];
 end;
 
-{** Writes a data-slot index into heap position i. **}
-procedure BHeap_IdxSet(Heap : PBinaryHeap; i : uint32; slot : uint32); inline;
+procedure BHeap_IdxSet(Heap : PBinaryHeap; i, slot : uint32); inline;
 begin
-  void(uint32(Heap^.Indices) + i * sizeof(uint32))^ := slot;
+  Heap^.Indices[i] := slot;
 end;
 
 { ---------------------------------------------------------------------------- }
@@ -92,20 +84,19 @@ end;
 {** Returns pointer to the start of the data slot for heap position i. **}
 function BHeap_SlotPtr(Heap : PBinaryHeap; i : uint32) : void; inline;
 begin
-  BHeap_SlotPtr := void(uint32(Heap^.Data) + BHeap_IdxGet(Heap, i) * Heap^.NodeStride);
+  BHeap_SlotPtr := void(PtrUInt(Heap^.Data) + SizeUInt(BHeap_IdxGet(Heap, i)) * Heap^.NodeStride);
 end;
 
 {** Returns the priority of the element at heap position i. **}
 function BHeap_GetPri(Heap : PBinaryHeap; i : uint32) : uint32; inline;
 begin
-  BHeap_GetPri := void(uint32(Heap^.Data) + BHeap_IdxGet(Heap, i) * Heap^.NodeStride)^;
+  BHeap_GetPri := BHeap_SlotPtr(Heap, i)^;
 end;
 
 {** Returns pointer to the inline element data at heap position i. **}
 function BHeap_DataPtr(Heap : PBinaryHeap; i : uint32) : void; inline;
 begin
-  BHeap_DataPtr := void(uint32(Heap^.Data)
-                     + BHeap_IdxGet(Heap, i) * Heap^.NodeStride
+  BHeap_DataPtr := void(PtrUInt(BHeap_SlotPtr(Heap, i))
                      + sizeof(uint32));
 end;
 
@@ -116,7 +107,7 @@ end;
 {** Pushes a freed data-slot index onto the free stack. **}
 procedure BHeap_FreePush(Heap : PBinaryHeap; slot : uint32); inline;
 begin
-  void(uint32(Heap^.FreeSlots) + Heap^.FreeCount * sizeof(uint32))^ := slot;
+  Heap^.FreeSlots[Heap^.FreeCount] := slot;
   Heap^.FreeCount := Heap^.FreeCount + 1;
 end;
 
@@ -124,7 +115,7 @@ end;
 function BHeap_FreePop(Heap : PBinaryHeap) : uint32; inline;
 begin
   Heap^.FreeCount := Heap^.FreeCount - 1;
-  BHeap_FreePop := void(uint32(Heap^.FreeSlots) + Heap^.FreeCount * sizeof(uint32))^;
+  BHeap_FreePop := Heap^.FreeSlots[Heap^.FreeCount];
 end;
 
 { ---------------------------------------------------------------------------- }
@@ -175,6 +166,7 @@ var
 begin
   while true do
   begin
+    if i >= Heap^.Count div 2 then break;
     best  := i;
     left  := 2 * i + 1;
     right := 2 * i + 2;
@@ -199,36 +191,28 @@ var
   newData    : void;
   newIdx     : void;
   newFree    : void;
-  dataBytes  : uint32;
-  idxBytes   : uint32;
-  freeBytes  : uint32;
 begin
+  if Heap^.Capacity > High(uint32) div 2 then exit;
   newCap := Heap^.Capacity * 2;
-
-  { Grow Data buffer }
-  dataBytes := Heap^.NextSlot * Heap^.NodeStride;
-  newData   := kalloc(newCap * Heap^.NodeStride);
-  if dataBytes > 0 then
-    memcpy(uint32(Heap^.Data), uint32(newData), dataBytes);
+  if newCap > High(SizeUInt) div Heap^.NodeStride then exit;
+  newData := kalloc(SizeUInt(newCap) * Heap^.NodeStride);
+  newIdx := kalloc(SizeUInt(newCap) * sizeof(uint32));
+  newFree := kalloc(SizeUInt(newCap) * sizeof(uint32));
+  if (newData = nil) or (newIdx = nil) or (newFree = nil) then begin
+    kfree(newFree);
+    kfree(newIdx);
+    kfree(newData);
+    exit;
+  end;
+  memcpy(PtrUInt(Heap^.Data), PtrUInt(newData), SizeUInt(Heap^.NextSlot) * Heap^.NodeStride);
+  memcpy(PtrUInt(Heap^.Indices), PtrUInt(newIdx), SizeUInt(Heap^.Count) * sizeof(uint32));
+  memcpy(PtrUInt(Heap^.FreeSlots), PtrUInt(newFree), SizeUInt(Heap^.FreeCount) * sizeof(uint32));
   kfree(Heap^.Data);
-  Heap^.Data := newData;
-
-  { Grow Indices array }
-  idxBytes := Heap^.Count * sizeof(uint32);
-  newIdx   := kalloc(newCap * sizeof(uint32));
-  if idxBytes > 0 then
-    memcpy(uint32(Heap^.Indices), uint32(newIdx), idxBytes);
   kfree(Heap^.Indices);
-  Heap^.Indices := newIdx;
-
-  { Grow FreeSlots stack }
-  freeBytes := Heap^.FreeCount * sizeof(uint32);
-  newFree   := kalloc(newCap * sizeof(uint32));
-  if freeBytes > 0 then
-    memcpy(uint32(Heap^.FreeSlots), uint32(newFree), freeBytes);
   kfree(Heap^.FreeSlots);
+  Heap^.Data := newData;
+  Heap^.Indices := newIdx;
   Heap^.FreeSlots := newFree;
-
   Heap^.Capacity := newCap;
 end;
 
@@ -241,9 +225,14 @@ function BHeap_New(ElementSize : uint32; InitialCapacity : uint32;
 var
   stride : uint32;
 begin
+  BHeap_New := nil;
+  if ElementSize > High(uint32) - sizeof(uint32) then exit;
+  if InitialCapacity = 0 then InitialCapacity := 1;
   stride := sizeof(uint32) + ElementSize;
 
+  if InitialCapacity > High(SizeUInt) div stride then exit;
   BHeap_New := PBinaryHeap(kalloc(sizeof(TBinaryHeap)));
+  if BHeap_New = nil then exit;
   BHeap_New^.Count       := 0;
   BHeap_New^.Capacity    := InitialCapacity;
   BHeap_New^.NextSlot    := 0;
@@ -251,10 +240,15 @@ begin
   BHeap_New^.ElementSize := ElementSize;
   BHeap_New^.NodeStride  := stride;
   BHeap_New^.IsMinHeap   := MinHeap;
-  BHeap_New^.Data        := kalloc(InitialCapacity * stride);
-  BHeap_New^.Indices     := kalloc(InitialCapacity * sizeof(uint32));
-  BHeap_New^.FreeSlots   := kalloc(InitialCapacity * sizeof(uint32));
-  memset(uint32(BHeap_New^.Data), 0, InitialCapacity * stride);
+  BHeap_New^.Data        := kalloc(SizeUInt(InitialCapacity) * stride);
+  BHeap_New^.Indices     := kalloc(SizeUInt(InitialCapacity) * sizeof(uint32));
+  BHeap_New^.FreeSlots   := kalloc(SizeUInt(InitialCapacity) * sizeof(uint32));
+  if (BHeap_New^.Data = nil) or (BHeap_New^.Indices = nil) or (BHeap_New^.FreeSlots = nil) then begin
+    BHeap_Free(BHeap_New);
+    BHeap_New := nil;
+    exit;
+  end;
+  memset(PtrUInt(BHeap_New^.Data), 0, SizeUInt(InitialCapacity) * stride);
 end;
 
 procedure BHeap_Insert(Heap : PBinaryHeap; Priority : uint32; Data : void);
@@ -262,8 +256,10 @@ var
   slot    : uint32;
   slotPtr : void;
 begin
-  if Heap^.Count >= Heap^.Capacity then
+  if Heap^.Count >= Heap^.Capacity then begin
     BHeap_Grow(Heap);
+    if Heap^.Count >= Heap^.Capacity then exit;
+  end;
 
   { Acquire a data slot — recycle freed slot or take next sequential }
   if Heap^.FreeCount > 0 then
@@ -275,9 +271,9 @@ begin
   end;
 
   { Write priority + element data into the data slot }
-  slotPtr := void(uint32(Heap^.Data) + slot * Heap^.NodeStride);
+  slotPtr := void(PtrUInt(Heap^.Data) + SizeUInt(slot) * Heap^.NodeStride);
   slotPtr^ := Priority;
-  memcpy(uint32(Data), uint32(slotPtr) + sizeof(uint32), Heap^.ElementSize);
+  memcpy(PtrUInt(Data), PtrUInt(slotPtr) + sizeof(uint32), Heap^.ElementSize);
 
   { Map the new heap position to this data slot }
   BHeap_IdxSet(Heap, Heap^.Count, slot);
@@ -295,7 +291,7 @@ begin
     exit;
 
   { Copy root element data to caller }
-  memcpy(uint32(BHeap_DataPtr(Heap, 0)), uint32(OutData), Heap^.ElementSize);
+  memcpy(PtrUInt(BHeap_DataPtr(Heap, 0)), PtrUInt(OutData), Heap^.ElementSize);
 
   { Recycle the root's data slot }
   rootSlot := BHeap_IdxGet(Heap, 0);
