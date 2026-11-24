@@ -34,6 +34,11 @@ asm
     out dx, al
 end;
 
+procedure runtimeError(code: longint); [public, alias: 'x64_runtime_error'];
+begin
+    debug.early.field('FPC_RUNTIME_ERROR', uint32(code));
+end;
+
 procedure init;
 begin
     debug.early.setWriter(@putchar);

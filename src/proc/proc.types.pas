@@ -103,6 +103,7 @@ type
 
         { Context switch state }
         SavedStack  : PtrUInt;
+        SavedExceptAddr: PExceptAddr;
         StackBase   : void;
         StackTop    : PtrUInt;
 
