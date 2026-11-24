@@ -273,3 +273,7 @@ Runs the VFS unit test suite via `io.syslog`. Tests path manipulation, virtual d
 - The per-process FD table is managed by `driver.storage.fdtable`; the VFS accesses it via `proc.mgr.CurrentProcess^.FDTable`.
 - Path evaluation (`evaluatePath`) resolves `.` and `..` using a forward-scan with stack semantics, handling consecutive `..` segments safely.
 - For stream-mode handles, `ReadFile` advances `StreamOff` by the number of bytes actually returned by the offset hook, enabling sequential reads without the caller tracking position.
+
+## Native filesystem startup
+
+The native boot sequence registers ISO9660, EXT2 and FAT32 with the shared filesystem manager and starts the EXT2 worker before blocking operations. The boot task repeats volume mounting after PCI discovery makes controller-backed devices available. Volume references and buffers use native pointer widths on both targets.

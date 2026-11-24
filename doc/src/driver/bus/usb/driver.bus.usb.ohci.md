@@ -42,3 +42,7 @@ Driver load callback invoked by `driver.mgr` when a PCI OHCI device (class `$0C`
 procedure UnitTest;
 ```
 Verifies register offset values and control bit constants.
+
+## Long-mode guests
+
+OHCI descriptors still require 32-bit physical addresses when the kernel uses 64-bit virtual addresses. The driver checks DMA reachability and rejects buffers outside that range. There is no OHCI bounce-buffer fallback.
