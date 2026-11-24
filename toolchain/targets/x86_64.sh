@@ -21,7 +21,7 @@ LINKER_SCRIPT="$TARGET_TOOLCHAIN_DIR/linker.script"
 BUILD_STEPS=(stub vergen lvgl sources initcalls link isogen)
 case "${ASURO_BOOT_TEST:-none}" in
     none) ;;
-    ud|pf|df) PASCAL_OPTIONS+=("-dASURO_TEST_${ASURO_BOOT_TEST^^}") ;;
+    storage|ud|pf|df) PASCAL_OPTIONS+=("-dASURO_TEST_${ASURO_BOOT_TEST^^}") ;;
     *) echo "Unknown ASURO_BOOT_TEST" >&2; exit 1 ;;
 esac
 

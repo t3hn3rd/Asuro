@@ -17,7 +17,7 @@ param(
     [string[]]$OpenPrograms = @(),
     [switch]$NetworkInput,
     [switch]$DesktopInput,
-    [ValidateSet('none', 'ud', 'pf', 'df')][string]$Test = 'none',
+    [ValidateSet('none', 'storage', 'ud', 'pf', 'df')][string]$Test = 'none',
     [ValidateRange(0, 8192)][int]$MemoryMB = 0,
     [string]$Controller = 'AHCI',
     [int]$Port = 1,
@@ -96,7 +96,7 @@ try {
     if (-not $started) { throw "VirtualBox session remained locked: $launchOutput" }
     $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
     $output = ''
-    $marker = if ($Test -eq 'none') { 'desktop ready' } else { 'HALTED: exception diagnostics complete' }
+    $marker = if (($Test -in @('none','storage'))) { 'desktop ready' } else { 'HALTED: exception diagnostics complete' }
     do {
         if (Test-Path -LiteralPath $serialPath) {
             $output = Get-Content -LiteralPath $serialPath -Raw
@@ -108,7 +108,7 @@ try {
     & VBoxManage.exe debugvm $vm getregisters rip rsp cs cr0 cr2 cr3 cr4 efer tr |
         Set-Content -LiteralPath (Join-Path $evidence "registers-$Test-$MemoryMB.log")
     if ($LASTEXITCODE -ne 0) { throw 'Cannot capture CPU registers.' }
-    if (($DesktopInput -or $NetworkInput -or $TerminalCommands.Count -gt 0 -or $OpenPrograms.Count -gt 0) -and $Test -eq 'none' -and $output.Contains($marker)) {
+    if (($DesktopInput -or $NetworkInput -or $TerminalCommands.Count -gt 0 -or $OpenPrograms.Count -gt 0) -and ($Test -in @('none','storage')) -and $output.Contains($marker)) {
         $vbox = New-Object -ComObject VirtualBox.VirtualBox
         $session = New-Object -ComObject VirtualBox.Session
         $machine = $vbox.FindMachine($vm)
@@ -162,32 +162,70 @@ try {
     }
     & VBoxManage.exe controlvm $vm screenshotpng (Join-Path $evidence "screen-$Test-$MemoryMB.png")
     $output = Get-Content -LiteralPath $serialPath -Raw
+    if ($Test -eq 'storage' -and $output.Contains('PASS: USB bulk read from sector zero matches reference reads')) {
+        while (-not ($output -match '128 KiB QD1, elapsed us=[1-9][0-9]*') -and [DateTime]::UtcNow -lt $deadline) {
+            Start-Sleep -Milliseconds 200
+            $output = Get-Content -LiteralPath $serialPath -Raw
+        }
+        if ($output -notmatch '128 KiB QD1, elapsed us=[1-9][0-9]*') { throw 'Timed USB read did not finish.' }
+    }
     $output | Set-Content -LiteralPath (Join-Path $evidence "boot-$Test-$MemoryMB.log")
     Write-Output $output
     if (-not $output -or -not $output.Contains($marker) -or $output.Contains('FAIL:')) {
         throw 'Boot did not reach its expected completion marker.'
     }
-    if ($Test -eq 'none' -and $output.Contains('HALTED:')) {
+    if (($Test -in @('none','storage')) -and $output.Contains('HALTED:')) {
         throw 'The kernel halted after starting the desktop.'
     }
-    foreach ($unit in @('driver.storage.vfs', 'driver.storage.metatest', 'driver.storage.ctl.ahci', 'driver.bus.usb.types', 'driver.bus.usb.core', 'driver.storage.ctl.usb', 'driver.hid.usb.keyboard', 'driver.hid.usb.mouse', 'driver.bus.usb.hub', 'driver.bus.usb.ohci', 'core.ds.cfifo', 'core.enc.fnv1a', 'core.strings')) {
+    foreach ($unit in @('driver.storage.vfs', 'driver.storage.metatest', 'driver.storage.ctl.ahci', 'driver.bus.usb.types', 'driver.bus.usb.core', 'driver.storage.ctl.usb', 'driver.hid.usb.keyboard', 'driver.hid.usb.mouse', 'driver.bus.usb.hub', 'driver.bus.usb.ohci', 'driver.bus.usb.xhci', 'core.ds.cfifo', 'core.enc.fnv1a', 'core.strings')) {
         if ($output -notmatch ('\[test:' + [regex]::Escape($unit) + '\] [1-9][0-9]* passed, 0 failed\.')) {
             throw "Missing passing test summary for $unit"
         }
     }
     foreach ($required in @('PASS: native unit initialization runs once', 'EXCEPTION_TESTS_PASSED=0000000000000002', 'EXCEPTION_TESTS_FAILED=0000000000000000',
         'PASS: VFS reads ELF64 kernel through AHCI',
-        'Device enumerated at address 1', 'IOREQ_TESTS_FAILED=0000000000000000', 'FSMGR_TESTS_FAILED=0000000000000000', 'PATH_TESTS_FAILED=0000000000000000', 'HASHMAP_TESTS_FAILED=0000000000000000', 'LISTS_TESTS_FAILED=0000000000000000', 'PMM_TESTS_FAILED=0000000000000000', 'VMM_TESTS_FAILED=0000000000000000',
+        'IOREQ_TESTS_FAILED=0000000000000000', 'FSMGR_TESTS_FAILED=0000000000000000', 'PATH_TESTS_FAILED=0000000000000000', 'HASHMAP_TESTS_FAILED=0000000000000000', 'LISTS_TESTS_FAILED=0000000000000000', 'PMM_TESTS_FAILED=0000000000000000', 'VMM_TESTS_FAILED=0000000000000000',
         'HEAP_TESTS_FAILED=0000000000000000', 'IRQ_TESTS_FAILED=0000000000000000', 'CONTEXT_TESTS_FAILED=0000000000000000', 'PROCESS_TESTS_FAILED=0000000000000000', 'FD_TESTS_FAILED=0000000000000000', 'STDIO_TESTS_FAILED=0000000000000000')) {
         if (-not $output.Contains($required)) { throw "Missing check: $required" }
     }
-    if ($MemoryMB -gt 4096 -and -not $output.Contains('PASS: AHCI DMA above 4 GiB matches every disk sector')) {
+    $ohci = $state -contains 'usb="on"'
+    $xhci = $state -contains 'xhci="on"'
+    if ($ohci -or $xhci) {
+        foreach ($usbController in @('ohci', 'xhci')) {
+            if ((($usbController -eq 'ohci' -and $ohci) -or ($usbController -eq 'xhci' -and $xhci)) -and
+                -not $output.Contains("Registered HC: driver.bus.usb.$usbController")) {
+                throw "Configured $usbController controller was not registered."
+            }
+        }
+        $usbInput = $state -contains 'hidkeyboard="usbkbd"' -or
+                    $state -contains 'hidpointing="usbmouse"' -or
+                    $state -contains 'hidpointing="usbtablet"'
+        $usbDisk = $false
+        if ($xhci -or $state -contains 'ehci="off"') {
+            foreach ($line in $state) {
+                if ($line -match '^storagecontrollertype(\d+)="USB"$') {
+                    $nameKey = 'storagecontrollername' + $Matches[1] + '="'
+                    $nameLine = $state | Where-Object { $_.StartsWith($nameKey) }
+                    $name = $nameLine.Substring($nameKey.Length).TrimEnd('"')
+                    $mediumPattern = '^"' + [regex]::Escape($name) + '-\d+-\d+"="(?!none"|emptydrive")[^"]+"$'
+                    if ($state -match $mediumPattern) { $usbDisk = $true }
+                }
+            }
+        }
+        if (($Test -eq 'storage') -and ($usbInput -or $usbDisk) -and -not $output.Contains('Device enumerated at address ')) {
+            throw 'Configured USB device did not enumerate.'
+        }
+        if ($Test -eq 'storage' -and $usbDisk -and -not $output.Contains('PASS: USB bulk read from sector zero matches reference reads')) {
+            throw 'Configured USB disk did not complete the sector-zero read.'
+        }
+    }
+    if ($Test -eq 'storage' -and $MemoryMB -gt 4096 -and -not $output.Contains('PASS: AHCI DMA above 4 GiB matches every disk sector')) {
         throw 'High physical memory test was skipped.'
     }
     if ($NetworkInput -and -not $output.Contains('Process ACK.')) {
         throw 'Network test did not receive a DHCP acknowledgement.'
     }
-    if ($Test -ne 'none') {
+    if ($Test -notin @('none','storage')) {
         $vector = @{ud = '6'; pf = 'E'; df = '8'}[$Test]
         $errorCode = if ($Test -eq 'pf') { '2' } else { '0' }
         foreach ($required in @("VECTOR=000000000000000$vector", "ERROR=000000000000000$errorCode", 'CS=0000000000000018')) {

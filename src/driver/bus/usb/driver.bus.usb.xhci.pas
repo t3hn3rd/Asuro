@@ -19,14 +19,13 @@ uses
     io.syslog,
     driver.bus.pci,
     driver.types,
-    arch.x86.memory.physical,
-    arch.x86.memory.virtual,
+    arch.platform.memory,
     memory.heap,
-    core.util, arch.x86.util,
+    core.util,
     driver.mgr,
     driver.bus.usb.types,
     driver.bus.usb.core,
-    arch.x86.isr.mgr,
+    arch.platform.interrupts,
     core.ds.lists,
     core.strings;
 
@@ -36,6 +35,7 @@ procedure UnitTest;
 implementation
 
 uses
+    {$ifdef CPUX86_64}arch.x86_64.memory.physical,{$endif}
     test.harness;
 
 { ========================= Stage 1: Constants & Types ========================= }
@@ -380,6 +380,19 @@ type
         Rsvd       : uint32;
     end;
 
+    PXHCI_Bounce = ^TXHCI_Bounce;
+    TXHCI_Bounce = record
+        Next : PXHCI_Bounce;
+        Page : Pointer;
+        Offset, Bytes : uint32;
+    end;
+    TXHCI_Span = record
+        Address : uint64;
+        Bytes : uint32;
+    end;
+    PXHCI_Spans = ^TXHCI_Spans;
+    TXHCI_Spans = array[0..XHCI_TRANSFER_RING_SIZE - 1] of TXHCI_Span;
+
     { Pending transfer tracking entry }
     PXHCI_PendingTransfer = ^TXHCI_PendingTransfer;
     TXHCI_PendingTransfer = record
@@ -388,16 +401,27 @@ type
         EPID     : uint8;
         Ring     : PXHCI_Ring;
         First, Count : uint32;
+        Bounce : PXHCI_Bounce;
+        ShortBytes : uint32;
     end;
+
+    TXHCI_Slot = record
+        Port, Speed : uint8;
+        OutputContext : Pointer;
+        EndpointRings : array[0..31] of PXHCI_Ring;
+    end;
+    PXHCI_Slots = ^TXHCI_Slots;
+    TXHCI_Slots = array[0..254] of TXHCI_Slot;
 
     { Private data for an driver.bus.usb.xhci host controller instance }
     PXHCI_PrivData = ^TXHCI_PrivData;
     TXHCI_PrivData = record
-        MMIOBase    : uint32;
-        OpBase      : uint32;
-        RTBase      : uint32;
-        DBBase      : uint32;
+        MMIOBase    : PtrUInt;
+        OpBase      : PtrUInt;
+        RTBase      : PtrUInt;
+        DBBase      : PtrUInt;
 
+        DmaLimit    : uint64;
         MaxSlots    : uint8;
         MaxIntrs    : uint16;
         MaxPorts    : uint8;
@@ -414,17 +438,10 @@ type
         ERST        : PXHCI_ERSTE;
 
         ScratchBufs : Pointer;
+        ScratchPages : ^Pointer;
         NumScratch  : uint16;
 
-        { Per-slot dynamic arrays (kalloc'd, 1-indexed via offset) }
-        SlotPort    : Pointer;     { ^uint8 array [0..MaxSlots-1] }
-        SlotSpeed   : Pointer;     { ^uint8 array }
-        SlotOutCtx  : Pointer;     { ^Pointer array (output device contexts) }
-
-        { Per-slot per-DCI transfer ring pointers.
-          Flat array: index = (slotID-1)*32 + dci.
-          Each entry is a PXHCI_Ring (or nil if not configured). }
-        SlotEPRings   : Pointer;   { ^PXHCI_Ring flat array [MaxSlots * 32] }
+        Slots : PXHCI_Slots;
 
         { Pending transfers list }
         PendingList : PLinkedListBase;
@@ -445,62 +462,111 @@ type
 
 { ========================= Stage 2: MMIO Helpers ========================= }
 
-function xhci_readl(base : uint32; reg : uint32) : uint32;
+function xhci_readl(base : PtrUInt; reg : uint32) : uint32;
 begin
     xhci_readl := PUint32(base + reg)^;
 end;
 
-procedure xhci_writel(base : uint32; reg : uint32; val : uint32);
+procedure xhci_writel(base : PtrUInt; reg : uint32; val : uint32);
 begin
     PUint32(base + reg)^ := val;
 end;
 
-function xhci_readb(base : uint32; reg : uint32) : uint8;
+function xhci_readb(base : PtrUInt; reg : uint32) : uint8;
 begin
     xhci_readb := PUint8(base + reg)^;
 end;
 
-function xhci_readw(base : uint32; reg : uint32) : uint16;
+function xhci_readw(base : PtrUInt; reg : uint32) : uint16;
 begin
     xhci_readw := PUint16(base + reg)^;
 end;
 
 { 64-bit read: low then high (i386) }
-procedure xhci_readq(base : uint32; reg : uint32; var rlo, rhi : uint32);
+procedure xhci_readq(base : PtrUInt; reg : uint32; var rlo, rhi : uint32);
 begin
     rlo := PUint32(base + reg)^;
     rhi := PUint32(base + reg + 4)^;
 end;
 
-{ 64-bit write: low then high (i386, high = 0 for 32-bit system) }
-procedure xhci_writeq(base : uint32; reg : uint32; lo : uint32; hi : uint32);
+{ Write the low register before the high register on both architectures. }
+procedure xhci_writeq(base : PtrUInt; reg : uint32; value : uint64);
 begin
-    PUint32(base + reg)^ := lo;
-    PUint32(base + reg + 4)^ := hi;
+    PUint32(base + reg)^ := uint32(value);
+    PUint32(base + reg + 4)^ := value shr 32;
 end;
 
 { ========================= Allocation Helpers ========================= }
 
+function xhci_dma_range(address, bytes, limit : uint64) : boolean;
+begin
+    xhci_dma_range := (address <> 0) and (bytes <> 0) and
+                      (address <= limit) and (bytes - 1 <= limit - address);
+end;
+
+function xhci_dma_alloc(bytes, alignment : uint32; limit : uint64) : Pointer;
+var
+    buffer : Pointer;
+    first : uint64;
+    offset : uint32;
+begin
+    xhci_dma_alloc := nil;
+    buffer := kalloc_aligned(bytes, alignment);
+    if buffer <> nil then begin
+        first := physicalAddress(PtrUInt(buffer));
+        if xhci_dma_range(first, bytes, limit) then begin
+            offset := 4096 - (PtrUInt(buffer) and $FFF);
+            while offset < bytes do begin
+                if physicalAddress(PtrUInt(buffer) + offset) <> first + offset then break;
+                inc(offset, 4096);
+            end;
+            if offset >= bytes then begin
+                xhci_dma_alloc := buffer;
+                exit;
+            end;
+        end;
+        kfree_aligned(buffer);
+    end;
+    {$ifdef CPUX86_64}
+    if (bytes <= 4096) and (alignment <= 4096) and (limit = $FFFFFFFF) then
+        xhci_dma_alloc := pointer(PtrUInt(arch.x86_64.memory.physical.alloc_page(true)));
+    {$endif}
+end;
+
+procedure xhci_dma_free(buffer : Pointer);
+begin
+    if buffer = nil then exit;
+    {$ifdef CPUX86_64}
+    { Heap allocations use the high virtual arena. Low fallback pages are
+      returned through their bootstrap identity mapping. }
+    if PtrUInt(buffer) <= $FFFFFFFF then begin
+        arch.x86_64.memory.physical.free_page(PtrUInt(buffer));
+        exit;
+    end;
+    {$endif}
+    kfree_aligned(buffer);
+end;
+
 { Allocate a TRB ring with Link TRB at the last entry.
   Returns a TXHCI_Ring descriptor. Ring is page-aligned. }
-function xhci_alloc_ring(numTRBs : uint32) : TXHCI_Ring;
+function xhci_alloc_ring(numTRBs : uint32; limit : uint64) : TXHCI_Ring;
 var
     ring    : TXHCI_Ring;
     linkTRB : PXHCI_TRB;
-    phys    : uint32;
+    phys    : uint64;
 begin
     ring.Size := numTRBs;
     ring.Enqueue := 0;
     ring.Dequeue := 0;
     ring.CycleBit := 1;
-    ring.Base := PXHCI_TRB(kalloc_aligned(numTRBs * sizeof(TXHCI_TRB), 4096));
+    ring.Base := PXHCI_TRB(xhci_dma_alloc(numTRBs * sizeof(TXHCI_TRB), 4096, limit));
     if ring.Base <> nil then begin
-        memset(uint32(ring.Base), 0, numTRBs * sizeof(TXHCI_TRB));
+        memset(PtrUInt(ring.Base), 0, numTRBs * sizeof(TXHCI_TRB));
         { Set up Link TRB at the last entry pointing back to start }
-        linkTRB := PXHCI_TRB(uint32(ring.Base) + ((numTRBs - 1) * sizeof(TXHCI_TRB)));
-        phys := vtop(uint32(ring.Base));
+        linkTRB := PXHCI_TRB(PtrUInt(ring.Base) + ((numTRBs - 1) * sizeof(TXHCI_TRB)));
+        phys := physicalAddress(PtrUInt(ring.Base));
         linkTRB^.Param0 := phys;
-        linkTRB^.Param1 := 0;
+        linkTRB^.Param1 := phys shr 32;
         linkTRB^.Status := 0;
         linkTRB^.Control := (XHCI_TRB_LINK SHL XHCI_TRB_TYPE_SHIFT) OR XHCI_TRB_TC;
         { Note: Cycle bit on Link TRB will be set by enqueue logic }
@@ -509,7 +575,7 @@ begin
 end;
 
 { Allocate an event ring (no Link TRB, controller wraps based on segment size) }
-function xhci_alloc_event_ring(numTRBs : uint32) : TXHCI_Ring;
+function xhci_alloc_event_ring(numTRBs : uint32; limit : uint64) : TXHCI_Ring;
 var
     ring : TXHCI_Ring;
 begin
@@ -517,31 +583,31 @@ begin
     ring.Enqueue := 0;
     ring.Dequeue := 0;
     ring.CycleBit := 1;
-    ring.Base := PXHCI_TRB(kalloc_aligned(numTRBs * sizeof(TXHCI_TRB), 4096));
+    ring.Base := PXHCI_TRB(xhci_dma_alloc(numTRBs * sizeof(TXHCI_TRB), 4096, limit));
     if ring.Base <> nil then
-        memset(uint32(ring.Base), 0, numTRBs * sizeof(TXHCI_TRB));
+        memset(PtrUInt(ring.Base), 0, numTRBs * sizeof(TXHCI_TRB));
     xhci_alloc_event_ring := ring;
 end;
 
 procedure xhci_free_ring(var ring : TXHCI_Ring);
 begin
     if ring.Base <> nil then begin
-        kfree_aligned(ring.Base);
+        xhci_dma_free(ring.Base);
         ring.Base := nil;
     end;
 end;
 
-function xhci_alloc_ctx(ctxSize : uint32) : Pointer;
+function xhci_alloc_ctx(ctxSize : uint32; limit : uint64) : Pointer;
 begin
-    xhci_alloc_ctx := kalloc_aligned(ctxSize, 64);
+    xhci_alloc_ctx := xhci_dma_alloc(ctxSize, 64, limit);
     if xhci_alloc_ctx <> nil then
-        memset(uint32(xhci_alloc_ctx), 0, ctxSize);
+        memset(PtrUInt(xhci_alloc_ctx), 0, ctxSize);
 end;
 
 procedure xhci_free_ctx(ctx : Pointer);
 begin
     if ctx <> nil then
-        kfree_aligned(ctx);
+        xhci_dma_free(ctx);
 end;
 
 { Return context entry size: 32 (standard) or 64 (if CSZ bit set) }
@@ -625,7 +691,7 @@ var
 begin
     if (ring = nil) or (ring^.Base = nil) or (trb = nil) then exit;
 
-    dest := PXHCI_TRB(uint32(ring^.Base) + (ring^.Enqueue * sizeof(TXHCI_TRB)));
+    dest := PXHCI_TRB(PtrUInt(ring^.Base) + (ring^.Enqueue * sizeof(TXHCI_TRB)));
 
     { Copy TRB data }
     dest^.Param0  := trb^.Param0;
@@ -641,7 +707,7 @@ begin
     { Check if we've reached the Link TRB (last entry in command/transfer rings) }
     if ring^.Enqueue >= (ring^.Size - 1) then begin
         { Set cycle bit on the Link TRB }
-        linkTRB := PXHCI_TRB(uint32(ring^.Base) + ((ring^.Size - 1) * sizeof(TXHCI_TRB)));
+        linkTRB := PXHCI_TRB(PtrUInt(ring^.Base) + ((ring^.Size - 1) * sizeof(TXHCI_TRB)));
         linkTRB^.Control := (linkTRB^.Control AND (NOT uint32(XHCI_TRB_CYCLE OR XHCI_TRB_CH))) OR
                             (trb^.Control AND XHCI_TRB_CH) OR uint32(ring^.CycleBit);
         { Toggle cycle bit and wrap to beginning }
@@ -669,7 +735,7 @@ begin
     xhci_event_pending := false;
     if (priv = nil) or (priv^.EvtRing.Base = nil) then exit;
 
-    evt := PXHCI_TRB(uint32(priv^.EvtRing.Base) + (priv^.EvtRing.Dequeue * sizeof(TXHCI_TRB)));
+    evt := PXHCI_TRB(PtrUInt(priv^.EvtRing.Base) + (priv^.EvtRing.Dequeue * sizeof(TXHCI_TRB)));
     cyc := evt^.Control AND XHCI_TRB_CYCLE;
 
     if cyc = uint32(priv^.EvtRing.CycleBit) then
@@ -684,7 +750,7 @@ begin
     xhci_event_dequeue := false;
     if not xhci_event_pending(priv) then exit;
 
-    evt := PXHCI_TRB(uint32(priv^.EvtRing.Base) + (priv^.EvtRing.Dequeue * sizeof(TXHCI_TRB)));
+    evt := PXHCI_TRB(PtrUInt(priv^.EvtRing.Base) + (priv^.EvtRing.Dequeue * sizeof(TXHCI_TRB)));
     trb := evt^;
 
     { Advance dequeue pointer }
@@ -704,17 +770,17 @@ end;
 { Write the Event Ring Dequeue Pointer to acknowledge processed events }
 procedure xhci_advance_erdp(priv : PXHCI_PrivData);
 var
-    erdp   : uint32;
-    irBase : uint32;
+    erdp   : uint64;
+    irBase : PtrUInt;
 begin
     if priv = nil then exit;
     irBase := priv^.RTBase + XHCI_RT_IR0_BASE;
 
     { ERDP = physical address of current dequeue position }
-    erdp := vtop(uint32(priv^.EvtRing.Base) + (priv^.EvtRing.Dequeue * sizeof(TXHCI_TRB)));
+    erdp := physicalAddress(PtrUInt(priv^.EvtRing.Base) + (priv^.EvtRing.Dequeue * sizeof(TXHCI_TRB)));
 
     { Set EHB (Event Handler Busy) bit 3 to clear it }
-    xhci_writeq(irBase, XHCI_IR_ERDP_LO, erdp OR $08, 0);
+    xhci_writeq(irBase, XHCI_IR_ERDP_LO, erdp OR $08);
 end;
 
 { Send a command TRB on the Command Ring and ring doorbell 0 }
@@ -764,10 +830,10 @@ function xhci_port_status(hc : PUSBHCDriver; port : uint8) : uint32; forward;
 
 { ========================= Stage 4: BIOS Handoff ========================= }
 
-procedure xhci_bios_handoff(priv : PXHCI_PrivData; pciDev : TPCI_Device);
+procedure xhci_bios_handoff(priv : PXHCI_PrivData; bar : uint64);
 var
     xecp    : uint32;
-    capAddr : uint32;
+    capAddr : PtrUInt;
     capVal  : uint32;
     loops   : uint32;
 begin
@@ -781,11 +847,13 @@ begin
     end;
 
     { XECP is in dwords, convert to byte offset from BAR0 }
-    capAddr := priv^.MMIOBase + (xecp SHL 2);
+    bar := bar + (xecp shl 2);
 
     { Walk the extended capability list }
     loops := 0;
     while loops < 100 do begin
+        capAddr := PtrUInt(mapDevice(bar, 8));
+        if capAddr = 0 then break;
         capVal := xhci_readl(capAddr, 0);
 
         { Check capability ID (bits 7:0) }
@@ -826,7 +894,7 @@ begin
         { Next capability: bits 15:8 = next pointer (dword offset) }
         xecp := (capVal SHR 8) AND $FF;
         if xecp = 0 then break;
-        capAddr := capAddr + (xecp SHL 2);
+        bar := bar + (xecp shl 2);
         inc(loops);
     end;
 
@@ -841,10 +909,10 @@ var
     hi, lo   : uint32;
     nScratch : uint32;
     bufArray : Pointer;
-    bufArrayPhys : uint32;
+    bufArrayPhys : uint64;
     i : uint32;
     page : Pointer;
-    pagePhys : uint32;
+    pagePhys : uint64;
 begin
     push_trace('driver.bus.usb.xhci.xhci_alloc_scratchpad');
 
@@ -867,34 +935,39 @@ begin
     io.syslog.writestringln(' scratchpad buffers.');
 
     { Allocate the scratchpad buffer array (array of 64-bit physical addresses) }
-    bufArray := kalloc_aligned(nScratch * 8, 64);
+    bufArray := xhci_dma_alloc(nScratch * 8, 64, priv^.DmaLimit);
     if bufArray = nil then begin
         io.syslog.logln('driver.bus.usb.xhci', 'Failed to allocate scratchpad array!');
         pop_trace;
         exit;
     end;
-    memset(uint32(bufArray), 0, nScratch * 8);
+    memset(PtrUInt(bufArray), 0, nScratch * 8);
     priv^.ScratchBufs := bufArray;
 
+    priv^.ScratchPages := Pointer(kalloc(nScratch * sizeof(Pointer)));
+    if priv^.ScratchPages = nil then begin
+        pop_trace;
+        exit;
+    end;
+    memset(PtrUInt(priv^.ScratchPages), 0, nScratch * sizeof(Pointer));
     { Allocate individual scratchpad pages and fill the array }
     for i := 0 to nScratch - 1 do begin
-        page := kalloc_aligned(4096, 4096);
+        page := xhci_dma_alloc(4096, 4096, priv^.DmaLimit);
         if page = nil then begin
             io.syslog.logln('driver.bus.usb.xhci', 'Failed to allocate scratchpad page!');
             pop_trace;
             exit;
         end;
-        memset(uint32(page), 0, 4096);
-        pagePhys := vtop(uint32(page));
+        priv^.ScratchPages[i] := page;
+        memset(PtrUInt(page), 0, 4096);
+        pagePhys := physicalAddress(PtrUInt(page));
         { Write 64-bit physical address to array entry }
-        PUint32(uint32(bufArray) + (i * 8))^ := pagePhys;
-        PUint32(uint32(bufArray) + (i * 8) + 4)^ := 0;
+        PUint64(PtrUInt(bufArray) + (i * 8))^ := pagePhys;
     end;
 
     { Store the scratchpad array physical address in DCBAA[0] }
-    bufArrayPhys := vtop(uint32(bufArray));
-    PUint32(uint32(priv^.DCBAA))^ := bufArrayPhys;
-    PUint32(uint32(priv^.DCBAA) + 4)^ := 0;
+    bufArrayPhys := physicalAddress(PtrUInt(bufArray));
+    PUint64(PtrUInt(priv^.DCBAA))^ := bufArrayPhys;
 
     io.syslog.logln('driver.bus.usb.xhci', 'Scratchpad buffers allocated.');
     pop_trace;
@@ -905,7 +978,7 @@ end;
 function xhci_reset(hc : PUSBHCDriver) : boolean;
 var
     priv      : PXHCI_PrivData;
-    opbase    : uint32;
+    opbase    : PtrUInt;
     loops     : uint32;
     cmd       : uint32;
     dcbaaSize : uint32;
@@ -961,16 +1034,16 @@ begin
 
     { Step 3: Allocate DCBAA }
     dcbaaSize := (uint32(priv^.MaxSlots) + 1) * 8;
-    priv^.DCBAA := kalloc_aligned(dcbaaSize, 64);
+    priv^.DCBAA := xhci_dma_alloc(dcbaaSize, 64, priv^.DmaLimit);
     if priv^.DCBAA = nil then begin
         io.syslog.logln('driver.bus.usb.xhci', 'Failed to allocate DCBAA!');
         pop_trace;
         exit;
     end;
-    memset(uint32(priv^.DCBAA), 0, dcbaaSize);
+    memset(PtrUInt(priv^.DCBAA), 0, dcbaaSize);
 
     { Step 4: Allocate Command Ring }
-    priv^.CmdRing := xhci_alloc_ring(XHCI_CMD_RING_SIZE);
+    priv^.CmdRing := xhci_alloc_ring(XHCI_CMD_RING_SIZE, priv^.DmaLimit);
     if priv^.CmdRing.Base = nil then begin
         io.syslog.logln('driver.bus.usb.xhci', 'Failed to allocate Command Ring!');
         pop_trace;
@@ -978,7 +1051,7 @@ begin
     end;
 
     { Step 5: Allocate Event Ring }
-    priv^.EvtRing := xhci_alloc_event_ring(XHCI_EVT_RING_SIZE);
+    priv^.EvtRing := xhci_alloc_event_ring(XHCI_EVT_RING_SIZE, priv^.DmaLimit);
     if priv^.EvtRing.Base = nil then begin
         io.syslog.logln('driver.bus.usb.xhci', 'Failed to allocate Event Ring!');
         pop_trace;
@@ -986,36 +1059,39 @@ begin
     end;
 
     { Step 6: Allocate Event Ring Segment Table (1 segment) }
-    priv^.ERST := PXHCI_ERSTE(kalloc_aligned(sizeof(TXHCI_ERSTE), 64));
+    priv^.ERST := PXHCI_ERSTE(xhci_dma_alloc(sizeof(TXHCI_ERSTE), 64, priv^.DmaLimit));
     if priv^.ERST = nil then begin
         io.syslog.logln('driver.bus.usb.xhci', 'Failed to allocate ERST!');
         pop_trace;
         exit;
     end;
-    memset(uint32(priv^.ERST), 0, sizeof(TXHCI_ERSTE));
-    priv^.ERST^.BaseAddrLo := vtop(uint32(priv^.EvtRing.Base));
-    priv^.ERST^.BaseAddrHi := 0;
+    memset(PtrUInt(priv^.ERST), 0, sizeof(TXHCI_ERSTE));
+    priv^.ERST^.BaseAddrLo := physicalAddress(PtrUInt(priv^.EvtRing.Base));
+    priv^.ERST^.BaseAddrHi := physicalAddress(PtrUInt(priv^.EvtRing.Base)) shr 32;
     priv^.ERST^.SegSize := XHCI_EVT_RING_SIZE;
 
     { Step 7: Allocate scratchpad buffers }
     xhci_alloc_scratchpad(priv);
+    if (priv^.NumScratch <> 0) and (PUint64(priv^.DCBAA)^ = 0) then begin
+        pop_trace;
+        exit;
+    end;
 
-    { Step 8: Allocate per-slot arrays }
-    priv^.SlotPort := Pointer(kalloc(uint32(priv^.MaxSlots)));
-    priv^.SlotSpeed := Pointer(kalloc(uint32(priv^.MaxSlots)));
-    priv^.SlotOutCtx := Pointer(kalloc(uint32(priv^.MaxSlots) * sizeof(Pointer)));
-    priv^.SlotEPRings := Pointer(kalloc(uint32(priv^.MaxSlots) * 32 * sizeof(Pointer)));
-    if (priv^.SlotPort <> nil) then
-        memset(uint32(priv^.SlotPort), 0, uint32(priv^.MaxSlots));
-    if (priv^.SlotSpeed <> nil) then
-        memset(uint32(priv^.SlotSpeed), 0, uint32(priv^.MaxSlots));
-    if (priv^.SlotOutCtx <> nil) then
-        memset(uint32(priv^.SlotOutCtx), 0, uint32(priv^.MaxSlots) * sizeof(Pointer));
-    if (priv^.SlotEPRings <> nil) then
-        memset(uint32(priv^.SlotEPRings), 0, uint32(priv^.MaxSlots) * 32 * sizeof(Pointer));
+    { Slot IDs are one-based. Allocate only the slots the controller supports. }
+    priv^.Slots := PXHCI_Slots(kalloc(uint32(priv^.MaxSlots) * sizeof(TXHCI_Slot)));
+    if priv^.Slots = nil then begin
+        pop_trace;
+        exit;
+    end;
+    memset(PtrUInt(priv^.Slots), 0, uint32(priv^.MaxSlots) * sizeof(TXHCI_Slot));
 
     { Allocate pending transfer list }
     priv^.PendingList := LL_New(sizeof(TXHCI_PendingTransfer));
+
+    if priv^.PendingList = nil then begin
+        pop_trace;
+        exit;
+    end;
 
     { Clear all pending status bits (write-1-to-clear) }
     xhci_writel(opbase, XHCI_OP_USBSTS, $3F);
@@ -1030,13 +1106,13 @@ end;
 function xhci_start(hc : PUSBHCDriver) : boolean;
 var
     priv     : PXHCI_PrivData;
-    opbase   : uint32;
-    irBase   : uint32;
+    opbase   : PtrUInt;
+    irBase   : PtrUInt;
     loops    : uint32;
     cmd      : uint32;
-    crcrPhys : uint32;
-    erstPhys : uint32;
-    erdpPhys : uint32;
+    crcrPhys : uint64;
+    erstPhys : uint64;
+    erdpPhys : uint64;
 begin
     push_trace('driver.bus.usb.xhci.xhci_start');
     xhci_start := false;
@@ -1055,14 +1131,14 @@ begin
     io.syslog.logln('driver.bus.usb.xhci', '  CONFIG set.');
 
     { Step 2: Program DCBAAP }
-    xhci_writeq(opbase, XHCI_OP_DCBAAP_LO, vtop(uint32(priv^.DCBAA)), 0);
+    xhci_writeq(opbase, XHCI_OP_DCBAAP_LO, physicalAddress(PtrUInt(priv^.DCBAA)));
     io.syslog.logln('driver.bus.usb.xhci', '  DCBAAP set.');
 
     { Step 3: Program Command Ring Control Register (CRCR)
       Low 6 bits: RCS (Ring Cycle State) = 1, CS/CA/CRR = 0
       Physical address of ring base in bits 63:6 }
-    crcrPhys := vtop(uint32(priv^.CmdRing.Base));
-    xhci_writeq(opbase, XHCI_OP_CRCR_LO, crcrPhys OR uint32(priv^.CmdRing.CycleBit), 0);
+    crcrPhys := physicalAddress(PtrUInt(priv^.CmdRing.Base));
+    xhci_writeq(opbase, XHCI_OP_CRCR_LO, crcrPhys OR uint32(priv^.CmdRing.CycleBit));
     io.syslog.logln('driver.bus.usb.xhci', '  CRCR set.');
 
     { Step 4: Program Interrupter 0 }
@@ -1070,12 +1146,12 @@ begin
     xhci_writel(irBase, XHCI_IR_ERSTSZ, 1);
 
     { ERDP = physical address of event ring start }
-    erdpPhys := vtop(uint32(priv^.EvtRing.Base));
-    xhci_writeq(irBase, XHCI_IR_ERDP_LO, erdpPhys, 0);
+    erdpPhys := physicalAddress(PtrUInt(priv^.EvtRing.Base));
+    xhci_writeq(irBase, XHCI_IR_ERDP_LO, erdpPhys);
 
     { ERSTBA = physical address of ERST (writing this enables the event ring) }
-    erstPhys := vtop(uint32(priv^.ERST));
-    xhci_writeq(irBase, XHCI_IR_ERSTBA_LO, erstPhys, 0);
+    erstPhys := physicalAddress(PtrUInt(priv^.ERST));
+    xhci_writeq(irBase, XHCI_IR_ERSTBA_LO, erstPhys);
 
     { Polling mode — do NOT enable hardware interrupts (no ISR registered).
       Clear IMAN IP if set, leave IE disabled. }
@@ -1112,7 +1188,7 @@ end;
 procedure xhci_stop(hc : PUSBHCDriver);
 var
     priv   : PXHCI_PrivData;
-    opbase : uint32;
+    opbase : PtrUInt;
     cmd    : uint32;
 begin
     push_trace('driver.bus.usb.xhci.xhci_stop');
@@ -1157,7 +1233,7 @@ end;
 function xhci_port_reset(hc : PUSBHCDriver; port : uint8) : boolean;
 var
     priv     : PXHCI_PrivData;
-    opbase   : uint32;
+    opbase   : PtrUInt;
     regOfs   : uint32;
     portsc   : uint32;
     loops    : uint32;
@@ -1170,7 +1246,7 @@ var
     slotCtx  : PXHCI_SlotCtx;
     ep0Ctx   : PXHCI_EPCtx;
     ep0Ring  : PXHCI_Ring;
-    ep0RingPhys : uint32;
+    ep0RingPhys : uint64;
     outCtx   : Pointer;
     maxPkt   : uint16;
     cc       : uint8;
@@ -1273,17 +1349,17 @@ begin
         pop_trace;
         exit;
     end;
-    ep0Ring^ := xhci_alloc_ring(XHCI_TRANSFER_RING_SIZE);
+    ep0Ring^ := xhci_alloc_ring(XHCI_TRANSFER_RING_SIZE, priv^.DmaLimit);
     if ep0Ring^.Base = nil then begin
         io.syslog.logln('driver.bus.usb.xhci', 'Failed to allocate EP0 ring buffer!');
         kfree(void(ep0Ring));
         pop_trace;
         exit;
     end;
-    ep0RingPhys := vtop(uint32(ep0Ring^.Base));
+    ep0RingPhys := physicalAddress(PtrUInt(ep0Ring^.Base));
 
     { ---- Allocate Output Device Context ---- }
-    outCtx := xhci_alloc_ctx(uint32(priv^.CtxSize) * 32);
+    outCtx := xhci_alloc_ctx(uint32(priv^.CtxSize) * 32, priv^.DmaLimit);
     if outCtx = nil then begin
         io.syslog.logln('driver.bus.usb.xhci', 'Failed to allocate output device context!');
         xhci_free_ring(ep0Ring^);
@@ -1293,12 +1369,11 @@ begin
     end;
 
     { Store output context pointer in DCBAA[slotID] }
-    PUint32(uint32(priv^.DCBAA) + (uint32(slotID) * 8))^ := vtop(uint32(outCtx));
-    PUint32(uint32(priv^.DCBAA) + (uint32(slotID) * 8) + 4)^ := 0;
+    PUint64(PtrUInt(priv^.DCBAA) + (uint32(slotID) * 8))^ := physicalAddress(PtrUInt(outCtx));
 
     { ---- Build Input Context for Address Device ---- }
     { Input Context = Input Control Ctx + Slot Ctx + EP0 Ctx (+ more EPs) }
-    inputCtx := xhci_alloc_ctx(uint32(priv^.CtxSize) * 33);
+    inputCtx := xhci_alloc_ctx(uint32(priv^.CtxSize) * 33, priv^.DmaLimit);
     if inputCtx = nil then begin
         io.syslog.logln('driver.bus.usb.xhci', 'Failed to allocate input context!');
         xhci_free_ring(ep0Ring^);
@@ -1314,7 +1389,7 @@ begin
     icc^.AddFlags := $03;  { A0=Slot, A1=EP0 }
 
     { Slot Context (at offset CtxSize from start of Input Context) }
-    slotCtx := PXHCI_SlotCtx(uint32(inputCtx) + uint32(priv^.CtxSize));
+    slotCtx := PXHCI_SlotCtx(PtrUInt(inputCtx) + uint32(priv^.CtxSize));
     slotCtx^.Field0 :=
         (xhci_slot_speed(speed) SHL XHCI_SLOT_SPEED_SHIFT) OR
         (uint32(1) SHL XHCI_SLOT_CTX_ENTRIES_SHIFT);  { Context Entries = 1 (Slot + EP0) }
@@ -1322,19 +1397,19 @@ begin
         (uint32(port + 1) SHL XHCI_SLOT_RHP_SHIFT);  { Root Hub Port Number (1-based) }
 
     { EP0 Context (at offset CtxSize*2 from start of Input Context) }
-    ep0Ctx := PXHCI_EPCtx(uint32(inputCtx) + uint32(priv^.CtxSize) * 2);
+    ep0Ctx := PXHCI_EPCtx(PtrUInt(inputCtx) + uint32(priv^.CtxSize) * 2);
     ep0Ctx^.Field1 :=
         (uint32(3) SHL XHCI_EP_CERR_SHIFT) OR            { CErr = 3 }
         (uint32(XHCI_EP_TYPE_CONTROL) SHL XHCI_EP_TYPE_SHIFT) OR  { EP Type = Control Bidirectional }
         (uint32(maxPkt) SHL XHCI_EP_MAXPACKET_SHIFT);     { Max Packet Size }
     ep0Ctx^.TRDeqLo := ep0RingPhys OR 1;  { DCS = 1 (initial cycle state) }
-    ep0Ctx^.TRDeqHi := 0;
+    ep0Ctx^.TRDeqHi := ep0RingPhys shr 32;
     ep0Ctx^.Field4 := 8;  { Average TRB Length = 8 (for control) }
 
     { ---- Address Device Command ---- }
     cmdTRB := xhci_make_trb(
-        vtop(uint32(inputCtx)),  { Input Context pointer (physical) }
-        0,
+        physicalAddress(PtrUInt(inputCtx)),  { Input Context pointer (physical) }
+        physicalAddress(PtrUInt(inputCtx)) shr 32,
         0,
         (XHCI_TRB_ADDRESS_DEVICE SHL XHCI_TRB_TYPE_SHIFT) OR
         (uint32(slotID) SHL 24)  { Slot ID in bits 31:24 }
@@ -1349,7 +1424,7 @@ begin
         io.syslog.log('driver.bus.usb.xhci', 'Address Device failed, cc=');
         io.syslog.writeintln(cc);
         { Clean up }
-        PUint32(uint32(priv^.DCBAA) + (uint32(slotID) * 8))^ := 0;
+        PUint64(PtrUInt(priv^.DCBAA) + (uint32(slotID) * 8))^ := 0;
         xhci_free_ring(ep0Ring^);
         kfree(void(ep0Ring));
         xhci_free_ctx(outCtx);
@@ -1362,10 +1437,10 @@ begin
 
     { ---- Store slot data ---- }
     { Arrays are 0-indexed, slot IDs are 1-based, so index = slotID - 1 }
-    PUint8(uint32(priv^.SlotPort) + uint32(slotID - 1))^ := port;
-    PUint8(uint32(priv^.SlotSpeed) + uint32(slotID - 1))^ := speed;
-    PUint32(uint32(priv^.SlotEPRings) + (uint32(slotID - 1) * 32 + 1) * 4)^ := uint32(ep0Ring);
-    PUint32(uint32(priv^.SlotOutCtx) + (uint32(slotID - 1) * 4))^ := uint32(outCtx);
+    priv^.Slots^[slotID - 1].Port := port;
+    priv^.Slots^[slotID - 1].Speed := speed;
+    priv^.Slots^[slotID - 1].EndpointRings[1] := ep0Ring;
+    priv^.Slots^[slotID - 1].OutputContext := outCtx;
 
     { Set NextAddress so driver.bus.usb.core assigns slotID as the device "address" }
     hc^.NextAddress := slotID;
@@ -1382,9 +1457,7 @@ begin
     xhci_get_ep_ring := nil;
     if (priv = nil) or (slotID = 0) or (slotID > priv^.MaxSlots) then exit;
     if (dci = 0) or (dci > 31) then exit;
-    xhci_get_ep_ring := PXHCI_Ring(
-        PUint32(uint32(priv^.SlotEPRings) + (uint32(slotID - 1) * 32 + uint32(dci)) * 4)^
-    );
+    xhci_get_ep_ring := priv^.Slots^[slotID - 1].EndpointRings[dci];
 end;
 
 { Get EP0 transfer ring (convenience wrapper, DCI=1) }
@@ -1398,7 +1471,7 @@ procedure xhci_set_ep_ring(priv : PXHCI_PrivData; slotID : uint8; dci : uint8; r
 begin
     if (priv = nil) or (slotID = 0) or (slotID > priv^.MaxSlots) then exit;
     if (dci = 0) or (dci > 31) then exit;
-    PUint32(uint32(priv^.SlotEPRings) + (uint32(slotID - 1) * 32 + uint32(dci)) * 4)^ := uint32(ring);
+    priv^.Slots^[slotID - 1].EndpointRings[dci] := ring;
 end;
 
 { Map endpoint pipe type + direction to driver.bus.usb.xhci Endpoint Context Type value }
@@ -1434,7 +1507,7 @@ var
     dci        : uint8;
     epIsIn     : boolean;
     ring       : PXHCI_Ring;
-    ringPhys   : uint32;
+    ringPhys   : uint64;
     inputCtx   : Pointer;
     icc        : PXHCI_InputCtrlCtx;
     slotCtx    : PXHCI_SlotCtx;
@@ -1464,17 +1537,17 @@ begin
         pop_trace;
         exit;
     end;
-    ring^ := xhci_alloc_ring(XHCI_TRANSFER_RING_SIZE);
+    ring^ := xhci_alloc_ring(XHCI_TRANSFER_RING_SIZE, priv^.DmaLimit);
     if ring^.Base = nil then begin
         io.syslog.logln('driver.bus.usb.xhci', 'Failed to alloc EP ring buffer!');
         kfree(void(ring));
         pop_trace;
         exit;
     end;
-    ringPhys := vtop(uint32(ring^.Base));
+    ringPhys := physicalAddress(PtrUInt(ring^.Base));
 
     { Build Input Context: ICC + Slot Ctx + EP Ctx }
-    inputCtx := xhci_alloc_ctx(uint32(priv^.CtxSize) * 33);
+    inputCtx := xhci_alloc_ctx(uint32(priv^.CtxSize) * 33, priv^.DmaLimit);
     if inputCtx = nil then begin
         io.syslog.logln('driver.bus.usb.xhci', 'Failed to alloc input ctx for Configure EP!');
         xhci_free_ring(ring^);
@@ -1489,19 +1562,19 @@ begin
     icc^.AddFlags := (uint32(1) SHL 0) OR (uint32(1) SHL dci);  { A0 + Adci }
 
     { Slot Context: must update Context Entries to cover this DCI }
-    slotCtx := PXHCI_SlotCtx(uint32(inputCtx) + uint32(priv^.CtxSize));
+    slotCtx := PXHCI_SlotCtx(PtrUInt(inputCtx) + uint32(priv^.CtxSize));
     { Read existing slot context from output context to get speed/port }
-    speed := PUint8(uint32(priv^.SlotSpeed) + uint32(slotID - 1))^;
+    speed := priv^.Slots^[slotID - 1].Speed;
     maxCtxEntries := uint32(dci);  { Context Entries = highest DCI }
     slotCtx^.Field0 :=
         (xhci_slot_speed(speed) SHL XHCI_SLOT_SPEED_SHIFT) OR
         (maxCtxEntries SHL XHCI_SLOT_CTX_ENTRIES_SHIFT);
     slotCtx^.Field1 :=
-        (uint32(PUint8(uint32(priv^.SlotPort) + uint32(slotID - 1))^ + 1) SHL XHCI_SLOT_RHP_SHIFT);
+        (uint32(priv^.Slots^[slotID - 1].Port + 1) SHL XHCI_SLOT_RHP_SHIFT);
 
     { Endpoint Context at offset CtxSize * (dci + 1) — ICC is ctx 0, slot is ctx 1,
       EP contexts start at ctx 2 (DCI 1). Offset = CtxSize * (1 + dci). }
-    epCtx := PXHCI_EPCtx(uint32(inputCtx) + uint32(priv^.CtxSize) * uint32(1 + dci));
+    epCtx := PXHCI_EPCtx(PtrUInt(inputCtx) + uint32(priv^.CtxSize) * uint32(1 + dci));
 
     epType := xhci_ep_ctx_type(ep^.PipeType, epIsIn);
 
@@ -1536,7 +1609,7 @@ begin
         (uint32(epType) SHL XHCI_EP_TYPE_SHIFT) OR
         (uint32(ep^.MaxPacket) SHL XHCI_EP_MAXPACKET_SHIFT);
     epCtx^.TRDeqLo := ringPhys OR 1;  { DCS = 1 }
-    epCtx^.TRDeqHi := 0;
+    epCtx^.TRDeqHi := ringPhys shr 32;
     { Average TRB Length: for interrupt, use MaxPacket; for bulk, use 3KB }
     if ep^.PipeType = ptInterrupt then
         epCtx^.Field4 := ep^.MaxPacket
@@ -1545,8 +1618,8 @@ begin
 
     { Issue Configure Endpoint command }
     cmdTRB := xhci_make_trb(
-        vtop(uint32(inputCtx)),
-        0,
+        physicalAddress(PtrUInt(inputCtx)),
+        physicalAddress(PtrUInt(inputCtx)) shr 32,
         0,
         (XHCI_TRB_CONFIG_EP SHL XHCI_TRB_TYPE_SHIFT) OR
         (uint32(slotID) SHL 24)
@@ -1610,131 +1683,15 @@ begin
     end;
 end;
 
-{ Submit a control transfer }
-function xhci_submit_control(hc : PUSBHCDriver; transfer : PUSBTransfer) : boolean;
-var
-    priv     : PXHCI_PrivData;
-    slotID   : uint8;
-    ring     : PXHCI_Ring;
-    trb      : TXHCI_TRB;
-    setupLo  : uint32;
-    setupHi  : uint32;
-    trt      : uint32;
-    dir      : uint32;
-    bufPhys  : uint32;
-begin
-    push_trace('driver.bus.usb.xhci.xhci_submit_control');
-    xhci_submit_control := false;
-    priv := PXHCI_PrivData(hc^.PrivData);
-
-    { ---- Intercept SET_ADDRESS ---- }
-    if transfer^.Setup.bRequest = USB_REQ_SET_ADDRESS then begin
-        transfer^.Status := tsSuccess;
-        transfer^.ActualLen := 0;
-        xhci_submit_control := true;
-        pop_trace;
-        exit;
-    end;
-
-    { Look up slot ID from device address }
-    slotID := transfer^.Device^.Address;
-    if slotID = 0 then begin
-        { Device at address 0 — this is the initial 8-byte GET_DESCRIPTOR before SET_ADDRESS.
-          For driver.bus.usb.xhci, the device was already addressed in port_reset. The driver.bus.usb.core calls
-          with address 0 first, but we already set NextAddress = slotID, so after
-          the first GET_DESCRIPTOR, driver.bus.usb.core sets the address = slotID via SET_ADDRESS.
-          We need to use the slot ID that was just assigned. Find it from NextAddress. }
-        slotID := hc^.NextAddress;
-        if slotID = 0 then begin
-            io.syslog.logln('driver.bus.usb.xhci', 'No slot for address-0 device!');
-            pop_trace;
-            exit;
-        end;
-    end;
-
-    ring := xhci_get_ep0_ring(priv, slotID);
-    if ring = nil then begin
-        io.syslog.logln('driver.bus.usb.xhci', 'No EP0 ring for slot!');
-        pop_trace;
-        exit;
-    end;
-
-    { ---- Setup Stage TRB ---- }
-    { Pack 8-byte setup packet into Param0 and Param1 }
-    setupLo := uint32(transfer^.Setup.bmRequestType) OR
-               (uint32(transfer^.Setup.bRequest) SHL 8) OR
-               (uint32(transfer^.Setup.wValue) SHL 16);
-    setupHi := uint32(transfer^.Setup.wIndex) OR
-               (uint32(transfer^.Setup.wLength) SHL 16);
-
-    { Determine Transfer Type for Setup Stage }
-    if transfer^.BufferLen = 0 then
-        trt := XHCI_TRB_TRT_NONE
-    else if (transfer^.Setup.bmRequestType AND $80) <> 0 then
-        trt := XHCI_TRB_TRT_IN
-    else
-        trt := XHCI_TRB_TRT_OUT;
-
-    trb := xhci_make_trb(
-        setupLo, setupHi,
-        8,  { TRB Transfer Length = 8 (setup packet) }
-        (XHCI_TRB_SETUP_STAGE SHL XHCI_TRB_TYPE_SHIFT) OR XHCI_TRB_IDT OR trt
-    );
-    xhci_ring_enqueue(ring, @trb, false);
-
-    { ---- Data Stage TRB (if there's data) ---- }
-    if transfer^.BufferLen > 0 then begin
-        bufPhys := vtop(uint32(transfer^.Buffer));
-        if (transfer^.Setup.bmRequestType AND $80) <> 0 then
-            dir := XHCI_TRB_DIR_IN
-        else
-            dir := XHCI_TRB_DIR_OUT;
-
-        trb := xhci_make_trb(
-            bufPhys, 0,
-            transfer^.BufferLen,
-            (XHCI_TRB_DATA_STAGE SHL XHCI_TRB_TYPE_SHIFT) OR dir
-        );
-        xhci_ring_enqueue(ring, @trb, false);
-    end;
-
-    { ---- Status Stage TRB ---- }
-    { Direction is opposite to data stage, or IN if no data }
-    if transfer^.BufferLen = 0 then
-        dir := XHCI_TRB_DIR_IN
-    else if (transfer^.Setup.bmRequestType AND $80) <> 0 then
-        dir := XHCI_TRB_DIR_OUT
-    else
-        dir := XHCI_TRB_DIR_IN;
-
-    trb := xhci_make_trb(
-        0, 0, 0,
-        (XHCI_TRB_STATUS_STAGE SHL XHCI_TRB_TYPE_SHIFT) OR XHCI_TRB_IOC OR dir
-    );
-    xhci_ring_enqueue(ring, @trb, false);
-
-    { Set status and track pending BEFORE ringing doorbell to avoid ISR race }
-    transfer^.Status := tsInProgress;
-    transfer^.HCPriv := Pointer(uint32(slotID));
-    xhci_add_pending(priv, transfer, slotID, 1);
-
-    { Ring the doorbell: slot=slotID, target=1 (EP 0 = DCI 1) }
-    xhci_ring_doorbell(priv, uint32(slotID), 1);
-
-    xhci_submit_control := true;
-    pop_trace;
-end;
-
 { A Normal TRB covers contiguous physical bytes within one 64 KiB boundary. }
-function xhci_trb_span(buffer : pointer; length : uint32) : uint32;
-var limit, base, offset : uint32;
+function xhci_trb_span(buffer : pointer; length : uint32; base : uint64) : uint32;
+var limit, offset : uint32;
 begin
-    base := vtop(uint32(buffer));
     limit := 65536 - (base and $FFFF); { One Normal TRB cannot cross 64 KiB. }
     if limit > length then limit := length;
-    offset := 4096 - (uint32(buffer) and $FFF);
+    offset := 4096 - (PtrUInt(buffer) and $FFF);
     while offset < limit do begin
-        if vtop(uint32(buffer) + offset) <> base + offset then begin
+        if physicalAddress(PtrUInt(buffer) + offset) <> base + offset then begin
             limit := offset;
             break;
         end;
@@ -1744,119 +1701,203 @@ begin
     xhci_trb_span := limit;
 end;
 
+procedure xhci_release_bounce(list : PXHCI_Bounce; dest : Pointer; received : uint32);
+var next : PXHCI_Bounce;
+    bytes : uint32;
+begin
+    while list <> nil do begin
+        next := list^.Next;
+        if received > list^.Offset then begin
+            bytes := received - list^.Offset;
+            if bytes > list^.Bytes then bytes := list^.Bytes;
+            memcpy(PtrUInt(list^.Page), PtrUInt(dest) + list^.Offset, bytes);
+        end;
+        {$ifdef CPUX86_64}
+        arch.x86_64.memory.physical.free_page(PtrUInt(list^.Page));
+        {$endif}
+        kfree(void(list));
+        list := next;
+    end;
+end;
+
+function xhci_prepare_span(buffer : Pointer; offset, remaining : uint32;
+                           physical, limit : uint64; input : boolean; var list : PXHCI_Bounce;
+                           var span : TXHCI_Span) : boolean;
+var address : PtrUInt;
+    {$ifdef CPUX86_64}node : PXHCI_Bounce;{$endif}
+begin
+    xhci_prepare_span := false;
+    address := PtrUInt(buffer) + offset;
+    span.Address := physical;
+    span.Bytes := xhci_trb_span(pointer(address), remaining, span.Address);
+    if (remaining = 0) or xhci_dma_range(span.Address, span.Bytes, limit) then begin
+        xhci_prepare_span := true;
+        exit;
+    end;
+    {$ifdef CPUX86_64}
+    if (span.Address = 0) or (limit <> $FFFFFFFF) then exit;
+    node := PXHCI_Bounce(kalloc(sizeof(TXHCI_Bounce)));
+    if node = nil then exit;
+    { The bootstrap identity mapping covers every DMA32 page. }
+    node^.Page := pointer(PtrUInt(arch.x86_64.memory.physical.alloc_page(true)));
+    if node^.Page = nil then begin
+        kfree(void(node));
+        exit;
+    end;
+    if span.Bytes > 4096 then span.Bytes := 4096;
+    node^.Next := list;
+    node^.Offset := offset;
+    node^.Bytes := span.Bytes;
+    list := node;
+    span.Address := PtrUInt(node^.Page);
+    if not input then memcpy(address, PtrUInt(node^.Page), span.Bytes);
+    xhci_prepare_span := true;
+    {$endif}
+end;
+
 { Submit a bulk or interrupt transfer }
-function xhci_submit_bulk_intr(hc : PUSBHCDriver; transfer : PUSBTransfer) : boolean;
-var
-    priv    : PXHCI_PrivData;
-    slotID  : uint8;
-    epNum   : uint8;
-    epIsIn  : boolean;
-    dci     : uint8;
-    ring    : PXHCI_Ring;
-    trb     : TXHCI_TRB;
-    offset, span, remainingPackets, maxPacket, control, flags : uint32;
-    freeSlots, count, firstIndex, firstCycle : uint32;
+function xhci_submit_transfer(hc : PUSBHCDriver; transfer : PUSBTransfer) : boolean;
+var priv : PXHCI_PrivData;
+    slotID, dci : uint8;
+    epIsIn, isControl : boolean;
+    ring : PXHCI_Ring;
+    trb : TXHCI_TRB;
+    offset, remainingPackets, maxPacket, control, setupLo, setupHi, trt : uint32;
+    flags : PtrUInt;
+    freeSlots, count, dataCount, firstIndex, firstCycle, capacity, i : uint32;
     firstTRB : PXHCI_TRB;
     pending : PXHCI_PendingTransfer;
+    small : array[0..3] of TXHCI_Span;
+    spans : PXHCI_Spans;
+    bounce : PXHCI_Bounce;
 begin
-    push_trace('driver.bus.usb.xhci.xhci_submit_bulk_intr');
-    xhci_submit_bulk_intr := false;
-    priv := PXHCI_PrivData(hc^.PrivData);
-
+    xhci_submit_transfer := false;
+    priv := hc^.PrivData;
+    isControl := transfer^.PipeType = ptControl;
     slotID := transfer^.Device^.Address;
-    if (slotID = 0) or (slotID > priv^.MaxSlots) then begin
-        pop_trace;
-        exit;
-    end;
-
-    epNum := transfer^.Endpoint^.Address;
-    epIsIn := (transfer^.Direction = driver.bus.usb.types.dirIn);
-    dci := xhci_ep_to_dci(epNum, epIsIn);
-
-    { Look up per-endpoint transfer ring; configure endpoint lazily if needed }
-    ring := xhci_get_ep_ring(priv, slotID, dci);
-    if ring = nil then begin
-        ring := xhci_configure_endpoint(hc, slotID, transfer^.Endpoint);
-        if ring = nil then begin
-            io.syslog.logln('driver.bus.usb.xhci', 'Failed to configure EP for bulk/intr!');
-            pop_trace;
+    if isControl then begin
+        if (transfer^.Setup.bmRequestType = 0) and (transfer^.Setup.bRequest = USB_REQ_SET_ADDRESS) then begin
+            transfer^.Status := tsSuccess;
+            transfer^.ActualLen := 0;
+            xhci_submit_transfer := true;
             exit;
         end;
+        if transfer^.BufferLen <> transfer^.Setup.wLength then exit;
+        if slotID = 0 then slotID := hc^.NextAddress;
+        dci := 1;
+        epIsIn := (transfer^.Setup.bmRequestType and $80) <> 0;
+        maxPacket := transfer^.Device^.MaxPacket0;
+        if (slotID <> 0) and (slotID <= priv^.MaxSlots) and
+           (priv^.Slots^[slotID - 1].Speed = USB_SPEED_SUPER) then maxPacket := 512;
+    end else begin
+        if transfer^.Endpoint = nil then exit;
+        epIsIn := transfer^.Direction = driver.bus.usb.types.dirIn;
+        dci := xhci_ep_to_dci(transfer^.Endpoint^.Address, epIsIn);
+        maxPacket := transfer^.Endpoint^.MaxPacket;
     end;
-
-    maxPacket := transfer^.Endpoint^.MaxPacket;
+    if (slotID = 0) or (slotID > priv^.MaxSlots) then exit;
     if maxPacket = 0 then begin
-        pop_trace;
-        exit;
+        if not isControl then exit;
+        maxPacket := 8;
     end;
-    { Count descriptors before modifying the ring. Keep one slot empty so
-      equal producer and consumer indices always mean an empty ring. }
-    count := 0;
+    ring := xhci_get_ep_ring(priv, slotID, dci);
+    if (ring = nil) and not isControl then ring := xhci_configure_endpoint(hc, slotID, transfer^.Endpoint);
+    if ring = nil then exit;
+    if (transfer^.BufferLen <> 0) and (transfer^.Buffer = nil) then exit;
+    spans := PXHCI_Spans(@small);
+    bounce := nil;
+    dataCount := 0;
     offset := 0;
-    repeat
-        inc(count);
-        if count >= ring^.Size - 1 then begin
-            pop_trace;
-            exit;
+    capacity := 4;
+    if (transfer^.BufferLen <> 0) or not isControl then repeat
+        if dataCount = capacity then begin
+            if capacity <> 4 then break;
+            capacity := (transfer^.BufferLen - offset) div 4096 + 6;
+            if capacity > ring^.Size - 2 then capacity := ring^.Size - 2;
+            spans := PXHCI_Spans(kalloc(capacity * sizeof(TXHCI_Span)));
+            if spans = nil then break;
+            memcpy(PtrUInt(@small), PtrUInt(spans), sizeof(small));
         end;
-        inc(offset, xhci_trb_span(pointer(uint32(transfer^.Buffer) + offset),
-                                  transfer^.BufferLen - offset));
+        if not xhci_prepare_span(transfer^.Buffer, offset, transfer^.BufferLen - offset,
+                                 physicalAddress(PtrUInt(transfer^.Buffer) + offset), priv^.DmaLimit, epIsIn, bounce, spans^[dataCount]) then break;
+        inc(offset, spans^[dataCount].Bytes);
+        inc(dataCount);
     until offset = transfer^.BufferLen;
-
-    asm pushfd; cli; pop flags end;
-    freeSlots := (ring^.Dequeue + ring^.Size - 2 - ring^.Enqueue) mod (ring^.Size - 1);
-    if count > freeSlots then begin
+    count := dataCount;
+    if isControl then inc(count, 2);
+    if (offset = transfer^.BufferLen) and (count > 0) then begin
+        asm {$ifdef CPUX86_64}pushfq{$else}pushfd{$endif}; cli; pop flags end;
+        freeSlots := (ring^.Dequeue + ring^.Size - 2 - ring^.Enqueue) mod (ring^.Size - 1);
+        pending := nil;
+        if count <= freeSlots then pending := xhci_add_pending(priv, transfer, slotID, dci);
+        if pending <> nil then begin
+            firstIndex := ring^.Enqueue;
+            firstCycle := ring^.CycleBit;
+            firstTRB := @ring^.Base[firstIndex];
+            pending^.Ring := ring;
+            pending^.First := firstIndex;
+            pending^.Count := count;
+            pending^.ShortBytes := transfer^.BufferLen;
+            pending^.Bounce := bounce;
+            bounce := nil;
+            if isControl then begin
+                setupLo := uint32(transfer^.Setup.bmRequestType) or (uint32(transfer^.Setup.bRequest) shl 8) or
+                           (uint32(transfer^.Setup.wValue) shl 16);
+                setupHi := uint32(transfer^.Setup.wIndex) or (uint32(transfer^.Setup.wLength) shl 16);
+                trt := XHCI_TRB_TRT_NONE;
+                if dataCount <> 0 then begin
+                    if epIsIn then trt := XHCI_TRB_TRT_IN else trt := XHCI_TRB_TRT_OUT;
+                end;
+                trb := xhci_make_trb(setupLo, setupHi, 8, (XHCI_TRB_SETUP_STAGE shl XHCI_TRB_TYPE_SHIFT) or XHCI_TRB_IDT or trt);
+                xhci_ring_enqueue(ring, @trb, true);
+            end;
+            offset := 0;
+            i := 0;
+            while i < dataCount do begin
+                trb.Param0 := uint32(spans^[i].Address);
+                trb.Param1 := spans^[i].Address shr 32;
+                inc(offset, spans^[i].Bytes);
+                control := XHCI_TRB_NORMAL shl XHCI_TRB_TYPE_SHIFT;
+                if isControl and (i = 0) then begin
+                    control := XHCI_TRB_DATA_STAGE shl XHCI_TRB_TYPE_SHIFT;
+                    if epIsIn then control := control or XHCI_TRB_DIR_IN;
+                end;
+                remainingPackets := 0;
+                if i + 1 < dataCount then begin
+                    control := control or XHCI_TRB_CH;
+                    remainingPackets := (transfer^.BufferLen + maxPacket - 1) div maxPacket - offset div maxPacket;
+                    if remainingPackets > 31 then remainingPackets := 31;
+                end else if not isControl then control := control or XHCI_TRB_IOC;
+                if epIsIn then control := control or XHCI_TRB_ISP;
+                trb.Status := spans^[i].Bytes or (remainingPackets shl 17);
+                trb.Control := control;
+                xhci_ring_enqueue(ring, @trb, ring^.Enqueue = firstIndex);
+                inc(i);
+            end;
+            if isControl then begin
+                control := (XHCI_TRB_STATUS_STAGE shl XHCI_TRB_TYPE_SHIFT) or XHCI_TRB_IOC;
+                if (dataCount = 0) or not epIsIn then control := control or XHCI_TRB_DIR_IN;
+                trb := xhci_make_trb(0, 0, 0, control);
+                xhci_ring_enqueue(ring, @trb, false);
+            end;
+            transfer^.Status := tsInProgress;
+            transfer^.HCPriv := Pointer(PtrUInt(slotID));
+            firstTRB^.Control := (firstTRB^.Control and not uint32(XHCI_TRB_CYCLE)) or firstCycle;
+            xhci_ring_doorbell(priv, slotID, dci);
+            xhci_submit_transfer := true;
+        end;
         if (flags and $200) <> 0 then asm sti end;
-        pop_trace;
-        exit;
     end;
-    pending := xhci_add_pending(priv, transfer, slotID, dci);
-    if pending = nil then begin
-        if (flags and $200) <> 0 then asm sti end;
-        pop_trace;
-        exit;
-    end;
-    firstIndex := ring^.Enqueue;
-    firstCycle := ring^.CycleBit;
-    firstTRB := @ring^.Base[firstIndex];
-    pending^.Ring := ring;
-    pending^.First := firstIndex;
-    pending^.Count := count;
-    offset := 0;
-    repeat
-        span := xhci_trb_span(pointer(uint32(transfer^.Buffer) + offset), transfer^.BufferLen - offset);
-        trb.Param0 := vtop(uint32(transfer^.Buffer) + offset);
-        trb.Param1 := 0;
-        inc(offset, span);
-        remainingPackets := 0;
-        control := XHCI_TRB_NORMAL shl XHCI_TRB_TYPE_SHIFT;
-        if offset < transfer^.BufferLen then begin
-            control := control or XHCI_TRB_CH;
-            remainingPackets := (transfer^.BufferLen + maxPacket - 1) div maxPacket - offset div maxPacket;
-            if remainingPackets > 31 then remainingPackets := 31;
-        end else
-            control := control or XHCI_TRB_IOC;
-        if epIsIn then control := control or XHCI_TRB_ISP;
-        trb.Status := span or (remainingPackets shl 17);
-        trb.Control := control;
-        xhci_ring_enqueue(ring, @trb, ring^.Enqueue = firstIndex);
-    until offset = transfer^.BufferLen;
-    transfer^.Status := tsInProgress;
-    transfer^.HCPriv := Pointer(uint32(slotID));
-    { Publish the first descriptor last, after all following descriptors
-      and the completion record are visible. x86 orders these DMA stores. }
-    firstTRB^.Control := (firstTRB^.Control and not uint32(XHCI_TRB_CYCLE)) or firstCycle;
-    xhci_ring_doorbell(priv, uint32(slotID), uint32(dci));
-    if (flags and $200) <> 0 then asm sti end;
-
-    xhci_submit_bulk_intr := true;
-    pop_trace;
+    xhci_release_bounce(bounce, nil, 0);
+    if (spans <> nil) and (pointer(spans) <> pointer(@small)) then kfree(void(spans));
 end;
 
 function xhci_bulk_limit(hc : PUSBHCDriver; ep : PUSBEndpoint; buffer : pointer; length : uint32) : uint32;
 begin
     xhci_bulk_limit := length;
     if length > hc^.BulkWindowBytes then xhci_bulk_limit := hc^.BulkWindowBytes;
+    if xhci_bulk_limit > (XHCI_TRANSFER_RING_SIZE - 2) * 4096 - (PtrUInt(buffer) and $FFF) then
+        xhci_bulk_limit := (XHCI_TRANSFER_RING_SIZE - 2) * 4096 - (PtrUInt(buffer) and $FFF);
 end;
 
 function xhci_submit(hc : PUSBHCDriver; transfer : PUSBTransfer) : boolean;
@@ -1869,10 +1910,8 @@ begin
     end;
 
     case transfer^.PipeType of
-        ptControl:
-            xhci_submit := xhci_submit_control(hc, transfer);
-        ptBulk, ptInterrupt:
-            xhci_submit := xhci_submit_bulk_intr(hc, transfer);
+        ptControl, ptBulk, ptInterrupt:
+            xhci_submit := xhci_submit_transfer(hc, transfer);
     else
         io.syslog.logln('driver.bus.usb.xhci', 'Unsupported pipe type for submit.');
     end;
@@ -1897,7 +1936,7 @@ var
     hc     : PUSBHCDriver;
     priv   : PXHCI_PrivData;
     usbsts : uint32;
-    irBase : uint32;
+    irBase : PtrUInt;
 begin
     for i := 0 to XHCIInstanceCount - 1 do begin
         hc := XHCIInstances[i];
@@ -1927,7 +1966,7 @@ end;
 procedure xhci_enable_interrupts(hc : PUSBHCDriver);
 var
     priv   : PXHCI_PrivData;
-    irBase : uint32;
+    irBase : PtrUInt;
     cmd    : uint32;
 begin
     if (hc = nil) or (hc^.PrivData = nil) then exit;
@@ -2000,17 +2039,21 @@ begin
                                 while n < pend^.Count do begin
                                     entry := @pend^.Ring^.Base[index];
                                     span := entry^.Status and $1FFFF;
-                                    if vtop(uint32(entry)) = evt.Param0 then break;
-                                    inc(bytes, span);
+                                    if physicalAddress(PtrUInt(entry)) = ((uint64(evt.Param1) shl 32) or evt.Param0) then break;
+                                    if (epID <> 1) or (n <> 0) then inc(bytes, span);
                                     index := (index + 1) mod (pend^.Ring^.Size - 1);
                                     inc(n);
                                 end;
                                 if n = pend^.Count then continue;
                                 if xferLen <= span then inc(bytes, span - xferLen);
+                                if (epID = 1) and (cc = XHCI_CC_SHORT_PACKET) and (n + 1 < pend^.Count) then begin
+                                    pend^.ShortBytes := bytes;
+                                    break;
+                                end;
+                                if (epID = 1) and (cc = XHCI_CC_SUCCESS) then bytes := pend^.ShortBytes;
                                 pend^.Ring^.Dequeue := (pend^.First + pend^.Count) mod (pend^.Ring^.Size - 1);
                             end;
                             transfer := pend^.Transfer;
-                            transfer^.Status := xhci_cc_to_status(cc);
                             if (cc = XHCI_CC_SUCCESS) or (cc = XHCI_CC_SHORT_PACKET) then begin
                                 { xferLen in Transfer Event is residual (remaining bytes) }
                                 if pend^.Ring <> nil then transfer^.ActualLen := bytes
@@ -2020,7 +2063,12 @@ begin
                                     transfer^.ActualLen := transfer^.BufferLen;
                             end else
                                 transfer^.ActualLen := 0;
+                            if ((epID = 1) and ((transfer^.Setup.bmRequestType and $80) <> 0)) or
+                               ((epID <> 1) and (transfer^.Direction = driver.bus.usb.types.dirIn)) then
+                                xhci_release_bounce(pend^.Bounce, transfer^.Buffer, transfer^.ActualLen)
+                            else xhci_release_bounce(pend^.Bounce, nil, 0);
                             LL_Delete(priv^.PendingList, i);
+                            transfer^.Status := xhci_cc_to_status(cc);
                             break;
                         end;
                     end;
@@ -2062,6 +2110,36 @@ begin
     priv^.PollBusy := false;
 end;
 
+{ No device has been enumerated when probe fails. Once DMA registers have
+  been programmed, wait for HCH before releasing controller-owned memory. }
+procedure xhci_release_probe(hc : PUSBHCDriver; programmed : boolean);
+var priv : PXHCI_PrivData;
+    i : uint32;
+begin
+    priv := hc^.PrivData;
+    if programmed then begin
+        xhci_stop(hc);
+        for i := 1 to 200000 do
+            if (xhci_readl(priv^.OpBase, XHCI_OP_USBSTS) and XHCI_STS_HCH) <> 0 then break;
+        if (xhci_readl(priv^.OpBase, XHCI_OP_USBSTS) and XHCI_STS_HCH) = 0 then begin
+            io.syslog.logln('driver.bus.usb.xhci', 'Halt timed out; retaining active DMA allocations.');
+            exit;
+        end;
+    end;
+    if priv^.PendingList <> nil then LL_Free(priv^.PendingList);
+    if priv^.Slots <> nil then kfree(void(priv^.Slots));
+    if priv^.ScratchPages <> nil then begin
+        for i := 0 to priv^.NumScratch - 1 do xhci_dma_free(priv^.ScratchPages[i]);
+        kfree(void(priv^.ScratchPages));
+    end;
+    xhci_dma_free(priv^.ScratchBufs);
+    xhci_dma_free(priv^.ERST);
+    xhci_free_ring(priv^.EvtRing);
+    xhci_free_ring(priv^.CmdRing);
+    xhci_dma_free(priv^.DCBAA);
+    kfree(void(priv));
+end;
+
 { ========================= Stage 7: Load ========================= }
 
 function load : boolean;
@@ -2072,8 +2150,8 @@ var
     priv     : PXHCI_PrivData;
     hc       : TUSBHCDriver;
     hcEntry  : PUSBHCDriver;
-    mmioBase : uint32;
-    block    : uint32;
+    mmioBase : PtrUInt;
+    bar      : uint64;
     capLen   : uint8;
     hciver   : uint16;
     hcsparams1 : uint32;
@@ -2098,6 +2176,7 @@ begin
     end;
 
     for i := 0 to count - 1 do begin
+        if XHCIInstanceCount >= XHCI_MAX_INSTANCES then break;
         io.syslog.log('driver.bus.usb.xhci', 'Controller[');
         io.syslog.writeint(i);
         io.syslog.writestring(']: VID=');
@@ -2108,20 +2187,13 @@ begin
         io.syslog.writehexln(devices[i].address0);
 
         { Read BAR0 — mask lower 4 bits (memory-mapped indicator/type bits) }
-        mmioBase := devices[i].address0 AND $FFFFFFF0;
-        if mmioBase = 0 then begin
-            io.syslog.logln('driver.bus.usb.xhci', 'Invalid MMIO base (BAR0=0), skipping.');
-            continue;
-        end;
-
-        { Map the MMIO region into identity-mapped address space }
-        block := mmioBase SHR 22;
-        force_alloc_block(block, 0);
-        map_page(block, block);
-
-        { Also map the next 4MB block in case registers span the boundary }
-        force_alloc_block(block + 1, 0);
-        map_page(block + 1, block + 1);
+        if (devices[i].address0 and 1) <> 0 then continue;
+        bar := devices[i].address0 and $FFFFFFF0;
+        if (devices[i].address0 and 7) = 4 then
+            bar := bar or (uint64(devices[i].address1) shl 32);
+        if bar = 0 then continue;
+        mmioBase := PtrUInt(mapDevice(bar, 4096));
+        if mmioBase = 0 then continue;
 
         { Enable bus mastering for DMA }
         driver.bus.pci.setBusMaster(devices[i].bus, devices[i].slot, devices[i].func, true);
@@ -2156,15 +2228,23 @@ begin
             io.syslog.logln('driver.bus.usb.xhci', 'Failed to allocate private data!');
             continue;
         end;
-        memset(uint32(priv), 0, sizeof(TXHCI_PrivData));
+        memset(PtrUInt(priv), 0, sizeof(TXHCI_PrivData));
 
         priv^.MMIOBase   := mmioBase;
-        priv^.OpBase     := mmioBase + capLen;
-        priv^.RTBase     := mmioBase + rtsoff;
-        priv^.DBBase     := mmioBase + dboff;
+        priv^.OpBase     := PtrUInt(mapDevice(bar + capLen, XHCI_OP_PORTSC_BASE + (hcsparams1 shr 24) * 16));
+        priv^.RTBase     := PtrUInt(mapDevice(bar + rtsoff, 64));
+        priv^.DBBase     := PtrUInt(mapDevice(bar + dboff, 1024));
+        if (priv^.OpBase = 0) or (priv^.RTBase = 0) or (priv^.DBBase = 0) then begin
+            kfree(void(priv));
+            continue;
+        end;
         priv^.HCSPARAMS1 := hcsparams1;
         priv^.HCSPARAMS2 := hcsparams2;
         priv^.HCCPARAMS1 := hccparams1;
+        if (hccparams1 and XHCI_HCC1_AC64) <> 0 then
+            priv^.DmaLimit := High(uint64)
+        else
+            priv^.DmaLimit := $FFFFFFFF;
         priv^.MaxSlots   := uint8(hcsparams1 AND XHCI_HCS1_MAXSLOTS_MASK);
         priv^.MaxIntrs   := uint16((hcsparams1 AND XHCI_HCS1_MAXINTRS_MASK) SHR XHCI_HCS1_MAXINTRS_SHIFT);
         priv^.MaxPorts   := uint8((hcsparams1 AND XHCI_HCS1_MAXPORTS_MASK) SHR XHCI_HCS1_MAXPORTS_SHIFT);
@@ -2185,7 +2265,7 @@ begin
         io.syslog.writeintln(priv^.CtxSize);
 
         { BIOS handoff }
-        xhci_bios_handoff(priv, devices[i]);
+        xhci_bios_handoff(priv, bar);
 
         { Set up HC driver record }
         usb_hc_init_record(@hc);
@@ -2195,7 +2275,6 @@ begin
         hc.PCIDev       := devices[i];
         hc.BaseAddr     := mmioBase;
         hc.PrivData     := Pointer(priv);
-        hc.Devices      := LL_New(sizeof(TUSBDevice));
         hc.NextAddress  := 1;
         hc.fnReset      := TUSBHCReset(@xhci_reset);
         hc.fnStart      := TUSBHCStart(@xhci_start);
@@ -2211,14 +2290,14 @@ begin
         { Reset the controller }
         if not xhci_reset(@hc) then begin
             io.syslog.logln('driver.bus.usb.xhci', 'Reset failed, skipping controller.');
-            kfree(void(priv));
+            xhci_release_probe(@hc, false);
             continue;
         end;
 
         { Start the controller }
         if not xhci_start(@hc) then begin
             io.syslog.logln('driver.bus.usb.xhci', 'Start failed, skipping controller.');
-            kfree(void(priv));
+            xhci_release_probe(@hc, true);
             continue;
         end;
 
@@ -2235,15 +2314,19 @@ begin
             { Register ISR on driver.bus.pci interrupt line (must happen BEFORE enabling HW interrupts) }
             io.syslog.log('driver.bus.usb.xhci', 'Registering ISR on IRQ ');
             io.syslog.writeintln(devices[i].interrupt_line);
-            arch.x86.isr.mgr.registerISR(32 + devices[i].interrupt_line, @xhci_isr);
+            arch.platform.interrupts.registerIRQ(32 + devices[i].interrupt_line, @xhci_isr);
+            arch.platform.interrupts.routePCI(devices[i].interrupt_line, 32 + devices[i].interrupt_line);
 
             { Now safe to enable hardware interrupts }
             xhci_enable_interrupts(hcEntry);
 
             { Scan for connected devices }
             driver.bus.usb.core.scan_ports(hcEntry);
-        end else
+        end else begin
             io.syslog.logln('driver.bus.usb.xhci', 'Failed to register HC with driver.bus.usb core.');
+            xhci_release_probe(@hc, true);
+            continue;
+        end;
 
         io.syslog.logln('driver.bus.usb.xhci', 'Controller initialized and registered.');
     end;
@@ -2254,16 +2337,71 @@ end;
 
 { ========================= Unit Tests ========================= }
 
+procedure test_control_reservation(var context : TTestContext);
+var hc : TUSBHCDriver;
+    priv : TXHCI_PrivData;
+    slot : TXHCI_Slot;
+    dev : TUSBDevice;
+    transfer : TUSBTransfer;
+    ring : TXHCI_Ring;
+    doorbells : array[0..1] of uint32;
+begin
+    memset(PtrUInt(@priv), 0, sizeof(priv));
+    memset(PtrUInt(@slot), 0, sizeof(slot));
+    memset(PtrUInt(@dev), 0, sizeof(dev));
+    memset(PtrUInt(@transfer), 0, sizeof(transfer));
+    usb_hc_init_record(@hc);
+    ring := xhci_alloc_ring(4, High(uint64));
+    test.harness.Assert(@context, ring.Base <> nil, 'allocate EP0 test ring');
+    if ring.Base = nil then exit;
+    slot.EndpointRings[1] := @ring;
+    priv.Slots := PXHCI_Slots(@slot);
+    priv.MaxSlots := 1;
+    priv.DBBase := PtrUInt(@doorbells);
+    hc.PrivData := @priv;
+    dev.Address := 1;
+    transfer.Device := @dev;
+    transfer.PipeType := ptControl;
+    doorbells[1] := 0;
+    test.harness.Assert(@context, not xhci_submit_transfer(@hc, @transfer), 'EP0 rejects missing completion tracking');
+    test.harness.Assert(@context, (ring.Enqueue = 0) and (ring.Base^.Control = 0) and (doorbells[1] = 0),
+                        'failed EP0 reservation preserves ring and doorbell');
+    xhci_free_ring(ring);
+end;
+
 procedure UnitTest;
 var
     context : TTestContext;
     trb  : TXHCI_TRB;
     ring : TXHCI_Ring;
     dest : PXHCI_TRB;
+    bytes : array[0..3] of uint8;
+    bounce : PXHCI_Bounce;
+    span : TXHCI_Span;
 
 begin
     test.harness.Start(@context, 'driver.bus.usb.xhci');
+    test_control_reservation(context);
+    test.harness.Assert(@context, xhci_dma_range($FFFFF000, 4096, $FFFFFFFF), 'last DMA32 page fits');
+    test.harness.Assert(@context, not xhci_dma_range($FFFFF000, 4097, $FFFFFFFF), 'DMA32 boundary crossing');
+    test.harness.Assert(@context, xhci_dma_range(uint64(1) shl 32, 4096, High(uint64)), 'DMA64 high page');
+    test.harness.Assert(@context, not xhci_dma_range(High(uint64), 2, High(uint64)), 'DMA64 range overflow');
 
+
+    test.harness.Assert(@context, xhci_trb_span(@bytes, 4, $FFFE) = 2, 'split at physical 64 KiB boundary');
+    {$ifdef CPUX86_64}
+    bounce := nil;
+    bytes[0] := 71;
+    bytes[1] := 19;
+    if xhci_prepare_span(@bytes, 0, 2, uint64(1) shl 32, $FFFFFFFF, false, bounce, span) then begin
+        test.harness.Assert(@context, (bounce <> nil) and (span.Address <= $FFFFFFFF) and
+            (PUint8(bounce^.Page)[0] = 71), 'DMA32 fallback copies outbound bytes');
+        PUint8(bounce^.Page)[0] := 91;
+        PUint8(bounce^.Page)[1] := 92;
+        xhci_release_bounce(bounce, @bytes, 1);
+        test.harness.Assert(@context, (bytes[0] = 91) and (bytes[1] = 19), 'short IN copies only completed bytes');
+    end else test.harness.Assert(@context, false, 'DMA32 fallback allocation');
+    {$endif}
     { === Structure Size Tests === }
     test.harness.Assert(@context, sizeof(TXHCI_TRB) = 16, 'sizeof TRB=16');
     test.harness.Assert(@context, sizeof(TXHCI_SlotCtx) = 32, 'sizeof SlotCtx=32');
@@ -2344,22 +2482,22 @@ begin
     test.harness.Assert(@context, xhci_context_entry_size($FFFFFFFF) = 64, 'ctxsize all bits=64');
 
     { === Ring Allocation Tests === }
-    ring := xhci_alloc_ring(16);
+    ring := xhci_alloc_ring(16, High(uint64));
     test.harness.Assert(@context, ring.Base <> nil, 'alloc_ring not nil');
-    test.harness.Assert(@context, (uint32(ring.Base) AND $FFF) = 0, 'alloc_ring page aligned');
+    test.harness.Assert(@context, (PtrUInt(ring.Base) AND $FFF) = 0, 'alloc_ring page aligned');
     test.harness.Assert(@context, ring.Size = 16, 'alloc_ring size=16');
     test.harness.Assert(@context, ring.Enqueue = 0, 'alloc_ring enqueue=0');
     test.harness.Assert(@context, ring.CycleBit = 1, 'alloc_ring cycle=1');
     { Check Link TRB at last entry }
-    dest := PXHCI_TRB(uint32(ring.Base) + (15 * sizeof(TXHCI_TRB)));
+    dest := PXHCI_TRB(PtrUInt(ring.Base) + (15 * sizeof(TXHCI_TRB)));
     test.harness.Assert(@context, (dest^.Control AND XHCI_TRB_TYPE_MASK) SHR XHCI_TRB_TYPE_SHIFT = XHCI_TRB_LINK,
            'alloc_ring link TRB at end');
     test.harness.Assert(@context, (dest^.Control AND XHCI_TRB_TC) <> 0, 'alloc_ring link TC bit');
-    test.harness.Assert(@context, dest^.Param0 = vtop(uint32(ring.Base)), 'alloc_ring link->start');
+    test.harness.Assert(@context, ((uint64(dest^.Param1) shl 32) or dest^.Param0) = physicalAddress(PtrUInt(ring.Base)), 'alloc_ring link->start');
     xhci_free_ring(ring);
 
     { === Ring Enqueue Tests === }
-    ring := xhci_alloc_ring(4); { 3 usable + 1 Link }
+    ring := xhci_alloc_ring(4, High(uint64)); { 3 usable + 1 Link }
     test.harness.Assert(@context, ring.Enqueue = 0, 'enq initial=0');
     test.harness.Assert(@context, ring.CycleBit = 1, 'enq initial cycle=1');
 
@@ -2367,7 +2505,7 @@ begin
     trb := xhci_make_trb($AA, $BB, $CC, XHCI_TRB_NORMAL SHL XHCI_TRB_TYPE_SHIFT);
     xhci_ring_enqueue(@ring, @trb, false);
     test.harness.Assert(@context, ring.Enqueue = 1, 'enq after 1st=1');
-    dest := PXHCI_TRB(uint32(ring.Base));
+    dest := PXHCI_TRB(PtrUInt(ring.Base));
     test.harness.Assert(@context, dest^.Param0 = $AA, 'enq 1st Param0');
     test.harness.Assert(@context, (dest^.Control AND XHCI_TRB_CYCLE) = 1, 'enq 1st cycle=1');
 
@@ -2389,7 +2527,7 @@ begin
     trb := xhci_make_trb($44, $55, $66, XHCI_TRB_NORMAL SHL XHCI_TRB_TYPE_SHIFT);
     xhci_ring_enqueue(@ring, @trb, false);
     test.harness.Assert(@context, ring.Enqueue = 1, 'enq after wrap=1');
-    dest := PXHCI_TRB(uint32(ring.Base));
+    dest := PXHCI_TRB(PtrUInt(ring.Base));
     test.harness.Assert(@context, (dest^.Control AND XHCI_TRB_CYCLE) = 0, 'enq wrap cycle=0');
 
     xhci_ring_enqueue(@ring, @trb, false);
@@ -2399,9 +2537,9 @@ begin
     xhci_free_ring(ring);
 
     { === Event Ring Allocation Tests === }
-    ring := xhci_alloc_event_ring(32);
+    ring := xhci_alloc_event_ring(32, High(uint64));
     test.harness.Assert(@context, ring.Base <> nil, 'evt_ring not nil');
-    test.harness.Assert(@context, (uint32(ring.Base) AND $FFF) = 0, 'evt_ring page aligned');
+    test.harness.Assert(@context, (PtrUInt(ring.Base) AND $FFF) = 0, 'evt_ring page aligned');
     test.harness.Assert(@context, ring.Size = 32, 'evt_ring size=32');
     test.harness.Assert(@context, ring.CycleBit = 1, 'evt_ring cycle=1');
     xhci_free_ring(ring);
