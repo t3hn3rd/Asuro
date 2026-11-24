@@ -705,7 +705,7 @@ procedure init;
 begin
     if Commands <> nil then exit;
     if not growCommands then exit;
-    UnitTest;
+    {$ifdef UNIT_TESTS}UnitTest;{$endif}
 
     Halted := false;
     HaltID := 0;

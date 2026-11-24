@@ -32,10 +32,20 @@ procedure Init;
 implementation
 
 uses
-    core.strings, memory.heap, io.syslog;
+    core.strings, memory.heap, io.syslog, arch.platform.cpu;
 
 var
     HarnessContext: THarnessContext;
+
+{ Keep serial test records intact when a driver logs from an interrupt. }
+procedure writeResult(tag, message: pchar);
+var
+    flags: PtrUInt;
+begin
+    flags := arch.platform.cpu.lock;
+    io.syslog.logln(tag, message);
+    arch.platform.cpu.unlock(flags);
+end;
 
 procedure Start(TestContext: PTestContext; UnitName: pchar);
 begin
@@ -46,7 +56,7 @@ begin
     TestContext^.SuccessCount:= 0;
     TestContext^.TotalCount:= 0;
     inc(HarnessContext.UnitsTotal);
-    io.syslog.logln(TestContext^.UnitPrefix, 'Unit tests starting...');
+    writeResult(TestContext^.UnitPrefix, 'Unit tests starting...');
 end;
 
 procedure Assert(TestContext: PTestContext; condition : boolean; testName : pchar);
@@ -63,7 +73,7 @@ begin
         inc(TestContext^.TotalCount);
         inc(HarnessContext.TestsFailed);
         msg:= stringConcat('FAIL: ', testName);
-        io.syslog.logln(TestContext^.UnitPrefix, msg);
+        writeResult(TestContext^.UnitPrefix, msg);
         kfree(void(msg));
     end;
 end;
@@ -80,7 +90,7 @@ begin
     kfree(void(msg));
     msg:= stringConcat(tmp, ' failed.');
     kfree(void(tmp));
-    io.syslog.logln(TestContext^.UnitPrefix, msg);
+    writeResult(TestContext^.UnitPrefix, msg);
     kfree(void(msg));
     kfree(void(pStr));
     kfree(void(fStr));
@@ -124,7 +134,7 @@ begin
     kfree(void(msg));
     msg:= stringConcat(tmp, ' failed.');
     kfree(void(tmp));
-    io.syslog.logln('test', msg);
+    writeResult('test', msg);
     kfree(void(msg));
     kfree(void(pStr));
     kfree(void(fStr));
@@ -141,7 +151,7 @@ begin
     kfree(void(msg));
     msg:= stringConcat(tmp, ' failed.');
     kfree(void(tmp));
-    io.syslog.logln('test', msg);
+    writeResult('test', msg);
     kfree(void(msg));
     kfree(void(tStr));
     kfree(void(pStr));

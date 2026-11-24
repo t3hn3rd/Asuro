@@ -17,7 +17,7 @@ interface
 {$i ../../common/platform.diagnostics.inc}
 
 implementation
-uses debug.early;
+uses debug.early, arch.x86_64.util;
 
 procedure log(tag, message: pchar);
 begin
@@ -40,8 +40,11 @@ begin
 end;
 
 procedure testSummary(tag, passedKey, failedKey: pchar; passed, failed: uint32);
+var flags: PtrUInt;
 begin
+    flags := lockIRQ;
     debug.early.field(passedKey, passed);
     debug.early.field(failedKey, failed);
+    unlockIRQ(flags);
 end;
 end.

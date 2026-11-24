@@ -34,7 +34,7 @@ def run_case(iso, case):
             if case == "unsupported":
                 wait_for(lambda: output() == "C", "32-bit CPU rejection marker", vm)
                 return
-            wait_for(lambda: "PASS: bootstrap and IST stack guard pages fault" in output(),
+            wait_for(lambda: "ASURO x86_64: IDT/TSS ready" in output(),
                      "native IDT and stack guards", vm)
             with socket.socket(socket.AF_UNIX) as client:
                 client.settimeout(5)
