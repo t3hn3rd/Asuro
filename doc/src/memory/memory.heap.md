@@ -74,10 +74,16 @@ procedure init;
 
 Allocates the first heap page via `new_heap_page`, sets `Root_Page` and `Search_Page` to it. Panics if the root page cannot be allocated.
 
+### tryAlloc
+
+`tryAlloc(size: SizeUInt)` returns a zeroed allocation or nil on exhaustion. Callers that can roll back, such as queue insertion and dynamic list growth, use this entry point. The existing `kalloc` entry point retains its fatal out-of-memory behavior for valid requests.
+
+The heap protects its list and bitmap updates with interrupts masked. It initializes private buffers and grows the heap outside that critical section. The native virtual allocator reserves arena slots before mapping individual frames and marks the range ready only after all pages have been installed. Failed allocations release the mapped prefix before making the slots available again.
+
 ### kalloc
 
 ```pascal
-function kalloc(size: uint32): void;
+function kalloc(size: SizeUInt): void;
 ```
 
 Allocates `size` bytes from the heap. Returns a 16-byte-aligned pointer. Returns `nil` for zero-size requests. Delegates to `klalloc` for requests too large for a single page. Searches pages starting from `Search_Page` using the `NextFree` roving hint, allocating a new page if no existing page can satisfy the request. Calls `core.panic.panic` if the system is completely out of memory. The allocated region is zeroed before being returned.
@@ -93,7 +99,7 @@ Frees a previously allocated block. Detects large allocations by checking the ma
 ### klalloc
 
 ```pascal
-function klalloc(size: uint32): void;
+function klalloc(size: SizeUInt): void;
 ```
 
 Allocates `size` bytes by mapping contiguous virtual pages from the low virtual address range (page numbers 5 through `KERNEL_PAGE_NUMBER - 1`). Writes a header containing the page count and `LARGE_ALLOC_MAGIC` sentinel. Returns a pointer 16 bytes past the header. Returns `nil` if no contiguous range is available.

@@ -35,7 +35,7 @@ const
     PTE_OWNED = uint64(1) shl 9;
 var
     root: PUInt64;
-    arenaBitmap: PUInt32;
+    arenaBitmap, readyArenas: PUInt32;
     tablePages: uint64;
     leafFlags: uint64;
     failAfter: sint32; { deterministic OOM injection, disabled outside UnitTest }
@@ -254,20 +254,25 @@ var
     i: uint32;
     slot: PUInt64;
     physical: uint64;
+    flags: PtrUInt;
 begin
     if pages = 0 then exit;
     for i := 0 to pages - 1 do begin
+        flags := lockIRQ;
         slot := leaf(address + uint64(i) * 4096);
         if slot = nil then fail('missing owned mapping');
         physical := slot^ and ADDRESS_MASK;
         slot^ := 0;
         invalidate(address + uint64(i) * 4096);
         if not arch.x86_64.memory.physical.free_page(physical) then fail('data frame release');
+        unlockIRQ(flags);
     end;
     { Scan empty tables once per 2 MiB span, not once per 4 KiB page. }
     i := 0;
     while i < pages do begin
+        flags := lockIRQ;
         prune(address + uint64(i) * 4096);
+        unlockIRQ(flags);
         inc(i, 512);
     end;
 end;
@@ -288,6 +293,7 @@ begin
         exit;
     end;
     bitmap_set_range(arenaBitmap, idx, arenas);
+    unlockIRQ(saved);
     base := HEAP_BASE + uint64(idx) * ARENA_SIZE;
     pages := arenas * (ARENA_SIZE div 4096);
     i := 0;
@@ -302,8 +308,13 @@ begin
     end;
     if i <> pages then begin
         releaseMapped(base, i);
+        saved := lockIRQ;
         bitmap_clear_range(arenaBitmap, idx, arenas);
-    end else allocate_region := base;
+    end else begin
+        saved := lockIRQ;
+        bitmap_set_range(readyArenas, idx, arenas);
+        allocate_region := base;
+    end;
     unlockIRQ(saved);
 end;
 
@@ -319,23 +330,24 @@ begin
     idx := (address - HEAP_BASE) div ARENA_SIZE;
     if arenas > ARENA_COUNT - idx then exit;
     saved := lockIRQ;
-    if not bitmap_all_set(arenaBitmap, idx, arenas) then begin
+    if not bitmap_all_set(readyArenas, idx, arenas) then begin
         unlockIRQ(saved);
         exit;
     end;
+    bitmap_clear_range(readyArenas, idx, arenas);
+    unlockIRQ(saved);
     pages := arenas * (ARENA_SIZE div 4096);
     for i := 0 to pages - 1 do begin
         slot := leaf(address + uint64(i) * 4096);
-        if slot = nil then begin
-            unlockIRQ(saved);
-            exit;
-        end;
-        if (slot^ and (PTE_OWNED or 1)) <> (PTE_OWNED or 1) then begin
+        if (slot = nil) or ((slot^ and (PTE_OWNED or 1)) <> (PTE_OWNED or 1)) then begin
+            saved := lockIRQ;
+            bitmap_set_range(readyArenas, idx, arenas);
             unlockIRQ(saved);
             exit;
         end;
     end;
     releaseMapped(address, pages);
+    saved := lockIRQ;
     bitmap_clear_range(arenaBitmap, idx, arenas);
     release_region := true;
     unlockIRQ(saved);
@@ -354,6 +366,7 @@ begin
     if storage = 0 then fail('arena metadata allocation');
     arenaBitmap := PUInt32(PtrUInt(storage));
     zero(arenaBitmap, 4096);
+    readyArenas := @arenaBitmap[(ARENA_COUNT + 31) div 32];
 end;
 
 procedure UnitTest;

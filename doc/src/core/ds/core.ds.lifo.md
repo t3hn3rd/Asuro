@@ -25,9 +25,9 @@ Creates and returns a new empty LIFO stack. `ElementSize` is the size in bytes o
 
 ### lifo_Push
 ```pascal
-procedure lifo_Push(Stack : PLIFOStack; Data : void);
+function lifo_Push(Stack : PLIFOStack; Data : void) : boolean;
 ```
-Allocates a new node, copies `ElementSize` bytes from `Data` into it, and prepends the node to the top of the stack.
+Allocates a new node, copies `ElementSize` bytes from `Data` into it, and prepends the node to the top of the stack. The node and payload share one allocation. A failed insertion returns false and preserves the collection.
 
 ### lifo_Pop
 ```pascal

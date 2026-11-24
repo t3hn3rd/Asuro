@@ -42,7 +42,7 @@ uses
     @param Stack Pointer to the LIFO stack.
     @param Data  Pointer to the element data to copy in.
   **}
-  procedure lifo_Push(Stack : PLIFOStack; Data : void);
+  function lifo_Push(Stack : PLIFOStack; Data : void) : boolean;
 
   {**
     @abstract Pops the top element from the stack.
@@ -90,22 +90,31 @@ uses
 
 function lifo_New(ElementSize : uint32) : PLIFOStack;
 begin
-  lifo_New := PLIFOStack(kalloc(sizeof(TLIFOStack)));
+  lifo_New := PLIFOStack(tryAlloc(sizeof(TLIFOStack)));
+  if lifo_New = nil then exit;
   lifo_New^.Top         := nil;
   lifo_New^.Count       := 0;
   lifo_New^.ElementSize := ElementSize;
 end;
 
-procedure lifo_Push(Stack : PLIFOStack; Data : void);
+function lifo_Push(Stack : PLIFOStack; Data : void) : boolean;
 var
   Node : PQueueNode;
+  bytes : SizeUInt;
 begin
-  Node := PQueueNode(kalloc(sizeof(TQueueNode)));
-  Node^.Data := kalloc(Stack^.ElementSize);
+  lifo_Push := false;
+  if Stack = nil then exit;
+  bytes := SizeUInt(Stack^.ElementSize) + SizeUInt(sizeof(TQueueNode));
+  if (bytes < Stack^.ElementSize) or
+     ((Stack^.ElementSize <> 0) and (Data = nil)) then exit;
+  Node := PQueueNode(tryAlloc(bytes));
+  if Node = nil then exit;
+  Node^.Data := void(PtrUInt(Node) + sizeof(TQueueNode));
   memcpy(PtrUInt(Data), PtrUInt(Node^.Data), Stack^.ElementSize);
   Node^.Next := Stack^.Top;
   Stack^.Top   := Node;
   Stack^.Count := Stack^.Count + 1;
+  lifo_Push := true;
 end;
 
 function lifo_Pop(Stack : PLIFOStack; Data : void) : boolean;
@@ -120,7 +129,6 @@ begin
 
   Stack^.Top   := Node^.Next;
   Stack^.Count := Stack^.Count - 1;
-  kfree(Node^.Data);
   kfree(void(Node));
   lifo_Pop := true;
 end;
@@ -152,7 +160,6 @@ begin
   while Node <> nil do
   begin
     Next := Node^.Next;
-    kfree(Node^.Data);
     kfree(void(Node));
     Node := Next;
   end;
@@ -177,7 +184,8 @@ begin
     test.harness.Assert(@context, lifo_Size(s) = 0, 'Initial size is 0');
 
     { === Push / Size === }
-    v := 10; lifo_Push(s, @v);
+    test.harness.Assert(@context, not lifo_Push(s, nil), 'Reject missing payload');
+    v := 10; test.harness.Assert(@context, lifo_Push(s, @v), 'Insert reports success');
     v := 20; lifo_Push(s, @v);
     v := 30; lifo_Push(s, @v);
     test.harness.Assert(@context, lifo_Size(s) = 3, 'Size after 3 pushes');
