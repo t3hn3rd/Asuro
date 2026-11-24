@@ -24,8 +24,7 @@ global x64_test_page_fault_instruction
 global x64_test_page_fault_return
 global x64_test_double_fault
 global x64_test_invalid_opcode
-global x64_df_stack_bottom, x64_df_stack_top
-global x64_nmi_stack_top, x64_mc_stack_top
+extern stack_bottom
 
 section .text
 ; Normalize hardware error-code and no-error-code frames. Never use software
@@ -187,15 +186,23 @@ x64_test_page_fault_instruction:
 x64_test_page_fault_return:
     ret
 
+global x64_guard_probe, x64_guard_return
+x64_guard_probe:
+    mov al, [rdi]
+x64_guard_return:
+    ret
+
 x64_test_invalid_opcode:
     ud2
     jmp bootstrap_halt
 
 x64_test_double_fault:
-    ; Both ordinary #UD and #PF delivery need this unmapped stack. #DF must
-    ; switch to IST1 and report the original broken RSP without touching it.
-    mov rsp, 0x100001000
-    ud2
+    ; Overflow the guarded kernel stack. Delivering #PF on this stack must
+    ; escalate to #DF and switch to IST1.
+    lea rsp, [rel stack_bottom]
+global x64_stack_overflow_push
+x64_stack_overflow_push:
+    push rax
     jmp bootstrap_halt
 
 section .rodata align=8
@@ -210,15 +217,6 @@ x64_isr_table:
 section .bss align=16
 x64_test_expected_rsp: resq 1
 alignb 16
-; Bounded bootstrap reservations, before an allocator exists. Keep these
-; reserved in the future allocator. NMI/MC cannot overwrite the #DF stack.
-x64_df_stack_bottom: resb 16384
-x64_df_stack_top:
-    resb 8192
-x64_nmi_stack_top:
-    resb 8192
-x64_mc_stack_top:
-
 section .text
 global x64_test_context_registers
 ; RDI: monotonically increasing switch counter; RSI: distinct 64-bit pattern.

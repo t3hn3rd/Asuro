@@ -36,7 +36,7 @@ uses
     driver.bus.usb.ohci,
     driver.bus.usb.xhci,
     driver.storage.metatest,
-    driver.storage.bench,
+    driver.storage.bench, driver.storage.perftest,
     driver.storage.types,
     arch.common.legacyirq,
     driver.mgr,
@@ -51,7 +51,8 @@ uses
     io.syslog,
     driver.io.serial,
     debug.tracer,
-    core.ds.cfifo,
+    core.ds.cfifo, core.ds.cfifols, core.ds.fifo, core.ds.lifo, core.ds.circ, core.enc.djb2,
+    core.ds.minh, core.ds.maxh, core.ds.prio, core.enc.sha1,
     driver.storage.iorequest,
     driver.storage.path,
     driver.storage.fs.mgr,
@@ -69,7 +70,7 @@ uses
     debug.early,
     arch.x86_64.debug,
     arch.x86_64.isr,
-    boot.multiboot,
+    boot.multiboot, boot.mgr, boot.services,
     arch.x86_64.memory.physical,
     arch.x86_64.memory.virtual;
 
@@ -257,32 +258,46 @@ begin
     puts('PASS: native framebuffer and double buffer initialized'#13#10);
 end;
 
-procedure finish_boot(ctx: PProcessContext);
+procedure init_usb_hosts;
 begin
-    driver.storage.metatest.RunTests(true);
-    driver.video.bga.init;
-    driver.net.init;
-    driver.bus.pci.init;
-    driver.storage.vfs.auto_mount_volumes;
-    test_storage_read;
-    driver.hid.ps2.mouse.init;
-    driver.hid.ps2.keyboard.init;
-    driver.hid.usb.keyboard.onAttach := @driver.hid.ps2.keyboard.disable;
-    driver.bus.usb.core.init;
-    driver.bus.usb.hub.init;
-    driver.storage.ctl.usb.init;
-    driver.hid.usb.keyboard.init;
-    driver.hid.usb.mouse.init;
     driver.bus.usb.ohci.load;
     driver.bus.usb.xhci.load;
+end;
+
+procedure registerNativeServices;
+begin
+    driver.hid.usb.keyboard.onAttach := @driver.hid.ps2.keyboard.disable;
+    { Early CPU, memory, scheduler and framebuffer setup precedes this process.
+      The remaining device services use the same phase graph as i386. }
+    boot.services.registerDevices;
+    boot.mgr.registerBoot('io.syslog', nil, 'Early serial ready', nil);
+    boot.mgr.registerBoot('driver.video.bga', @driver.video.bga.init, 'Display adapter', BOOT_MGR_BARRIER_EARLY);
+    boot.mgr.registerBoot('driver.bus.usb.core', @driver.bus.usb.core.init, 'USB core', BOOT_MGR_BARRIER_EARLY);
+    boot.mgr.registerBoot('driver.bus.usb.hub', @driver.bus.usb.hub.init, 'USB hubs', 'driver.bus.usb.core');
+    boot.mgr.registerBoot('driver.bus.pci', @driver.bus.pci.init, 'PCI devices', BOOT_MGR_BARRIER_BUS_LATE);
+    boot.mgr.registerBoot('driver.storage.vol.mount', @driver.storage.vfs.auto_mount_volumes, 'Mount volumes', 'driver.bus.pci');
+    boot.mgr.registerBoot('driver.bus.usb.hosts', @init_usb_hosts, 'USB host controllers', 'driver.bus.pci');
+    boot.mgr.registerBoot('driver.timer.rtc', @driver.timer.rtc.init, 'Real time clock', 'driver.bus.usb.hosts');
+end;
+
+procedure validateStorage;
+begin
+    test_storage_read;
     {$ifdef ASURO_TEST_STORAGE}
     test_usb_read;
     test_high_dma;
+    driver.storage.perftest.UnitTest;
     {$endif}
-    driver.timer.rtc.init;
+end;
+
+procedure initDesktop;
+begin
     driver.video.lvgl.onDebugToggle := @app.uidebug.toggle;
     driver.video.desktop.init;
-    app.mgr.init;
+end;
+
+procedure finishDesktop;
+begin
     app.wasm.runner.UnitTest;
     driver.video.lvgl.lvgl_handler;
     driver.video.Flush;
@@ -296,6 +311,20 @@ begin
     arch.x86_64.isr.testFatal(8);
     {$endif}
     svc.gfxd.init;
+end;
+
+procedure finish_boot(ctx: PProcessContext);
+begin
+    driver.storage.metatest.RunTests(true);
+    registerNativeServices;
+    boot.mgr.registerBoot('storage.verify', @validateStorage, 'Storage checks', 'driver.bus.usb.hosts');
+    boot.mgr.registerBoot('driver.video.desktop', @initDesktop, 'Desktop', BOOT_MGR_BARRIER_LATE);
+    boot.mgr.registerBoot('app.mgr', @app.mgr.init, 'Applications', 'driver.video.desktop');
+    boot.mgr.registerBoot('svc.gfxd', @finishDesktop, 'Graphics service', 'app.mgr');
+    if not boot.mgr.runChecked then begin
+        puts('FAIL: unresolved native boot dependency'#13#10);
+        bootstrap_halt;
+    end;
     puts('ASURO x86_64: desktop ready'#13#10);
 end;
 
@@ -349,6 +378,15 @@ begin
     core.ds.hashmap.UnitTest;
     core.ds.lists.TestAllLists;
     core.ds.cfifo.UnitTest;
+    core.ds.cfifols.UnitTest;
+    core.ds.fifo.UnitTest;
+    core.ds.lifo.UnitTest;
+    core.ds.circ.UnitTest;
+    core.enc.djb2.UnitTest;
+    core.enc.sha1.UnitTest;
+    core.ds.minh.UnitTest;
+    core.ds.maxh.UnitTest;
+    core.ds.prio.UnitTest;
     driver.storage.iorequest.UnitTest;
     driver.storage.path.UnitTest;
     driver.storage.fs.mgr.UnitTest;
@@ -362,7 +400,6 @@ begin
     arch.x86_64.proc.sched.init;
     arch.x86_64.proc.sched.UnitTest;
     driver.storage.mgr.init;
-    driver.storage.bench.init;
     {$ifdef ASURO_TEST_STORAGE}driver.storage.bench.UnitTest;{$endif}
     driver.storage.vol.mgr.init;
     driver.storage.fs.iso9660.init;

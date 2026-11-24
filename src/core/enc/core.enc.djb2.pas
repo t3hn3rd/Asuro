@@ -78,12 +78,12 @@ var
   h : uint32;
 begin
   h := 5381;
-  p := puint8(uint32(Data));
+  p := puint8(Data);
   if DataLen > 0 then
     for i := 0 to DataLen - 1 do
     begin
       h := ((h shl 5) + h) xor uint32(p^);
-      p := puint8(uint32(p) + 1);
+      inc(p);
     end;
   Hash_DJB2_32 := h;
 end;
@@ -95,12 +95,12 @@ var
   h : uint64;
 begin
   h := 5381;
-  p := puint8(uint32(Data));
+  p := puint8(Data);
   if DataLen > 0 then
     for i := 0 to DataLen - 1 do
     begin
       h := ((h shl 5) + h) xor uint64(p^);
-      p := puint8(uint32(p) + 1);
+      inc(p);
     end;
   Hash_DJB2_64 := h;
 end;
@@ -112,12 +112,12 @@ var
   h : uint32;
 begin
   h := 5381;
-  p := puint8(uint32(Data));
+  p := puint8(Data);
   if DataLen > 0 then
     for i := 0 to DataLen - 1 do
     begin
       h := ((h shl 5) + h) + uint32(p^);
-      p := puint8(uint32(p) + 1);
+      inc(p);
     end;
   Hash_DJB2Add_32 := h;
 end;
@@ -129,12 +129,12 @@ var
   h : uint64;
 begin
   h := 5381;
-  p := puint8(uint32(Data));
+  p := puint8(Data);
   if DataLen > 0 then
     for i := 0 to DataLen - 1 do
     begin
       h := ((h shl 5) + h) + uint64(p^);
-      p := puint8(uint32(p) + 1);
+      inc(p);
     end;
   Hash_DJB2Add_64 := h;
 end;

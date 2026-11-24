@@ -25,7 +25,7 @@ uses
     memory.heap,
     core.ds.types,
     core.ds.cfifo,
-    core.util, arch.x86.util;
+    core.util;
 
 { ============================================================================ }
 {                 Contiguous FIFO List — CFIFOLS_* API                       }
@@ -105,20 +105,16 @@ uses
 {  Internal helpers                                                            }
 { ---------------------------------------------------------------------------- }
 
-{** Returns pointer to the PCFIFOQueue slot at index i. **}
+type PQueueSlot = ^PCFIFOQueue;
+
 function CFIFOLS_SlotAt(List : PCFIFOList; i : uint32) : PCFIFOQueue; inline;
 begin
-  { Each slot is sizeof(PCFIFOQueue) = 4 bytes (pointer on i386) }
-  CFIFOLS_SlotAt := PCFIFOQueue(pointer(uint32(List^.Items) + i * sizeof(PCFIFOQueue))^);
+  CFIFOLS_SlotAt := PQueueSlot(List^.Items)[i];
 end;
 
-{** Writes a PCFIFOQueue pointer into slot i. **}
 procedure CFIFOLS_SetSlot(List : PCFIFOList; i : uint32; Queue : PCFIFOQueue); inline;
-var
-  slotPtr : ^PCFIFOQueue;
 begin
-  slotPtr := pointer(uint32(List^.Items) + i * sizeof(PCFIFOQueue));
-  slotPtr^ := Queue;
+  PQueueSlot(List^.Items)[i] := Queue;
 end;
 
 {** Doubles the list capacity. **}
@@ -126,17 +122,20 @@ procedure CFIFOLS_Grow(List : PCFIFOList);
 var
   newCap  : uint32;
   newBuf  : void;
-  oldSize : uint32;
+  oldSize : SizeUInt;
 begin
+  if List^.Capacity > High(uint32) div 2 then exit;
   newCap := List^.Capacity * 2;
   if newCap = 0 then newCap := 4;
 
+  if newCap > High(SizeUInt) div sizeof(PCFIFOQueue) then exit;
   newBuf := kalloc(newCap * sizeof(PCFIFOQueue));
-  memset(uint32(newBuf), 0, newCap * sizeof(PCFIFOQueue));
+  if newBuf = nil then exit;
+  memset(PtrUInt(newBuf), 0, newCap * sizeof(PCFIFOQueue));
 
   oldSize := List^.Count * sizeof(PCFIFOQueue);
   if oldSize > 0 then
-    memcpy(uint32(List^.Items), uint32(newBuf), oldSize);
+    memcpy(PtrUInt(List^.Items), PtrUInt(newBuf), oldSize);
 
   kfree(List^.Items);
   List^.Items    := newBuf;
@@ -149,17 +148,28 @@ end;
 
 function CFIFOLS_New(InitialCapacity : uint32) : PCFIFOList;
 begin
+  CFIFOLS_New := nil;
+  if InitialCapacity > High(SizeUInt) div sizeof(PCFIFOQueue) then exit;
   CFIFOLS_New := PCFIFOList(kalloc(sizeof(TCFIFOList)));
+  if CFIFOLS_New = nil then exit;
   CFIFOLS_New^.Count    := 0;
   CFIFOLS_New^.Capacity := InitialCapacity;
   CFIFOLS_New^.Items    := kalloc(InitialCapacity * sizeof(PCFIFOQueue));
-  memset(uint32(CFIFOLS_New^.Items), 0, InitialCapacity * sizeof(PCFIFOQueue));
+  if (InitialCapacity <> 0) and (CFIFOLS_New^.Items = nil) then begin
+    kfree(void(CFIFOLS_New));
+    CFIFOLS_New := nil;
+    exit;
+  end;
+  memset(PtrUInt(CFIFOLS_New^.Items), 0, InitialCapacity * sizeof(PCFIFOQueue));
 end;
 
 procedure CFIFOLS_Add(List : PCFIFOList; Queue : PCFIFOQueue);
 begin
   if List^.Count >= List^.Capacity then
+  begin
     CFIFOLS_Grow(List);
+    if List^.Count >= List^.Capacity then exit;
+  end;
 
   CFIFOLS_SetSlot(List, List^.Count, Queue);
   List^.Count := List^.Count + 1;
@@ -175,7 +185,7 @@ end;
 
 function CFIFOLS_Remove(List : PCFIFOList; Index : uint32) : boolean;
 var
-  src, dst, len : uint32;
+  src, dst, len : PtrUInt;
 begin
   CFIFOLS_Remove := false;
   if Index >= List^.Count then exit;
@@ -185,7 +195,7 @@ begin
   { Shift remaining entries left by one slot }
   if Index < List^.Count then
   begin
-    dst := uint32(List^.Items) + Index * sizeof(PCFIFOQueue);
+    dst := PtrUInt(List^.Items) + Index * sizeof(PCFIFOQueue);
     src := dst + sizeof(PCFIFOQueue);
     len := (List^.Count - Index) * sizeof(PCFIFOQueue);
     memcpy(src, dst, len);
@@ -217,7 +227,7 @@ var
   q : PCFIFOQueue;
 begin
   if List = nil then exit;
-  for i := 0 to List^.Count - 1 do
+  if List^.Count > 0 then for i := 0 to List^.Count - 1 do
   begin
     q := CFIFOLS_SlotAt(List, i);
     if q <> nil then

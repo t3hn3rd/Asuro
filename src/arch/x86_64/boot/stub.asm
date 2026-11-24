@@ -14,7 +14,10 @@ bits 32
 global loader
 global bootstrap_halt
 global bootstrap_tss_descriptor
-global stack_top
+global stack_bottom, stack_top
+global x64_df_stack_bottom, x64_df_stack_top
+global x64_nmi_stack_bottom, x64_nmi_stack_top
+global x64_mc_stack_bottom, x64_mc_stack_top
 extern kmain
 extern load_end
 extern kernel_end
@@ -100,6 +103,18 @@ protected_entry:
     add eax, 0x200000
     loop .pages
 
+    ; Split only the identity leaves containing stack guard pages. The
+    ; contiguous stack block is smaller than 2 MiB and can span two leaves.
+    mov ebx, guard_tables
+%macro guard_below 1
+    mov edx, %1 - 4096
+    call unmap_guard
+%endmacro
+    guard_below stack_bottom
+    guard_below x64_df_stack_bottom
+    guard_below x64_nmi_stack_bottom
+    guard_below x64_mc_stack_bottom
+
     ; Multiboot enters with paging off. PAE must precede activation of LME.
     mov eax, cr4
     or eax, (1 << 5) | (1 << 9) | (1 << 10)
@@ -115,6 +130,37 @@ protected_entry:
     or eax, (1 << 31) | (1 << 1)
     mov cr0, eax
     jmp 0x18:long_entry
+
+unmap_guard:
+    mov eax, edx
+    shr eax, 21
+    lea ecx, [page_directories + eax * 8]
+    mov edi, [ecx]
+    test edi, 0x80
+    jz .table
+    mov eax, edi
+    and eax, 0xFFE00000
+    or eax, 3
+    mov edi, ebx
+    or ebx, 3
+    mov [ecx], ebx
+    mov ebx, edi
+    mov ecx, 512
+.fill:
+    stosd
+    mov dword [edi], 0
+    add edi, 4
+    add eax, 4096
+    loop .fill
+    mov edi, ebx
+    add ebx, 4096
+.table:
+    and edi, 0xFFFFF000
+    mov eax, edx
+    shr eax, 12
+    and eax, 511
+    mov dword [edi + eax * 8], 0
+    ret
 
 fail_boot:
     mov bl, 'B'
@@ -205,6 +251,16 @@ section .bss align=4096
 pml4: resb 4096
 pdpt: resb 4096
 page_directories: resb 4 * 4096
-align 16
+guard_tables: resb 2 * 4096
+    resb 4096
 stack_bottom: resb 16384
 stack_top:
+    resb 4096
+x64_df_stack_bottom: resb 16384
+x64_df_stack_top:
+    resb 4096
+x64_nmi_stack_bottom: resb 8192
+x64_nmi_stack_top:
+    resb 4096
+x64_mc_stack_bottom: resb 8192
+x64_mc_stack_top:

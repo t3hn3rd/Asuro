@@ -55,6 +55,10 @@ var
     tssDescriptor: TTSSDescriptor; external name 'bootstrap_tss_descriptor';
     entryTable: array[0..255] of uint64; external name 'x64_isr_table';
     kernelStackTop: uint8; external name 'stack_top';
+    overflowPush: uint8; external name 'x64_stack_overflow_push';
+    kernelBottom: uint8; external name 'stack_bottom';
+    nmiBottom: uint8; external name 'x64_nmi_stack_bottom';
+    mcBottom: uint8; external name 'x64_mc_stack_bottom';
     dfBottom: uint8; external name 'x64_df_stack_bottom';
     dfTop: uint8; external name 'x64_df_stack_top';
     nmiTop: uint8; external name 'x64_nmi_stack_top';
@@ -64,11 +68,16 @@ var
     pageFaultInstruction: uint8; external name 'x64_test_page_fault_instruction';
     pageFaultReturn: uint8; external name 'x64_test_page_fault_return';
     expectedTest: uint32;
+    guardAddress: PtrUInt;
+    guardValid: boolean;
     breakpointValid, pageFaultValid, fatalActive: boolean;
 
 function testBreakpoint: uint32; cdecl; external name 'x64_test_breakpoint';
 
 procedure testPageFault; cdecl; external name 'x64_test_page_fault';
+
+procedure probeGuard(address: PtrUInt); cdecl; external name 'x64_guard_probe';
+procedure guardReturn; cdecl; external name 'x64_guard_return';
 
 procedure testInvalidOpcode; cdecl; external name 'x64_test_invalid_opcode';
 
@@ -122,6 +131,18 @@ begin
     idtr.limit := sizeof(gates) - 1;
     idtr.base := PtrUInt(@gates);
     loadTables(@idtr);
+    { Enable machine-check delivery only after vector 18 has a valid IST. }
+    asm
+        mov eax, 1
+        cpuid
+        and edx, $4080
+        cmp edx, $4080
+        jne @done
+        mov rax, cr4
+        or eax, $40
+        mov cr4, rax
+    @done:
+    end ['rax','rbx','rcx','rdx'];
     puts('ASURO x86_64: IDT/TSS ready; DF/NMI/MC emergency stacks installed'#13#10);
 end;
 
@@ -163,6 +184,13 @@ begin
         exit;
     end;
 
+    if (expectedTest = 3) and (frame^.vector = 14) and
+       (frame^.rip = PtrUInt(@probeGuard)) then begin
+        guardValid := (frame^.error = 0) and (frame^.cr2 = guardAddress);
+        frame^.rip := PtrUInt(@guardReturn);
+        exit;
+    end;
+
     if fatalActive then begin
         puts('FATAL: nested exception while reporting'#13#10);
         field('VECTOR', frame^.vector);
@@ -193,6 +221,13 @@ begin
     if (PtrUInt(frame) >= PtrUInt(@dfBottom)) and
        (PtrUInt(frame) + sizeof(TFrame) <= PtrUInt(@dfTop)) then
         puts('STACK=double-fault IST1'#13#10);
+    if (PtrUInt(frame) >= PtrUInt(@nmiBottom)) and (PtrUInt(frame) + sizeof(TFrame) <= PtrUInt(@nmiTop)) then
+        puts('STACK=NMI IST2'#13#10);
+    if (PtrUInt(frame) >= PtrUInt(@mcBottom)) and (PtrUInt(frame) + sizeof(TFrame) <= PtrUInt(@mcTop)) then
+        puts('STACK=machine-check IST3'#13#10);
+    if (frame^.vector = 8) and (frame^.rsp = PtrUInt(@kernelBottom)) and
+       (frame^.rip = PtrUInt(@overflowPush)) then
+        puts('FAULT=bootstrap stack guard'#13#10);
     for i := 0 to 14 do field(names[i], registers[i]);
     puts('HALTED: exception diagnostics complete'#13#10);
     bootstrap_halt;
@@ -215,6 +250,15 @@ var
         puts(name);
         puts(#13#10);
     end;
+    function guarded(bottom: PtrUInt): boolean;
+    begin
+        guardAddress := bottom - 1;
+        guardValid := false;
+        expectedTest := 3;
+        probeGuard(guardAddress);
+        expectedTest := 0;
+        guarded := guardValid;
+    end;
 begin
     passed := 0;
     failed := 0;
@@ -229,6 +273,9 @@ begin
     testPageFault;
     expectedTest := 0;
     Assert(pageFaultValid, 'page-fault error code, CR2 and IRETQ recovery');
+    Assert(guarded(PtrUInt(@kernelBottom)) and guarded(PtrUInt(@dfBottom)) and
+           guarded(PtrUInt(@nmiBottom)) and guarded(PtrUInt(@mcBottom)),
+           'bootstrap and IST stack guard pages fault');
     field('EXCEPTION_TESTS_PASSED', passed);
     field('EXCEPTION_TESTS_FAILED', failed);
     if failed <> 0 then bootstrap_halt;

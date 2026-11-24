@@ -24,7 +24,7 @@ interface
 uses
     memory.heap,
     core.ds.types,
-    core.util, arch.x86.util;
+    core.util;
 
 { ============================================================================ }
 {                     Circular Queue — circ_* API                            }
@@ -99,25 +99,33 @@ uses
 
 function circ_New(Capacity : uint32; ElementSize : uint32) : PCircularQueue;
 begin
+  circ_New := nil;
+  if (Capacity = 0) or (ElementSize = 0) or (Capacity > High(SizeUInt) div ElementSize) then exit;
   circ_New := PCircularQueue(kalloc(sizeof(TCircularQueue)));
+  if circ_New = nil then exit;
   circ_New^.Capacity    := Capacity;
   circ_New^.ElementSize := ElementSize;
   circ_New^.Count       := 0;
   circ_New^.Head        := 0;
   circ_New^.Tail        := 0;
-  circ_New^.Data        := kalloc(Capacity * ElementSize);
-  memset(uint32(circ_New^.Data), 0, Capacity * ElementSize);
+  circ_New^.Data        := kalloc(SizeUInt(Capacity) * ElementSize);
+  if circ_New^.Data = nil then begin
+    kfree(void(circ_New));
+    circ_New := nil;
+    exit;
+  end;
+  memset(PtrUInt(circ_New^.Data), 0, SizeUInt(Capacity) * ElementSize);
 end;
 
 function circ_Enqueue(Queue : PCircularQueue; Data : void) : boolean;
 var
-  dst : uint32;
+  dst : PtrUInt;
 begin
   circ_Enqueue := false;
   if Queue^.Count >= Queue^.Capacity then exit;
 
-  dst := uint32(Queue^.Data) + (Queue^.Tail * Queue^.ElementSize);
-  memcpy(uint32(Data), dst, Queue^.ElementSize);
+  dst := PtrUInt(Queue^.Data) + (SizeUInt(Queue^.Tail) * Queue^.ElementSize);
+  memcpy(PtrUInt(Data), dst, Queue^.ElementSize);
 
   Queue^.Tail  := (Queue^.Tail + 1) mod Queue^.Capacity;
   Queue^.Count := Queue^.Count + 1;
@@ -126,13 +134,13 @@ end;
 
 function circ_Dequeue(Queue : PCircularQueue; Data : void) : boolean;
 var
-  src : uint32;
+  src : PtrUInt;
 begin
   circ_Dequeue := false;
   if Queue^.Count = 0 then exit;
 
-  src := uint32(Queue^.Data) + (Queue^.Head * Queue^.ElementSize);
-  memcpy(src, uint32(Data), Queue^.ElementSize);
+  src := PtrUInt(Queue^.Data) + (SizeUInt(Queue^.Head) * Queue^.ElementSize);
+  memcpy(src, PtrUInt(Data), Queue^.ElementSize);
 
   Queue^.Head  := (Queue^.Head + 1) mod Queue^.Capacity;
   Queue^.Count := Queue^.Count - 1;
@@ -144,7 +152,7 @@ begin
   if Queue^.Count = 0 then
     circ_Peek := nil
   else
-    circ_Peek := void(uint32(Queue^.Data) + (Queue^.Head * Queue^.ElementSize));
+    circ_Peek := void(PtrUInt(Queue^.Data) + (SizeUInt(Queue^.Head) * Queue^.ElementSize));
 end;
 
 function circ_Size(Queue : PCircularQueue) : uint32;

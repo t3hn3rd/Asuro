@@ -23,7 +23,7 @@ interface
 
 uses
     memory.heap,
-    core.util, arch.x86.util,
+    core.util,
     core.ds.types;
 
 { ============================================================================ }
@@ -102,7 +102,7 @@ var
 begin
   Node := PQueueNode(kalloc(sizeof(TQueueNode)));
   Node^.Data := kalloc(Stack^.ElementSize);
-  memcpy(uint32(Data), uint32(Node^.Data), Stack^.ElementSize);
+  memcpy(PtrUInt(Data), PtrUInt(Node^.Data), Stack^.ElementSize);
   Node^.Next := Stack^.Top;
   Stack^.Top   := Node;
   Stack^.Count := Stack^.Count + 1;
@@ -116,7 +116,7 @@ begin
   if Stack^.Top = nil then exit;
 
   Node := Stack^.Top;
-  memcpy(uint32(Node^.Data), uint32(Data), Stack^.ElementSize);
+  memcpy(PtrUInt(Node^.Data), PtrUInt(Data), Stack^.ElementSize);
 
   Stack^.Top   := Node^.Next;
   Stack^.Count := Stack^.Count - 1;

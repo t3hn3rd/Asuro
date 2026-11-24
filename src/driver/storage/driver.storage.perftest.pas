@@ -3,7 +3,7 @@ interface
 procedure UnitTest;
 procedure init;
 implementation
-uses boot.mgr, io.stdio, io.syslog, memory.heap, core.util, core.ds.cfifo,
+uses io.stdio, io.syslog, memory.heap, core.util, core.ds.cfifo,
      driver.storage.types, driver.storage.mgr, driver.storage.fs.fat32.types,
      driver.storage.fs.fat32.core, driver.storage.fs.fat32.transfer, test.harness;
 type
@@ -23,10 +23,10 @@ begin
     if (request^.LBA >= 128) or (request^.SectorCount > 128-request^.LBA) then begin
         complete_io(request,false,eInvalidArgument); exit;
     end;
-    if (uint32(request^.Buffer) and 1) <> 0 then begin complete_io(request,false,eInvalidArgument); exit; end;
+    if (PtrUInt(request^.Buffer) and 1) <> 0 then begin complete_io(request,false,eInvalidArgument); exit; end;
     bytes := request^.SectorCount*512;
-    if request^.RequestType = ioRead then memcpy(uint32(m^.Data)+request^.LBA*512,uint32(request^.Buffer),bytes)
-    else memcpy(uint32(request^.Buffer),uint32(m^.Data)+request^.LBA*512,bytes);
+    if request^.RequestType = ioRead then memcpy(PtrUInt(m^.Data)+request^.LBA*512,PtrUInt(request^.Buffer),bytes)
+    else memcpy(PtrUInt(request^.Buffer),PtrUInt(m^.Data)+request^.LBA*512,bytes);
     complete_io(request,true,eNone);
 end;
 procedure dispatch(device : PStorage_Device; request : PIORequest);
@@ -69,8 +69,8 @@ begin
         test.harness.Finish(@context);
         exit;
     end;
-    memset(uint32(device),0,sizeof(TStorage_Device)); memset(uint32(volume),0,sizeof(TStorage_Volume));
-    memset(uint32(ofi),0,sizeof(TFATOpenFile)); memset(uint32(m),0,sizeof(TMock));
+    memset(PtrUInt(device),0,sizeof(TStorage_Device)); memset(PtrUInt(volume),0,sizeof(TStorage_Volume));
+    memset(PtrUInt(ofi),0,sizeof(TFATOpenFile)); memset(PtrUInt(m),0,sizeof(TMock));
     m^.Data := puint8(kalloc(128*512)); ofi^.RunMap.Runs := PFATRun(kalloc(4*sizeof(TFATRun)));
     if (m^.Data=nil) or (ofi^.RunMap.Runs=nil) then begin
         if m^.Data<>nil then kfree(void(m^.Data)); if ofi^.RunMap.Runs<>nil then kfree(void(ofi^.RunMap.Runs));
@@ -79,11 +79,11 @@ begin
         test.harness.Finish(@context);
         exit;
     end;
-    for i := 0 to 127 do memset(uint32(m^.Data)+i*512,i,512);
-    br := PBootRecord(m^.Data); memset(uint32(br),0,sizeof(TBootRecord));
+    for i := 0 to 127 do memset(PtrUInt(m^.Data)+i*512,i,512);
+    br := PBootRecord(m^.Data); memset(PtrUInt(br),0,sizeof(TBootRecord));
     br^.sectorSize := 512; br^.spc := 1; br^.rsvSectors := 1; br^.numFats := 1;
     br^.FATSize := 1; br^.manySectors := 128; br^.rootCluster := 2;
-    device^.controllerId0 := uint32(m); device^.sectorSize := 512; device^.maxSectorCount := 128;
+    device^.controllerId0 := PtrUInt(m); device^.sectorSize := 512; device^.maxSectorCount := 128;
     device^.writable := true; device^.maxActive := 4;
     device^.dispatchRead := @dispatch; device^.dispatchWrite := @dispatch;
     device^.requestQueue := CFIFO_New(sizeof(pointer),16); m^.FailLBA := $FFFFFFFF;
@@ -152,25 +152,25 @@ begin
     { Force a backlog without issuing hardware I/O, then drain through a mock. }
     device^.maxActive := 0; device^.mergeMaxSectors := 8; m^.Deferred := false;
     m^.Callbacks := 0; before := m^.Calls;
-    for i := 0 to 3 do test.harness.Assert(@context, storage_read_async(device,10+i,1,puint32(uint32(buffer)+i*512),@done,m)=eNone,'merge enqueue');
+    for i := 0 to 3 do test.harness.Assert(@context, storage_read_async(device,10+i,1,puint32(PtrUInt(buffer)+i*512),@done,m)=eNone,'merge enqueue');
     device^.maxActive := 1;
     test.harness.Assert(@context, storage_read_async(device,50,1,puint32(buffer),@done,m)=eNone,'drain trigger');
     test.harness.Assert(@context, (m^.Calls-before=2) and (m^.Callbacks=5),'four requests merge with five callbacks including trigger');
     test.harness.Assert(@context, device^.Stats.Merged=3,'merge counter');
     device^.maxActive := 0; m^.Callbacks := 0; m^.FailLBA := 10;
-    for i := 0 to 1 do test.harness.Assert(@context, storage_write_async(device,10+i,1,puint32(uint32(buffer)+i*512),@done,m)=eNone,'merged write enqueue');
+    for i := 0 to 1 do test.harness.Assert(@context, storage_write_async(device,10+i,1,puint32(PtrUInt(buffer)+i*512),@done,m)=eNone,'merged write enqueue');
     device^.maxActive := 1; before := device^.Stats.Failed;
     test.harness.Assert(@context, storage_read_async(device,50,1,puint32(buffer),@done,m)=eNone,'failed merge drain trigger');
     test.harness.Assert(@context, (device^.Stats.Failed-before=2) and (m^.Callbacks=3),'merged failure fans out once');
     m^.FailLBA := $FFFFFFFF; device^.maxActive := 0; device^.mergeMaxSectors := 2;
     m^.Callbacks := 0; before := m^.Calls;
-    for i := 0 to 3 do test.harness.Assert(@context, storage_read_async(device,10+i,1,puint32(uint32(buffer)+i*512),@done,m)=eNone,'limited merge enqueue');
+    for i := 0 to 3 do test.harness.Assert(@context, storage_read_async(device,10+i,1,puint32(PtrUInt(buffer)+i*512),@done,m)=eNone,'limited merge enqueue');
     device^.maxActive := 1;
     test.harness.Assert(@context, storage_read_async(device,50,1,puint32(buffer),@done,m)=eNone,'limited merge drain trigger');
     test.harness.Assert(@context, (m^.Calls-before=3) and (m^.Callbacks=5),'driver command limit splits merges');
     device^.maxActive := 0; device^.mergeMaxSectors := 8; before := m^.Calls;
     test.harness.Assert(@context, storage_read_async(device,10,1,puint32(buffer),nil,nil)=eNone,'ordering read');
-    test.harness.Assert(@context, storage_write_async(device,11,1,puint32(uint32(buffer)+512),nil,nil)=eNone,'ordering write');
+    test.harness.Assert(@context, storage_write_async(device,11,1,puint32(PtrUInt(buffer)+512),nil,nil)=eNone,'ordering write');
     test.harness.Assert(@context, storage_write_async(device,12,1,puint32(buffer),nil,nil)=eNone,'noncontiguous buffer');
     device^.maxActive := 1;
     test.harness.Assert(@context, storage_read_async(device,50,1,puint32(buffer),nil,nil)=eNone,'ordering drain trigger');
@@ -184,6 +184,4 @@ procedure command(params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutB
 begin UnitTest; io.stdio.bufWriteStrLn(stdout_buf,'Storage performance regression results written to serial log.'); end;
 procedure init;
 begin io.stdio.registerCommand('STORPERF',@command,'Run memory-backed storage performance regression tests'); end;
-initialization
-    boot.mgr.registerBoot('driver.storage.perftest',@init,'Storage Performance Tests',BOOT_MGR_BARRIER_MID);
 end.
