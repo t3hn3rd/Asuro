@@ -45,6 +45,7 @@ const
     TRANSFER_TICKS = (PIT_INPUT_HZ div PIT_DIVISOR) * 5;
 
 type
+    TWorkerAction = (waPark, waDrain, waMaintenance, waWaitIRQ);
     PUSBVolumeSlot = ^PStorage_Volume;
     TCBW = packed record
         Signature, Tag, DataLength : uint32;
@@ -107,25 +108,26 @@ begin
     wake_worker;
 end;
 
-{ 0 = park, 1 = drain requests, 2 = retry pending teardown/DMA. Caller holds CLI. }
-function worker_action(first : PMSDevice) : uint8;
+{ Caller holds CLI. Ready work on any device takes priority over waiting. }
+function worker_action(first : PMSDevice) : TWorkerAction;
 var c : PMSDevice;
 begin
-    worker_action := 0;
+    worker_action := waPark;
     c := first;
     while c <> nil do begin
         if c^.Ready and (c^.Request <> nil) then begin
             if c^.Offline or not c^.InFlight or
                not (PUSBTransfer(@c^.Transfer)^.Status in [tsNotStarted, tsInProgress]) then begin
-                worker_action := 1;
+                worker_action := waDrain;
                 exit;
             end;
-            worker_action := 2;
+            if c^.USB^.HC^.HCType = USB_HC_XHCI then worker_action := waWaitIRQ
+            else if worker_action = waPark then worker_action := waMaintenance;
         end;
-        if c^.Offline and not c^.Attaching and
+        if (worker_action = waPark) and c^.Offline and not c^.Attaching and
            (c^.InFlight or (c^.Ready and
             ((not c^.VolumesDetached) or (c^.Buffer <> nil) or (c^.Original = nil)))) then
-            worker_action := 2;
+            worker_action := waMaintenance;
         c := c^.Next;
     end;
 end;
@@ -751,7 +753,7 @@ begin
 end;
 
 procedure worker_loop(ctx : PProcessContext);
-var c, next, prev, scan : PMSDevice; flags : PtrUInt; action : uint8; serviceDue : boolean;
+var c, next, prev, scan : PMSDevice; flags : PtrUInt; action : TWorkerAction; serviceDue : boolean;
 begin
     while true do begin
         flags := arch.platform.cpu.lock;
@@ -789,10 +791,17 @@ begin
         end;
         flags := arch.platform.cpu.lock;
         action := worker_action(Devices);
-        MaintenanceNeeded := action <> 0;
-        if action <> 1 then ctx^.State := psAwaiting;
+        MaintenanceNeeded := action <> waPark;
+        { The storage process owns the active request. Resume it on each
+          interrupt until the transfer completes or the watchdog times out.
+          Timer preemption still schedules other runnable processes. }
+        if (action = waWaitIRQ) and ((flags and $200) <> 0) then begin
+            asm sti; hlt end;
+            continue;
+        end;
+        if action <> waDrain then ctx^.State := psAwaiting;
         arch.platform.cpu.unlock(flags);
-        if action <> 1 then proc.mgr.proc_yield;
+        if action <> waDrain then proc.mgr.proc_yield;
     end;
 end;
 
@@ -1089,13 +1098,21 @@ begin
         test.harness.Assert(@context, m^.C.Buffer <> nil, 'mock DMA scratch allocation');
         if m^.C.Buffer <> nil then begin
             test.harness.Assert(@context, (PtrUInt(m^.C.Buffer) and (BUFFER_SIZE - 1)) = 0, '64 KiB DMA alignment');
-            test.harness.Assert(@context, worker_action(@m^.C) = 0, 'idle worker can park');
+            test.harness.Assert(@context, worker_action(@m^.C) = waPark, 'idle worker can park');
             m^.C.Ready := true;
             m^.C.Request := @m^.Request;
-            test.harness.Assert(@context, worker_action(@m^.C) = 1, 'queued request prevents parking');
+            test.harness.Assert(@context, worker_action(@m^.C) = waDrain, 'queued request prevents parking');
+            m^.C.InFlight := true;
+            m^.C.Transfer.Status := tsInProgress;
+            m^.C.USB^.HC^.HCType := USB_HC_XHCI;
+            test.harness.Assert(@context, worker_action(@m^.C) = waWaitIRQ, 'active xHCI process waits for hardware');
+            m^.C.Transfer.Status := tsSuccess;
+            test.harness.Assert(@context, worker_action(@m^.C) = waDrain, 'completed stage continues in process');
+            m^.HC.HCType := USB_HC_EHCI;
+            m^.C.InFlight := false;
             m^.C.Request := nil;
             m^.C.Offline := true;
-            test.harness.Assert(@context, worker_action(@m^.C) = 2, 'disconnect cleanup keeps polling');
+            test.harness.Assert(@context, worker_action(@m^.C) = waMaintenance, 'disconnect cleanup keeps polling');
             m^.C.Offline := false;
             m^.Disk.sectorSize := 512;
             m^.Disk.maxSectorCount := 8192;
