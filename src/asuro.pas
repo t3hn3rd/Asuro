@@ -23,15 +23,23 @@ unit asuro;
 interface
  
 uses
+    {$ifdef CPUX86_64}
+    arch.x86_64.boot,
+    {$endif}
     boot.mgr,
-    io.syslog,
-    core.panic,
+    io.syslog
+    {$ifndef CPUX86_64}, core.panic,
     arch.x86.multiboot,
-    arch.x86.proc.sched, arch.x86.startup;
+    arch.x86.proc.sched, arch.x86.startup
+    {$endif};
  
+{$ifndef CPUX86_64}
 procedure kmain(mbinfo: Pmultiboot_info_t; mbmagic: uint32); stdcall;
+{$endif}
  
 implementation
+
+{$ifndef CPUX86_64}
 
 procedure init();
 begin
@@ -87,5 +95,5 @@ end;
 
 initialization
     boot.mgr.registerBoot('asuro', @asuro.init, 'Kernel Initialization', 'io.syslog');
-    
+{$endif}
 end.

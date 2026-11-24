@@ -7,6 +7,7 @@
     @author(Kieron Morris <kjm@kieronmorris.me>)
 }
 unit driver.bus.usb.uhci;
+{$DEFINE NOT_DANGLING} { Selected by i386 startup; requires the i386 platform. }
 
 interface
 
