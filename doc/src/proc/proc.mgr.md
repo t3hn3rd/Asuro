@@ -144,13 +144,13 @@ Sets the exit code, transitions the process to `psFinished`, and enters an infin
 ### bindResource / unbindResource / unbindResourceNoCleanup / unbindAllResources
 
 ```pascal
-procedure bindResource(ctx: PProcessContext; kind: TResourceKind; handle: void; cleanup: TResourceCleanup);
+function bindResource(ctx: PProcessContext; kind: TResourceKind; handle: void; cleanup: TResourceCleanup): boolean;
 procedure unbindResource(ctx: PProcessContext; handle: void);
 procedure unbindResourceNoCleanup(ctx: PProcessContext; handle: void);
 procedure unbindAllResources(ctx: PProcessContext);
 ```
 
-Manage per-process resource bindings. `bindResource` appends a `TResourceBinding` to the process's resource DList. `unbindResource` calls the cleanup callback before removing the binding. `unbindResourceNoCleanup` removes without calling cleanup. `unbindAllResources` detaches the DList, iterates in reverse calling all cleanup callbacks, then frees the list.
+Manage per-process resource bindings. `bindResource` appends a `TResourceBinding` to the process's resource DList. A false result leaves ownership with the caller. `unbindResource` calls the cleanup callback before removing the binding. `unbindResourceNoCleanup` removes without calling cleanup. `unbindAllResources` detaches the DList, iterates in reverse calling all cleanup callbacks, then frees the list.
 
 ### runCommand
 

@@ -272,7 +272,13 @@ begin
     shim^.ProcessCtx := processCtx;
 
     { 10. Register cleanup for kill-safety }
-    proc.mgr.bindResource(processCtx, rkCustom, void(shim), @app.wasm.cleanup.wasm_resource_cleanup);
+    if not proc.mgr.bindResource(processCtx, rkCustom, void(shim), @app.wasm.cleanup.wasm_resource_cleanup) then begin
+        processCtx^.Local := nil;
+        proc.mgr.kill(processCtx^.ProcessID);
+        app.wasm.cleanup.wasm_resource_cleanup(void(shim));
+        io.stdio.bufWriteStrLn(stderr_buf, 'WASM: cannot bind process resources');
+        exit;
+    end;
 
     wasm_file_handler := processCtx^.ProcessID;
     processCtx^.State := psReady;
