@@ -36,6 +36,7 @@ uses
     driver.bus.usb.ohci,
     driver.bus.usb.xhci,
     driver.storage.metatest,
+    driver.storage.bench,
     driver.storage.types,
     arch.common.legacyirq,
     driver.mgr,
@@ -361,6 +362,8 @@ begin
     arch.x86_64.proc.sched.init;
     arch.x86_64.proc.sched.UnitTest;
     driver.storage.mgr.init;
+    driver.storage.bench.init;
+    {$ifdef ASURO_TEST_STORAGE}driver.storage.bench.UnitTest;{$endif}
     driver.storage.vol.mgr.init;
     driver.storage.fs.iso9660.init;
     driver.storage.fs.ext2.init;

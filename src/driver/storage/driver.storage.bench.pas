@@ -4,8 +4,7 @@ interface
 procedure init;
 procedure UnitTest;
 implementation
-uses boot.mgr, io.stdio, io.syslog, core.strings, core.util, arch.x86.util,
-     arch.x86.bda, arch.x86.isr.tmr0, memory.heap, proc.mgr, proc.types,
+uses io.stdio, io.syslog, core.strings, core.util, arch.platform.cpu, memory.heap, proc.mgr, proc.types,
      driver.storage.types, driver.storage.mgr, core.ds.cfifo, core.clock, test.harness;
 const
     MAX_DEPTH = 32;
@@ -159,24 +158,24 @@ begin
         Inc(run^.Successful); Inc(run^.Bytes,uint64(slot^.Sectors)*run^.Device^.sectorSize);
     end else if run^.Error=eNone then begin run^.Error := error; run^.ErrorLBA := slot^.LBA; end;
     Dec(run^.Active); slot^.State := 2;
-    if run^.Process<>nil then run^.Process^.State := psReady;
+    if (run^.Process<>nil) and (run^.Process^.State=psAwaiting) then run^.Process^.State := psReady;
     Inc(run^.WakeSequence);
 end;
 
 { Task context only. Reserve before submit to support immediate callbacks.
   Stop submitting on the first error, but drain accepted DMA before freeing. }
 procedure execute(run : PBench);
-var i, flags, wake, attemptedActive : uint32; slot : PSlot; err : TError; finished, ready : boolean;
+var flags : PtrUInt; i, wake, attemptedActive : uint32; slot : PSlot; err : TError; finished, ready : boolean;
 begin
     run^.Process := CurrentProcess;
     for i := 0 to run^.Depth-1 do begin
         run^.Slots[i].Owner := run;
-        run^.Slots[i].Buffer := puint32(uint32(run^.Buffer)+i*run^.RequestBytes);
+        run^.Slots[i].Buffer := puint32(PtrUInt(run^.Buffer)+i*run^.RequestBytes);
     end;
     storage_get_stats(run^.Device,run^.BeforeStats); run^.StartTick := nowTick;
     repeat
         for i := 0 to run^.Depth-1 do begin
-            asm pushfd; cli; pop flags end;
+            flags := arch.platform.cpu.lock;
             slot := @run^.Slots[i];
             if slot^.State=2 then slot^.State := 0;
             if (slot^.State=0) and (run^.Remaining>0) and (run^.Error=eNone) then begin
@@ -189,17 +188,17 @@ begin
                 end;
                 if (err=eNone) and (attemptedActive>run^.Peak) then run^.Peak := attemptedActive;
             end;
-            if (flags and $200)<>0 then asm sti end;
+            arch.platform.cpu.unlock(flags);
         end;
-        asm pushfd; cli; pop flags end;
+        flags := arch.platform.cpu.lock;
         finished := (run^.Active=0) and ((run^.Remaining=0) or (run^.Error<>eNone));
         ready := false;
         for i := 0 to run^.Depth-1 do if run^.Slots[i].State=2 then ready := true;
         wake := run^.WakeSequence;
         if not finished and not ready and (run^.Process<>nil) then run^.Process^.State := psAwaiting;
-        if (flags and $200)<>0 then asm sti end;
+        arch.platform.cpu.unlock(flags);
         if not finished and not ready then
-            while puint32(@run^.WakeSequence)^=wake do asm hlt end;
+            while puint32(@run^.WakeSequence)^=wake do arch.platform.cpu.idle;
     until finished;
     run^.Elapsed := nowTick-run^.StartTick;
     storage_get_stats(run^.Device,run^.AfterStats);
@@ -250,7 +249,7 @@ begin
     run := PBench(kalloc(sizeof(TBench)));
     if summary<>nil then summary^.Error := eOutOfMemory;
     if run=nil then begin bufWriteStrLn(errors,'Out of memory allocating benchmark state.'); exit; end;
-    memset(uint32(run),0,sizeof(TBench));
+    memset(PtrUInt(run),0,sizeof(TBench));
     if not configure(run,device,mib,kib,depth,start,explicitStart,randomRead) then begin
         if summary<>nil then summary^.Error := eInvalidArgument;
         bufWriteStrLn(errors,'Invalid/unreadable device, range, or request size (must be a whole number of device sectors).');
@@ -258,7 +257,7 @@ begin
     end;
     run^.Buffer := kalloc(run^.Depth*run^.RequestBytes);
     if run^.Buffer=nil then begin bufWriteStrLn(errors,'Out of memory allocating benchmark buffers.'); kfree(void(run)); exit; end;
-    memset(uint32(run^.Buffer),0,run^.Depth*run^.RequestBytes);
+    memset(PtrUInt(run^.Buffer),0,run^.Depth*run^.RequestBytes);
     if summary=nil then begin
         if randomRead then bufWriteStr(output,'Random') else bufWriteStr(output,'Sequential');
         writeValue(output,' read: ',kib); writeValue(output,' KiB/request, depth=',depth);
@@ -332,7 +331,7 @@ function suiteProfile(index : uint32; automatic : boolean; hardwareDepth : uint3
 var queued : uint32;
 begin
     suiteProfile := false;
-    memset(uint32(summary),0,sizeof(TCaseResult));
+    memset(PtrUInt(summary),0,sizeof(TCaseResult));
     queued := hardwareDepth; if queued<4 then queued:=4; if queued>16 then queued:=16;
     if automatic then begin
         if index>=6 then exit;
@@ -368,7 +367,7 @@ begin
     if automatic then count:=6 else count:=12;
     summaries := PCaseResult(kalloc(count*sizeof(TCaseResult)));
     if summaries=nil then begin bufWriteStrLn(errors,'Out of memory allocating results.'); exit; end;
-    memset(uint32(summaries),0,count*sizeof(TCaseResult));
+    memset(PtrUInt(summaries),0,count*sizeof(TCaseResult));
     bufWriteNewLine(output); tableLine(output);
     if automatic then bufWriteStrLn(output,'  STORAGE BENCHMARK / AUTO') else bufWriteStrLn(output,'  STORAGE BENCHMARK / COMPARE');
     writeValue(output,'  Disk ',disk); writeValue(output,' | ',mib); writeValue(output,' MiB/profile | ',count);
@@ -575,7 +574,7 @@ begin
         test.harness.Finish(@context);
         exit;
     end;
-    memset(uint32(run),0,sizeof(TBench)); memset(uint32(device),0,sizeof(TStorage_Device));
+    memset(PtrUInt(run),0,sizeof(TBench)); memset(PtrUInt(device),0,sizeof(TStorage_Device));
     device^.dispatchRead := @testDispatch; device^.sectorSize := 512; device^.maxSectorCount := $FFFFFFFF;
     test.harness.Assert(@context, configure(run,device,4096,1024,32,0,true,false) and (run^.Span=8388608),'4 GiB transfer does not wrap');
     test.harness.Assert(@context, not configure(run,device,1,1024,33,0,true,false),'depth memory cap');
@@ -599,24 +598,24 @@ begin
     mock := PBenchMock(kalloc(sizeof(TBenchMock))); buffer := kalloc(4*65536);
     device^.requestQueue := CFIFO_New(sizeof(pointer),8);
     if (mock<>nil) and (buffer<>nil) and (device^.requestQueue<>nil) then begin
-        memset(uint32(mock),0,sizeof(TBenchMock)); mock^.Batch := 4; mock^.FailLBA := $FFFFFFFF;
-        device^.controllerId0 := uint32(mock); device^.sectorSize := 512; device^.maxActive := 4;
-        memset(uint32(run),0,sizeof(TBench)); run^.Buffer := buffer;
+        memset(PtrUInt(mock),0,sizeof(TBenchMock)); mock^.Batch := 4; mock^.FailLBA := $FFFFFFFF;
+        device^.controllerId0 := PtrUInt(mock); device^.sectorSize := 512; device^.maxActive := 4;
+        memset(PtrUInt(run),0,sizeof(TBench)); run^.Buffer := buffer;
         test.harness.Assert(@context, configure(run,device,1,64,4,0,true,false),'configure queued mock');
         execute(run);
         test.harness.Assert(@context, (run^.Accepted=16) and (run^.Completed=16) and (run^.Bytes=1048576),'queued reads complete exact byte count');
         test.harness.Assert(@context, (run^.Peak=4) and (mock^.Count=0) and (run^.Active=0),'reverse groups drain at configured depth');
         test.harness.Assert(@context, not mock^.InvalidRange,'benchmark issues only in-range reads');
-        memset(uint32(run),0,sizeof(TBench)); run^.Buffer := buffer; mock^.FailLBA := 128;
+        memset(PtrUInt(run),0,sizeof(TBench)); run^.Buffer := buffer; mock^.FailLBA := 128;
         test.harness.Assert(@context, configure(run,device,1,64,4,0,true,false),'configure failing mock');
         execute(run);
         test.harness.Assert(@context, (run^.Error=eIOError) and (run^.Accepted=4) and (run^.Completed=4),'failure stops new submissions and drains accepted requests');
         test.harness.Assert(@context, (run^.Bytes=3*65536) and (run^.Active=0),'failed reads excluded from throughput');
-        memset(uint32(run),0,sizeof(TBench)); run^.Buffer := buffer; mock^.FailLBA := $FFFFFFFF; mock^.Batch := 1;
+        memset(PtrUInt(run),0,sizeof(TBench)); run^.Buffer := buffer; mock^.FailLBA := $FFFFFFFF; mock^.Batch := 1;
         test.harness.Assert(@context, configure(run,device,1,64,1,0,true,false),'configure immediate mock');
         execute(run);
         test.harness.Assert(@context, (run^.Peak=1) and (run^.Bytes=1048576),'inline completions preserve peak and byte accounting');
-        memset(uint32(run),0,sizeof(TBench)); run^.Buffer := buffer;
+        memset(PtrUInt(run),0,sizeof(TBench)); run^.Buffer := buffer;
         test.harness.Assert(@context, configure(run,device,1,64,4,0,true,false),'configure removed device mock');
         device^.removed := true; execute(run);
         test.harness.Assert(@context, (run^.Error=eDeviceRemoved) and (run^.Accepted=0) and (run^.Active=0),'submission rejection has no completion ownership');
@@ -628,6 +627,4 @@ begin
 end;
 procedure init;
 begin registerCommand('STORBENCH',@command,'Read-only disk benchmark. STORBENCH help for sizes, queue depths and comparison mode.'); end;
-initialization
-    boot.mgr.registerBoot('driver.storage.bench',@init,'Storage Benchmark',BOOT_MGR_BARRIER_LATE);
 end.
