@@ -18,6 +18,7 @@
 	@author(Kieron Morris <kjm@kieronmorris.me>)
 }
 unit driver.video.vesa;
+{$DEFINE NOT_DANGLING} { Selected by i386 startup; requires the i386 platform. }
 
 interface
 

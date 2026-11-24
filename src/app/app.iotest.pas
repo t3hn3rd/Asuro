@@ -12,6 +12,7 @@
     @author(Aaron Hance <ah@aaronhance.me>)
 }
 unit app.iotest;
+{$DEFINE NOT_DANGLING} { Selected by i386 startup; requires the i386 platform. }
 
 interface
 

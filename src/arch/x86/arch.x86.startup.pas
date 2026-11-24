@@ -17,6 +17,7 @@ interface
 
 implementation
 uses
+    app.edit, app.inio, proc.testprocs, driver.bus.usb, driver.storage.test,
     app.mgr, app.vbeinfo, app.divzero, app.bsod, app.iotest, arch.x86.cpu,
     driver.net,
     driver.video.desktop, driver.timer.rtc, svc.gfxd,

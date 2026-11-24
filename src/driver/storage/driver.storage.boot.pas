@@ -5,7 +5,7 @@ interface
 uses
     boot.mgr,
     driver.storage.mgr,
-    arch.x86.multiboot;
+    boot.multiboot;
 
 implementation
 
