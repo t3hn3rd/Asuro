@@ -56,15 +56,15 @@ Extracts a single byte from a 32-bit value by zero-based byte index (0 = least s
 
 ### memset
 ```pascal
-procedure memset(location : uint32; value : uint8; size : uint32);
+procedure memset(location : PtrUInt; value : uint8; size : SizeUInt);
 ```
 Fills `size` bytes starting at address `location` with the byte `value`. Does nothing if `size` is zero.
 
 ### memcpy
 ```pascal
-procedure memcpy(source : uint32; dest : uint32; size : uint32);
+procedure memcpy(source : PtrUInt; dest : PtrUInt; size : SizeUInt);
 ```
-Copies `size` bytes from address `source` to address `dest` byte by byte. Behaviour is undefined if the regions overlap.
+Copies `size` bytes from address `source` to address `dest` through the target CPU copy routine. Behaviour is undefined if the regions overlap.
 
 ### BCDToUint8
 ```pascal
@@ -86,6 +86,6 @@ Returns the absolute value of a signed 32-bit integer using a branchless arithme
 
 ## Notes
 
-`memcpy` is a simple byte loop and does not handle overlapping source and destination regions correctly. Callers must ensure regions do not overlap, or copy in the appropriate direction manually.
+Use `memory.raw.move` for overlapping ranges. Both source and destination addresses must retain their native pointer width.
 
 The `hi`, `lo`, and `switchendian` functions carry stable C-compatible export aliases (`util_hi`, `util_lo`, `util_switchendian`) for use from assembly or interop stubs.

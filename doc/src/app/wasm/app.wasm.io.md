@@ -6,27 +6,13 @@ WASI hook implementations bridging the WASURO VM to Asuro process I/O buffers.
 
 `app.wasm.io` provides concrete implementations of the WASI preview1 system call hooks that the WASURO VM calls when a WASM module performs I/O. File descriptors 0, 1, and 2 are routed to the owning Asuro process's `StdIn`, `StdOut`, and `StdErr` `POutBuf` buffers respectively.
 
-A module-level `ActiveShimPtr` variable is set to the current shim before each tick batch and cleared afterwards. Because all hook calls occur synchronously within `wasm_tick` under the preemptive scheduler, this is safe with no additional locking.
+Each callback resolves the shim through `proc.mgr.CurrentProcess^.Local`. When the scheduler switches between WASM processes, the next callback sees the running process's own streams, arguments and exit state.
 
 ## Dependencies
 
-- `app.wasm.shim`
-- `wasm.types.builtin`, `wasm.types.context`, `wasm.types.values`
-- `io.stdio`, `proc.types`
-- `wasm.types.wasi`, `wasm.types.stack`, `wasm.types.heap`
-- `arch.x86.bda`, `core.rand`
-- `core.util`, `arch.x86.util`
+The bridge uses the WASURO types, process manager, standard I/O buffers, platform CPU and interrupt adapters, shared PIT constants and core utilities.
 
 ## Functions and Procedures
-
-### setActiveShim / clearActiveShim
-
-```pascal
-procedure setActiveShim(shim: PProcessWASMShim);
-procedure clearActiveShim;
-```
-
-Must be called immediately before and after each `wasm_tick` batch to establish and remove the active shim context for hook callbacks.
 
 ### asuro_fd_write
 
@@ -58,7 +44,7 @@ WASI `proc_exit` hook. Propagates the exit code to the Asuro process context's `
 function asuro_clock_time_get(clock_id: TWASMUInt32; precision: TWASMUInt64; var time: TWASMUInt64): TWASMUInt32;
 ```
 
-Returns the current time in nanoseconds derived from the BIOS 1024 Hz tick counter (`Counters.c64 * 976562`).
+Returns the current time in nanoseconds derived from the platform timer tick count, PIT divisor and PIT input frequency.
 
 ### asuro_clock_res_get
 

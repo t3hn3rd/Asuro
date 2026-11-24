@@ -12,7 +12,7 @@ The VFS layer calls `fd_alloc`, `fd_get`, and `fd_close` rather than manipulatin
 
 - `memory.heap`
 - `driver.storage.types`
-- `core.util`, `arch.x86.util`
+- `memory.raw`, `arch.platform.cpu`
 
 ## Constants
 

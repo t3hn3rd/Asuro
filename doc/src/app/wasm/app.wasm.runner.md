@@ -53,9 +53,9 @@ File dispatch callback. Performs the following steps:
 5. Serializes command-line parameters into the shim's `ArgBuf` via `serializeParams`.
 6. Wires all WASI hooks (fd_write, fd_read, proc_exit, clock, random, args, environ) to `app.wasm.io` implementations.
 7. Registers `asuro_wasi_args_get` as a direct host function before calling `wasm_register_wasi_preview1`.
-8. Creates the process via `proc.mgr.create` at priority 5.
+8. Creates a suspended process via `proc.mgr.createSuspended` at priority 5.
 9. Attaches stdin, stdout, and stderr buffers to the process context.
-10. Binds the shim as a custom resource with `app.wasm.cleanup.wasm_resource_cleanup` for kill-safe teardown.
+10. Binds the shim as a custom resource with `app.wasm.cleanup.wasm_resource_cleanup` for kill-safe teardown. The runner publishes the process as ready only after assigning its streams, process back-reference and cleanup binding. WASI callbacks obtain the execution context from the current process.
 
 Returns the new process ID on success, or 0 on any failure.
 

@@ -1,6 +1,6 @@
 # asuro
 
-Kernel main entry point.
+i386 kernel entry point. Native x86-64 enters Pascal through `arch.x86_64.boot.kmain`. See [native startup](arch/x86_64/startup.md).
 
 ## Overview
 

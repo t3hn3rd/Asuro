@@ -151,3 +151,7 @@ Issues a SCSI READ CAPACITY(10) command to query the device's sector count and b
 - `stop_port` and `start_port` manage the port command (`PxCMD`) ST and FRE bits in the correct order as required by the AHCI specification.
 - The AHCI ISR identifies completions by comparing the pre-issue and post-issue `cmd_issue` bitmasks. Each bit that transitioned from 1 to 0 corresponds to a completed slot.
 - ATAPI devices use 2048-byte sectors; the `sectorSize` field on the registered `TStorage_Device` is set from the READ CAPACITY response.
+
+## Native address handling
+
+Command tables fit within individual physical pages. The driver translates each data page and combines adjacent physical ranges into PRDs, up to 32 descriptors. It retains the upper address bits for 64-bit-capable controllers and rejects inaccessible DMA buffers on controllers limited to 32 bits. The native storage profile checks high-memory reads in a 6 GiB guest.

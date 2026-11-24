@@ -59,6 +59,10 @@ nav:
 
   - Source:
     - Kernel Entry: src/asuro.md
+    - Architecture (x86-64):
+      - Startup and target selection: src/arch/x86_64/startup.md
+      - Exceptions and scheduling: src/arch/x86_64/interrupts.md
+      - Memory and platform adapters: src/arch/x86_64/memory.md
     - Architecture (x86):
       - CPU: src/arch/x86/arch.x86.cpu.md
       - GDT: src/arch/x86/arch.x86.gdt.md

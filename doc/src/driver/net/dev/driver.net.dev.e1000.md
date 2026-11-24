@@ -50,3 +50,7 @@ Walks the receive descriptor ring, passes each completed frame to `driver.net.re
 
 - The EEPROM read procedure uses the EEPROM register's start/done bit protocol; a bitwise read loop is used for NICs without auto-read support.
 - QEMU's default e1000 emulation (`$100E`) does not require an interrupt handler if the driver polls the receive tail pointer.
+
+## Native DMA and validation
+
+The x86-64 driver maps the adapter registers through the platform memory interface and routes interrupts through the selected platform implementation. DMA objects fit within aligned 4 KiB pages and retain their owning allocations. VirtualBox NAT validation obtained DHCP leases at 64 MiB and 6 GiB of guest RAM and received ping replies in the 6 GiB guest.
