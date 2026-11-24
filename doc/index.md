@@ -2,6 +2,8 @@
 
 Asuro is a 32-bit x86 operating system kernel written in Free Pascal and x86 assembly.
 
+See the [x86-64 port guide](planning/x86_64.md) for native target status.
+
 ## Getting Started
 
 Clone the repository, install Docker with Compose, and run the following from the repository root. The builder image supplies PowerShell, Ninja, Free Pascal and the boot-image tools.
