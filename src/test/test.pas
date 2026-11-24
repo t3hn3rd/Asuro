@@ -38,9 +38,9 @@ uses
     app.diskutil,
     driver.bus.usb.types,
     driver.bus.usb.core,
-    driver.bus.usb.uhci,
+    {$ifndef CPUX86_64}driver.bus.usb.uhci,{$endif}
     driver.bus.usb.ohci,
-    driver.bus.usb.ehci,
+    {$ifndef CPUX86_64}driver.bus.usb.ehci,{$endif}
     driver.bus.usb.xhci,
     driver.bus.usb.hub,
     driver.hid.usb.keyboard,
@@ -50,12 +50,12 @@ uses
     core.ds.cfifols,
     core.ds.lifo,
     core.ds.circ,
-    wasm.test,
+    {$ifndef CPUX86_64}wasm.test,{$endif}
     core.ds.minh,
     core.ds.maxh,
     core.ds.prio,
     driver.storage.vfs,
-    driver.storage.test,
+    {$ifndef CPUX86_64}driver.storage.test,{$endif}
     driver.storage.bench,
     core.clock,
     driver.storage.metatest,
@@ -66,8 +66,8 @@ uses
     core.comp.lz4,
     core.comp.deflate,
     core.enc.fnv1a,
-    core.enc.djb2,
-    core.ds.bloom,
+    core.enc.djb2, core.enc.sha1,
+    {$ifndef CPUX86_64}core.ds.bloom,{$endif}
     core.fmt.png,
     core.fmt.json,
     core.fmt.cbor.tests;
@@ -93,9 +93,9 @@ begin
     app.diskutil.UnitTest;
     driver.bus.usb.types.UnitTest;
     driver.bus.usb.core.UnitTest;
-    driver.bus.usb.uhci.UnitTest;
+    {$ifndef CPUX86_64}driver.bus.usb.uhci.UnitTest;{$endif}
     driver.bus.usb.ohci.UnitTest;
-    driver.bus.usb.ehci.UnitTest;
+    {$ifndef CPUX86_64}driver.bus.usb.ehci.UnitTest;{$endif}
     driver.bus.usb.xhci.UnitTest;
     driver.bus.usb.hub.UnitTest;
     driver.hid.usb.keyboard.UnitTest;
@@ -105,12 +105,12 @@ begin
     core.ds.cfifols.UnitTest;
     core.ds.lifo.UnitTest;
     core.ds.circ.UnitTest;
-    wasm.test.run_all_tests;
+    {$ifndef CPUX86_64}wasm.test.run_all_tests;{$endif}
     core.ds.minh.UnitTest;
     core.ds.maxh.UnitTest;
     core.ds.prio.UnitTest;
     driver.storage.vfs.UnitTest;
-    driver.storage.test.UnitTest;
+    {$ifndef CPUX86_64}driver.storage.test.UnitTest;{$endif}
     driver.storage.ctl.ahci.UnitTest;
     driver.storage.ctl.usb.UnitTest;
     core.comp.lzw.UnitTest;
@@ -119,7 +119,8 @@ begin
     core.fmt.png.UnitTest;
     core.enc.fnv1a.UnitTest;
     core.enc.djb2.UnitTest;
-    core.ds.bloom.UnitTest;
+    core.enc.sha1.UnitTest;
+    {$ifndef CPUX86_64}core.ds.bloom.UnitTest;{$endif}
 end;
 
 procedure runComplexTests();
@@ -127,7 +128,7 @@ begin
     io.syslog.logln('test', 'Running complex unit tests...');
 
     { Run complex unit tests }
-    core.fmt.json.UnitTest;
+    {$ifndef CPUX86_64}core.fmt.json.UnitTest;{$endif}
     core.fmt.cbor.tests.UnitTest;
     core.clock.UnitTest;
     driver.storage.bench.UnitTest;

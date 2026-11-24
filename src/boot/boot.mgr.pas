@@ -73,9 +73,8 @@ implementation
 
 uses
     io.syslog
-    {$ifndef CPUX86_64}, boot.splash
+    {$ifndef CPUX86_64}, boot.splash{$endif}
     {$INCLUDE dangling_units.inc}
-    {$endif}
     ;
 
 type

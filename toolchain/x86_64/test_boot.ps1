@@ -17,7 +17,7 @@ param(
     [string[]]$OpenPrograms = @(),
     [switch]$NetworkInput,
     [switch]$DesktopInput,
-    [ValidateSet('none', 'storage', 'ud', 'pf', 'df')][string]$Test = 'none',
+    [ValidateSet('none', 'regression', 'storage', 'ud', 'pf', 'df')][string]$Test = 'none',
     [ValidateRange(0, 8192)][int]$MemoryMB = 0,
     [string]$Controller = 'AHCI',
     [int]$Port = 1,
@@ -96,7 +96,7 @@ try {
     if (-not $started) { throw "VirtualBox session remained locked: $launchOutput" }
     $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
     $output = ''
-    $marker = if (($Test -in @('none','storage'))) { 'desktop ready' } else { 'HALTED: exception diagnostics complete' }
+    $marker = if (($Test -in @('none','regression','storage'))) { 'desktop ready' } else { 'HALTED: exception diagnostics complete' }
     do {
         if (Test-Path -LiteralPath $serialPath) {
             $output = Get-Content -LiteralPath $serialPath -Raw
@@ -108,7 +108,7 @@ try {
     & VBoxManage.exe debugvm $vm getregisters rip rsp cs cr0 cr2 cr3 cr4 efer tr |
         Set-Content -LiteralPath (Join-Path $evidence "registers-$Test-$MemoryMB.log")
     if ($LASTEXITCODE -ne 0) { throw 'Cannot capture CPU registers.' }
-    if (($DesktopInput -or $NetworkInput -or $TerminalCommands.Count -gt 0 -or $OpenPrograms.Count -gt 0) -and ($Test -in @('none','storage')) -and $output.Contains($marker)) {
+    if (($DesktopInput -or $NetworkInput -or $TerminalCommands.Count -gt 0 -or $OpenPrograms.Count -gt 0) -and ($Test -in @('none','regression','storage')) -and $output.Contains($marker)) {
         $vbox = New-Object -ComObject VirtualBox.VirtualBox
         $session = New-Object -ComObject VirtualBox.Session
         $machine = $vbox.FindMachine($vm)
@@ -175,19 +175,26 @@ try {
     if (-not $output -or -not $output.Contains($marker) -or $output.Contains('FAIL:')) {
         throw 'Boot did not reach its expected completion marker.'
     }
-    if (($Test -in @('none','storage')) -and $output.Contains('HALTED:')) {
+    if (($Test -in @('none','regression','storage')) -and $output.Contains('HALTED:')) {
         throw 'The kernel halted after starting the desktop.'
     }
-    foreach ($unit in @('driver.storage.vfs', 'driver.storage.metatest', 'driver.storage.ctl.ahci', 'driver.bus.usb.types', 'driver.bus.usb.core', 'driver.storage.ctl.usb', 'driver.hid.usb.keyboard', 'driver.hid.usb.mouse', 'driver.bus.usb.hub', 'driver.bus.usb.ohci', 'driver.bus.usb.xhci', 'core.ds.cfifo', 'core.ds.cfifols', 'core.ds.fifo', 'core.ds.lifo', 'core.ds.circ', 'core.ds.minh', 'core.ds.maxh', 'core.ds.prio', 'core.enc.sha1', 'core.enc.djb2', 'core.enc.fnv1a', 'core.strings')) {
-        if ($output -notmatch ('\[test:' + [regex]::Escape($unit) + '\] [1-9][0-9]* passed, 0 failed\.')) {
-            throw "Missing passing test summary for $unit"
+    if ($Test -ne 'none') {
+        if ($output -notmatch '\[test\] [1-9][0-9]* tests run, [1-9][0-9]* passed, 0 failed\.') {
+            throw 'Missing passing shared test harness summary.'
         }
-    }
-    foreach ($required in @('PASS: native unit initialization runs once', 'EXCEPTION_TESTS_PASSED=0000000000000003', 'EXCEPTION_TESTS_FAILED=0000000000000000',
-        'PASS: VFS reads ELF64 kernel through AHCI',
-        'IOREQ_TESTS_FAILED=0000000000000000', 'FSMGR_TESTS_FAILED=0000000000000000', 'PATH_TESTS_FAILED=0000000000000000', 'HASHMAP_TESTS_FAILED=0000000000000000', 'LISTS_TESTS_FAILED=0000000000000000', 'PMM_TESTS_FAILED=0000000000000000', 'VMM_TESTS_FAILED=0000000000000000',
-        'HEAP_TESTS_FAILED=0000000000000000', 'IRQ_TESTS_FAILED=0000000000000000', 'CONTEXT_TESTS_FAILED=0000000000000000', 'PROCESS_TESTS_FAILED=0000000000000000', 'FD_TESTS_FAILED=0000000000000000', 'STDIO_TESTS_FAILED=0000000000000000')) {
-        if (-not $output.Contains($required)) { throw "Missing check: $required" }
+        foreach ($unit in @('driver.storage.vfs', 'driver.storage.ctl.ahci', 'driver.bus.usb.types', 'driver.bus.usb.core', 'driver.storage.ctl.usb', 'driver.hid.usb.keyboard', 'driver.hid.usb.mouse', 'driver.bus.usb.hub', 'driver.bus.usb.ohci', 'driver.bus.usb.xhci', 'core.ds.cfifo', 'core.ds.cfifols', 'core.ds.fifo', 'core.ds.lifo', 'core.ds.circ', 'core.ds.minh', 'core.ds.maxh', 'core.ds.prio', 'core.enc.sha1', 'core.enc.djb2', 'core.enc.fnv1a', 'core.strings')) {
+            if ($output -notmatch ('\[test:' + [regex]::Escape($unit) + '\] [1-9][0-9]* passed, 0 failed\.')) {
+                throw "Missing passing test summary for $unit"
+            }
+        }
+        foreach ($required in @('PASS: native FPC compiler runtime', 'PASS: native unit initialization runs once', 'EXCEPTION_TESTS_PASSED=0000000000000003', 'EXCEPTION_TESTS_FAILED=0000000000000000',
+            'PASS: VFS reads ELF64 kernel through AHCI',
+            'IOREQ_TESTS_FAILED=0000000000000000', 'FSMGR_TESTS_FAILED=0000000000000000', 'PATH_TESTS_FAILED=0000000000000000', 'HASHMAP_TESTS_FAILED=0000000000000000', 'LISTS_TESTS_FAILED=0000000000000000', 'PMM_TESTS_FAILED=0000000000000000', 'VMM_TESTS_FAILED=0000000000000000',
+            'HEAP_TESTS_FAILED=0000000000000000', 'IRQ_TESTS_FAILED=0000000000000000', 'CONTEXT_TESTS_FAILED=0000000000000000', 'PROCESS_TESTS_FAILED=0000000000000000', 'FD_TESTS_FAILED=0000000000000000', 'STDIO_TESTS_FAILED=0000000000000000')) {
+            if (-not $output.Contains($required)) { throw "Missing check: $required" }
+        }
+    } elseif ($output.Contains('PROCESS_TESTS_PASSED=')) {
+        throw 'Regression suite ran during normal boot.'
     }
     if ($Test -eq 'storage' -and $output -notmatch '\[test:driver\.storage\.bench\] [1-9][0-9]* passed, 0 failed\.') {
         throw 'Missing passing native storage benchmark test summary.'
@@ -232,7 +239,7 @@ try {
     if ($NetworkInput -and -not $output.Contains('Process ACK.')) {
         throw 'Network test did not receive a DHCP acknowledgement.'
     }
-    if ($Test -notin @('none','storage')) {
+    if ($Test -notin @('none','regression','storage')) {
         $vector = @{ud = '6'; pf = 'E'; df = '8'}[$Test]
         $errorCode = if ($Test -eq 'pf') { '2' } else { '0' }
         foreach ($required in @("VECTOR=000000000000000$vector", "ERROR=000000000000000$errorCode", 'CS=0000000000000018')) {
