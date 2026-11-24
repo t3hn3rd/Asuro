@@ -188,6 +188,9 @@ try {
         'HEAP_TESTS_FAILED=0000000000000000', 'IRQ_TESTS_FAILED=0000000000000000', 'CONTEXT_TESTS_FAILED=0000000000000000', 'PROCESS_TESTS_FAILED=0000000000000000', 'FD_TESTS_FAILED=0000000000000000', 'STDIO_TESTS_FAILED=0000000000000000')) {
         if (-not $output.Contains($required)) { throw "Missing check: $required" }
     }
+    if ($Test -eq 'storage' -and $output -notmatch '\[test:driver\.storage\.bench\] [1-9][0-9]* passed, 0 failed\.') {
+        throw 'Missing passing native storage benchmark test summary.'
+    }
     $ohci = $state -contains 'usb="on"'
     $xhci = $state -contains 'xhci="on"'
     if ($ohci -or $xhci) {

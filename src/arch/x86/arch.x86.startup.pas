@@ -28,6 +28,7 @@ uses
     driver.hid.ps2.keyboard, driver.hid.ps2.mouse,
     driver.storage.ctl.usb,
     driver.storage.metatest,
+    driver.storage.bench,
     driver.mgr,
     driver.bus.pci,
     driver.storage.ctl.ahci,
@@ -97,6 +98,7 @@ initialization
     boot.mgr.registerBoot('driver.hid.usb.keyboard', @driver.hid.usb.keyboard.init, 'USB Keyboard Driver', BOOT_MGR_BARRIER_DEVICE);
     boot.mgr.registerBoot('driver.hid.usb.mouse', @driver.hid.usb.mouse.init, 'USB Mouse Driver', BOOT_MGR_BARRIER_DEVICE);
     boot.mgr.registerBoot('driver.storage.ctl.usb', @driver.storage.ctl.usb.init, 'USB Mass Storage Driver', BOOT_MGR_BARRIER_DEVICE);
+    boot.mgr.registerBoot('driver.storage.bench', @driver.storage.bench.init, 'Storage Benchmark', BOOT_MGR_BARRIER_LATE);
     boot.mgr.registerBoot('driver.storage.metatest', @driver.storage.metatest.init, 'Storage Metadata Tests', BOOT_MGR_BARRIER_MID);
     boot.mgr.registerBoot('driver.mgr', @driver.mgr.init, 'Driver Manager Initialization', BOOT_MGR_BARRIER_MID);
     boot.mgr.registerBoot('driver.bus.pci', @driver.bus.pci.Init, 'PCI Bus Driver', BOOT_MGR_BARRIER_BUS_LATE);
