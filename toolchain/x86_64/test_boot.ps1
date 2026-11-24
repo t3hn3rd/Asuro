@@ -212,7 +212,7 @@ try {
                 }
             }
         }
-        if (($Test -eq 'storage') -and ($usbInput -or $usbDisk) -and -not $output.Contains('Device enumerated at address ')) {
+        if (($Test -eq 'storage') -and $usbInput -and -not $usbDisk -and -not $output.Contains('Device enumerated at address ')) {
             throw 'Configured USB device did not enumerate.'
         }
         if ($Test -eq 'storage' -and $usbDisk -and -not $output.Contains('PASS: USB bulk read from sector zero matches reference reads')) {
