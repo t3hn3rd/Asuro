@@ -34,7 +34,9 @@ var
 function selectProcess(saved: PtrUInt): PtrUInt;
 begin
     CurrentProcess^.SavedStack := saved;
+    CurrentProcess^.SavedExceptAddr := ExceptAddrStack;
     CurrentProcess := scheduler_pick_next;
+    ExceptAddrStack := CurrentProcess^.SavedExceptAddr;
     inc(switches);
     selectProcess := CurrentProcess^.SavedStack;
 end;
@@ -168,7 +170,12 @@ begin
     asyncEntry^.FSCloseHook := @closeChildFD;
     fd_begin_async(asyncEntry);
     cleanupCtx := parent;
-    bindResource(parent, rkCustom, kalloc(37), @cleanupResource);
+    list := PDList(parent^.Resources);
+    { Force the list's checked capacity limit without allocating a large buffer. }
+    list^.Count := High(uint32);
+    Assert(not bindResource(parent, rkCustom, nil, @cleanupResource), 'resource insertion failure is reported');
+    list^.Count := 0;
+    Assert(bindResource(parent, rkCustom, kalloc(37), @cleanupResource), 'process accepts ownership of bound resource');
     Assert((findByID(parentID) = parent) and (findByName('lifecycle child') = child), 'process lookup preserves native pointers');
     Assert((parent^.State = psSuspended) and (child^.State = psSuspended), 'processes stay suspended until published');
     kill(killed^.ProcessID);

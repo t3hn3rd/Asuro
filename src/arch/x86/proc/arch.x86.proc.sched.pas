@@ -53,6 +53,7 @@ var
 begin
     { 1. Save ESP into the current process }
     proc.mgr.CurrentProcess^.SavedStack := saved_esp;
+    proc.mgr.CurrentProcess^.SavedExceptAddr := ExceptAddrStack;
 
     { 2. Dispatch all hooks registered on interrupt 32 (timer hooks).
          This fires TMR_0_ISR.Main which in turn fires BDA tick,
@@ -65,6 +66,7 @@ begin
     { 4. Pick the next process to run (always returns non-nil; idle as fallback) }
     next := proc.mgr.scheduler_pick_next;
     proc.mgr.CurrentProcess := next;
+    ExceptAddrStack := next^.SavedExceptAddr;
 
     { 5. Return the selected process ESP }
     do_context_switch_work := next^.SavedStack;

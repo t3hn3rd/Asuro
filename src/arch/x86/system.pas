@@ -72,49 +72,7 @@ var
 
 procedure init();
 
-{ ---- FPC 3.2.2 compilerproc stubs ---- }
-{ These are required by the compiler for program init/exit and error handling. }
-procedure fpc_initializeunits; compilerproc;
-procedure fpc_do_exit; compilerproc;
-procedure fpc_handleerror(errno: longint); compilerproc;
-procedure fpc_rangeerror; compilerproc;
-procedure fpc_overflow; compilerproc;
-procedure fpc_divbyzero; compilerproc;
-procedure fpc_objecterror; compilerproc;
-procedure fpc_abstracterror; compilerproc;
-procedure fpc_stackcheck(stack_size: SizeUInt); compilerproc;
-procedure fpc_iocheck; compilerproc;
-function fpc_pushexceptaddr(ft: longint; _buf: PJmp_buf; var newaddr: TExceptAddr): PJmp_buf; compilerproc;
-procedure fpc_popaddrstack; compilerproc;
-function fpc_setjmp(var s: jmp_buf): longint; compilerproc;
-procedure fpc_longjmp(var s: jmp_buf; value: longint); compilerproc;
-procedure fpc_shortstr_assign(len: longint; sstr, dstr: Pointer); compilerproc;
-
-{ 64-bit multiply compilerproc required by FPC on i386 when
-  any int64/uint64 arithmetic occurs (e.g. sint32 * uint32 promotion).
-  Must live in the system unit so the compiler can resolve it. }
-function fpc_mul_int64(f1, f2: int64): int64; compilerproc;
-function fpc_mul_dword_to_qword(f1, f2: uint32): qword; compilerproc;
-function fpc_div_int64(d, n: int64): int64; compilerproc;
-function fpc_mod_int64(d, n: int64): int64; compilerproc;
-function fpc_mod_qword(d, n: qword): qword; compilerproc;
-function fpc_div_qword(d, n: qword): qword; compilerproc;
-
-{ Memory allocation compilerprocs - delegate to core.version heap (memory.heap) }
-function fpc_getmem(size: PtrUInt): Pointer; compilerproc;
-procedure fpc_freemem(p: Pointer); compilerproc;
-
-{ Exception handling compilerprocs }
-procedure fpc_reraise; compilerproc;
-procedure fpc_raiseexception(obj: Pointer; anaddr, aframe: Pointer); compilerproc;
-function fpc_catches(obj: Pointer; t: Pointer): Pointer; compilerproc;
-procedure fpc_doneexception; compilerproc;
-
-procedure move(const source; var dest; count: SizeInt);
-
-{ Float-to-integer intrinsics }
-function Trunc(d: Double): int64;
-function Round(d: Double): int64;
+{$i ../common/system.compilerprocs.inc}
 
 implementation
 
@@ -177,26 +135,8 @@ begin
     end;
 end;
 
-{ Move memory block — minimal implementation needed by shortstr_assign }
-procedure move(const source; var dest; count: SizeInt);
-    [public, alias: 'FPC_MOVE'];
-var
-    i: SizeInt;
-    s, d: PuInt8;
-begin
-    s := @source;
-    d := @dest;
-    if SizeUInt(d) > SizeUInt(s) then begin
-        { Copy backward to handle overlap }
-        for i := count - 1 downto 0 do
-            d[i] := s[i];
-    end else begin
-        for i := 0 to count - 1 do
-            d[i] := s[i];
-    end;
-end;
-
 {$i ../common/system.init.inc}
+{$i ../common/system.runtime.inc}
 
 procedure fpc_initializeunits; [public, alias: 'FPC_INITIALIZEUNITS']; compilerproc;
 begin
@@ -210,62 +150,6 @@ begin
         cli
         hlt
     end;
-end;
-
-procedure fpc_handleerror(errno: longint); [public, alias: 'FPC_HANDLEERROR']; compilerproc;
-begin
-    HandleErrorInternal(errno);
-end;
-
-procedure fpc_rangeerror; [public, alias: 'FPC_RANGEERROR']; compilerproc;
-begin
-    HandleErrorInternal(201);
-end;
-
-procedure fpc_overflow; [public, alias: 'FPC_OVERFLOW']; compilerproc;
-begin
-    HandleErrorInternal(215);
-end;
-
-procedure fpc_divbyzero; [public, alias: 'FPC_DIVBYZERO']; compilerproc;
-begin
-    HandleErrorInternal(200);
-end;
-
-procedure fpc_objecterror; [public, alias: 'FPC_OBJECTERROR']; compilerproc;
-begin
-    HandleErrorInternal(210);
-end;
-
-procedure fpc_abstracterror; [public, alias: 'FPC_ABSTRACTERROR']; compilerproc;
-begin
-    HandleErrorInternal(211);
-end;
-
-procedure fpc_stackcheck(stack_size: SizeUInt); [public, alias: 'FPC_STACKCHECK']; compilerproc;
-begin
-    { No stack checking on bare metal }
-end;
-
-procedure fpc_iocheck; [public, alias: 'FPC_IOCHECK']; compilerproc;
-begin
-    { No IO error checking on bare metal }
-end;
-
-function fpc_pushexceptaddr(ft: longint; _buf: PJmp_buf; var newaddr: TExceptAddr): PJmp_buf;
-    [public, alias: 'FPC_PUSHEXCEPTADDR']; compilerproc;
-begin
-    newaddr.buf := _buf;
-    newaddr.next := ExceptAddrStack;
-    newaddr.frametype := ft;
-    ExceptAddrStack := @newaddr;
-    fpc_pushexceptaddr := _buf;
-end;
-
-procedure fpc_popaddrstack; [public, alias: 'FPC_POPADDRSTACK']; compilerproc;
-begin
-    if ExceptAddrStack <> nil then
-        ExceptAddrStack := ExceptAddrStack^.next;
 end;
 
 function fpc_setjmp(var s: jmp_buf): longint; [public, alias: 'FPC_SETJMP']; compilerproc; assembler;
@@ -295,22 +179,6 @@ asm
     mov ebp, [ecx+12]
     mov esp, [ecx+16]
     jmp dword [ecx+20]
-end;
-
-procedure fpc_shortstr_assign(len: longint; sstr, dstr: Pointer);
-    [public, alias: 'FPC_SHORTSTR_ASSIGN']; compilerproc;
-var
-    slen: uint8;
-    src, dst: PuInt8;
-begin
-    src := PuInt8(sstr);
-    dst := PuInt8(dstr);
-    slen := src^;
-    if slen > uint8(len) then
-        slen := uint8(len);
-    dst^ := slen;
-    if slen > 0 then
-        move(PuInt8(PtrUInt(sstr) + 1)^, PuInt8(PtrUInt(dstr) + 1)^, SizeInt(slen));
 end;
 
 function fpc_mul_int64(f1, f2: int64): int64; [public, alias: 'FPC_MUL_INT64']; compilerproc;
@@ -589,47 +457,6 @@ begin
         fistp qword [res]
     end;
     Round := res;
-end;
-
-{ ---------- Memory allocation compilerprocs ---------- }
-function kernel_kalloc(size: uint32): Pointer; external name 'kernel_kalloc';
-
-procedure kernel_kfree(p: Pointer); external name 'kernel_kfree';
-
-function fpc_getmem(size: PtrUInt): Pointer;
-    [public, alias: 'FPC_GETMEM']; compilerproc;
-begin
-    fpc_getmem := kernel_kalloc(uint32(size));
-end;
-
-procedure fpc_freemem(p: Pointer);
-    [public, alias: 'FPC_FREEMEM']; compilerproc;
-begin
-    kernel_kfree(p);
-end;
-
-{ ---------- Exception handling compilerprocs ---------- }
-procedure fpc_reraise; [public, alias: 'FPC_RERAISE']; compilerproc;
-begin
-    { In a bare-metal core.version re-raise is a fatal condition }
-    HandleErrorInternal(217);
-end;
-
-procedure fpc_raiseexception(obj: Pointer; anaddr, aframe: Pointer);
-    [public, alias: 'FPC_RAISEEXCEPTION']; compilerproc;
-begin
-    HandleErrorInternal(217);
-end;
-
-function fpc_catches(obj: Pointer; t: Pointer): Pointer;
-    [public, alias: 'FPC_CATCHES']; compilerproc;
-begin
-    fpc_catches := nil;
-end;
-
-procedure fpc_doneexception; [public, alias: 'FPC_DONEEXCEPTION']; compilerproc;
-begin
-    { nothing to do in bare-metal context }
 end;
 
 procedure init();
