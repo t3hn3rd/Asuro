@@ -104,7 +104,10 @@ begin
         exit;
     end;
     st^.Address := ip;
-    proc.mgr.bindResource(proc.mgr.CurrentProcess, rkCustom, void(st), @cleanup);
+    if not proc.mgr.bindResource(proc.mgr.CurrentProcess, rkCustom, void(st), @cleanup) then begin
+        cleanup(void(st));
+        exit;
+    end;
     timeoutTicks := (PING_TIMEOUT_MS * 1024) div 1000;
 
     for i := 0 to 9 do begin

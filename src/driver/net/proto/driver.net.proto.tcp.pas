@@ -163,14 +163,21 @@ var
     i   : uint32;
 begin
     push_trace('driver.net.proto.tcp.CreateTCB');
-    tcb := PTCB(kalloc(sizeof(TTCB)));
-    memset(PtrUInt(tcb), 0, sizeof(TTCB));
+    tcb := PTCB(tryAlloc(sizeof(TTCB)));
+    if tcb = nil then begin CreateTCB := nil; exit; end;
     tcb^.State := tssClosed;
     tcb^.RCV_WND := TCP_DEFAULT_WINDOW;
     tcb^.SendBufSize := TCP_DEFAULT_WINDOW;
     tcb^.RecvBufSize := TCP_DEFAULT_WINDOW;
-    tcb^.SendBuf := kalloc(TCP_DEFAULT_WINDOW);
-    tcb^.RecvBuf := kalloc(TCP_DEFAULT_WINDOW);
+    tcb^.SendBuf := tryAlloc(TCP_DEFAULT_WINDOW);
+    tcb^.RecvBuf := tryAlloc(TCP_DEFAULT_WINDOW);
+    if (tcb^.SendBuf = nil) or (tcb^.RecvBuf = nil) then begin
+        kfree(tcb^.SendBuf);
+        kfree(tcb^.RecvBuf);
+        kfree(void(tcb));
+        CreateTCB := nil;
+        exit;
+    end;
     tcb^.SendBufLen := 0;
     tcb^.RecvBufLen := 0;
     tcb^.Active := true;
@@ -228,7 +235,8 @@ var
     sock : PTCPSocket;
 begin
     push_trace('driver.net.proto.tcp.CreateSocket');
-    sock := PTCPSocket(kalloc(sizeof(TTCPSocket)));
+    sock := PTCPSocket(tryAlloc(sizeof(TTCPSocket)));
+    if sock = nil then begin CreateSocket := nil; exit; end;
     sock^.TCB := tcb;
     sock^.OnReceive := onRecv;
     sock^.OnEvent := onEvt;
@@ -1151,6 +1159,7 @@ begin
 
             { Create new TCB for incoming connection }
             newTcb := CreateTCB;
+            if newTcb = nil then exit;
             copyIPv4(@getIPv4Config^.Address[0], @newTcb^.LocalIP[0]);
             copyIPv4(@p_context^.IP.Source[0], @newTcb^.RemoteIP[0]);
             newTcb^.LocalPort := localPort;
@@ -1181,9 +1190,12 @@ begin
             newTcb^.CongWnd := TCP_INITIAL_CWND_SEGS * mss;
 
             { Inherit callbacks from listen socket }
-            CreateSocket(newTcb, listenTcb^.Socket^.OnReceive,
+            if CreateSocket(newTcb, listenTcb^.Socket^.OnReceive,
                         listenTcb^.Socket^.OnEvent,
-                        listenTcb^.Socket^.UserData);
+                        listenTcb^.Socket^.UserData) = nil then begin
+                DestroyTCB(newTcb);
+                exit;
+            end;
 
             AddTCB(newTcb);
 
@@ -1400,10 +1412,16 @@ begin
 
     sock := CreateSocket(tcb, context^.OnReceive, context^.OnEvent, context^.UserData);
 
+    if sock = nil then begin DestroyTCB(tcb); exit; end;
+
     { Auto-bind socket to calling process for cleanup on process death }
     if proc.mgr.CurrentProcess <> nil then begin
         sock^.OwnerPID := proc.mgr.CurrentProcess^.ProcessID;
-        proc.mgr.bindResource(proc.mgr.CurrentProcess, rkSocket, void(sock), @socket_cleanup);
+        if not proc.mgr.bindResource(proc.mgr.CurrentProcess, rkSocket, void(sock), @socket_cleanup) then begin
+            kfree(void(sock));
+            DestroyTCB(tcb);
+            exit;
+        end;
     end;
 
     AddTCB(tcb);
@@ -1440,10 +1458,16 @@ begin
 
     sock := CreateSocket(tcb, context^.OnReceive, context^.OnEvent, context^.UserData);
 
+    if sock = nil then begin DestroyTCB(tcb); exit; end;
+
     { Auto-bind socket to calling process for cleanup on process death }
     if proc.mgr.CurrentProcess <> nil then begin
         sock^.OwnerPID := proc.mgr.CurrentProcess^.ProcessID;
-        proc.mgr.bindResource(proc.mgr.CurrentProcess, rkSocket, void(sock), @socket_cleanup);
+        if not proc.mgr.bindResource(proc.mgr.CurrentProcess, rkSocket, void(sock), @socket_cleanup) then begin
+            kfree(void(sock));
+            DestroyTCB(tcb);
+            exit;
+        end;
     end;
 
     AddTCB(tcb);

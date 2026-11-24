@@ -56,7 +56,7 @@ procedure proc_suspend;
 procedure proc_exit(exitCode : uint32);
 
 { Resource binding }
-procedure bindResource(ctx : PProcessContext; kind : TResourceKind; handle : void; cleanup : TResourceCleanup);
+function bindResource(ctx : PProcessContext; kind : TResourceKind; handle : void; cleanup : TResourceCleanup): boolean;
 procedure unbindResource(ctx : PProcessContext; handle : void);
 procedure unbindResourceNoCleanup(ctx : PProcessContext; handle : void);
 procedure unbindAllResources(ctx : PProcessContext);
@@ -507,11 +507,12 @@ begin
 end;
 
 { ---- Resource binding ---- }
-procedure bindResource(ctx: PProcessContext; kind: TResourceKind; handle: void; cleanup: TResourceCleanup);
+function bindResource(ctx: PProcessContext; kind: TResourceKind; handle: void; cleanup: TResourceCleanup): boolean;
 var
     binding: PResourceBinding;
     savedFlags: PtrUInt;
 begin
+    bindResource := false;
     if ctx = nil then exit;
     savedFlags := arch.platform.cpu.lock;
     if ctx^.Resources <> nil then begin
@@ -520,6 +521,7 @@ begin
             binding^.Kind := kind;
             binding^.Handle := handle;
             binding^.Cleanup := cleanup;
+            bindResource := true;
         end;
     end;
     arch.platform.cpu.unlock(savedFlags);
