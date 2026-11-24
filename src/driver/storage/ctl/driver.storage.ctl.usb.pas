@@ -29,7 +29,7 @@ procedure UnitTest;
 
 implementation
 
-uses driver.mgr, memory.heap, driver.storage.types,
+uses {$ifdef ASURO_TEST_STORAGE}core.clock,{$endif} driver.mgr, memory.heap, driver.storage.types,
      driver.storage.mgr, driver.bus.usb.core, driver.bus.usb.types,
      proc.mgr, proc.types, arch.common.legacyirq, arch.platform.process, arch.platform.interrupts,
      core.util, arch.platform.cpu, io.syslog, io.stdio, core.strings,
@@ -796,6 +796,40 @@ begin
     end;
 end;
 
+{$ifdef ASURO_TEST_STORAGE}
+{ Identical read-only workload on both targets. Exclude allocation, clock
+  preparation and the warm-up read from the measured interval. }
+procedure measure_usb_reads(disk : PStorage_Device);
+const requestBytes = 131072;
+      requests = 32;
+var sectors, i : uint32;
+    buffer : puint32;
+    started, elapsed : uint64;
+begin
+    { Allow other boot tasks, including the native read comparison, to finish. }
+    proc.mgr.proc_sleep_ms(3000);
+    if (disk = nil) or not core.clock.prepare then exit;
+    sectors := requestBytes div disk^.sectorSize;
+    if (sectors = 0) or (disk^.maxSectorCount < requests * sectors) then exit;
+    buffer := puint32(kalloc(requestBytes));
+    if buffer = nil then exit;
+    if storage_read(disk, 0, sectors, buffer) = eNone then begin
+        started := core.clock.nowUS;
+        i := 0;
+        while i < requests do begin
+            if storage_read(disk, i * sectors, sectors, buffer) <> eNone then break;
+            inc(i);
+        end;
+        elapsed := core.clock.nowUS - started;
+        if (i = requests) and (elapsed > 0) and (elapsed <= High(uint32)) then begin
+            io.syslog.log('USBMSC', '4 MiB sequential, 128 KiB QD1, elapsed us=');
+            io.syslog.writeintln(uint32(elapsed));
+        end else io.syslog.logln('USBMSC', 'FAIL: timed sequential read');
+    end;
+    kfree(void(buffer));
+end;
+{$endif}
+
 procedure attach_worker(ctx : PProcessContext);
 var c : PMSDevice; d : PStorage_Device; sectors, sectorSize, i : uint32; flags : PtrUInt;
     claimed : boolean;
@@ -846,6 +880,7 @@ begin
     kfree(void(d));
     finish_attach(c); AttachBusy := false;
     io.syslog.logln('USBMSC', 'LUN 0 registered with storage manager.');
+    {$ifdef ASURO_TEST_STORAGE}measure_usb_reads(c^.Disk);{$endif}
 
 end;
 

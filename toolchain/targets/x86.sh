@@ -36,3 +36,7 @@ if [[ "${COMPLEX_TESTS:-0}" == "1" ]]; then
 elif [[ "${UNIT_TESTS:-0}" == "1" ]]; then
     PASCAL_OPTIONS+=(-dUNIT_TESTS)
 fi
+
+if [[ "${ASURO_BOOT_TEST:-none}" == storage ]]; then
+    PASCAL_OPTIONS+=(-dASURO_TEST_STORAGE)
+fi

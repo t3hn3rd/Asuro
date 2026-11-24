@@ -34,6 +34,7 @@ uses
     driver.bus.usb.core,
     driver.bus.usb.hub,
     driver.bus.usb.ohci,
+    driver.bus.usb.xhci,
     driver.storage.metatest,
     driver.storage.types,
     arch.common.legacyirq,
@@ -112,6 +113,7 @@ begin
     if ok then
         for i := 0 to count - 1 do begin
             device := driver.storage.mgr.get_device(i);
+            if not (device^.controller in [ControllerAHCI, ControllerAHCI_ATAPI]) then continue;
             if (device^.sectorSize = 0) or (device^.sectorSize > 4096) then begin
                 ok := false;
                 break;
@@ -162,9 +164,15 @@ end;
 procedure test_usb_read;
 var
     device: PStorage_Device;
-    buffer: puint32;
+    buffer, reference: puint8;
+    sectors, chunk, offset, bytes: uint32;
+    matches: boolean;
     attempt, i, count: uint32;
 begin
+    if driver.bus.usb.core.get_hc_count = 0 then begin
+        puts('SKIP: no supported USB host controller registered'#13#10);
+        exit;
+    end;
     device := nil;
     for attempt := 0 to 499 do begin
         count := driver.storage.mgr.get_device_count;
@@ -179,16 +187,42 @@ begin
         puts('SKIP: no USB storage device registered'#13#10);
         exit;
     end;
-    buffer := puint32(kalloc(device^.sectorSize));
-    if buffer = nil then begin
-        puts('FAIL: USB read buffer allocation'#13#10);
+    if (device^.sectorSize = 0) or (device^.sectorSize > 4096) then begin
+        puts('FAIL: USB disk sector size'#13#10);
         exit;
     end;
-    if storage_read(device, 0, 1, buffer) = eNone then
-        puts('PASS: USB mass storage reads sector zero through OHCI'#13#10)
-    else
-        puts('FAIL: USB mass storage sector read'#13#10);
-    kfree(void(buffer));
+    sectors := 131072 div device^.sectorSize;
+    if sectors > device^.maxSectorCount then sectors := device^.maxSectorCount;
+    if sectors = 0 then begin
+        puts('FAIL: USB disk capacity'#13#10);
+        exit;
+    end;
+    buffer := puint8(kalloc(sectors * device^.sectorSize));
+    reference := puint8(kalloc(4096));
+    if (buffer <> nil) and (reference <> nil) then begin
+        matches := storage_read(device, 0, sectors, puint32(buffer)) = eNone;
+        offset := 0;
+        while matches and (offset < sectors) do begin
+            chunk := 4096 div device^.sectorSize;
+            if chunk > sectors - offset then chunk := sectors - offset;
+            bytes := chunk * device^.sectorSize;
+            matches := storage_read(device, offset, chunk, puint32(reference)) = eNone;
+            if matches then
+                for i := 0 to bytes - 1 do
+                    if buffer[offset * device^.sectorSize + i] <> reference[i] then begin
+                        matches := false;
+                        break;
+                    end;
+            inc(offset, chunk);
+        end;
+        if matches then
+            puts('PASS: USB bulk read from sector zero matches reference reads'#13#10)
+        else
+            puts('FAIL: USB bulk read comparison'#13#10);
+    end else
+        puts('FAIL: USB read buffer allocation'#13#10);
+    if reference <> nil then kfree(void(reference));
+    if buffer <> nil then kfree(void(buffer));
 end;
 
 procedure init_video(info: Pmultiboot_info_t);
@@ -239,9 +273,11 @@ begin
     driver.hid.usb.keyboard.init;
     driver.hid.usb.mouse.init;
     driver.bus.usb.ohci.load;
+    driver.bus.usb.xhci.load;
+    {$ifdef ASURO_TEST_STORAGE}
     test_usb_read;
-    test_storage_read;
     test_high_dma;
+    {$endif}
     driver.timer.rtc.init;
     driver.video.lvgl.onDebugToggle := @app.uidebug.toggle;
     driver.video.desktop.init;
@@ -306,6 +342,7 @@ begin
     driver.hid.usb.keyboard.UnitTest;
     driver.hid.usb.mouse.UnitTest;
     driver.bus.usb.ohci.UnitTest;
+    driver.bus.usb.xhci.UnitTest;
     core.strings.UnitTest;
     core.enc.fnv1a.UnitTest;
     core.ds.hashmap.UnitTest;
