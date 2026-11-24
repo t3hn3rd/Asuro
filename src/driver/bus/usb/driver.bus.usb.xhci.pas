@@ -2187,10 +2187,7 @@ begin
         io.syslog.writehexln(devices[i].address0);
 
         { Read BAR0 — mask lower 4 bits (memory-mapped indicator/type bits) }
-        if (devices[i].address0 and 1) <> 0 then continue;
-        bar := devices[i].address0 and $FFFFFFF0;
-        if (devices[i].address0 and 7) = 4 then
-            bar := bar or (uint64(devices[i].address1) shl 32);
+        bar := driver.bus.pci.memoryBAR(devices[i].address0, devices[i].address1);
         if bar = 0 then continue;
         mmioBase := PtrUInt(mapDevice(bar, 4096));
         if mmioBase = 0 then continue;
