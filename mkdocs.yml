@@ -189,6 +189,7 @@ nav:
         - TCP: src/driver/net/proto/driver.net.proto.tcp.md
         - UDP: src/driver/net/proto/driver.net.proto.udp.md
       - Storage:
+        - Benchmark commands: src/driver/storage/benchmarks.md
         - Types: src/driver/storage/driver.storage.types.md
         - Manager: src/driver/storage/driver.storage.mgr.md
         - Boot Drive: src/driver/storage/driver.storage.boot.md

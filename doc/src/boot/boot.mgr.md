@@ -4,13 +4,13 @@ Boot initialization manager providing self-registering, dependency-ordered unit 
 
 ## Overview
 
-`boot.mgr` replaces the hardcoded initialization sequence in `kmain` with a dynamic, dependency-driven boot process. Units register themselves during their Pascal `initialization` sections by calling `registerBoot()` with a name, init procedure, splash text, and an optional dependency. When `boot.mgr.run()` is called from `kmain`, it performs a topological sort of registrations and executes them in dependency order, respecting barrier boundaries.
+Both targets use the same dependency sorter. The i386 kernel calls `boot.mgr.run` from its kernel entry. On x86-64, early CPU, memory and scheduler initialization precede the native boot task. That task registers services and calls `boot.mgr.runChecked`. A cycle or missing exact dependency makes the checked call return false before any registered callback executes.
 
-Because registration happens before `kmain` (via `FPC_INITIALIZEUNITS`), and therefore before the heap exists, all storage uses static allocation. This is one of the justified cases for static arrays in the kernel.
+Both targets call `boot.services.registerDevices` to register networking, PS/2 and USB input, USB storage, STORBENCH and STORPERF. Registration uses static tables so it can run before heap initialization.
 
 ## Dependencies
 
-`boot.mgr`'s interface has no `uses` clause — it relies only on built-in types from the `system` unit to avoid circular dependencies. The implementation section uses `io.syslog` and `boot.splash` for progress output, and includes all silo units that must be compiled into the kernel.
+The interface uses built-in system types. The i386 build includes splash progress and generated unit references. The native boot task supplies its platform callbacks.
 
 ## Constants
 
