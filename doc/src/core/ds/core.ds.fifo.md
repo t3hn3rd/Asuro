@@ -25,9 +25,9 @@ Creates and returns a new empty FIFO queue. `ElementSize` is the size in bytes o
 
 ### FIFO_Enqueue
 ```pascal
-procedure FIFO_Enqueue(Queue : PFIFOQueue; Data : void);
+function FIFO_Enqueue(Queue : PFIFOQueue; Data : void) : boolean;
 ```
-Allocates a new node, copies `ElementSize` bytes from `Data` into it, and appends it to the tail of the queue.
+Allocates a new node, copies `ElementSize` bytes from `Data` into it, and appends it to the tail of the queue. The node and payload share one allocation. A failed insertion returns false and preserves the collection.
 
 ### FIFO_Dequeue
 ```pascal

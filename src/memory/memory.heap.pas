@@ -73,6 +73,7 @@ var
 procedure init;
 procedure UnitTest;
 { Returned allocations are zero-filled, including reused storage. }
+function tryAlloc(size : SizeUInt) : void;
 function kalloc(size : SizeUInt) : void;
 function klalloc(size : SizeUInt) : void;
 procedure klfree(address : PtrUInt);
@@ -114,7 +115,7 @@ begin
 end;
 
 { ==== Page management ==== }
-function new_heap_page(current: PHeapPageHeader): PHeapPageHeader;
+function new_heap_page: PHeapPageHeader;
 var
     addr: PtrUInt;
     bmp: PuInt32;
@@ -129,10 +130,8 @@ begin
     end;
     new_heap_page := PHeapPageHeader(addr);
     { Link into list }
-    if current <> nil then
-        current^.NextPage := new_heap_page;
     new_heap_page^.NextPage   := nil;
-    new_heap_page^.PrevPage   := current;
+    new_heap_page^.PrevPage   := nil;
     new_heap_page^.FreeUnits  := TOTAL_UNITS;
     new_heap_page^.NextFree   := 0;
     new_heap_page^.TotalUnits := TOTAL_UNITS;
@@ -147,8 +146,9 @@ begin
 end;
 
 { Release a completely-free heap page back to VMM/PMM. }
-procedure try_release_page(hp: PHeapPageHeader);
+function detach_empty_page(hp: PHeapPageHeader): boolean;
 begin
+    detach_empty_page := false;
     if hp = Root_Page then exit;
     if hp^.FreeUnits <> hp^.TotalUnits then exit;
 
@@ -169,7 +169,7 @@ begin
     end;
 
     { Free the virtual page (returns physical block to PMM) }
-    arch.platform.memory.release(PtrUInt(hp), 1);
+    detach_empty_page := true;
 
     pop_trace;
 end;
@@ -179,7 +179,7 @@ procedure init;
 begin
     push_trace('memory.heap.init');
     heap_log('INIT BEGIN.');
-    Root_Page := new_heap_page(nil);
+    Root_Page := new_heap_page;
     Search_Page := Root_Page;
     if Root_Page = nil then begin
         heap_log('FATAL: Could not allocate root heap page!');
@@ -246,7 +246,7 @@ begin
     pop_trace;
 end;
 
-function kalloc(size: SizeUInt): void; [public, alias: 'kernel_kalloc'];
+function tryAlloc(size: SizeUInt): void;
 var
     units_needed : uint32;
     hp           : PHeapPageHeader;
@@ -255,34 +255,23 @@ var
     alloc_base   : PtrUInt;
     saved_flags  : PtrUInt;
 begin
-    { Disable interrupts - save EFLAGS to local then cli.
-      Uses pushfd;cli;pop (stack-balanced) instead of bare pushfd/popfd
-      across the function, which is unsafe because FPC does not track
-      stack pointer changes inside asm blocks. }
-    saved_flags := arch.platform.cpu.lock;
-
-    kalloc := nil;
+    tryAlloc := nil;
 
     if (size = 0) or (size > High(SizeUInt) - PAGE_SIZE_LMM - SIZE_PREFIX) then begin
-        arch.platform.cpu.unlock(saved_flags);
         exit;
     end;
 
     { Keep every allocation start 16-byte aligned, including odd sizes. }
     if size > TOTAL_UNITS * ALLOC_UNIT - SIZE_PREFIX - 16 then begin
-        kalloc := klalloc(size);
-        if kalloc = nil then begin
-            arch.platform.cpu.unlock(saved_flags);
-            heap_oom('kalloc: large allocation failed');
-            exit;
-        end;
-        arch.platform.cpu.zero(Pointer(kalloc), size);
-        arch.platform.cpu.unlock(saved_flags);
+        tryAlloc := klalloc(size);
+        if tryAlloc = nil then exit;
+        arch.platform.cpu.zero(Pointer(tryAlloc), size);
         exit;
     end;
 
     units_needed := ((size + SIZE_PREFIX + {$IFDEF DEBUG_LMM}8 + {$ENDIF}15) div 16) * 2;
 
+    saved_flags := arch.platform.cpu.lock;
     hp := Search_Page;
     while true do begin
         { Only try pages with enough free units }
@@ -309,10 +298,7 @@ begin
                 alloc_base := get_data_base(hp) + uint32(idx) * ALLOC_UNIT;
                 PuInt32(alloc_base)^ := units_needed;
                 PuInt32(alloc_base + 4)^ := 0;
-                kalloc := void(alloc_base + SIZE_PREFIX);
-
-                { Zero the user-visible area }
-                arch.platform.cpu.zero(Pointer(kalloc), size);
+                tryAlloc := void(alloc_base + SIZE_PREFIX);
 
                 {$IFDEF DEBUG_LMM}
                 { Write guard sentinel at end of allocated region }
@@ -321,18 +307,22 @@ begin
 
                 Search_Page := hp;
                 arch.platform.cpu.unlock(saved_flags);
+                arch.platform.cpu.zero(Pointer(tryAlloc), size);
                 exit;
             end;
         end;
 
         { Move to next page or allocate a new one }
         if hp^.NextPage = nil then begin
-            hp := new_heap_page(hp);
-            if hp = nil then begin
-                arch.platform.cpu.unlock(saved_flags);
-                heap_oom('kalloc: out of memory');
-                exit;
-            end;
+            arch.platform.cpu.unlock(saved_flags);
+            hp := new_heap_page;
+            if hp = nil then exit;
+            saved_flags := arch.platform.cpu.lock;
+            { Root is permanent; the old search cursor could have been freed. }
+            hp^.PrevPage := Root_Page;
+            hp^.NextPage := Root_Page^.NextPage;
+            if hp^.NextPage <> nil then hp^.NextPage^.PrevPage := hp;
+            Root_Page^.NextPage := hp;
         end else begin
             hp := hp^.NextPage;
         end;
@@ -340,6 +330,13 @@ begin
     end;
 
     arch.platform.cpu.unlock(saved_flags);
+end;
+
+function kalloc(size: SizeUInt): void; [public, alias: 'kernel_kalloc'];
+begin
+    kalloc := tryAlloc(size);
+    if (kalloc = nil) and (size <> 0) and
+       (size <= High(SizeUInt) - PAGE_SIZE_LMM - SIZE_PREFIX) then heap_oom('kalloc: out of memory');
 end;
 
 procedure kfree(area: void); [public, alias: 'kernel_kfree'];
@@ -361,8 +358,8 @@ begin
       (klalloc header is [page_count:4][MAGIC:4][pad:8][user_data]) }
     if PuInt32(PtrUInt(area) - 12)^ = LARGE_ALLOC_MAGIC then begin
         base := PtrUInt(area) - 16;
-        klfree(base);
         arch.platform.cpu.unlock(saved_flags);
+        klfree(base);
         exit;
     end;
 
@@ -413,9 +410,10 @@ begin
         hp^.NextFree := unit_idx;
 
     { If page is completely free, return it to VMM/PMM }
-    try_release_page(hp);
-
-    arch.platform.cpu.unlock(saved_flags);
+    if detach_empty_page(hp) then begin
+        arch.platform.cpu.unlock(saved_flags);
+        arch.platform.memory.release(PtrUInt(hp), 1);
+    end else arch.platform.cpu.unlock(saved_flags);
 end;
 
 { ==== Statistics ==== }

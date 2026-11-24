@@ -18,29 +18,29 @@ const MAX_HEAP_REGIONS = 256;
 {$i ../../common/platform.memory.inc}
 
 implementation
-uses arch.x86.memory.virtual, arch.x86.memory.physical, arch.platform.diagnostics;
+uses arch.platform.cpu, arch.x86.memory.virtual, arch.x86.memory.physical, arch.platform.diagnostics;
 
-function allocateHeapPage: PtrUInt;
+function allocateHeapPageLocked: PtrUInt;
 var
     i: uint32;
 begin
-    allocateHeapPage := 0;
+    allocateHeapPageLocked := 0;
     i := KERNEL_PAGE_NUMBER + 4;
     while i < 1024 do begin
         if arch.x86.memory.virtual.new_page(i) then begin
-            allocateHeapPage := i shl 22;
+            allocateHeapPageLocked := i shl 22;
             exit;
         end;
         inc(i);
     end;
 end;
 
-function allocateLarge(pages: uint32): PtrUInt;
+function allocateLargeLocked(pages: uint32): PtrUInt;
 var
     curr_page, i: uint16;
     miss: boolean;
 begin
-    allocateLarge := 0;
+    allocateLargeLocked := 0;
     if (pages = 0) or (pages > MAX_HEAP_REGIONS) then exit;
     curr_page := 5;
     while uint32(curr_page) + pages - 1 < KERNEL_PAGE_NUMBER do begin
@@ -64,14 +64,14 @@ begin
                 end;
                 inc(i);
             end;
-            allocateLarge := uint32(curr_page) shl 22;
+            allocateLargeLocked := uint32(curr_page) shl 22;
             exit;
         end;
         inc(curr_page);
     end;
 end;
 
-procedure release(address: PtrUInt; pages: uint32);
+procedure releaseLocked(address: PtrUInt; pages: uint32);
 var
     i: uint32;
     page_num: uint16;
@@ -82,6 +82,31 @@ begin
     end;
     page_num := address shr 22;
     for i := 0 to pages - 1 do arch.x86.memory.virtual.free_page(page_num + uint16(i));
+end;
+
+
+function allocateHeapPage: PtrUInt;
+var flags: PtrUInt;
+begin
+    flags := arch.platform.cpu.lock;
+    allocateHeapPage := allocateHeapPageLocked;
+    arch.platform.cpu.unlock(flags);
+end;
+
+function allocateLarge(pages: uint32): PtrUInt;
+var flags: PtrUInt;
+begin
+    flags := arch.platform.cpu.lock;
+    allocateLarge := allocateLargeLocked(pages);
+    arch.platform.cpu.unlock(flags);
+end;
+
+procedure release(address: PtrUInt; pages: uint32);
+var flags: PtrUInt;
+begin
+    flags := arch.platform.cpu.lock;
+    releaseLocked(address, pages);
+    arch.platform.cpu.unlock(flags);
 end;
 
 function identityReserve(address: PtrUInt): pointer;

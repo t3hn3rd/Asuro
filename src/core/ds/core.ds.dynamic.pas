@@ -55,7 +55,7 @@ begin
     end;
     data := nil;
     if bytes <> 0 then begin
-        data := kalloc(bytes);
+        data := tryAlloc(bytes);
         if data = nil then exit;
         memory.raw.move(pointer(list^.Data), pointer(data), list^.Count * list^.ElementSize);
     end;
@@ -90,7 +90,7 @@ var
 begin
     DL_New := nil;
     if (ElementSize = 0) or (ElementSize > High(uint32) div 4) then exit;
-    list := PDList(kalloc(sizeof(TDList)));
+    list := PDList(tryAlloc(sizeof(TDList)));
     if list = nil then exit;
     list^.ElementSize := ElementSize;
     if ElementSize > 128 then count := 4 else

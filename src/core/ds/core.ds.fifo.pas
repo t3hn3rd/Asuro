@@ -42,7 +42,7 @@ uses
     @param Queue Pointer to the FIFO queue.
     @param Data  Pointer to the element data to copy in.
   **}
-  procedure FIFO_Enqueue(Queue : PFIFOQueue; Data : void);
+  function FIFO_Enqueue(Queue : PFIFOQueue; Data : void) : boolean;
 
   {**
     @abstract Dequeues the front element from the FIFO queue.
@@ -90,20 +90,28 @@ uses
 
 function FIFO_New(ElementSize : uint32) : PFIFOQueue;
 begin
-  FIFO_New := PFIFOQueue(kalloc(sizeof(TFIFOQueue)));
+  FIFO_New := PFIFOQueue(tryAlloc(sizeof(TFIFOQueue)));
+  if FIFO_New = nil then exit;
   FIFO_New^.Head        := nil;
   FIFO_New^.Tail        := nil;
   FIFO_New^.Count       := 0;
   FIFO_New^.ElementSize := ElementSize;
 end;
 
-procedure FIFO_Enqueue(Queue : PFIFOQueue; Data : void);
+function FIFO_Enqueue(Queue : PFIFOQueue; Data : void) : boolean;
 var
   Node : PQueueNode;
+  bytes : SizeUInt;
 begin
-  Node := PQueueNode(kalloc(sizeof(TQueueNode)));
+  FIFO_Enqueue := false;
+  if Queue = nil then exit;
+  bytes := SizeUInt(Queue^.ElementSize) + SizeUInt(sizeof(TQueueNode));
+  if (bytes < Queue^.ElementSize) or
+     ((Queue^.ElementSize <> 0) and (Data = nil)) then exit;
+  Node := PQueueNode(tryAlloc(bytes));
+  if Node = nil then exit;
   Node^.Next := nil;
-  Node^.Data := kalloc(Queue^.ElementSize);
+  Node^.Data := void(PtrUInt(Node) + sizeof(TQueueNode));
   memcpy(PtrUInt(Data), PtrUInt(Node^.Data), Queue^.ElementSize);
 
   if Queue^.Tail <> nil then
@@ -113,6 +121,7 @@ begin
 
   Queue^.Tail  := Node;
   Queue^.Count := Queue^.Count + 1;
+  FIFO_Enqueue := true;
 end;
 
 function FIFO_Dequeue(Queue : PFIFOQueue; Data : void) : boolean;
@@ -130,7 +139,6 @@ begin
     Queue^.Tail := nil;
 
   Queue^.Count := Queue^.Count - 1;
-  kfree(Node^.Data);
   kfree(void(Node));
   FIFO_Dequeue := true;
 end;
@@ -162,7 +170,6 @@ begin
   while Node <> nil do
   begin
     Next := Node^.Next;
-    kfree(Node^.Data);
     kfree(void(Node));
     Node := Next;
   end;
@@ -187,7 +194,8 @@ begin
     test.harness.Assert(@context, FIFO_Size(q) = 0, 'Initial size is 0');
 
     { === Enqueue / Size === }
-    v := 10; FIFO_Enqueue(q, @v);
+    test.harness.Assert(@context, not FIFO_Enqueue(q, nil), 'Reject missing payload');
+    v := 10; test.harness.Assert(@context, FIFO_Enqueue(q, @v), 'Insert reports success');
     v := 20; FIFO_Enqueue(q, @v);
     v := 30; FIFO_Enqueue(q, @v);
     test.harness.Assert(@context, FIFO_Size(q) = 3, 'Size after 3 enqueues');
