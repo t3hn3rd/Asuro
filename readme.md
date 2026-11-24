@@ -2,6 +2,8 @@
 
 We welcome everyone to give building/breaking/fixing/shooting Asuro a go, feel free to follow the steps below and mess with Asuro for fun or profit.
 
+See the [x86-64 port guide](doc/planning/x86_64.md) for native target status.
+
 ## Getting Started
 
 Install Docker with Compose and Git, then clone this repository. From the repository root, build the image and the bootable ISO.
