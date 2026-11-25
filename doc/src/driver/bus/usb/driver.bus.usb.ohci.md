@@ -45,4 +45,4 @@ Verifies register offset values and control bit constants.
 
 ## Long-mode guests
 
-OHCI descriptors still require 32-bit physical addresses when the kernel uses 64-bit virtual addresses. The driver checks DMA reachability and rejects buffers outside that range. There is no OHCI bounce-buffer fallback.
+OHCI descriptors still require 32-bit physical addresses when the kernel uses 64-bit virtual addresses. Schedule structures and descriptors use addressable allocations. A transfer backed by high RAM owns a low staging buffer until its ED retires. OUT data is copied before submission, and IN completion copies only the transferred prefix.

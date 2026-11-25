@@ -42,12 +42,15 @@ uses
     core.strings;
 
 function load : boolean;
+{$ifdef UNIT_TESTS}
+function testDMA32(buffer: puint8): boolean;
+{$endif}
 procedure UnitTest;
 
 implementation
 
 uses
-    test.harness;
+    test.harness, driver.dma;
 
 { ========================= driver.bus.usb.ohci Register Offsets (from MMIO Base) ========================= }
 
@@ -226,7 +229,7 @@ type
         SWNext   : POHCI_ED;  { Software linked list for traversal }
         SWTransfer : Pointer; { Back-pointer to owning TUSBTransfer }
         SWPad1   : PtrUInt;
-        SWPad2   : PtrUInt;
+        Bounce   : pointer;
     end;
 
     { General Transfer Descriptor (TD) - 16 bytes, 16-byte aligned }
@@ -241,6 +244,7 @@ type
         SWTransfer : Pointer; { Back-pointer to owning TUSBTransfer }
         SWED     : POHCI_ED;  { Owning ED }
         SWPad    : uint32;
+        Setup    : TUSBSetupPacket;
     end;
 
     { Private data for an driver.bus.usb.ohci host controller instance }
@@ -273,62 +277,24 @@ end;
 { OHCI exposes only 32-bit DMA addresses. Validate every backing page before
   publishing descriptors; a high virtual address is valid when its backing RAM
   is below 4 GiB. Zero-length transfers do not need a buffer. }
-function ohci_dma_addressable(address: PtrUInt; bytes: uint32): boolean;
-var
-    physical: uint64;
-    chunk: uint32;
-begin
-    ohci_dma_addressable := false;
-    if bytes > High(PtrUInt) - address then exit;
-    while bytes > 0 do begin
-        physical := arch.platform.memory.physicalAddress(address);
-        if (physical = 0) or (physical > $FFFFFFFF) then exit;
-        chunk := 4096 - (address and 4095);
-        if chunk > bytes then chunk := bytes;
-        inc(address, chunk);
-        dec(bytes, chunk);
-    end;
-    ohci_dma_addressable := true;
-end;
-
-{ ========================= ED/TD Construction Helpers ========================= }
-
-{ Allocate an ED (16-byte aligned) }
 function ohci_alloc_ed : POHCI_ED;
 begin
-    ohci_alloc_ed := POHCI_ED(kalloc_aligned(sizeof(TOHCI_ED), OHCI_ED_ALIGN));
-    if ohci_alloc_ed <> nil then begin
-        if not ohci_dma_addressable(PtrUInt(ohci_alloc_ed), 16) then begin
-            kfree_aligned(ohci_alloc_ed);
-            ohci_alloc_ed := nil;
-        end;
-    end;
+    ohci_alloc_ed := driver.dma.allocate(sizeof(TOHCI_ED), OHCI_ED_ALIGN, true);
 end;
 
-{ Free an ED }
-procedure ohci_free_ed(ed : POHCI_ED);
+procedure ohci_free_ed(ed: POHCI_ED);
 begin
-    if ed <> nil then
-        kfree_aligned(ed);
+    driver.dma.release(ed);
 end;
 
-{ Allocate a TD (16-byte aligned) }
 function ohci_alloc_td : POHCI_TD;
 begin
-    ohci_alloc_td := POHCI_TD(kalloc_aligned(sizeof(TOHCI_TD), OHCI_TD_ALIGN));
-    if ohci_alloc_td <> nil then begin
-        if not ohci_dma_addressable(PtrUInt(ohci_alloc_td), 16) then begin
-            kfree_aligned(ohci_alloc_td);
-            ohci_alloc_td := nil;
-        end;
-    end;
+    ohci_alloc_td := driver.dma.allocate(sizeof(TOHCI_TD), OHCI_TD_ALIGN, true);
 end;
 
-{ Free a TD }
-procedure ohci_free_td(td : POHCI_TD);
+procedure ohci_free_td(td: POHCI_TD);
 begin
-    if td <> nil then
-        kfree_aligned(td);
+    driver.dma.release(td);
 end;
 
 { Build an ED control dword.
@@ -483,14 +449,9 @@ begin
     priv := POHCI_PrivData(hc^.PrivData);
 
     { Allocate HCCA (256-byte aligned) }
-    hcca := POHCI_HCCA(kalloc_aligned(OHCI_HCCA_SIZE, OHCI_HCCA_ALIGN));
+    hcca := POHCI_HCCA(driver.dma.allocate(OHCI_HCCA_SIZE, OHCI_HCCA_ALIGN, true));
     if hcca = nil then begin
         io.syslog.logln('driver.bus.usb.ohci', 'Failed to allocate HCCA!');
-        pop_trace;
-        exit;
-    end;
-    if not ohci_dma_addressable(PtrUInt(hcca), OHCI_HCCA_SIZE) then begin
-        kfree_aligned(hcca);
         pop_trace;
         exit;
     end;
@@ -744,7 +705,7 @@ end;
 { Build a control transfer: SETUP TD, optional DATA TDs, STATUS TD, all on a new ED }
 procedure ohci_free_td_chain(firstTD : POHCI_TD); forward;
 
-function ohci_submit_control(hc : PUSBHCDriver; transfer : PUSBTransfer) : boolean;
+function ohci_submit_control(hc : PUSBHCDriver; transfer : PUSBTransfer; payload, bounce: pointer) : boolean;
 var
     priv     : POHCI_PrivData;
     dev      : PUSBDevice;
@@ -784,8 +745,9 @@ begin
 
     td^.Control := ohci_make_td_control(OHCI_TD_DP_SETUP, OHCI_TD_DT_DATA0,
                                          OHCI_TD_DI_NONE, false);
-    td^.CBP     := arch.platform.memory.physicalAddress(PtrUInt(@transfer^.Setup));
-    td^.BE      := arch.platform.memory.physicalAddress(PtrUInt(@transfer^.Setup) + 7);
+    td^.Setup := transfer^.Setup;
+    td^.CBP     := arch.platform.memory.physicalAddress(PtrUInt(@td^.Setup));
+    td^.BE      := arch.platform.memory.physicalAddress(PtrUInt(@td^.Setup) + 7);
     td^.NextTD  := 0;
     td^.SWTransfer := Pointer(transfer);
     td^.SWNext  := nil;
@@ -813,9 +775,9 @@ begin
 
         td^.Control := ohci_make_td_control(dirPID, toggle,
                                              OHCI_TD_DI_NONE, true);
-        td^.CBP     := arch.platform.memory.physicalAddress(PtrUInt(transfer^.Buffer) + offset);
+        td^.CBP     := arch.platform.memory.physicalAddress(PtrUInt(payload) + offset);
         if pktLen > 0 then
-            td^.BE := arch.platform.memory.physicalAddress(PtrUInt(transfer^.Buffer) + offset + uint32(pktLen) - 1)
+            td^.BE := arch.platform.memory.physicalAddress(PtrUInt(payload) + offset + uint32(pktLen) - 1)
         else
             td^.BE := 0;
         td^.SWPad := pktLen; { Original data length, excluding SETUP/status }
@@ -876,7 +838,7 @@ begin
     ed^.NextED   := 0;
     ed^.SWTransfer := Pointer(transfer);
     ed^.SWPad1  := PtrUInt(firstTD);  { Virtual firstTD for cleanup }
-    ed^.SWPad2  := PtrUInt(tailTD);   { Virtual tailTD for cleanup }
+    ed^.Bounce := bounce;
 
     { Store ED in transfer for cleanup and poll }
     transfer^.HCPriv := Pointer(ed);
@@ -905,7 +867,7 @@ begin
 end;
 
 { Build TDs for an interrupt or bulk transfer on a new ED }
-function ohci_submit_async(hc : PUSBHCDriver; transfer : PUSBTransfer) : boolean;
+function ohci_submit_async(hc : PUSBHCDriver; transfer : PUSBTransfer; payload, bounce: pointer) : boolean;
 var
     priv     : POHCI_PrivData;
     dev      : PUSBDevice;
@@ -973,8 +935,8 @@ begin
         td^.Control := ohci_make_td_control(dirPID, toggle,
                                              OHCI_TD_DI_NONE, transfer^.PipeType <> ptBulk);
         if pktLen > 0 then begin
-            td^.CBP := arch.platform.memory.physicalAddress(PtrUInt(transfer^.Buffer) + offset);
-            td^.BE := arch.platform.memory.physicalAddress(PtrUInt(transfer^.Buffer) + offset + uint32(pktLen) - 1)
+            td^.CBP := arch.platform.memory.physicalAddress(PtrUInt(payload) + offset);
+            td^.BE := arch.platform.memory.physicalAddress(PtrUInt(payload) + offset + uint32(pktLen) - 1)
         end else begin
             td^.CBP := 0;
             td^.BE := 0;
@@ -1031,7 +993,7 @@ begin
     ed^.NextED   := 0;
     ed^.SWTransfer := Pointer(transfer);
     ed^.SWPad1  := PtrUInt(firstTD);  { Virtual firstTD for cleanup }
-    ed^.SWPad2  := PtrUInt(tailTD);   { Virtual tailTD for cleanup }
+    ed^.Bounce := bounce;
 
     transfer^.HCPriv := Pointer(ed);
     transfer^.Status := tsInProgress;
@@ -1058,30 +1020,35 @@ begin
     ohci_bulk_limit := limit;
 end;
 
-function ohci_submit(hc : PUSBHCDriver; transfer : PUSBTransfer) : boolean;
+function inbound(transfer: PUSBTransfer): boolean;
 begin
-    push_trace('driver.bus.usb.ohci.ohci_submit');
+    if transfer^.PipeType = ptControl then inbound := (transfer^.Setup.bmRequestType and $80) <> 0
+    else inbound := transfer^.Direction = dirIn;
+end;
+
+function ohci_submit(hc : PUSBHCDriver; transfer : PUSBTransfer) : boolean;
+var payload, bounce: pointer;
+begin
     ohci_submit := false;
-    if (hc = nil) or (transfer = nil) or (transfer^.Device = nil) then begin
-        pop_trace;
-        exit;
+    if (hc = nil) or (transfer = nil) or (transfer^.Device = nil) then exit;
+    if not (transfer^.PipeType in [ptControl, ptBulk, ptInterrupt]) then exit;
+    if (transfer^.PipeType <> ptControl) and (transfer^.Endpoint = nil) then exit;
+    payload := transfer^.Buffer;
+    bounce := nil;
+    case driver.dma.reach32(PtrUInt(payload), transfer^.BufferLen) of
+        dmaInvalid: exit;
+        dmaHigh: begin
+            bounce := driver.dma.allocateBounce(transfer^.BufferLen);
+            if bounce = nil then exit;
+            payload := bounce;
+            if not inbound(transfer) then memcpy(PtrUInt(transfer^.Buffer), PtrUInt(payload), transfer^.BufferLen);
+        end;
     end;
-
-    if not ohci_dma_addressable(PtrUInt(transfer^.Buffer), transfer^.BufferLen) or
-       not ohci_dma_addressable(PtrUInt(@transfer^.Setup), sizeof(TUSBSetupPacket)) then begin
-        pop_trace;
-        exit;
-    end;
-
     case transfer^.PipeType of
-        ptControl:
-            ohci_submit := ohci_submit_control(hc, transfer);
-        ptInterrupt, ptBulk:
-            ohci_submit := ohci_submit_async(hc, transfer);
-    else
-        io.syslog.logln('driver.bus.usb.ohci', 'Unsupported pipe type for submit.');
+        ptControl: ohci_submit := ohci_submit_control(hc, transfer, payload, bounce);
+        ptInterrupt, ptBulk: ohci_submit := ohci_submit_async(hc, transfer, payload, bounce);
     end;
-    pop_trace;
+    if not ohci_submit then driver.dma.release(bounce);
 end;
 
 { ========================= Poll / Completion ========================= }
@@ -1201,7 +1168,7 @@ var
     transfer : PUSBTransfer;
     cc       : uint8;
     listIdx  : uint32;
-    firstTD  : POHCI_TD;
+    status   : TUSBTransferStatus;
 begin
     if (hc = nil) or (hc^.PrivData = nil) then exit;
     priv := POHCI_PrivData(hc^.PrivData);
@@ -1241,46 +1208,33 @@ begin
                 if transfer^.Status = tsInProgress then begin
                     { HeadP and TailP are physical addresses (set via vtop).
                       When HeadP equals TailP (ignoring low bits), the ED is done. }
-                    if (ed^.HeadP AND $FFFFFFF0) = (ed^.TailP AND $FFFFFFF0) then begin
-                        { All TDs consumed — walk chain via virtual SWNext to check CCs }
-                        transfer^.Status := tsSuccess;
+                    if ((ed^.HeadP and 1) <> 0) or
+                       ((ed^.HeadP and $FFFFFFF0) = (ed^.TailP and $FFFFFFF0)) then begin
+                        if (ed^.HeadP and 1) <> 0 then status := tsStall
+                        else status := tsSuccess;
                         transfer^.ActualLen := 0;
                         td := POHCI_TD(ed^.SWPad1); { Virtual firstTD }
                         while td <> nil do begin
                             cc := ohci_td_cc(td);
                             inc(transfer^.ActualLen, ohci_td_data_length(td));
                             if (cc <> OHCI_CC_NO_ERROR) and (cc <> OHCI_CC_NOT_ACCESSED) then begin
-                                transfer^.Status := ohci_cc_to_status(cc);
+                                status := ohci_cc_to_status(cc);
                                 break;
                             end;
                             td := td^.SWNext;
                         end;
                         if transfer^.PipeType = ptBulk then
                             transfer^.Endpoint^.Toggle := (ed^.HeadP shr 1) and 1;
-                        transfer^.HCPriv := nil;
-                        ohci_remove_ed(sentinel, ed);
-                        ohci_free_td_chain(POHCI_TD(ed^.SWPad1));
-                        ohci_free_ed(ed);
-                    end else if (ed^.HeadP AND $01) <> 0 then begin
-                        { ED is halted — walk virtual chain to find the error CC }
-                        transfer^.Status := tsStall;
-                        transfer^.ActualLen := 0;
-                        td := POHCI_TD(ed^.SWPad1); { Virtual firstTD }
-                        while td <> nil do begin
-                            cc := ohci_td_cc(td);
-                            inc(transfer^.ActualLen, ohci_td_data_length(td));
-                            if (cc <> OHCI_CC_NO_ERROR) and (cc <> OHCI_CC_NOT_ACCESSED) then begin
-                                transfer^.Status := ohci_cc_to_status(cc);
-                                break;
-                            end;
-                            td := td^.SWNext;
+                        if ed^.Bounce <> nil then begin
+                            if inbound(transfer) and (transfer^.ActualLen <= transfer^.BufferLen) then
+                                memcpy(PtrUInt(ed^.Bounce), PtrUInt(transfer^.Buffer), transfer^.ActualLen);
+                            driver.dma.release(ed^.Bounce);
                         end;
-                        if transfer^.PipeType = ptBulk then
-                            transfer^.Endpoint^.Toggle := (ed^.HeadP shr 1) and 1;
                         transfer^.HCPriv := nil;
                         ohci_remove_ed(sentinel, ed);
                         ohci_free_td_chain(POHCI_TD(ed^.SWPad1));
                         ohci_free_ed(ed);
+                        transfer^.Status := status;
                     end;
                     { else: still in progress, leave it }
                 end;
@@ -1391,7 +1345,7 @@ begin
         { Start the controller }
         if not ohci_start(@hc) then begin
             io.syslog.logln('driver.bus.usb.ohci', 'Start failed, skipping controller.');
-            if priv^.HCCA <> nil then kfree_aligned(priv^.HCCA);
+            if priv^.HCCA <> nil then driver.dma.release(priv^.HCCA);
             if priv^.EDControl <> nil then ohci_free_ed(priv^.EDControl);
             if priv^.EDBulk <> nil then ohci_free_ed(priv^.EDBulk);
             if priv^.EDInterrupt <> nil then ohci_free_ed(priv^.EDInterrupt);
@@ -1433,6 +1387,69 @@ end;
 
 { ========================= Unit Tests ========================= }
 
+{$ifdef UNIT_TESTS}
+function testDMA32(buffer: puint8): boolean;
+type
+    PFixture = ^TFixture;
+    TFixture = record
+        priv: TOHCI_PrivData;
+        hc: TUSBHCDriver;
+        dev: TUSBDevice;
+        ep: TUSBEndpoint;
+        xfer: TUSBTransfer;
+        regs: array[0..15] of uint32;
+    end;
+var f: PFixture;
+    ed: POHCI_ED;
+    td: POHCI_TD;
+    ok: boolean;
+begin
+    testDMA32 := false;
+    f := PFixture(tryAlloc(sizeof(TFixture)));
+    if f = nil then exit;
+    f^.hc.PrivData := @f^.priv;
+    f^.priv.MMIOBase := PtrUInt(@f^.regs);
+    f^.priv.EDBulk := ohci_alloc_ed;
+    f^.xfer.Device := @f^.dev;
+    f^.xfer.Endpoint := @f^.ep;
+    f^.ep.MaxPacket := 64;
+    f^.xfer.Buffer := buffer;
+    f^.xfer.BufferLen := 64;
+    f^.xfer.PipeType := ptBulk;
+    f^.xfer.Direction := dirOut;
+    buffer[0] := $76;
+    ok := (f^.priv.EDBulk <> nil) and ohci_submit(@f^.hc, @f^.xfer);
+    if ok then begin
+        ed := f^.priv.EDBulk^.SWNext;
+        td := POHCI_TD(ed^.SWPad1);
+        ok := (ed^.Bounce <> nil) and (puint8(ed^.Bounce)[0] = $76) and
+              (td^.CBP = physicalAddress(PtrUInt(ed^.Bounce)));
+        td^.Control := td^.Control and $0FFFFFFF;
+        td^.CBP := 0;
+        ed^.HeadP := ed^.TailP;
+        ohci_poll(@f^.hc);
+        ok := ok and (f^.xfer.Status = tsSuccess) and (f^.xfer.ActualLen = 64);
+    end;
+    f^.xfer.Direction := dirIn;
+    buffer[8] := $78;
+    if ok then ok := ohci_submit(@f^.hc, @f^.xfer);
+    if ok then begin
+        ed := f^.priv.EDBulk^.SWNext;
+        td := POHCI_TD(ed^.SWPad1);
+        memset(PtrUInt(ed^.Bounce), $91, 64);
+        inc(td^.CBP, 8);
+        td^.Control := (td^.Control and $0FFFFFFF) or (uint32(OHCI_CC_DATA_UNDERRUN) shl 28);
+        ed^.HeadP := ed^.HeadP or 1;
+        ohci_poll(@f^.hc);
+        ok := (f^.xfer.Status = tsSuccess) and (f^.xfer.ActualLen = 8) and
+              (buffer[7] = $91) and (buffer[8] = $78) and (f^.xfer.HCPriv = nil);
+    end;
+    ohci_free_ed(f^.priv.EDBulk);
+    kfree(void(f));
+    testDMA32 := ok;
+end;
+{$endif}
+
 procedure UnitTest;
 var
     context : TTestContext;
@@ -1446,9 +1463,9 @@ begin
     test.harness.Start(@context, 'driver.bus.usb.ohci');
 
     { === Structure Sizes === }
-    test.harness.Assert(@context, ohci_dma_addressable(0, 0), 'empty transfer requires no DMA buffer');
-    test.harness.Assert(@context, not ohci_dma_addressable(0, 16), 'unmapped DMA buffer rejected');
-    test.harness.Assert(@context, not ohci_dma_addressable(High(PtrUInt) - 7, 16), 'DMA address wrap rejected');
+    test.harness.Assert(@context, (driver.dma.reach32(0, 0) = dmaDirect), 'empty transfer requires no DMA buffer');
+    test.harness.Assert(@context, (driver.dma.reach32(0, 16) = dmaInvalid), 'unmapped DMA buffer rejected');
+    test.harness.Assert(@context, (driver.dma.reach32(High(PtrUInt) - 7, 16) = dmaInvalid), 'DMA address wrap rejected');
     test.harness.Assert(@context, sizeof(TOHCI_HCCA) = 256, 'sizeof HCCA=256');
     test.harness.Assert(@context, PtrUInt(@POHCI_ED(nil)^.SWNext) = 16, 'ED hardware prefix remains 16 bytes');
     test.harness.Assert(@context, PtrUInt(@POHCI_TD(nil)^.SWNext) = 16, 'TD hardware prefix remains 16 bytes');
@@ -1556,10 +1573,10 @@ begin
     { === HCCA Size / Alignment === }
     test.harness.Assert(@context, OHCI_HCCA_SIZE = 256, 'HCCA_SIZE=256');
     test.harness.Assert(@context, OHCI_HCCA_ALIGN = 256, 'HCCA_ALIGN=256');
-    hcca := POHCI_HCCA(kalloc_aligned(OHCI_HCCA_SIZE, OHCI_HCCA_ALIGN));
+    hcca := POHCI_HCCA(driver.dma.allocate(OHCI_HCCA_SIZE, OHCI_HCCA_ALIGN, true));
     test.harness.Assert(@context, hcca <> nil, 'hcca alloc not nil');
     test.harness.Assert(@context, (PtrUInt(hcca) AND $FF) = 0, 'hcca 256-byte aligned');
-    kfree_aligned(hcca);
+    driver.dma.release(hcca);
 
     { === Register offset constants === }
     test.harness.Assert(@context, OHCI_REG_REVISION = $00, 'REG_REVISION=$00');
