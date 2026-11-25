@@ -10,7 +10,7 @@ Central initialization manager for all baked-in terminal programs and kernel-lev
 
 - `debug.tracer`, `io.stdio`, `proc.mgr`
 - `app.base64`, `app.md5sum`, `app.dhclient`, `app.vbeinfo`, `app.testcmd`, `app.ping`, `app.meminfo`, `app.setres`
-- `driver.storage.ctl.ram`, `driver.mgr`
+- `driver.mgr`
 - `driver.net.proto.ipv4`, `driver.net.proto.arp`, `driver.net.proto.tcp`
 - `driver.storage.filedispatch`
 - `app.wasm.runner`
@@ -47,8 +47,8 @@ Registers all kernel-level terminal commands and calls `init()` on every bundled
 
 Application modules initialized (each registers its own command internally): `app.diskcmd`, `app.partcmd`, `app.volcmd`, `app.diskutil`, `app.notepad`, `app.md5sum`, `app.base64`, `app.dhclient`, `app.vbeinfo`, `app.testcmd`, `app.ping`, `app.meminfo`.
 
-Finally initializes the RAM storage controller, file dispatch subsystem, WASM runner, and display resolution command.
+Finally initializes the file dispatch subsystem, WASM runner, and display resolution command.
 
 ## Notes
 
-Initialization order is significant: `driver.storage.ctl.ram.init()` and `driver.storage.filedispatch.init()` must precede `app.wasm.runner.init()` because the WASM runner registers a file-type handler with the dispatch subsystem.
+Initialization order is significant: `driver.storage.filedispatch.init()` must precede `app.wasm.runner.init()` because the WASM runner registers a file-type handler with the dispatch subsystem.

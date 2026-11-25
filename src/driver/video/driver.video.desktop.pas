@@ -24,14 +24,24 @@ type
 { Register a program so it appears in the search results. }
 procedure registerProgram(name: pchar; launcher: TProgLaunchProc);
 
-procedure init;
+procedure PrepareBackground;
+procedure init(scr : Plv_obj);
 procedure update;
 procedure relayout;
 
 implementation
 
 uses
-    io.syslog, core.ds.lists, memory.heap, driver.hid.keyboard, app.tasks;
+    io.syslog,
+    core.ds.lists,
+    memory.heap,
+    driver.hid.keyboard,
+    app.tasks,
+    app.settings,
+    driver.storage.vfs,
+    driver.storage.types,
+    core.fmt.targa,
+    core.gfx.texture;
 
 const
     DOCK_HEIGHT   = 48;
@@ -654,9 +664,158 @@ end;
 { ============================================================
   Init — create the driver.video.desktop UI
   ============================================================ }
-procedure init;
+{$PUSH}
+{$POINTERMATH ON}
+const
+    IMAGE_MAGIC_XRGB8888 = $1119;
+    BACKGROUND_WIDTH = 1920;
+    BACKGROUND_HEIGHT = 1080;
+
+type
+    TBackgroundImageDescriptor = packed record
+        MagicFormat, Dimensions, Stride, Size : uint32;
+        Data, Reserved : Pointer;
+    end;
+
 var
-    scr       : Plv_obj;
+    backgroundImage : TBackgroundImageDescriptor;
+    backgroundObject : Plv_obj;
+
+procedure LayoutBackground(width, height : uint32);
+const
+    LVGL_IMAGE_SCALE_ONE = 256;
+var
+    imageWidth, imageHeight, zoom, axisZoom : uint32;
+begin
+    if backgroundObject = nil then Exit;
+    imageWidth := backgroundImage.Dimensions and $FFFF;
+    imageHeight := backgroundImage.Dimensions shr 16;
+    zoom := (width * LVGL_IMAGE_SCALE_ONE + imageWidth - 1) div imageWidth;
+    axisZoom := (height * LVGL_IMAGE_SCALE_ONE + imageHeight - 1) div imageHeight;
+    if axisZoom > zoom then zoom := axisZoom;
+    if zoom < LVGL_IMAGE_SCALE_ONE then zoom := LVGL_IMAGE_SCALE_ONE;
+    lv_obj_align(backgroundObject, LV_ALIGN_CENTER, 0, 0);
+    lv_image_set_scale(backgroundObject, zoom);
+end;
+
+function ReadConfiguredPath(path : PChar; capacity : uint32) : Boolean;
+var
+    handle : TFileHandle;
+    error : TError;
+    length, i : uint32;
+begin
+    ReadConfiguredPath := False;
+    handle := OpenFile('/cfg/asuro/driver/video/desktop/background.txt', omRead, @error);
+    if handle = 0 then
+        handle := OpenFile('/cfg/asuro/driver/video/desktop/background', omRead, @error);
+    if handle = 0 then Exit;
+    length := FileSizeFromHandle(handle);
+    if (length <> 0) and (length < capacity) then
+        if ReadFile(handle, 0, PUInt8(path), length) = length then begin
+            path[length] := #0;
+            ReadConfiguredPath := path[0] = '/';
+            for i := 0 to length - 1 do
+                if path[i] = #0 then ReadConfiguredPath := False;
+        end;
+    CloseFile(handle);
+end;
+
+function ReadBackground(context : Pointer; offset : uint32; buffer : PUInt8;
+                        length : uint32) : uint32;
+begin
+    ReadBackground := ReadFile(TFileHandle(PtrUInt(context)), offset, buffer, length);
+end;
+
+procedure PrepareBackground;
+var
+    path : array[0..255] of Char;
+    handle : TFileHandle;
+    error : TError;
+    texture : PTexture;
+    size : uint32;
+    buffer : PUInt8;
+    header : PTARGAHeader;
+begin
+    if not ReadConfiguredPath(@path[0], SizeOf(path)) then Exit;
+    handle := OpenFile(@path[0], omRead, @error);
+    if handle = 0 then begin
+        io.syslog.logln('wallpaper', 'Configured background file could not be opened.');
+        Exit;
+    end;
+    size := FileSizeFromHandle(handle);
+    texture := nil;
+    if (size >= SizeOf(TTARGAHeader)) and
+       (size <= BACKGROUND_WIDTH * BACKGROUND_HEIGHT * 4 + 4096) then begin
+        buffer := PUInt8(kalloc(size));
+        if ReadFile(handle, 0, buffer, size) = size then begin
+            header := PTARGAHeader(buffer);
+            if (header^.Width = BACKGROUND_WIDTH) and (header^.Height = BACKGROUND_HEIGHT) then
+                texture := core.fmt.targa.Parse(buffer, size)
+            else
+                texture := core.fmt.targa.ParseScaled(@ReadBackground, Pointer(PtrUInt(handle)),
+                                size, BACKGROUND_WIDTH, BACKGROUND_HEIGHT);
+        end;
+        kfree(void(buffer));
+    end else
+        texture := core.fmt.targa.ParseScaled(@ReadBackground, Pointer(PtrUInt(handle)),
+                        size, BACKGROUND_WIDTH, BACKGROUND_HEIGHT);
+    CloseFile(handle);
+    if texture = nil then begin
+        io.syslog.logln('wallpaper', 'Could not load desktop background.');
+        Exit;
+    end;
+
+    backgroundImage.MagicFormat := IMAGE_MAGIC_XRGB8888;
+    backgroundImage.Dimensions := texture^.Width or (texture^.Height shl 16);
+    backgroundImage.Stride := texture^.Width * 4;
+    backgroundImage.Size := backgroundImage.Stride * texture^.Height;
+    backgroundImage.Data := texture^.Pixels;
+    backgroundImage.Reserved := nil;
+    kfree(void(texture));
+end;
+
+type
+    TBackgroundImageHeader = packed record
+        Magic, ColourFormat : uint8;
+        Flags, Width, Height, Stride, Reserved : uint16;
+    end;
+    PBackgroundImageHeader = ^TBackgroundImageHeader;
+
+function lv_image_decoder_get_info(source : Pointer;
+    header : PBackgroundImageHeader) : sint32; cdecl; external;
+
+procedure AttachBackground(screen : Plv_obj);
+var
+    header : TBackgroundImageHeader;
+    pixels : PUInt32;
+begin
+    if backgroundImage.Data = nil then Exit;
+    if lv_image_decoder_get_info(@backgroundImage, @header) <> LV_RESULT_OK then begin
+        io.syslog.logln('wallpaper', 'LVGL rejected the background descriptor.');
+        Exit;
+    end;
+    pixels := PUInt32(backgroundImage.Data);
+    io.syslog.log('wallpaper', 'LVGL background width=');
+    io.syslog.writeint(header.Width);
+    io.syslog.writestring(' height=');
+    io.syslog.writeint(header.Height);
+    io.syslog.writestring(' stride=');
+    io.syslog.writeint(header.Stride);
+    io.syslog.writestring(' center pixel=');
+    io.syslog.writehexln(pixels[(BACKGROUND_HEIGHT div 2) * BACKGROUND_WIDTH + BACKGROUND_WIDTH div 2]);
+    backgroundObject := lv_image_create(screen);
+    lv_image_set_src(backgroundObject, @backgroundImage);
+    lv_obj_set_size(backgroundObject, header.Width, header.Height);
+    lv_image_set_pivot(backgroundObject, header.Width div 2, header.Height div 2);
+    lv_obj_remove_flag(backgroundObject, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(backgroundObject, LV_OBJ_FLAG_SCROLLABLE);
+    LayoutBackground(driver.video.frontBufferWidth, driver.video.frontBufferHeight);
+end;
+
+{$POP}
+
+procedure init(scr : Plv_obj);
+var
     scr_w     : sint32;
     scr_h     : sint32;
     dock_w    : sint32;
@@ -669,7 +828,6 @@ begin
     results_panel  := nil;
     search_active  := false;
 
-    scr := lv_screen_active;
     scr_w := sint32(driver.video.frontBufferWidth);
     scr_h := sint32(driver.video.frontBufferHeight);
 
@@ -681,6 +839,7 @@ begin
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
     lv_obj_remove_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_scrollbar_mode(scr, LV_SCROLLBAR_MODE_OFF);
+    AttachBackground(scr);
     { Click on background to dismiss search }
     lv_obj_add_flag(scr, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(scr, @screen_click_cb, LV_EVENT_CLICKED, nil);
@@ -790,6 +949,7 @@ begin
     { ---- Register built-in programs ---- }
     registerProgram('System Information', @openSysInfo);
     registerProgram('Tasks', @openTasks);
+    registerProgram('Settings', @app.settings.Launch);
 
     { Register for resolution-change notifications from GPU framework }
     driver.video.gpu.registerModeChangeCallback(@desktopModeChanged);
@@ -814,6 +974,7 @@ begin
 
     { Close any open search/results first }
     clearAndClose;
+    LayoutBackground(uint32(scr_w), uint32(scr_h));
 
     { Reposition dock }
     dock_w := scr_w - (DOCK_HPAD * 2);
@@ -844,8 +1005,5 @@ begin
     end;
     updateClockText;
 end;
-
-Initialization
-    boot.mgr.registerBoot('proc.desktop', @init, 'Initialize Desktop', 'boot.splash.teardown');
 
 end.

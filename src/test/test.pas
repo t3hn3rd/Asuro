@@ -70,7 +70,8 @@ uses
     core.ds.bloom,
     core.fmt.png,
     core.fmt.json,
-    core.fmt.cbor.tests;
+    core.fmt.cbor.tests,
+    svc.registry;
 
 procedure init();
 begin
@@ -124,6 +125,7 @@ begin
     { Run complex unit tests }
     core.fmt.json.UnitTest;
     core.fmt.cbor.tests.UnitTest;
+    svc.registry.UnitTest;
     driver.storage.bench.clock.UnitTest;
     driver.storage.bench.UnitTest;
     driver.storage.metatest.UnitTest;

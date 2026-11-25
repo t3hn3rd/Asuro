@@ -4,7 +4,7 @@ TGA (Truevision TARGA) image file parser.
 
 ## Overview
 
-`core.fmt.targa` parses a 32-bit uncompressed TGA image from a raw byte buffer and produces a `TTexture` pixel array in BGRA order. Only type-2 (uncompressed true-colour) images with a 32-bit pixel depth are supported. The parser handles both top-to-bottom and bottom-to-top vertical orientation, determined by bit 5 of the TGA image descriptor byte.
+`core.fmt.targa` decodes uncompressed type-2 true-colour images with 24-bit or 32-bit pixels into BGRA textures. It handles both row and column origins and rejects truncated pixel data.
 
 The primary consumer of this unit is `core.panic`, which uses it to decode the embedded teapot image displayed on the kernel panic screen.
 
@@ -40,9 +40,13 @@ TTARGAHeader = packed record
     ImageDescriptor : uint8;
 end;
 ```
-The 18-byte TGA file header. `ImageType` must be `2` (uncompressed true-colour). `PixelDepth` must be `32`. Pixel data begins immediately after the header plus any optional ID field (`IDLength` bytes).
+The 18-byte TGA file header. `ImageType` must be `2` (uncompressed true-colour). `PixelDepth` must be `24` or `32`. Pixel data begins immediately after the header plus any optional ID field (`IDLength` bytes).
 
 ## Functions and Procedures
+
+`ParseScaled` takes an offset reader, a source length, and target dimensions.
+It crops to the target aspect ratio and decodes using one source row at a
+time. The desktop uses it to load wallpapers through the VFS.
 
 ### Parse
 ```pascal

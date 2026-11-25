@@ -493,7 +493,12 @@ function New-X86GrubIso {
     try {
         Invoke-Tool rsync @('-a', "$($target.ImageSource)/", "$($stage.FullName)/")
         Copy-Item -LiteralPath "$buildPath/kernel.bin" -Destination "$($stage.FullName)/boot/asuro.bin"
-        Invoke-Tool grub-mkrescue @('-o', "$buildPath/Asuro.iso", $stage.FullName)
+        $registrySeed = Join-Path $stage.FullName 'sys/asuro.db.cbor'
+        if (Test-Path -LiteralPath $registrySeed -PathType Leaf) {
+            Rename-Item -LiteralPath $registrySeed -NewName 'asuro.db'
+        }
+        # Keep long filenames in the primary ISO9660 directory read by Asuro.
+        Invoke-Tool grub-mkrescue @('-o', "$buildPath/Asuro.iso", $stage.FullName, '-iso-level', '3')
     } finally {
         Remove-Item -LiteralPath $stage.FullName -Recurse -Force
     }

@@ -18,8 +18,17 @@ interface
 
 uses
     boot.mgr,
-    core.util, arch.x86.util, io.syslog, debug.tracer, driver.video.gpu, driver.bus.pci, driver.types, driver.mgr,
-    arch.x86.memory.virtual, memory.heap;
+    core.util,
+    arch.x86.util,
+    io.syslog,
+    debug.tracer,
+    driver.video.gpu,
+    driver.bus.pci,
+    driver.types,
+    driver.mgr,
+    arch.x86.memory.virtual,
+    memory.heap,
+    arch.x86.multiboot;
 
 procedure init;
 
@@ -42,9 +51,12 @@ const
     BGA_REG_X_OFFSET    = $08;
     BGA_REG_Y_OFFSET    = $09;
 
+    BGA_REG_MEMORY_64K  = $0A;
+
     { BGA enable flags }
     BGA_DISABLED    = $00;
     BGA_ENABLED     = $01;
+    BGA_GET_CAPS    = $02;
     BGA_LFB_ENABLED = $40;
 
     { Expected BGA ID range (BGA versions 0-5) }
@@ -58,6 +70,7 @@ const
 var
     BGAPresent    : boolean = false;
     BGAFramebuffer: uint32 = 0;
+    BGAMaxWidth, BGAMaxHeight, BGAMaxBPP, BGAMemory : uint32;
     BGAPCIBus     : uint8 = 0;
     BGAPCISlot    : uint8 = 0;
     BGAPCIFunc    : uint8 = 0;
@@ -76,7 +89,69 @@ begin
     bgaReadReg := inw(BGA_PORT_DATA);
 end;
 
-{ Map the framebuffer physical memory pages so we can access it }
+procedure ReadCapabilities;
+var
+    enable, blocks : uint16;
+    bytes : uint32;
+begin
+    enable := bgaReadReg(BGA_REG_ENABLE);
+    bgaWriteReg(BGA_REG_ENABLE, enable or BGA_GET_CAPS);
+    BGAMaxWidth := bgaReadReg(BGA_REG_XRES);
+    BGAMaxHeight := bgaReadReg(BGA_REG_YRES);
+    BGAMaxBPP := bgaReadReg(BGA_REG_BPP);
+    bgaWriteReg(BGA_REG_ENABLE, enable);
+    blocks := bgaReadReg(BGA_REG_MEMORY_64K);
+    { VirtualBox returns the VRAM size in bytes on a 32-bit data-port read. }
+    bytes := inl(BGA_PORT_DATA);
+    if (bytes >= $10000) and ((bytes and $FFFF) = 0) then
+        BGAMemory := bytes
+    else if blocks <> $FFFF then
+        BGAMemory := uint32(blocks) shl 16;
+
+    io.syslog.log('BGA', 'Limits: ');
+    io.syslog.writeint(BGAMaxWidth);
+    io.syslog.writestring('x');
+    io.syslog.writeint(BGAMaxHeight);
+    io.syslog.writestring('x');
+    io.syslog.writeint(BGAMaxBPP);
+    io.syslog.writestring(', VRAM KiB: ');
+    io.syslog.writeintln(BGAMemory shr 10);
+end;
+
+function CanSetMode(width, height : uint32; bpp : uint8) : Boolean;
+begin
+    CanSetMode := false;
+    if not BGAPresent or (width = 0) or (height = 0)
+        or (width > BGAMaxWidth) or (height > BGAMaxHeight)
+        or ((width and 7) <> 0) or (bpp > BGAMaxBPP) then exit;
+    if (bpp <> 8) and (bpp <> 16) and (bpp <> 24) and (bpp <> 32) then exit;
+    CanSetMode := uint64(width) * height * (bpp div 8) <= BGAMemory;
+end;
+
+procedure EnumerateModes(visit : TGPUVisitMode);
+const
+    Widths : array[0..9] of uint16 =
+        (640, 800, 1024, 1280, 1280, 1360, 1600, 1920, 1920, 2560);
+    Heights : array[0..9] of uint16 =
+        (480, 600, 768, 720, 1024, 768, 1200, 1080, 1200, 1440);
+var
+    i : uint32;
+    width, height : uint32;
+    bpp : uint8;
+begin
+    for i := Low(Widths) to High(Widths) do begin
+        if CanSetMode(Widths[i], Heights[i], 16) then visit(Widths[i], Heights[i], 16);
+        if CanSetMode(Widths[i], Heights[i], 32) then visit(Widths[i], Heights[i], 32);
+    end;
+    if multibootinfo <> nil then begin
+        width := multibootinfo^.framebuffer_width;
+        height := multibootinfo^.framebuffer_height;
+        bpp := multibootinfo^.framebuffer_bpp;
+        if CanSetMode(width, height, bpp) then visit(width, height, bpp);
+    end;
+end;
+
+{ Map the framebuffer physical memory pages so we can access it. }
 procedure mapFramebuffer(address, width, height : uint32; bpp : uint8);
 var
     framebufferSize : uint32;
@@ -152,6 +227,7 @@ begin
         end;
 
         { Notify GPU framework that BGA is available }
+        ReadCapabilities;
         driver.video.gpu.markAvailable('BGA');
         load := true;
     end else begin
@@ -168,7 +244,7 @@ begin
     push_trace('driver.video.bga.bgaSetMode');
     bgaSetMode := false;
 
-    if not BGAPresent then begin
+    if not CanSetMode(width, height, bpp) then begin
         pop_trace;
         exit;
     end;
@@ -191,8 +267,10 @@ begin
     bgaWriteReg(BGA_REG_ENABLE, BGA_ENABLED or BGA_LFB_ENABLED);
 
     { Verify mode was set }
-    if bgaReadReg(BGA_REG_XRES) <> (width and $FFFF) then begin
-        io.syslog.logln('BGA', 'setMode: XRES verify failed.');
+    if (bgaReadReg(BGA_REG_XRES) <> width) or
+       (bgaReadReg(BGA_REG_YRES) <> height) or
+       (bgaReadReg(BGA_REG_BPP) <> bpp) then begin
+        io.syslog.logln('BGA', 'setMode: Mode verification failed.');
         pop_trace;
         exit;
     end;
@@ -229,7 +307,7 @@ begin
     io.syslog.logln('BGA', 'INIT BEGIN.');
 
     { Register with GPU framework for mode setting (priority 10 = preferred over VBE) }
-    driver.video.gpu.registerDriver('BGA', 10, @bgaSetMode);
+    driver.video.gpu.registerDriver('BGA', 10, @bgaSetMode, @EnumerateModes);
 
     { Register with driver.mgr for driver.bus.pci auto-detection.
       Match any VGA-compatible display controller (class=$03, subclass=$00).

@@ -247,6 +247,8 @@ nav:
       - Test Harness: src/test/test.harness.md
     - Services:
       - Graphics Daemon: src/svc/svc.gfxd.md
+      - Settings Registry: src/svc/svc.registry.md
+      - Settings Service: src/svc/svc.settings.md
       - USB Daemon: src/svc/svc.usbd.md
     - Applications:
       - Manager: src/app/app.mgr.md

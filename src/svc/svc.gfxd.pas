@@ -23,7 +23,10 @@ implementation
 
 uses
     boot.mgr,
+    boot.splash,
+    svc.registry,
     driver.video.desktop,
+    driver.video.gpu,
     app.uidebug,
     driver.video.lvgl,
     driver.video,
@@ -50,6 +53,16 @@ var
     should_update : boolean;
 
 begin
+    boot.splash.update(100, 'Loading settings');
+    svc.registry.WaitReady;
+    driver.video.gpu.ApplyRegistryMode;
+    boot.splash.update(100, 'Preparing desktop');
+    driver.video.desktop.PrepareBackground;
+    lvgl_lock;
+    driver.video.desktop.init(boot.splash.DesktopScreen);
+    boot.splash.teardown;
+    lvgl_unlock;
+
     while true do begin
         should_update := (CURRENT_TICK - LAST_UPDATE) >= TICKS_PER_FRAME;
         should_update := should_update or (CURRENT_TICK < LAST_UPDATE);  { handle tick counter wraparound }
@@ -87,6 +100,6 @@ begin
 end;
 
 Initialization
-    boot.mgr.registerBoot('svc.gfxd', @init, 'GFX Daemon', BOOT_MGR_BARRIER_LATE);
+    boot.mgr.registerBoot('svc.gfxd', @init, 'GFX Daemon', 'svc.registry');
 
 end.

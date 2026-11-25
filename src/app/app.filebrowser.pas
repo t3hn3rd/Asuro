@@ -74,6 +74,7 @@ type
     { Collect context for hashmap forEach callback }
     PFBCollectCtx = ^TFBCollectCtx;
     TFBCollectCtx = record
+        directory  : pchar;
         dir_names  : PNameBuf;
         file_names : PNameBuf;
         file_sizes : PSizeBuf;
@@ -682,6 +683,7 @@ procedure fb_collect_cb(key: pchar; data: void; ud: void);
 var
     ctx : PFBCollectCtx;
     obj : PVFSObject;
+    path : pchar;
 begin
     ctx := PFBCollectCtx(ud);
     obj := PVFSObject(data);
@@ -694,10 +696,17 @@ begin
                 ctx^.dir_names^[ctx^.dir_count] := key;
                 ctx^.dir_count := ctx^.dir_count + 1;
             end;
-        otFILE, otVFILE:
+        otFILE, otVFILE, otDEVICE:
             if ctx^.file_count < ENTRY_MAX then begin
                 ctx^.file_names^[ctx^.file_count] := key;
                 ctx^.file_sizes^[ctx^.file_count] := obj^.FileSize;
+                if obj^.ObjectType = otDEVICE then begin
+                    path := MakeAbsolutePathFrom(key, ctx^.directory);
+                    if path <> nil then begin
+                        ctx^.file_sizes^[ctx^.file_count] := FileSize(path, nil);
+                        kfree(void(path));
+                    end;
+                end;
                 ctx^.file_count := ctx^.file_count + 1;
             end;
     end;
@@ -809,6 +818,7 @@ begin
     end;
 
     { Collect entries }
+    ctx.directory  := state^.cur_path;
     ctx.dir_names  := dir_names;
     ctx.file_names := file_names;
     ctx.file_sizes := file_sizes;

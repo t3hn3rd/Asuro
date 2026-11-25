@@ -28,7 +28,7 @@ uses
     //progs
     app.base64, app.md5sum, app.dhclient, app.vbeinfo, app.testcmd, app.ping, app.meminfo, app.setres, app.iotest,
     //drivers
-    driver.storage.ctl.ram, driver.mgr,
+    driver.mgr,
     //network
     driver.net.proto.ipv4, driver.net.proto.arp, driver.net.proto.tcp,
     //dispatch
@@ -69,7 +69,6 @@ begin
     io.stdio.registerCommand('USB', @driver.bus.usb.core.terminal_command_usb, 'driver.bus.usb subsystem information.');
 
     { File dispatch — must init before apps that register handlers }
-    driver.storage.ctl.ram.init();
     driver.storage.filedispatch.init();
 
     { Initialize baked-in programs }

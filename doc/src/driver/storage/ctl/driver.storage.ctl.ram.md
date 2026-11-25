@@ -1,5 +1,8 @@
 # driver.storage.ctl.ram
 
+This legacy driver is disconnected from boot. The description below records
+its original design.
+
 In-memory RAM drive for testing and built-in file hosting.
 
 ## Overview

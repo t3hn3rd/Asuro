@@ -3,7 +3,7 @@ unit core.fmt.targa;
 interface
 
 uses
-    memory.heap, core.gfx.texture;
+    memory.heap, core.gfx.texture, core.gfx.color;
 
 type
     TTARGAColor = packed record
@@ -27,51 +27,109 @@ type
     end;
     PTARGAHeader = ^TTARGAHeader;
 
-Function Parse(buffer : puint8; len : uint32) : PTexture;
+{ The reader copies exactly length bytes and returns the number copied. }
+type
+    TTargaRead = function(context : Pointer; offset : uint32;
+                          buffer : PUInt8; length : uint32) : uint32;
+
+function Parse(buffer : PUInt8; len : uint32) : PTexture;
+{ Decode with one source row in memory and crop to the output aspect ratio. }
+function ParseScaled(reader : TTargaRead; context : Pointer; len, width, height : uint32) : PTexture;
 
 implementation
 
-Function Parse(buffer : puint8; len : uint32) : PTexture;
+{$POINTERMATH ON}
+
+function Decode(reader : TTargaRead; context : Pointer; len, destWidth, destHeight : uint32) : PTexture;
 var
-    header : PTARGAHeader;
-    src    : PTARGAColor;
-    tex    : PTexture;
-    x, y   : uint32;
-    dstRow : uint32;
-    topDown: boolean;
-
+    header : TTargaHeader;
+    width, height, pixelBytes, rowBytes, dataOffset : uint32;
+    cropWidth, cropHeight, cropLeft, cropTop : uint32;
+    x, y, sourceX, sourceY, previousY : uint32;
+    row, pixel : PUInt8;
+    texture : PTexture;
+    dest : PRGB32;
 begin
-    Parse := nil;
-    if len < sizeof(TTARGAHeader) then exit;
+    Decode := nil;
+    if (not Assigned(reader)) or (len < SizeOf(header)) then Exit;
+    if reader(context, 0, @header, SizeOf(header)) <> SizeOf(header) then Exit;
+    if (header.ImageType <> 2) or (header.ColorMapType <> 0) then Exit;
+    if (header.ImageDescriptor and $C0) <> 0 then Exit;
+    if (header.PixelDepth <> 24) and (header.PixelDepth <> 32) then Exit;
+    width := header.Width;
+    height := header.Height;
+    if (width = 0) or (height = 0) then Exit;
+    if destWidth = 0 then destWidth := width;
+    if destHeight = 0 then destHeight := height;
+    if (destWidth > $FFFF) or (destHeight > $FFFF) then Exit;
+    if destHeight > High(uint32) div SizeOf(TRGB32) div destWidth then Exit;
 
-    header := PTARGAHeader(buffer);
-    if (header^.ImageType <> 2) or (header^.PixelDepth <> 32) then exit;
+    pixelBytes := header.PixelDepth div 8;
+    rowBytes := width * pixelBytes;
+    dataOffset := SizeOf(header) + header.IDLength;
+    if dataOffset > len then Exit;
+    if height > (len - dataOffset) div rowBytes then Exit;
 
-    { Pixel data starts after the 18-byte header + any ID field. }
-    src := PTARGAColor(buffer + sizeof(TTARGAHeader) + header^.IDLength);
+    cropWidth := width;
+    cropHeight := height;
+    if width * destHeight > height * destWidth then
+        cropWidth := (height * destWidth) div destHeight
+    else cropHeight := (width * destHeight) div destWidth;
+    if cropWidth = 0 then cropWidth := 1;
+    if cropHeight = 0 then cropHeight := 1;
+    cropLeft := (width - cropWidth) div 2;
+    cropTop := (height - cropHeight) div 2;
 
-    { Bit 5 of ImageDescriptor: 1 = top-to-bottom, 0 = bottom-to-top. }
-    topDown := (header^.ImageDescriptor AND $20) <> 0;
-
-    tex := core.gfx.texture.newTexture(header^.Width, header^.Height);
-
-    for y := 0 to header^.Height - 1 do begin
-        { Flip vertically when origin is bottom-left (the TGA default). }
-        if topDown then
-            dstRow := y
-        else
-            dstRow := (header^.Height - 1) - y;
-
-        for x := 0 to header^.Width - 1 do begin
-            tex^.Pixels[dstRow * header^.Width + x].b := src^.b;
-            tex^.Pixels[dstRow * header^.Width + x].g := src^.g;
-            tex^.Pixels[dstRow * header^.Width + x].r := src^.r;
-            tex^.Pixels[dstRow * header^.Width + x].a := src^.a;
-            Inc(src);
+    row := PUInt8(kalloc(rowBytes));
+    texture := core.gfx.texture.newTexture(destWidth, destHeight);
+    dest := texture^.Pixels;
+    previousY := High(uint32);
+    for y := 0 to destHeight - 1 do begin
+        sourceY := cropTop + (y * cropHeight) div destHeight;
+        if (header.ImageDescriptor and $20) = 0 then sourceY := height - 1 - sourceY;
+        if sourceY <> previousY then begin
+            if reader(context, dataOffset + sourceY * rowBytes, row, rowBytes) <> rowBytes then begin
+                kfree(void(texture^.Pixels));
+                kfree(void(texture));
+                kfree(void(row));
+                Exit;
+            end;
+            previousY := sourceY;
+        end;
+        for x := 0 to destWidth - 1 do begin
+            sourceX := cropLeft + (x * cropWidth) div destWidth;
+            if (header.ImageDescriptor and $10) <> 0 then sourceX := width - 1 - sourceX;
+            pixel := row + sourceX * pixelBytes;
+            dest^.B := pixel[0];
+            dest^.G := pixel[1];
+            dest^.R := pixel[2];
+            if pixelBytes = 4 then dest^.A := pixel[3]
+            else dest^.A := $FF;
+            Inc(dest);
         end;
     end;
+    kfree(void(row));
+    Decode := texture;
+end;
 
-    Parse := tex;
+function ReadBuffer(context : Pointer; offset : uint32; buffer : PUInt8;
+                    length : uint32) : uint32;
+begin
+    System.Move((PUInt8(context) + offset)^, buffer^, length);
+    ReadBuffer := length;
+end;
+
+function Parse(buffer : PUInt8; len : uint32) : PTexture;
+begin
+    Parse := nil;
+    if buffer <> nil then Parse := Decode(@ReadBuffer, buffer, len, 0, 0);
+end;
+
+function ParseScaled(reader : TTargaRead; context : Pointer; len, width, height : uint32) : PTexture;
+begin
+    ParseScaled := nil;
+    if (width <> 0) and (height <> 0) then
+        ParseScaled := Decode(reader, context, len, width, height);
 end;
 
 end.

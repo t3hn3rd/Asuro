@@ -248,6 +248,8 @@ var
     DirCacheTick      : uint32;
     DirCacheReady     : boolean;
 
+procedure VFS_OnMutation(event : TVFSWatchEvent; dirPath : pchar; itemPath : pchar; vol : PStorage_Volume; relPath : pchar); forward;
+
 procedure vfs_write_complete(error : TError; userdata : pointer);
 var
     ctx : PVFSWriteAsyncCtx;
@@ -258,6 +260,9 @@ begin
     if (error = eNone) and (ctx^.FD <> nil) then begin
         if ctx^.Position + ctx^.BytesWritten > ctx^.FD^.DataSize then
             ctx^.FD^.DataSize := ctx^.Position + ctx^.BytesWritten;
+        if (ctx^.FD^.Volume <> nil) and (ctx^.FD^.Volume^.device = nil) then
+            VFS_OnMutation(weModified, ctx^.FD^.VFSDir, ctx^.FD^.VFSDir,
+                           ctx^.FD^.Volume, ctx^.FD^.Directory);
     end;
     if ctx^.BytesWrittenPtr <> nil then
         ctx^.BytesWrittenPtr^ := ctx^.BytesWritten;
@@ -979,6 +984,18 @@ end;
 
 { Volume helper: convert readDirCallback results to a VFS core.ds.hashmap }
 
+function VolumeCanDispatch(volume : PStorage_Volume) : Boolean;
+begin
+    VolumeCanDispatch := False;
+    if (volume = nil) or (volume^.filesystem = nil) then exit;
+    if driver.storage.vol.mgr.volume_is_busy(volume) then exit;
+    if volume^.device <> nil then
+        VolumeCanDispatch := not volume^.device^.metadataBusy
+    else
+        VolumeCanDispatch :=
+            (volume^.lifecycleFlags and STORAGE_VOLUME_FLAG_DEVICELESS) <> 0;
+end;
+
 function volumeGetDirectories(vol : PStorage_Volume; RelPath : pchar; Parent : PVFSObject) : PHashMap;
 var
     dirList    : PLinkedListBase;
@@ -993,13 +1010,12 @@ begin
     debug.tracer.push_trace('driver.storage.vfs.volumeGetDirectories.enter');
     volumeGetDirectories := nil;
 
-    if vol = nil then exit;
-    if (vol^.device = nil) or vol^.device^.metadataBusy or driver.storage.vol.mgr.volume_is_busy(vol) then exit;
-    if vol^.filesystem = nil then exit;
+    if not VolumeCanDispatch(vol) then exit;
     if vol^.filesystem^.readDirCallback = nil then exit;
 
     { --- Cache lookup --- }
-    cached := DirCache_Lookup(vol, RelPath);
+    cached := nil;
+    if vol^.device <> nil then cached := DirCache_Lookup(vol, RelPath);
     if cached <> nil then begin
         volumeGetDirectories := cached;
         debug.tracer.push_trace('driver.storage.vfs.volumeGetDirectories.cacheHit');
@@ -1039,7 +1055,7 @@ begin
         LL_Free(dirList);
 
     { --- Cache store (deep copy kept in cache, caller owns resultMap) --- }
-    DirCache_Store(vol, RelPath, resultMap);
+    if vol^.device <> nil then DirCache_Store(vol, RelPath, resultMap);
 
     volumeGetDirectories := resultMap;
     kfree(puint32(status));
@@ -1291,11 +1307,11 @@ begin
     end;
 
     volOut^ := PStorage_Volume(Obj^.Reference);
-    if (volOut^ = nil) or (volOut^^.device = nil) then begin
-        if volRel <> nil then kfree(void(volRel)); exit;
-    end;
-    if volOut^^.device^.metadataBusy or driver.storage.vol.mgr.volume_is_busy(volOut^) then begin
-        if volRel <> nil then kfree(void(volRel)); volOut^ := nil; exit;
+    if not VolumeCanDispatch(volOut^) then begin
+        if volRel <> nil then kfree(void(volRel));
+        volOut^ := nil;
+        debug.tracer.push_trace('driver.storage.vfs.ResolveFilePath.exit');
+        exit;
     end;
 
     { volRel is the path within the volume, e.g. '/mydir/myfile.txt' }
@@ -1343,6 +1359,35 @@ begin
     debug.tracer.push_trace('driver.storage.vfs.ResolveFilePath.exit');
 end;
 
+function OpenDeviceFile(filename : PChar; mode : TOpenMode;
+                        fd : PFileDescriptor) : Boolean;
+var
+    path : PChar;
+    obj : PVFSObject;
+    device : PVFSDevice;
+begin
+    path := MakeAbsolutePath(filename);
+    obj := GetObjectFromPath(path);
+    kfree(void(path));
+    OpenDeviceFile := false;
+    if (obj = nil) or (obj^.ObjectType <> otDEVICE) or (obj^.Reference = nil) then exit;
+    device := PVFSDevice(obj^.Reference);
+    fd^.InUse := true;
+    fd^.Volume := nil;
+    fd^.Directory := nil;
+    fd^.FileName := stringCopy(obj^.ObjectName);
+    fd^.VFSDir := nil;
+    fd^.OpenMode := uint8(Ord(mode));
+    fd^.DataSize := 0;
+    fd^.DeviceOps := Pointer(device^.Ops);
+    fd^.DeviceData := device^.DevData;
+    fd^.FSPrivate := nil;
+    fd^.FSCloseHook := nil;
+    if (device^.Ops <> nil) and (device^.Ops^.Size <> nil) then
+        fd^.DataSize := device^.Ops^.Size(device^.DevData);
+    OpenDeviceFile := true;
+end;
+
 Function OpenFile(Filename : pchar; OpenMode : TOpenMode; Error : PError) : TFileHandle;
 var
     tbl      : PFDTable;
@@ -1351,9 +1396,6 @@ var
     vol      : PStorage_Volume;
     dir      : pchar;
     fname    : pchar;
-    absPath  : pchar;
-    vfsObj   : PVFSObject;
-    devInfo  : PVFSDevice;
 begin
     debug.tracer.push_trace('driver.storage.vfs.OpenFile.enter');
     OpenFile := 0;
@@ -1379,24 +1421,7 @@ begin
         exit;
     end;
 
-    { Check for device node before trying volume resolution }
-    absPath := MakeAbsolutePath(Filename);
-    vfsObj := GetObjectFromPath(absPath);
-    kfree(void(absPath));
-    if (vfsObj <> nil) and (vfsObj^.ObjectType = otDEVICE) and (vfsObj^.Reference <> nil) then begin
-        devInfo := PVFSDevice(vfsObj^.Reference);
-        fd := @tbl^.Entries[slot - 1];
-        fd^.InUse := true;
-        fd^.Volume := nil;
-        fd^.Directory := nil;
-        fd^.FileName := stringCopy(vfsObj^.ObjectName);
-        fd^.VFSDir := nil; { devices have no parent directory }
-        fd^.OpenMode := uint8(ord(OpenMode));
-        fd^.DataSize := 0;
-        fd^.DeviceOps := pointer(devInfo^.Ops);
-        fd^.DeviceData := devInfo^.DevData;
-        if (devInfo^.Ops <> nil) and (devInfo^.Ops^.Size <> nil) then
-            fd^.DataSize := devInfo^.Ops^.Size(devInfo^.DevData);
+    if OpenDeviceFile(Filename, OpenMode, @tbl^.Entries[slot - 1]) then begin
         if Error <> nil then Error^ := eNone;
         OpenFile := slot;
         debug.tracer.push_trace('driver.storage.vfs.OpenFile.exit');
@@ -1434,7 +1459,8 @@ begin
        (vol^.filesystem^.openFileModeCallback <> nil)) then begin
         if vol^.filesystem^.openFileModeCallback <> nil then
             fd^.FSPrivate := vol^.filesystem^.openFileModeCallback(vol, dir, fname,
-                (OpenMode = omCreate) or (OpenMode = omWrite), fd^.DataSize)
+                (OpenMode = omCreate) or ((OpenMode = omWrite) and (vol^.device <> nil)),
+                fd^.DataSize)
         else fd^.FSPrivate := vol^.filesystem^.openFileCallback(vol, dir, fname, fd^.DataSize);
         if fd^.FSPrivate = nil then begin
             if Error <> nil then begin
@@ -1607,7 +1633,8 @@ begin
       browser (and any other caller) only re-reads directory listings after
       the completion callback fires, by which time the disk write has
       finished and the fresh read will return the updated listing. }
-    VFS_OnMutation(weModified, fd^.VFSDir, fd^.VFSDir, vol, fd^.Directory);
+    if vol^.device <> nil then
+        VFS_OnMutation(weModified, fd^.VFSDir, fd^.VFSDir, vol, fd^.Directory);
 
     if vol^.filesystem^.writeOffsetAsyncCallback <> nil then begin
         if not fd_begin_async(fd) then begin
@@ -1636,6 +1663,8 @@ begin
         padSize := vol^.filesystem^.writeOffsetCallback(
             vol, fd^.Directory, fd^.FileName,
             Position, puint32(Buffer), Length, fd^.FSPrivate);
+        if (vol^.device = nil) and (padSize = Length) then
+            VFS_OnMutation(weModified, fd^.VFSDir, fd^.VFSDir, vol, fd^.Directory);
         if padSize > 0 then begin
             if Position + padSize > fd^.DataSize then
                 fd^.DataSize := Position + padSize;
@@ -1660,6 +1689,7 @@ var
     vol     : PStorage_Volume;
     dir     : pchar;
     fname   : pchar;
+    openError : TError;
 begin
     debug.tracer.push_trace('driver.storage.vfs.OpenFileAsync.enter');
     OutHandle := 0;
@@ -1681,6 +1711,14 @@ begin
     if slot = 0 then begin
         if Error <> nil then Error^ := eTooManyOpenFiles;
         if Callback <> nil then Callback(eTooManyOpenFiles, CallbackData);
+        exit;
+    end;
+
+    if OpenDeviceFile(Filename, OpenMode, @tbl^.Entries[slot - 1]) then begin
+        OutHandle := slot;
+        if Error <> nil then Error^ := eNone;
+        if Callback <> nil then Callback(eNone, CallbackData);
+        debug.tracer.push_trace('driver.storage.vfs.OpenFileAsync.exit');
         exit;
     end;
 
@@ -1714,18 +1752,18 @@ begin
        (vol^.filesystem^.openFileModeCallback <> nil)) then begin
         if vol^.filesystem^.openFileModeCallback <> nil then
             fd^.FSPrivate := vol^.filesystem^.openFileModeCallback(vol, dir, fname,
-                (OpenMode = omCreate) or (OpenMode = omWrite), fd^.DataSize)
+                (OpenMode = omCreate) or ((OpenMode = omWrite) and (vol^.device <> nil)),
+                fd^.DataSize)
         else fd^.FSPrivate := vol^.filesystem^.openFileCallback(vol, dir, fname, fd^.DataSize);
-        if fd^.FSPrivate = nil then begin
-            if Error <> nil then begin
-                if (OpenMode = omCreate) or (OpenMode = omWrite) then
-                    Error^ := eInvalidFileName
-                else
-                    Error^ := eFileDoesNotExist;
-            end;
+            if fd^.FSPrivate = nil then begin
+            if (OpenMode = omCreate) or (OpenMode = omWrite) then
+                openError := eInvalidFileName
+            else
+                openError := eFileDoesNotExist;
+            if Error <> nil then Error^ := openError;
             fd_close(tbl, slot);
             OutHandle := 0;
-            if Callback <> nil then Callback(Error^, CallbackData);
+            if Callback <> nil then Callback(openError, CallbackData);
             debug.tracer.push_trace('driver.storage.vfs.OpenFileAsync.exit');
             exit;
         end;
@@ -2302,6 +2340,17 @@ begin
     debug.tracer.push_trace('driver.storage.vfs.CreateDirectory.exit');
 end;
 
+procedure RefreshHandleSize(fd : PFileDescriptor);
+var
+    volume : PStorage_Volume;
+begin
+    volume := fd^.Volume;
+    if VolumeCanDispatch(volume) and (volume^.device = nil)
+        and (volume^.filesystem^.fileSizeCallback <> nil) then
+        fd^.DataSize := volume^.filesystem^.fileSizeCallback(
+            volume, fd^.Directory, fd^.FileName);
+end;
+
 function FileSizeFromHandle(Handle : TFileHandle) : uint32;
 var
     fd : PFileDescriptor;
@@ -2322,6 +2371,7 @@ begin
         exit;
     end;
 
+    RefreshHandleSize(fd);
     FileSizeFromHandle := fd^.DataSize;
     debug.tracer.push_trace('driver.storage.vfs.FileSizeFromHandle.exit');
 end;
@@ -2371,6 +2421,7 @@ begin
         exit;
     end;
 
+    RefreshHandleSize(fd);
     if Position >= fd^.DataSize then begin
         if BytesRead <> nil then BytesRead^ := 0;
         if Callback <> nil then Callback(eNone, CallbackData);
@@ -3593,6 +3644,15 @@ begin
     mountFS := PFilesystem(kalloc(sizeof(TFilesystem)));
     mountFS^.sName := 'MOUNTTEST';
     mountVolA^.filesystem := mountFS; mountVolB^.filesystem := mountFS;
+    test.harness.Assert(@context, not VolumeCanDispatch(mountVolA),
+                        'A volume with a missing device requires explicit opt-in');
+    mountVolA^.lifecycleFlags := STORAGE_VOLUME_FLAG_DEVICELESS;
+    test.harness.Assert(@context, VolumeCanDispatch(mountVolA),
+                        'An intentionally device-less volume can dispatch');
+    mountVolA^.lifecycleFlags := STORAGE_VOLUME_FLAG_DEVICELESS or STORAGE_VOLUME_FLAG_REMOVED;
+    test.harness.Assert(@context, not VolumeCanDispatch(mountVolA),
+                        'A removed device-less volume cannot dispatch');
+    mountVolA^.lifecycleFlags := 0;
     mountVolA^.id := $FFFFFFFE; mountVolB^.id := $FFFFFFFD;
     tmpKey := defaultVolumeName(mountVolA);
     test.harness.Assert(@context, stringEquals(tmpKey,'vol4294967294'),'unlabelled default mount name'); kfree(void(tmpKey));

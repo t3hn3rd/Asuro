@@ -22,7 +22,15 @@ unit driver.video.vesa;
 interface
 
 uses
-    driver.video.types, debug.tracer, arch.x86.multiboot, memory.heap, arch.x86.v86, core.util, arch.x86.util, io.syslog, driver.video.gpu;
+    driver.video.types,
+    debug.tracer,
+    arch.x86.multiboot,
+    memory.heap,
+    arch.x86.v86,
+    core.util,
+    arch.x86.util,
+    io.syslog,
+    driver.video.gpu;
 
 const
     { VBE buffer addresses in low physical memory }
@@ -38,7 +46,24 @@ function setMode(width, height : uint32; bpp : uint8) : boolean;
 implementation
 
 uses
-    driver.video.vesa8, driver.video.vesa16, driver.video.vesa24, driver.video.vesa32;
+    driver.video.vesa8,
+    driver.video.vesa16,
+    driver.video.vesa24,
+    driver.video.vesa32;
+
+type
+    PVBEMode = ^TVBEMode;
+    TVBEMode = record
+        Next : PVBEMode;
+        Number : uint16;
+        Info : TGPUModeInfo;
+    end;
+
+var
+    modes : PVBEMode;
+    modesScanned : Boolean;
+
+procedure EnumerateModes(visit : TGPUVisitMode); forward;
 
 { GPU framework: VBE setMode callback.
   Wraps the existing driver.video.vesa.setMode and fills TGPUModeInfo on success. }
@@ -110,35 +135,25 @@ begin
     if Register <> nil then
         Register('VESA', @enable);
     { Register VBE as a GPU driver (priority 50 = fallback behind BGA) }
-    driver.video.gpu.registerDriver('VBE', 50, @vbeSetModeGPU);
+    driver.video.gpu.registerDriver('VBE', 50, @vbeSetModeGPU, @EnumerateModes);
     { VBE is available if the bootloader already set up a framebuffer }
     if arch.x86.multiboot.multibootinfo^.framebuffer_addr <> 0 then
         driver.video.gpu.markAvailable('VBE');
     debug.tracer.push_trace('driver.video.vesa.init.exit');
 end;
 
-function setMode(width, height : uint32; bpp : uint8) : boolean;
+procedure ScanModes;
+const
+    MAX_MODE_ENTRIES = 1024;
 var
     regs : TV86Regs;
-    mode_list_off, mode_list_seg : uint16;
-    mode_list_linear : uint32;
-    mode : uint16;
-    mode_width, mode_height : uint16;
-    mode_bpp : uint8;
-    mode_attr : uint16;
-    mode_fb : uint32;
-    mode_pitch : uint16;
-    found_mode : uint16;
-    found_fb : uint32;
-    found_pitch : uint16;
-    bufBase : uint32;
-
+    bufBase, listAddress, i : uint32;
+    number, attributes : uint16;
+    mode : PVBEMode;
+    info : TGPUModeInfo;
 begin
-    debug.tracer.push_trace('driver.video.vesa.setMode.enter');
-    setMode := false;
-    found_mode := $FFFF;
+    if modesScanned then exit;
     bufBase := KERNEL_VIRTUAL_BASE;
-
     { Step 1: Get VBE controller info }
     { Write "VBE2" signature at buffer start for VBE2.0+ extended info }
     PuByte(bufBase + VBE_INFO_ADDR + 0)^ := ord('V');
@@ -154,66 +169,89 @@ begin
     regs.EDI := VBE_INFO_ADDR;
 
     if not arch.x86.v86.v86_int($10, regs) then begin
-        io.syslog.logln('VESA', 'setMode: VBE 4F00h failed (arch.x86.v86 error).');
-        debug.tracer.pop_trace;
+        io.syslog.logln('VESA', 'ScanModes: VBE 4F00h failed (arch.x86.v86 error).');
         exit;
     end;
     if (regs.EAX and $FFFF) <> $004F then begin
-        io.syslog.logln('VESA', 'setMode: VBE 4F00h not supported.');
-        debug.tracer.pop_trace;
+        io.syslog.logln('VESA', 'ScanModes: VBE 4F00h not supported.');
         exit;
     end;
 
     { Read mode list far pointer from VBE info block (offset 0x0E = offset, 0x10 = segment) }
-    mode_list_off := PUInt16(bufBase + VBE_INFO_ADDR + $0E)^;
-    mode_list_seg := PUInt16(bufBase + VBE_INFO_ADDR + $10)^;
-    mode_list_linear := uint32(mode_list_seg) * 16 + mode_list_off;
+    listAddress := uint32(PUInt16(bufBase + VBE_INFO_ADDR + $10)^) * 16
+                   + PUInt16(bufBase + VBE_INFO_ADDR + $0E)^;
+    if (listAddress = 0) or (listAddress >= $100000) then exit;
 
-    { Step 2: Enumerate modes to find a match }
-    mode := PUInt16(bufBase + mode_list_linear)^;
-    while mode <> $FFFF do begin
-        { INT 10h, AX=4F01h: Get VBE Mode Information }
+    for i := 0 to MAX_MODE_ENTRIES - 1 do begin
+        if listAddress > $FFFFE then break;
+        number := PUInt16(bufBase + listAddress)^;
+        if number = $FFFF then break;
+        Inc(listAddress, 2);
+
         memset(bufBase + VBE_MODE_INFO_ADDR, 0, 256);
         memset(uint32(@regs), 0, sizeof(TV86Regs));
         regs.EAX := $4F01;
-        regs.ECX := mode;
-        regs.ES  := 0;
+        regs.ECX := number;
+        regs.ES := 0;
         regs.EDI := VBE_MODE_INFO_ADDR;
+        if not arch.x86.v86.v86_int($10, regs) then continue;
+        if (regs.EAX and $FFFF) <> $004F then continue;
 
-        if arch.x86.v86.v86_int($10, regs) then begin
-            if (regs.EAX and $FFFF) = $004F then begin
-                mode_attr   := PUInt16(bufBase + VBE_MODE_INFO_ADDR + $00)^;
-                mode_width  := PUInt16(bufBase + VBE_MODE_INFO_ADDR + $12)^;
-                mode_height := PUInt16(bufBase + VBE_MODE_INFO_ADDR + $14)^;
-                mode_bpp    := PuByte(bufBase + VBE_MODE_INFO_ADDR + $19)^;
-                mode_fb     := PUInt32(bufBase + VBE_MODE_INFO_ADDR + $28)^;
-                mode_pitch  := PUInt16(bufBase + VBE_MODE_INFO_ADDR + $10)^;
+        attributes := PUInt16(bufBase + VBE_MODE_INFO_ADDR + $00)^;
+        if (attributes and $91) <> $91 then continue;
+        info.Width := PUInt16(bufBase + VBE_MODE_INFO_ADDR + $12)^;
+        info.Height := PUInt16(bufBase + VBE_MODE_INFO_ADDR + $14)^;
+        info.BPP := PuByte(bufBase + VBE_MODE_INFO_ADDR + $19)^;
+        info.Framebuffer := PUInt32(bufBase + VBE_MODE_INFO_ADDR + $28)^;
+        info.Pitch := PUInt16(bufBase + VBE_MODE_INFO_ADDR + $10)^;
+        if (info.Width = 0) or (info.Height = 0) or (info.BPP = 0)
+            or (info.Framebuffer = 0) or (info.Pitch = 0) then continue;
 
-                { Check: mode supported (bit 0) and has linear framebuffer (bit 7) }
-                if ((mode_attr and $01) <> 0) and ((mode_attr and $80) <> 0) then begin
-                    if (mode_width = width) and (mode_height = height) and (mode_bpp = bpp) then begin
-                        found_mode  := mode;
-                        found_fb    := mode_fb;
-                        found_pitch := mode_pitch;
-                    end;
-                end;
-            end;
-        end;
-
-        mode_list_linear := mode_list_linear + 2;
-        mode := PUInt16(bufBase + mode_list_linear)^;
+        mode := PVBEMode(kalloc(SizeOf(TVBEMode)));
+        mode^.Number := number;
+        mode^.Info := info;
+        mode^.Next := modes;
+        modes := mode;
     end;
+    modesScanned := true;
+end;
 
-    if found_mode = $FFFF then begin
+procedure EnumerateModes(visit : TGPUVisitMode);
+var
+    mode : PVBEMode;
+begin
+    ScanModes;
+    mode := modes;
+    while mode <> nil do begin
+        visit(mode^.Info.Width, mode^.Info.Height, mode^.Info.BPP);
+        mode := mode^.Next;
+    end;
+end;
+
+function setMode(width, height : uint32; bpp : uint8) : boolean;
+var
+    regs : TV86Regs;
+    mode : PVBEMode;
+    found_mode : uint16;
+    found_fb, found_pitch : uint32;
+begin
+    debug.tracer.push_trace('driver.video.vesa.setMode.enter');
+    setMode := false;
+    ScanModes;
+    mode := modes;
+    while mode <> nil do begin
+        if (mode^.Info.Width = width) and (mode^.Info.Height = height)
+            and (mode^.Info.BPP = bpp) then break;
+        mode := mode^.Next;
+    end;
+    if mode = nil then begin
         io.syslog.logln('VESA', 'setMode: No matching VBE mode found.');
         debug.tracer.pop_trace;
         exit;
     end;
-
-    io.syslog.log('VESA', 'setMode: Found VBE mode $');
-    io.syslog.writehex(found_mode);
-    io.syslog.writestring(' fb=$');
-    io.syslog.writehexln(found_fb);
+    found_mode := mode^.Number;
+    found_fb := mode^.Info.Framebuffer;
+    found_pitch := mode^.Info.Pitch;
 
     { Step 3: Set the mode with linear framebuffer flag }
     memset(uint32(@regs), 0, sizeof(TV86Regs));

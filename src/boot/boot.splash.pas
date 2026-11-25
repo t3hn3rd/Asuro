@@ -25,6 +25,7 @@ procedure update(percent: uint32; status: pchar);
 
 { Remove all boot.splash LVGL objects and load the default screen. }
 procedure teardown;
+function DesktopScreen : Plv_obj;
 
 implementation
 
@@ -242,6 +243,12 @@ begin
     //busywait_500ms;
 end;
 
+function DesktopScreen : Plv_obj;
+begin
+    DesktopScreen := previousScreen;
+    if DesktopScreen = nil then DesktopScreen := lv_screen_active;
+end;
+
 procedure teardown;
 begin
     if not Initialized then exit;
@@ -273,6 +280,5 @@ end;
 
 Initialization
     boot.mgr.registerBoot('boot.splash', @init, 'Boot Splash Screen', 'core.panic');
-    boot.mgr.registerBoot('boot.splash.teardown', @teardown, 'Stop Splash Screen', BOOT_MGR_BARRIER_FINAL);
 
 end.

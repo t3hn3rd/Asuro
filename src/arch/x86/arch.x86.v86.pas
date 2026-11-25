@@ -24,8 +24,8 @@ uses
     core.util, arch.x86.util, core.panic, io.syslog, debug.tracer, arch.x86.memory.virtual, arch.x86.gdt, arch.x86.idt, arch.x86.isr.types;
 
 const
-    { V86 EFLAGS: VM=1 ($20000), IOPL=3 ($3000), IF=0 }
-    V86_EFLAGS      = $23000;
+    { Trap BIOS interrupts and I/O to the monitor. Keep hardware IRQs off. }
+    V86_EFLAGS      = $20002;
     { Thunk location in low memory (physical 0x7C00, free after boot) }
     V86_THUNK_ADDR  = $7C00;
     { V86 real-mode stack at SS:SP = 0000:8000 (grows down from 0x8000) }
@@ -319,7 +319,7 @@ begin
                 val32         := v86_pop32(frame);
                 { Preserve VM bit, update shadow IF }
                 V86ShadowIF := (val32 and $0200) <> 0;
-                frame^.EFLAGS := (frame^.EFLAGS and $FFFF0000) or (val32 and $FFFF);
+                frame^.EFLAGS := (frame^.EFLAGS and $FFFF0000) or (val32 and $CDFF);
                 frame^.EFLAGS := frame^.EFLAGS or $20000; { Keep VM=1 }
             end else begin
                 { 16-bit IRET }
@@ -327,7 +327,7 @@ begin
                 frame^.CS     := v86_pop16(frame);
                 flags16       := v86_pop16(frame);
                 V86ShadowIF := (flags16 and $0200) <> 0;
-                frame^.EFLAGS := (frame^.EFLAGS and $FFFF0000) or flags16;
+                frame^.EFLAGS := (frame^.EFLAGS and $FFFF0000) or (flags16 and $CDFF);
                 frame^.EFLAGS := frame^.EFLAGS or $20000; { Keep VM=1 }
             end;
         end;
@@ -352,7 +352,7 @@ begin
             else
                 flags16 := flags16 and (not uint16($0200));
             if prefix66 then begin
-                val32 := frame^.EFLAGS and $00FCFFFF; { Clear VM, IOPL }
+                val32 := frame^.EFLAGS and $FFFCFFFF; { Clear VM and RF }
                 if V86ShadowIF then
                     val32 := val32 or $0200
                 else
@@ -369,12 +369,12 @@ begin
             if prefix66 then begin
                 val32 := v86_pop32(frame);
                 V86ShadowIF := (val32 and $0200) <> 0;
-                frame^.EFLAGS := (frame^.EFLAGS and $FFFF0000) or (val32 and $FFFF);
+                frame^.EFLAGS := (frame^.EFLAGS and $FFFF0000) or (val32 and $CDFF);
                 frame^.EFLAGS := frame^.EFLAGS or $20000; { Keep VM=1 }
             end else begin
                 flags16 := v86_pop16(frame);
                 V86ShadowIF := (flags16 and $0200) <> 0;
-                frame^.EFLAGS := (frame^.EFLAGS and $FFFF0000) or flags16;
+                frame^.EFLAGS := (frame^.EFLAGS and $FFFF0000) or (flags16 and $CDFF);
                 frame^.EFLAGS := frame^.EFLAGS or $20000; { Keep VM=1 }
             end;
             frame^.EIP := frame^.EIP + ip_offset + 1;
@@ -646,10 +646,16 @@ end;
 
 { The core v86_int function }
 function v86_int(intNo : uint8; var regs : TV86Regs) : boolean;
+var
+    callerFlags : uint32;
 begin
     push_trace('arch.x86.v86.v86_int');
 
-    CLI;
+    asm
+        pushfd
+        cli
+        pop callerFlags
+    end;
 
     { Mark V86 active }
     V86Active := true;
@@ -668,7 +674,7 @@ begin
     V86EntryEIP    := V86_THUNK_ADDR;               { CS:IP → 0000:7C00 }
     V86EntryCS     := V86_THUNK_ADDR shr 4;         { Segment for thunk }
     V86EntryEIP    := V86_THUNK_ADDR and $F;         { Offset within segment }
-    V86EntryEFLAGS := V86_EFLAGS;                    { VM=1, IOPL=3 }
+    V86EntryEFLAGS := V86_EFLAGS;
     V86EntryESP    := V86_STACK_PTR;                  { SP = 0x8000 }
     V86EntrySS     := V86_STACK_SEG;                  { SS = 0x0000 }
     V86EntryES     := regs.ES;
@@ -688,7 +694,12 @@ begin
     { Save core.version context and enter V86 mode.
       The exit handler will restore ESP/EBP and JMP to @v86_return. }
     asm
-        { Save core.version stack state }
+        { BIOS execution uses these caller-preserved registers. }
+        push ebx
+        push esi
+        push edi
+
+        { Save the protected-mode stack state }
         mov dword ptr [V86SavedESP], esp
         mov dword ptr [V86SavedEBP], ebp
 
@@ -721,6 +732,9 @@ begin
 
         { V86 exit handler jumps here after restoring ESP/EBP }
     @v86_return:
+        pop edi
+        pop esi
+        pop ebx
     end;
 
     { We arrive here after V86 exit (registers already copied to V86RegsPtr by emulator) }
@@ -729,9 +743,12 @@ begin
     V86Active := false;
     v86_int := V86Success;
 
-    STI;
-
     pop_trace;
+
+    asm
+        push callerFlags
+        popfd
+    end;
 end;
 
 { ========================================================================= }
