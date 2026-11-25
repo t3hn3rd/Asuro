@@ -32,8 +32,25 @@ implementation
 uses arch.x86_64.memory.physical, arch.x86_64.util, memory.bitmap, debug.early;
 const
     ADDRESS_MASK = uint64($000FFFFFFFFFF000);
+    MMIO_BASE = PtrUInt($FFFFC00000000000);
+    MMIO_END = PtrUInt($FFFFD00000000000);
+    MMIO_CACHE_FLAGS = $18; { PCD + PWT: UC in the bootstrap PAT }
     PTE_OWNED = uint64(1) shl 9;
+type
+    TDeviceRange = record
+        first, last: uint64; { inclusive page-aligned physical bounds }
+        base: PtrUInt;
+    end;
+    PDeviceRanges = ^TDeviceRanges;
+    TDeviceRanges = record
+        next: PDeviceRanges;
+        count: SizeUInt;
+        ranges: array[0..169] of TDeviceRange;
+    end;
 var
+    deviceRanges: PDeviceRanges;
+    nextDeviceVA: PtrUInt;
+    maxPhysical: uint64;
     root: PUInt64;
     arenaBitmap, readyArenas: PUInt32;
     tablePages: uint64;
@@ -77,7 +94,7 @@ asm
     pop rbx
 end;
 
-function map_page(address: PtrUInt; physical: uint64; owned: boolean): boolean;
+function installPage(address: PtrUInt; physical, flags: uint64): boolean;
 var
     table, slot: PUInt64;
     shift, created: sint32;
@@ -85,8 +102,8 @@ var
     parents: array[0..2] of PUInt64;
     frames: array[0..2] of uint64;
 begin
-    map_page := false;
-    if not managed(address) or ((address and $FFF) <> 0) or
+    installPage := false;
+    if ((address and $FFF) <> 0) or
        ((physical and not ADDRESS_MASK) <> 0) then exit;
     saved := lockIRQ;
     table := root;
@@ -111,19 +128,28 @@ begin
     if shift = 12 then begin
         slot := @table[(address shr 12) and $1FF];
         if (slot^ and 1) = 0 then begin
-            slot^ := physical or leafFlags;
-            if owned then slot^ := slot^ or PTE_OWNED;
+            slot^ := physical or flags;
             invalidate(address);
-            map_page := true;
+            installPage := true;
         end;
     end;
-    if not map_page then while created > 0 do begin
+    if not installPage then while created > 0 do begin
         dec(created);
         parents[created]^ := 0;
         if not arch.x86_64.memory.physical.free_page(frames[created]) then fail('table rollback');
         dec(tablePages);
     end;
     unlockIRQ(saved);
+end;
+
+function map_page(address: PtrUInt; physical: uint64; owned: boolean): boolean;
+var flags: uint64;
+begin
+    map_page := false;
+    if not managed(address) then exit;
+    flags := leafFlags;
+    if owned then flags := flags or PTE_OWNED;
+    map_page := installPage(address, physical, flags);
 end;
 
 function leaf(address: PtrUInt): PUInt64;
@@ -133,7 +159,6 @@ var
     entry: uint64;
 begin
     leaf := nil;
-    if not managed(address) then exit;
     table := root;
     shift := 39;
     while shift > 12 do begin
@@ -168,30 +193,104 @@ begin
     end;
 end;
 
+procedure prune(address: PtrUInt); forward;
+
+function identityLeaf(page: PtrUInt): PUInt64;
+var table: PUInt64;
+begin
+    table := PUInt64(PtrUInt(root[0] and ADDRESS_MASK));
+    table := PUInt64(PtrUInt(table[(page shr 30) and $1FF] and ADDRESS_MASK));
+    identityLeaf := @table[(page shr 21) and $1FF];
+end;
+
+procedure uncachedIdentity(first, last: PtrUInt);
+var page: PtrUInt;
+    slot: PUInt64;
+begin
+    page := first and not PtrUInt($1FFFFF);
+    while page <= last do begin
+        slot := identityLeaf(page);
+        slot^ := slot^ or MMIO_CACHE_FLAGS;
+        invalidate(page);
+        inc(page, $200000);
+    end;
+end;
+
 function mapDevice(address: uint64; bytes: SizeUInt): pointer;
-var
-    first, last, page: PtrUInt;
-    table, slot: PUInt64;
-    flags: PtrUInt;
+var first, last, page: uint64;
+    base, va, saved: PtrUInt;
+    block: PDeviceRanges;
+    i: SizeInt;
+    region: ^TDeviceRange;
+    slot: PUInt64;
 begin
     mapDevice := nil;
-    if (bytes = 0) or (address >= $100000000) or (bytes > $100000000 - address) then exit;
-    first := PtrUInt(address) and not PtrUInt($1FFFFF);
-    last := PtrUInt(address + bytes - 1) and not PtrUInt($1FFFFF);
-    flags := lockIRQ;
+    if (address = 0) or (bytes = 0) or (address > maxPhysical) then exit;
+    if bytes - 1 > maxPhysical - address then exit;
+    first := address and ADDRESS_MASK;
+    last := (address + bytes - 1) and ADDRESS_MASK;
+    saved := lockIRQ;
+    if last < $100000000 then begin
+        uncachedIdentity(first, last);
+        mapDevice := pointer(PtrUInt(address));
+        unlockIRQ(saved);
+        exit;
+    end;
+    { Permanent device mappings. Reuse subranges of already mapped BARs. }
+    block := deviceRanges;
+    while block <> nil do begin
+        for i := 0 to SizeInt(block^.count) - 1 do begin
+            region := @block^.ranges[i];
+            if (first >= region^.first) and (last <= region^.last) then begin
+                mapDevice := pointer(region^.base + (address - region^.first));
+                unlockIRQ(saved);
+                exit;
+            end;
+        end;
+        block := block^.next;
+    end;
+    base := nextDeviceVA;
+    if last - first + 4096 > MMIO_END - base then begin
+        unlockIRQ(saved);
+        exit;
+    end;
+    block := deviceRanges;
+    if (block = nil) or (block^.count = 170) then begin
+        block := PDeviceRanges(PtrUInt(acquire(true)));
+        if block = nil then begin
+            unlockIRQ(saved);
+            exit;
+        end;
+        block^.next := deviceRanges;
+        block^.count := 0;
+    end;
+    va := base;
     page := first;
-    repeat
-        table := PUInt64(PtrUInt(root[0] and ADDRESS_MASK));
-        table := PUInt64(PtrUInt(table[(page shr 30) and $1FF] and ADDRESS_MASK));
-        slot := @table[(page shr 21) and $1FF];
-        { Bootstrap low identity leaves are 2 MiB. Disable caching for MMIO. }
-        slot^ := slot^ or $18;
-        invalidate(page);
-        if page = last then break;
-        inc(page, $200000);
-    until false;
-    unlockIRQ(flags);
-    mapDevice := pointer(PtrUInt(address));
+    while page <= last do begin
+        if not installPage(va, page, leafFlags or MMIO_CACHE_FLAGS) then break;
+        inc(va, 4096);
+        inc(page, 4096);
+    end;
+    if page > last then begin
+        if first < $100000000 then uncachedIdentity(first, $FFFFFFFF);
+        block^.ranges[block^.count].first := first;
+        block^.ranges[block^.count].last := last;
+        block^.ranges[block^.count].base := base;
+        inc(block^.count);
+        deviceRanges := block;
+        nextDeviceVA := va;
+        mapDevice := pointer(base + (address - first));
+    end else begin
+        while va > base do begin
+            dec(va, 4096);
+            slot := leaf(va);
+            slot^ := 0;
+            invalidate(va);
+            if ((va and $1FFFFF) = 0) or (va = base) then prune(va);
+        end;
+        if block <> deviceRanges then arch.x86_64.memory.physical.free_page(PtrUInt(block));
+    end;
+    unlockIRQ(saved);
 end;
 
 procedure prune(address: PtrUInt);
@@ -353,11 +452,30 @@ begin
     unlockIRQ(saved);
 end;
 
+function physicalBits: uint32; assembler; nostackframe;
+asm
+    push rbx
+    mov eax, $80000000
+    cpuid
+    cmp eax, $80000008
+    jb @fallback
+    mov eax, $80000008
+    cpuid
+    and eax, $ff
+    jmp @done
+@fallback:
+    mov eax, 36
+@done:
+    pop rbx
+end;
+
 procedure init;
 var
     storage: uint64;
 begin
     root := PUInt64(PtrUInt(pageRoot and ADDRESS_MASK));
+    nextDeviceVA := MMIO_BASE;
+    maxPhysical := (uint64(1) shl physicalBits) - 1;
     leafFlags := 3;
     if enableNX then leafFlags := leafFlags or (uint64(1) shl 63);
     tablePages := 0;
@@ -373,7 +491,7 @@ procedure UnitTest;
 const TEST_ADDRESS = HEAP_BASE + $800000;
       TEST_PATTERN = uint64($FEDCBA9876543210);
 var
-    before, frame, removed, highFrame: uint64;
+    before, frame, removed, highFrame, originalIdentity: uint64;
     region: PtrUInt;
     passed, failed: uint32;
 
@@ -431,6 +549,34 @@ begin
     Assert((PUInt64(region)^ = 1) and (PUInt64(region + ARENA_SIZE - 8)^ = 2), 'VMM first/last arena pages writable');
     Assert(release_region(region, 1), 'VMM releases complete arena');
     Assert((free_count = before) and (tablePages = 0), 'VMM final frame accounting restored');
+    Assert(mapDevice(maxPhysical, 2) = nil, 'MMIO rejects unsupported physical extent');
+    failAfter := 4; { metadata and the three table levels for the first 2 MiB }
+    region := PtrUInt(mapDevice($100000000, $201000));
+    failAfter := -1;
+    Assert((region = 0) and (translate(MMIO_BASE) = 0) and (free_count = before)
+           and (tablePages = 0), 'MMIO rolls back a partially installed device range');
+    originalIdentity := identityLeaf($FFFFFFFC)^;
+    region := PtrUInt(mapDevice($FFFFFFFC, 8));
+    Assert((region <> 0) and (translate(region) = $FFFFFFFC) and
+           (translate(region + 4) = $100000000), 'MMIO preserves offsets across 4 GiB');
+    Assert((leaf(region)^ and MMIO_CACHE_FLAGS = MMIO_CACHE_FLAGS) and
+           (leaf(region + 4)^ and MMIO_CACHE_FLAGS = MMIO_CACHE_FLAGS),
+           'MMIO sets uncached attributes on both device pages');
+    Assert(PtrUInt(mapDevice($100000001, 2)) = region + 5, 'MMIO reuses a mapped subrange');
+    { Drop the two synthetic mappings before PCI enumeration. The test does
+      not own or access their physical pages. }
+    region := region and not PtrUInt($FFF);
+    leaf(region)^ := 0;
+    leaf(region + 4096)^ := 0;
+    invalidate(region);
+    invalidate(region + 4096);
+    prune(region);
+    identityLeaf($FFFFFFFC)^ := originalIdentity;
+    invalidate($FFFFFFFC);
+    arch.x86_64.memory.physical.free_page(PtrUInt(deviceRanges));
+    deviceRanges := nil;
+    nextDeviceVA := MMIO_BASE;
+    Assert((tablePages = 0) and (free_count = before), 'MMIO test releases its page tables');
     field('VMM_TESTS_FAILED', failed);
 end;
 end.

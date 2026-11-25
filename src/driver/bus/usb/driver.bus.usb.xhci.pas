@@ -43,7 +43,6 @@ uses
 { ---- Capability Register Offsets (from BAR0) ---- }
 const
     XHCI_CAP_CAPLENGTH    = $00;  { 1 byte: offset to operational registers }
-    XHCI_CAP_HCIVERSION   = $02;  { 2 bytes: BCD interface version }
     XHCI_CAP_HCSPARAMS1   = $04;  { 4 bytes: structural parameters 1 }
     XHCI_CAP_HCSPARAMS2   = $08;  { 4 bytes: structural parameters 2 }
     XHCI_CAP_HCSPARAMS3   = $0C;  { 4 bytes: structural parameters 3 }
@@ -470,16 +469,6 @@ end;
 procedure xhci_writel(base : PtrUInt; reg : uint32; val : uint32);
 begin
     PUint32(base + reg)^ := val;
-end;
-
-function xhci_readb(base : PtrUInt; reg : uint32) : uint8;
-begin
-    xhci_readb := PUint8(base + reg)^;
-end;
-
-function xhci_readw(base : PtrUInt; reg : uint32) : uint16;
-begin
-    xhci_readw := PUint16(base + reg)^;
 end;
 
 { 64-bit read: low then high (i386) }
@@ -2154,6 +2143,7 @@ var
     bar      : uint64;
     capLen   : uint8;
     hciver   : uint16;
+    capHeader: uint32;
     hcsparams1 : uint32;
     hcsparams2 : uint32;
     hccparams1 : uint32;
@@ -2196,8 +2186,9 @@ begin
         driver.bus.pci.setBusMaster(devices[i].bus, devices[i].slot, devices[i].func, true);
 
         { Read capability registers }
-        capLen := xhci_readb(mmioBase, XHCI_CAP_CAPLENGTH);
-        hciver := xhci_readw(mmioBase, XHCI_CAP_HCIVERSION);
+        capHeader := xhci_readl(mmioBase, XHCI_CAP_CAPLENGTH);
+        capLen := uint8(capHeader);
+        hciver := uint16(capHeader shr 16);
         hcsparams1 := xhci_readl(mmioBase, XHCI_CAP_HCSPARAMS1);
         hcsparams2 := xhci_readl(mmioBase, XHCI_CAP_HCSPARAMS2);
         hccparams1 := xhci_readl(mmioBase, XHCI_CAP_HCCPARAMS1);
