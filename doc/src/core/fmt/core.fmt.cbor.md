@@ -66,3 +66,27 @@ The header functions operate on individual tokens. Use `Validate` to check the s
 ## Boot tests
 
 `test.runAllTests` calls `core.fmt.cbor.tests.UnitTest`. The suite covers the examples in RFC 8949 Appendix A, malformed and truncated cases from Appendix F.1, UTF-8 errors, native number conversion, and buffer and nesting limits. Results appear under the `CBOR` syslog label.
+
+## Owned values and map lookup
+
+Use `core.fmt.cbor.values` when you need repeated lookups in a complete CBOR
+document. `Parse` returns a status and an owned root. The input buffer can be
+reused once parsing finishes. Release the root with `FreeValue`. Child values
+and string data borrowed through the accessors remain valid until then.
+
+```pascal
+if core.fmt.cbor.values.Parse(buffer, size, root) = cborOK then begin
+    gateway := GetMapItem(root, 'default-gateway');
+    if GetString(gateway, data, length) then begin
+        { Use data and length while root is alive. }
+    end;
+    FreeValue(root);
+end;
+```
+
+Map keys are UTF-8 text without embedded NULs. Unsupported keys return
+`cborUnsupported` and duplicate keys return `cborInvalid`. The wire codec
+can still read maps with arbitrary key types. Text and byte values preserve
+their lengths and embedded NULs. Chunked strings and indefinite containers
+are materialised as their definite counterparts. Use `GetArraySize` and
+`GetArrayItem` for arrays and the header helpers for numeric conversions.

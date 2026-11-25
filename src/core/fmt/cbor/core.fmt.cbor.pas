@@ -55,6 +55,9 @@ function WriteString(buffer : PUInt8; size : SizeUInt; var offset : SizeUInt;
                      payload : PUInt8; length : SizeUInt;
                      kind : TCBORKind) : TCBORStatus;
 
+{ Validate a UTF-8 payload without a CBOR header. }
+function ValidUTF8(payload : PUInt8; length : SizeUInt) : Boolean;
+
 { Skip exactly one structurally complete item, checking UTF-8. The offset
   changes only on success. Validate requires exactly one item in the buffer.
   Map-key uniqueness and tag-specific semantics belong to the application. }
@@ -305,6 +308,7 @@ var
     first, next, remaining, minimum, maximum : Byte;
 begin
     Result := False;
+    if (payload = nil) and (length <> 0) then Exit;
     pos := 0;
     while pos < length do begin
         first := payload[pos];

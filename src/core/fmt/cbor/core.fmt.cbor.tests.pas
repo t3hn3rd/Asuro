@@ -10,7 +10,7 @@ procedure UnitTest;
 implementation
 
 uses
-    core.fmt.cbor, test.harness;
+    core.fmt.cbor, core.fmt.cbor.values, test.harness;
 
 const
     { RFC 8949, Appendix A and Appendix F.1. }
@@ -252,6 +252,55 @@ begin
     Result := True;
 end;
 
+procedure TestValues(context : PTestContext);
+var
+    buffer : TBuffer;
+    root, value, child : PCBORValue;
+    data : PUInt8;
+    size, length : SizeUInt;
+begin
+    { Indefinite map and array, chunked key and byte string, and a tag. }
+    size := FromHex('bf7f61616162ff9f5f42000141ffffc11bffffffffffffffffff606100ff', buffer);
+    test.harness.Assert(context, Parse(@buffer[0], size, root) = cborOK, 'parse owned map');
+    if root <> nil then begin
+        buffer[0] := 0;
+        value := GetMapItem(root, 'ab');
+        test.harness.Assert(context, GetArraySize(value) = 2, 'look up joined text key');
+        test.harness.Assert(context, GetArrayItem(value, 2) = nil, 'array index out of range');
+        child := GetArrayItem(value, 0);
+        if GetString(child, data, length) then
+            test.harness.Assert(context, (length = 3) and (data^ = 0) and
+                ((data + 2)^ = $FF), 'copy and join binary data')
+        else test.harness.Assert(context, False, 'read binary data');
+        child := GetArrayItem(value, 1);
+        if child <> nil then begin
+            test.harness.Assert(context, child^.Head.Kind = cborTag, 'retain tag kind');
+            if child^.Head.Kind = cborTag then
+                test.harness.Assert(context, child^.Tagged^.Head.Argument = High(QWord),
+                                    'retain full unsigned range');
+        end else test.harness.Assert(context, False, 'read tagged item');
+        child := GetMapItem(root, '');
+        if GetString(child, data, length) then
+            test.harness.Assert(context, (length = 1) and (data^ = 0),
+                                'allow empty keys and NUL in text values')
+        else test.harness.Assert(context, False, 'read empty key');
+        test.harness.Assert(context, GetMapItem(root, 'missing') = nil, 'missing key');
+    end;
+    FreeValue(root);
+
+    size := FromHex('a26161007f6161ff01', buffer);
+    test.harness.Assert(context, Parse(@buffer[0], size, root) = cborInvalid, 'reject duplicate text key');
+    test.harness.Assert(context, root = nil, 'free partial duplicate map');
+    size := FromHex('81a2616100610000', buffer);
+    test.harness.Assert(context, Parse(@buffer[0], size, root) = cborUnsupported, 'reject embedded NUL key');
+    test.harness.Assert(context, root = nil, 'free partial nested map');
+    size := FromHex('a10100', buffer);
+    test.harness.Assert(context, Parse(@buffer[0], size, root) = cborUnsupported, 'reject integer key');
+    size := FromHex('a0', buffer);
+    test.harness.Assert(context, Parse(@buffer[0], size, root) = cborOK, 'parse empty map');
+    FreeValue(root);
+end;
+
 procedure UnitTest;
 var
     buffer : TBuffer;
@@ -343,6 +392,7 @@ begin
     test.harness.Assert(@context, Validate(@nested[1], CBOR_MAX_DEPTH + 1) = cborOK, 'Accept depth limit');
     test.harness.Assert(@context, Validate(@nested[0], SizeOf(nested)) = cborDepthLimit, 'Report exceeded depth limit');
 
+    TestValues(@context);
     test.harness.Finish(@context);
 end;
 
