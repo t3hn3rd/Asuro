@@ -138,6 +138,7 @@ nav:
         - MD5: src/core/enc/core.enc.md5.md
         - SHA-1: src/core/enc/core.enc.sha1.md
       - Formats:
+        - CBOR: src/core/fmt/core.fmt.cbor.md
         - JSON: src/core/fmt/core.fmt.json.md
         - Targa (TGA): src/core/fmt/core.fmt.targa.md
       - Graphics:
