@@ -22,12 +22,45 @@ procedure validateStorage;
 implementation
 
 uses
-    test.harness, arch.platform.cpu, driver.bus.pci, driver.bus.usb.core,
+    test.harness, driver.storage.ctl.ahci, driver.bus.usb.ohci, arch.platform.cpu, driver.bus.pci, driver.bus.usb.core,
     driver.storage.types, driver.storage.fs.mgr, driver.storage.mgr, driver.storage.vfs,
     driver.storage.perftest, memory.heap, proc.mgr, debug.early,
     arch.x86_64.memory.physical, arch.x86_64.memory.virtual;
 
 {$i regression.compiler-abi.inc}
+
+procedure testHighDMA32(var ctx: TTestContext);
+var frame, original, removed: uint64;
+    raw: pointer;
+    address, saved: PtrUInt;
+begin
+    frame := alloc_high;
+    if frame = 0 then begin
+        puts('SKIP: DMA32 high-buffer checks require RAM above 4 GiB'#13#10);
+        exit;
+    end;
+    raw := tryAlloc(128 * 1024 + 8192);
+    test.harness.Assert(@ctx, raw <> nil, 'DMA32 fixture allocation');
+    if raw <> nil then begin
+        { Replace only a full page inside this allocation, then restore its
+          original physical frame and ownership before freeing the fixture. }
+        address := (PtrUInt(raw) + 4095) and not PtrUInt(4095);
+        saved := arch.platform.cpu.lock;
+        if not unmap_page(address, original) then bootstrap_halt;
+        if not map_page(address, frame, false) then bootstrap_halt;
+        arch.platform.cpu.unlock(saved);
+        test.harness.Assert(@ctx, driver.storage.ctl.ahci.testDMA32(puint8(address)),
+                            'AHCI DMA32 write, read and failed completion with high backing');
+        test.harness.Assert(@ctx, driver.bus.usb.ohci.testDMA32(puint8(address)),
+                            'OHCI DMA32 write and short read preserve the caller buffer');
+        saved := arch.platform.cpu.lock;
+        if not unmap_page(address, removed) or (removed <> frame) then bootstrap_halt;
+        if not map_page(address, original, true) then bootstrap_halt;
+        arch.platform.cpu.unlock(saved);
+        kfree(void(raw));
+    end;
+    if not free_page(frame) then bootstrap_halt;
+end;
 
 procedure UnitTest;
 var
@@ -35,6 +68,9 @@ var
 begin
     test.harness.Start(@ctx, 'arch.x86_64.runtime');
     testCompilerRuntime(ctx);
+    test.harness.Finish(@ctx);
+    test.harness.Start(@ctx, 'driver.dma');
+    testHighDMA32(ctx);
     test.harness.Finish(@ctx);
     test.harness.Start(@ctx, 'driver.bus.pci.memoryBAR');
     test.harness.Assert(@ctx, driver.bus.pci.memoryBAR($2004, 1) = uint64($100002000), '64-bit address');
