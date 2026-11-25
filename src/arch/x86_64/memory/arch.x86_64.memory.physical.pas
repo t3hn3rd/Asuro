@@ -22,6 +22,7 @@ const
     MAX_MANAGED = uint64(64) shl 30;
 procedure init(info: Pmultiboot_info_t);
 function alloc_page(lowOnly: boolean): uint64;
+function alloc_low_run(pages: uint32): uint64;
 function alloc_high: uint64;
 function free_page(address: uint64): boolean;
 function reserve_range(address, bytes: uint64): boolean;
@@ -268,6 +269,62 @@ function alloc_page(lowOnly: boolean): uint64;
 begin
     if lowOnly then alloc_page := allocateBetween(0, $100000)
     else alloc_page := allocateBetween(0, frameCount);
+end;
+
+function findLowRun(first, limit, pages: uint32): uint32;
+var i, run, bits: uint32;
+begin
+    findLowRun := High(uint32);
+    run := 0;
+    i := first;
+    while i < limit do begin
+        bits := eligible[i shr 5] and not used[i shr 5];
+        if bits = 0 then begin
+            i := (i and not uint32(31)) + 32;
+            run := 0;
+            continue;
+        end;
+        if (bits and (uint32(1) shl (i and 31))) <> 0 then inc(run)
+        else run := 0;
+        inc(i);
+        if run = pages then begin
+            findLowRun := i - pages;
+            exit;
+        end;
+    end;
+end;
+
+{ A DMA32 staging run is owned until the transfer retires. The second search
+  includes runs straddling the hint; neither search crosses the DMA ceiling. }
+function alloc_low_run(pages: uint32): uint64;
+var saved: PtrUInt;
+    i, start, limit, first, endOfPrefix: uint32;
+begin
+    alloc_low_run := 0;
+    if pages = 1 then begin
+        alloc_low_run := alloc_page(true);
+        exit;
+    end;
+    limit := frameCount;
+    if limit > $100000 then limit := $100000;
+    if (pages = 0) or (pages > limit) then exit;
+    saved := lockIRQ;
+    first := hint;
+    if first >= limit then first := 0;
+    start := findLowRun(first, limit, pages);
+    if (start = High(uint32)) and (first > 0) then begin
+        endOfPrefix := first + pages - 1;
+        if endOfPrefix > limit then endOfPrefix := limit;
+        start := findLowRun(0, endOfPrefix, pages);
+    end;
+    if start <> High(uint32) then begin
+        for i := start to start + pages - 1 do
+            used[i shr 5] := used[i shr 5] or (uint32(1) shl (i and 31));
+        dec(freeFrames, pages);
+        hint := start + pages;
+        alloc_low_run := uint64(start) * FRAME_SIZE;
+    end;
+    unlockIRQ(saved);
 end;
 
 function alloc_high: uint64;
