@@ -56,7 +56,7 @@ const
 
 var
     BGAPresent    : boolean = false;
-    BGAFramebuffer: uint32 = 0;
+    BGAFramebuffer: uint64 = 0;
     BGAMemoryBytes: uint64 = 0;
     BGAPCIBus     : uint8 = 0;
     BGAPCISlot    : uint8 = 0;
@@ -80,7 +80,7 @@ end;
 function load(ptr : void) : boolean;
 var
     dev    : PPCI_Device;
-    bar0   : uint32;
+    framebufferBAR: uint64;
     id     : uint16;
 begin
     push_trace('driver.video.bga.load');
@@ -100,26 +100,12 @@ begin
     { Read framebuffer address from driver.bus.pci BARs.
       Native BGA (vendor $1234): framebuffer is at BAR0.
       VMware SVGA (vendor $15AD): BAR0=I/O ports, framebuffer is at BAR1. }
-    bar0 := 0;
-    if (dev^.address0 and $01) = 0 then begin
-        { BAR0 is MMIO — check if it's a plausible framebuffer address }
-        bar0 := dev^.address0 and $FFFFFFF0;
-        if bar0 < $100000 then
-            bar0 := 0; { Too low — probably not the framebuffer }
-    end;
-    if bar0 = 0 then begin
-        { Try BAR1 (VMware SVGA puts framebuffer there) }
-        if (dev^.address1 and $01) = 0 then begin
-            bar0 := dev^.address1 and $FFFFFFF0;
-            if bar0 < $100000 then
-                bar0 := 0;
-        end;
-    end;
-    if bar0 <> 0 then begin
-        BGAFramebuffer := bar0;
-        io.syslog.log('BGA', 'driver.bus.pci framebuffer=$');
-        io.syslog.writehexln(BGAFramebuffer);
-    end;
+    if (dev^.device_id = $15AD) and ((dev^.address0 and 1) <> 0) then
+        framebufferBAR := driver.bus.pci.memoryBAR(dev^.address1, dev^.address2)
+    else
+        framebufferBAR := driver.bus.pci.memoryBAR(dev^.address0, dev^.address1);
+    if framebufferBAR < $100000 then framebufferBAR := 0;
+    BGAFramebuffer := framebufferBAR;
 
     { Probe the BGA I/O port for a valid version ID }
     id := bgaReadReg(BGA_REG_ID);
@@ -143,8 +129,7 @@ begin
         { If BAR0 was zero, use the well-known default }
         if BGAFramebuffer = 0 then begin
             BGAFramebuffer := $E0000000;
-            io.syslog.log('BGA', 'Using default framebuffer=$');
-            io.syslog.writehexln(BGAFramebuffer);
+            io.syslog.logln('BGA', 'Using legacy framebuffer at $E0000000');
         end;
 
         { Notify GPU framework that BGA is available }
@@ -233,8 +218,10 @@ begin
     io.syslog.writeint(height);
     io.syslog.writestring('x');
     io.syslog.writeint(bpp);
-    io.syslog.writestring(' fb=$');
-    io.syslog.writehexln(BGAFramebuffer);
+    io.syslog.writestring(' framebuffer high/low: ');
+    io.syslog.writehex(uint32(BGAFramebuffer shr 32));
+    io.syslog.writestring('/');
+    io.syslog.writehexln(uint32(BGAFramebuffer));
 
     bgaSetMode := true;
     pop_trace;

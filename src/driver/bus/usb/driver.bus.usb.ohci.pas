@@ -1301,6 +1301,7 @@ var
     priv    : POHCI_PrivData;
     hc      : TUSBHCDriver;
     hcEntry : PUSBHCDriver;
+    bar: uint64;
     mmioBase : PtrUInt;
 begin
     push_trace('driver.bus.usb.ohci.load');
@@ -1328,15 +1329,14 @@ begin
         io.syslog.writestring(' BAR0=');
         io.syslog.writehexln(devices[i].address0);
 
-        { BAR0 is MMIO base for OHCI. Mask off type bits (lower 4 bits for MMIO). }
-        mmioBase := devices[i].address0 AND $FFFFFFF0;
-        if mmioBase = 0 then begin
+        bar := driver.bus.pci.memoryBAR(devices[i].address0, devices[i].address1);
+        if bar = 0 then begin
             io.syslog.logln('driver.bus.usb.ohci', 'Invalid MMIO base (BAR0=0), skipping.');
             continue;
         end;
 
-        { Identity-map the MMIO region so we can access it }
-        mmioBase := PtrUInt(arch.platform.memory.mapDevice(mmioBase, 4096));
+        { Map the full physical BAR before accessing controller registers. }
+        mmioBase := PtrUInt(arch.platform.memory.mapDevice(bar, 4096));
         if mmioBase = 0 then continue;
 
         { Enable driver.bus.pci bus mastering }
