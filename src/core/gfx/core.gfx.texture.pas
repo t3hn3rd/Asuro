@@ -23,8 +23,14 @@ var
     texture: PTexture;
 
 begin
+    newTexture := nil;
     texture:= PTexture(kalloc(sizeof(TTexture)));
+    if texture = nil then exit;
     texture^.Pixels:= PRGB32(kalloc(width * height * sizeof(TRGB32)));
+    if texture^.Pixels = nil then begin
+        kfree(void(texture));
+        exit;
+    end;
     texture^.Width:= width;
     texture^.Height:= height;
     texture^.Size:= width * height;
