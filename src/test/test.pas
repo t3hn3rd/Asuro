@@ -33,6 +33,7 @@ uses
     {$IFDEF TEST_ONLY}
     arch.x86.power,
     {$ENDIF}
+    {$if defined(CPUX86_64) and defined(UNIT_TESTS)}arch.x86_64.regression,{$endif}
     core.strings,
     core.strings.helpers,
     core.ds.lists,
@@ -86,6 +87,7 @@ begin
     io.syslog.logln('test', 'Running all standard unit tests...');
 
     { Run unit tests }
+    {$if defined(CPUX86_64) and defined(UNIT_TESTS)}arch.x86_64.regression.UnitTest;{$endif}
     core.strings.UnitTest;
     core.strings.helpers.UnitTest;
     core.ds.lists.TestAllLists;
