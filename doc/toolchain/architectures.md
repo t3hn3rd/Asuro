@@ -16,17 +16,17 @@ For the native code, use the same target C compiler for LVGL, generated icons an
 
 ## 3. Wire the recipe into the launcher
 
-Make these changes in `toolchain/build.ps1`:
+Add an entry to `Get-ArchitectureTable` in `toolchain/build.ps1`. The table drives both the Ninja graph and the stage commands. Each build uses `build/<arch>/<profile>/` so the new target has its own cache.
 
-| Area | What to change |
+| Area | What to configure |
 | --- | --- |
-| Target selection | Extend `Invoke-Build` and `Invoke-Stage` validation for the new architecture. Keep the architecture in `build/<arch>/<profile>/` so caches stay isolated. |
-| Pascal | Select the target compiler and flags in `Get-PascalOptions` and `Build-Pascal`. Record the selected compiler version and effective options in `toolchain.json` so a toolchain change invalidates the Pascal cache. Use a `ppudump` compatible with the compiler’s PPU format. |
-| Assembly | Update the `stub` and `splash` stages and their inputs in `Write-Graph`. The current splash assets are assembled with NASM using an x86 ELF format. Supply a target assembler or another way to embed those bytes for a different CPU family. |
-| Native objects | Select the target C compiler, archive tool, and flags for the Ninja `cc` rule and the `icons`, `lvgl`, and `initcalls` stages. Keep compiler-generated header dependencies enabled. |
-| Kernel link | Add a target linker script and select the linker, emulation, and runtime library in `Link-Kernel`. Add the selected linker script as a Ninja input. Match the entry symbol and memory layout to the boot stub. |
-| Initialization | Check the generated `INITFINAL` record against the target `system` unit. Verify the count field, function pointer widths, alignment, symbol spelling, and calling convention. Use the compiler-derived object list for both symbol discovery and linking. |
-| Boot image | Add the target's packaging recipe and asset dependencies. Only expose `iso` and `all` for that target once they can produce the expected boot image. Preserve the root `Asuro.iso` contract for CI jobs that publish ISOs. |
+| Pascal | Set `PascalCompiler`, `PascalFlags`, and `PpuDump`. Use a PPUDump compatible with the compiler's PPU format. |
+| Native objects | Set `CCompiler`, `CTargetFlags`, `Archiver`, and `SymbolReader`. The shared stages use these tools for LVGL, icons, and `INITFINAL`. |
+| Assembly | Set `Assemble` to a function reference such as `${function:Build-X86Assembly}`. Ninja tracks `StubSource`, `SplashSource`, and `SplashAssets`. The x86 handler uses `Assembler` and `AssemblerFlags` to assemble both inputs. |
+| Kernel link | Set `Linker`, `LinkerFlags`, `LinkerScript`, and `RuntimeFlags`. Match the entry symbol and memory layout to the boot stub. |
+| Boot image | Set `PackageImage` to a function reference and `ImageSource` to the asset directory. The handler produces `Asuro.iso` in the build directory for the launcher to publish. Use `$null` for `PackageImage` while bringing up a compile-only target. |
+
+Reuse the shared stages when the target's tools accept the same command syntax. If the target uses an assembler other than NASM, adapt the version query in Write-Version, which currently parses NASM's output for the kernel version record. Check the generated `INITFINAL` record against the target `system` unit, including the count field, function pointer widths, alignment, symbol spelling, and calling convention. Check that compiler runtime libraries and all linked objects use the same target ABI.
 
 ## 4. Verify and enable CI
 

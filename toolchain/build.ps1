@@ -18,6 +18,8 @@
 #>
 #Requires -Version 7.4
 
+#region Launcher setup
+
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $false
 
@@ -25,13 +27,15 @@ Set-Location -LiteralPath (Join-Path $PSScriptRoot '..')
 $root = (Get-Location).Path
 [Environment]::CurrentDirectory = $root
 $launcher = 'toolchain/build.ps1'
-$lvgl = 'build/vendor/v9.2.2/lvgl'
-$wasuro = 'build/vendor/wasuro'
-$lvglIntegration = 'src/driver/video/lvgl'
+
+#endregion
+
+#region Architecture and build profiles
+
 $iconSizes = 32, 64, 128
-$nativeFlags = @(
-    '-m32', '-march=i686', '-ffreestanding', '-fno-builtin',
-    '-fno-stack-protector', '-fno-pic', '-fno-pie', '-O2', '-DLV_CONF_INCLUDE_SIMPLE'
+$commonNativeFlags = @(
+    '-ffreestanding', '-fno-builtin', '-fno-stack-protector',
+    '-fno-pic', '-fno-pie', '-O2', '-DLV_CONF_INCLUDE_SIMPLE'
 )
 $profiles = @{
     'release'      = @('-O3')
@@ -39,6 +43,58 @@ $profiles = @{
     'test:minimal' = @('-O3', '-gw', '-g', '-gl', '-dUNIT_TESTS')
     'test:complex' = @('-O3', '-gw', '-g', '-gl', '-dUNIT_TESTS', '-dUNIT_TESTS_COMPLEX')
 }
+
+# Register target tools, their build inputs, and the handlers that vary by architecture.
+function Get-ArchitectureTable {
+    @{
+        x86 = @{
+            PascalCompiler = 'fpc'
+            PascalFlags    = @('-OpPENTIUM3', '-CfSSE', '-CfSSE2', '-Rintel', '-Pi386', '-Tlinux')
+            PpuDump        = 'ppudump'
+
+            CCompiler      = 'gcc'
+            CTargetFlags   = @('-m32', '-march=i686')
+            Archiver       = 'ar'
+            SymbolReader   = 'nm'
+
+            Assembler      = 'nasm'
+            AssemblerFlags = @('-f', 'elf')
+            Assemble       = ${function:Build-X86Assembly}
+            StubSource     = 'src/arch/x86/boot/stub.asm'
+            SplashSource   = 'src/boot/splash_tga.asm'
+            SplashAssets   = @('assets/embedded/asuro.tga', 'assets/embedded/teapot.tga')
+
+            Linker         = 'ld'
+            LinkerFlags    = @('-m', 'elf_i386')
+            LinkerScript   = 'toolchain/linker.script'
+            RuntimeFlags   = @('-m32', '-print-libgcc-file-name')
+
+            PackageImage   = ${function:New-X86GrubIso}
+            ImageSource    = 'assets/iso'
+        }
+    }
+}
+
+function Get-TargetRecipe([string]$Name) {
+    if ($architectureTable.Keys -cnotcontains $Name) {
+        throw "Unknown architecture '$Name'. Supported architectures: $($architectureTable.Keys -join ', ')."
+    }
+    $architectureTable[$Name]
+}
+
+# Keep the effective FPC options in one place for compilation and cache validation.
+function Get-PascalOptions {
+    @('-Cn', '-Aelf', '-n', '-v0e', '-Si', '-Sc', '-Sg', '-Xd', '-CX', '-XXs') +
+        $target.PascalFlags + $profiles[$buildProfile]
+}
+
+function Get-NativeFlags {
+    $target.CTargetFlags + $commonNativeFlags
+}
+
+#endregion
+
+#region Shared helpers
 
 # Run a native tool and turn a nonzero exit code into a build error.
 function Invoke-Tool {
@@ -78,18 +134,13 @@ function Get-RelativePaths([string[]]$Directories, [string[]]$Extensions) {
         Sort-Object -CaseSensitive -Unique
 }
 
-# Refresh the profile’s source mirror while preserving generated Pascal files.
-function Sync-Sources {
-    New-BuildDirectory "$buildPath/source/src/arch/$arch"
-    New-BuildDirectory "$buildPath/source/wasuro"
-    Invoke-Tool rsync @(
-        '-a', '--checksum', '--delete', '--exclude=/core/core.version.pas',
-        '--exclude=/boot/dangling_units.inc', '--exclude=/arch/',
-        'src/', "$buildPath/source/src/"
-    )
-    Invoke-Tool rsync @('-a', '--checksum', '--delete', "src/arch/$arch/", "$buildPath/source/src/arch/$arch/")
-    Invoke-Tool rsync @('-a', '--checksum', '--delete', "$wasuro/", "$buildPath/source/wasuro/")
-}
+#endregion
+
+#region Dependency caches and cloning
+
+$lvgl = 'build/vendor/v9.2.2/lvgl'
+$wasuro = 'build/vendor/wasuro'
+$lvglIntegration = 'src/driver/video/lvgl'
 
 # Fetch Wasuro and LVGL when their caches are absent.
 function Initialize-Dependencies {
@@ -113,6 +164,23 @@ function Initialize-Dependencies {
         New-BuildDirectory (Split-Path -Parent $lvgl)
         Invoke-Tool git @('clone', '--depth', '1', '--branch', 'v9.2.2', 'https://github.com/lvgl/lvgl.git', $lvgl)
     }
+}
+
+#endregion
+
+#region Pascal source mirror and cache
+
+# Refresh the profile’s source mirror while preserving generated Pascal files.
+function Sync-Sources {
+    New-BuildDirectory "$buildPath/source/src/arch/$arch"
+    New-BuildDirectory "$buildPath/source/wasuro"
+    Invoke-Tool rsync @(
+        '-a', '--checksum', '--delete', '--exclude=/core/core.version.pas',
+        '--exclude=/boot/dangling_units.inc', '--exclude=/arch/',
+        'src/', "$buildPath/source/src/"
+    )
+    Invoke-Tool rsync @('-a', '--checksum', '--delete', "src/arch/$arch/", "$buildPath/source/src/arch/$arch/")
+    Invoke-Tool rsync @('-a', '--checksum', '--delete', "$wasuro/", "$buildPath/source/wasuro/")
 }
 
 # Record Pascal input contents so Ninja can see changes even when timestamps collide.
@@ -159,6 +227,47 @@ function Update-UnitInventory([string[]]$Sources) {
     }
 }
 
+# Walk FPC’s compiled-unit dependencies from asuro to get the objects for the kernel link.
+function Get-PascalObjects {
+    $ppus = @(Get-ChildItem -LiteralPath "$buildPath/units" -Filter '*.ppu' -File)
+    $units = @{}
+    $current = $null
+    foreach ($line in (Invoke-Tool $target.PpuDump (@('-VIM') + $ppus.FullName))) {
+        switch -Regex ($line) {
+            '^Analyzing (.+\.ppu) \(' {
+                $current = @{
+                    Dependencies = [Collections.Generic.List[string]]::new()
+                    Objects = [Collections.Generic.List[string]]::new()
+                }
+                $units[[IO.Path]::GetFileNameWithoutExtension($Matches[1])] = $current
+            }
+            '^\s*Uses unit:\s+(\S+)' { $current.Dependencies.Add($Matches[1]) }
+            '^\s*Link unit object file:\s+(\S+)' { $current.Objects.Add($Matches[1]) }
+        }
+    }
+    $pending = [Collections.Generic.Queue[string]]::new()
+    $visited = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+    $objects = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+    $pending.Enqueue('asuro')
+    while ($pending.Count) {
+        $name = $pending.Dequeue()
+        if (!$visited.Add($name)) { continue }
+        if (!$units.ContainsKey($name)) { throw "Missing compiled Pascal unit: $name" }
+        foreach ($dependency in $units[$name].Dependencies) { $pending.Enqueue($dependency) }
+        foreach ($object in $units[$name].Objects) {
+            $path = [IO.Path]::GetFullPath("$buildPath/units/$object")
+            if (![IO.File]::Exists($path)) { throw "Missing Pascal link input: $path" }
+            [void]$objects.Add($path)
+        }
+    }
+    if (!$objects.Count) { throw 'No Pascal objects reachable from asuro.' }
+    $objects | Sort-Object -CaseSensitive
+}
+
+#endregion
+
+#region Build stages
+
 # Generate the Pascal unit containing build and source metadata.
 function Write-Version {
     $version = Invoke-Tool git @('describe', '--tags', '--always')
@@ -180,8 +289,8 @@ function Write-Version {
         [Text.Encoding]::UTF8.GetBytes($hashes + "`n")
     )).ToLowerInvariant()
     $now = Get-Date
-    $fpcVersion = Invoke-Tool fpc @('-iV')
-    $nasmVersion = (Invoke-Tool nasm @('-v') -split ' ')[2]
+    $fpcVersion = Invoke-Tool $target.PascalCompiler @('-iV')
+    $nasmVersion = (Invoke-Tool $target.Assembler @('-v') -split ' ')[2]
     $makeVersion = ((Invoke-Tool make @('--version'))[0] -split ' ')[2]
     Write-BuildFile "$buildPath/source/src/core/core.version.pas" @"
 unit core.version;
@@ -243,51 +352,6 @@ function Write-BootUnits {
     }
 }
 
-# Walk FPC’s compiled-unit dependencies from asuro to get the objects for the kernel link.
-function Get-PascalObjects {
-    $ppus = @(Get-ChildItem -LiteralPath "$buildPath/units" -Filter '*.ppu' -File)
-    $units = @{}
-    $current = $null
-    foreach ($line in (Invoke-Tool ppudump (@('-VIM') + $ppus.FullName))) {
-        switch -Regex ($line) {
-            '^Analyzing (.+\.ppu) \(' {
-                $current = @{
-                    Dependencies = [Collections.Generic.List[string]]::new()
-                    Objects = [Collections.Generic.List[string]]::new()
-                }
-                $units[[IO.Path]::GetFileNameWithoutExtension($Matches[1])] = $current
-            }
-            '^\s*Uses unit:\s+(\S+)' { $current.Dependencies.Add($Matches[1]) }
-            '^\s*Link unit object file:\s+(\S+)' { $current.Objects.Add($Matches[1]) }
-        }
-    }
-    $pending = [Collections.Generic.Queue[string]]::new()
-    $visited = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-    $objects = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
-    $pending.Enqueue('asuro')
-    while ($pending.Count) {
-        $name = $pending.Dequeue()
-        if (!$visited.Add($name)) { continue }
-        if (!$units.ContainsKey($name)) { throw "Missing compiled Pascal unit: $name" }
-        foreach ($dependency in $units[$name].Dependencies) { $pending.Enqueue($dependency) }
-        foreach ($object in $units[$name].Objects) {
-            $path = [IO.Path]::GetFullPath("$buildPath/units/$object")
-            if (![IO.File]::Exists($path)) { throw "Missing Pascal link input: $path" }
-            [void]$objects.Add($path)
-        }
-    }
-    if (!$objects.Count) { throw 'No Pascal objects reachable from asuro.' }
-    $objects | Sort-Object -CaseSensitive
-}
-
-# Keep the effective FPC options in one place for compilation and cache validation.
-function Get-PascalOptions {
-    @(
-        '-Cn', '-Aelf', '-n', '-v0e', '-OpPENTIUM3', '-Si', '-Sc', '-Sg', '-Xd', '-CX', '-XXs',
-        '-CfSSE', '-CfSSE2', '-Rintel', '-Pi386', '-Tlinux'
-    ) + $profiles[$buildProfile]
-}
-
 # Compile the kernel units and refresh the linker list and rebuild stamp.
 function Build-Pascal {
     Sync-Sources
@@ -308,7 +372,7 @@ function Build-Pascal {
     }
 
     $statePath = "$buildPath/pascal-cache.json"
-    $signature = ConvertTo-Json -Compress -InputObject @($config.Compiler, $options)
+    $signature = ConvertTo-Json -Compress -InputObject @($target.PascalCompiler, $config.Compiler, $options)
     $rebuildAll = $true
     if ([IO.File]::Exists($statePath)) {
         $previous = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json -AsHashtable
@@ -342,7 +406,7 @@ function Build-Pascal {
     # Only a complete compiler run can validate the cache for the next build.
     [IO.File]::Delete($statePath)
     [IO.File]::Delete("$buildPath/pascal.stamp")
-    Invoke-Tool fpc ($options + "$buildPath/source/src/asuro.pas")
+    Invoke-Tool $target.PascalCompiler ($options + "$buildPath/source/src/asuro.pas")
     $objects = @(Get-PascalObjects)
     Write-BuildFile "$buildPath/pascal-objects.rsp" (($objects -join "`n") + "`n")
     Write-BuildFile $statePath (ConvertTo-Json -Depth 4 -InputObject @{
@@ -355,7 +419,7 @@ function Build-Pascal {
 # Build the INITFINAL table from the same Pascal objects used by the linker.
 function Build-InitCalls {
     $objects = [IO.File]::ReadAllLines("$buildPath/pascal-objects.rsp")
-    $symbols = @(Invoke-Tool nm (@('--defined-only') + $objects) | ForEach-Object {
+    $symbols = @(Invoke-Tool $target.SymbolReader (@('--defined-only') + $objects) | ForEach-Object {
         if ($_ -match '^\s*[0-9a-fA-F]+\s+T\s+(INIT\$_\$\S+)') { $Matches[1] }
     })
     $lines = @(
@@ -375,7 +439,9 @@ function Build-InitCalls {
         $lines += 'struct __attribute__((packed)) { int count; } INITFINAL = { 0 };'
     }
     Write-BuildFile "$buildPath/initcalls.c" (($lines -join "`n") + "`n")
-    Invoke-Tool gcc @('-m32', '-c', '-fno-pic', '-ffreestanding', '-o', "$buildPath/initcalls.o", "$buildPath/initcalls.c")
+    Invoke-Tool $target.CCompiler ($target.CTargetFlags + @(
+        '-c', '-fno-pic', '-ffreestanding', '-o', "$buildPath/initcalls.o", "$buildPath/initcalls.c"
+    ))
     Write-Host "Found $($symbols.Count) unit initialization sections."
 }
 
@@ -394,7 +460,7 @@ function Build-Icons {
     New-BuildDirectory "$buildPath/icons"
     Invoke-Tool python3 @('toolchain/gen_file_icons.py', "$buildPath/icons", '--font-dir', 'assets/embedded')
     foreach ($size in $iconSizes) {
-        Invoke-Tool gcc ($nativeFlags + @(
+        Invoke-Tool $target.CCompiler ((Get-NativeFlags) + @(
             '-I', (Split-Path -Parent $lvgl), '-I', $lvgl, '-I', $lvglIntegration,
             '-c', "$buildPath/icons/asuro_icons_$size.c", '-o', "$buildPath/icons/asuro_icons_$size.o"
         ))
@@ -404,21 +470,26 @@ function Build-Icons {
 # Link the Pascal, assembly, and native objects into the kernel image.
 function Link-Kernel {
     $objects = [IO.File]::ReadAllLines("$buildPath/pascal-objects.rsp")
-    $libgcc = Invoke-Tool gcc @('-m32', '-print-libgcc-file-name')
+    $libgcc = Invoke-Tool $target.CCompiler $target.RuntimeFlags
     $strip = @()
     if ($buildProfile -eq 'release') { $strip = @('-s') }
-    Invoke-Tool ld (@('-m', 'elf_i386') + $strip + @(
-        '--gc-sections', '--no-warn-execstack', '-T', 'toolchain/linker.script',
+    Invoke-Tool $target.Linker ($target.LinkerFlags + $strip + @(
+        '--gc-sections', '--no-warn-execstack', '-T', $target.LinkerScript,
         '-o', "$buildPath/kernel.bin", "$buildPath/stub.o"
     ) + $objects + @("$buildPath/splash_tga.o", "$buildPath/initcalls.o") + @(Get-IconObjects) +
         @('--start-group', "$buildPath/liblvgl.a", $libgcc, '--end-group'))
 }
 
-# Stage the ISO source tree and add the linked kernel before packaging.
-function Package-Iso {
+# Assemble either of the x86 boot objects using the target's ELF format.
+function Build-X86Assembly([string]$Source, [string]$Output) {
+    Invoke-Tool $target.Assembler ($target.AssemblerFlags + @($Source, '-o', $Output))
+}
+
+# Stage the x86 ISO source tree and add the linked kernel before GRUB packaging.
+function New-X86GrubIso {
     $stage = [IO.Directory]::CreateTempSubdirectory('asuro-iso-')
     try {
-        Invoke-Tool rsync @('-a', 'assets/iso/', "$($stage.FullName)/")
+        Invoke-Tool rsync @('-a', "$($target.ImageSource)/", "$($stage.FullName)/")
         Copy-Item -LiteralPath "$buildPath/kernel.bin" -Destination "$($stage.FullName)/boot/asuro.bin"
         Invoke-Tool grub-mkrescue @('-o', "$buildPath/Asuro.iso", $stage.FullName)
     } finally {
@@ -426,49 +497,9 @@ function Package-Iso {
     }
 }
 
-# Dispatch a single Ninja stage using the configuration of its build directory.
-function Invoke-Stage {
-    param(
-        [ValidateSet('docs', 'version', 'boot-units', 'compile-pascal', 'stub', 'splash', 'lvgl', 'icons', 'initcalls', 'link', 'iso')]
-        [string]$Step,
+#endregion
 
-        [ValidatePattern('^build/(?:docs|x86/(?:debug|release|test-minimal|test-complex))$')]
-        [string]$Path
-    )
-
-    if ($Step -eq 'docs') {
-        Invoke-Tool python3 @('-m', 'mkdocs', 'build', '--strict')
-        return
-    }
-    if ($Path -eq 'build/docs') {
-        throw "Stage '$Step' requires an architecture and build profile."
-    }
-    $buildPath = $Path
-    $config = Get-Content -LiteralPath "$buildPath/toolchain.json" -Raw | ConvertFrom-Json
-    $arch, $buildProfile = $config.Arch, $config.Profile
-    if ($arch -cne 'x86' -or !$buildProfile -or !$profiles.ContainsKey($buildProfile) -or
-        $buildPath -cne "build/$arch/$($buildProfile.Replace(':', '-'))") {
-        throw "Toolchain configuration does not match $buildPath."
-    }
-
-    switch ($Step) {
-        'version'        { Write-Version }
-        'boot-units'     { Write-BootUnits }
-        'compile-pascal' { Build-Pascal }
-        'stub'           { Invoke-Tool nasm @('-f', 'elf', "src/arch/$arch/boot/stub.asm", '-o', "$buildPath/stub.o") }
-        'splash'         { Invoke-Tool nasm @('-f', 'elf', 'src/boot/splash_tga.asm', '-o', "$buildPath/splash_tga.o") }
-        'lvgl' {
-            $objects = @([IO.File]::ReadLines("$buildPath/native.manifest") | ForEach-Object { Get-NativeObject $_ })
-            [IO.File]::Delete("$buildPath/liblvgl.a")
-            Invoke-Tool ar (@('rcs', "$buildPath/liblvgl.a") + $objects)
-        }
-        'icons'          { Build-Icons }
-        'initcalls'      { Build-InitCalls }
-        'link'           { Link-Kernel }
-        'iso'            { Package-Iso }
-        default          { throw "Unknown build stage: $Step" }
-    }
-}
+#region Ninja graph generation
 
 # Escape paths for use as Ninja input or output tokens.
 function ConvertTo-NinjaPaths([string[]]$Paths) {
@@ -511,7 +542,7 @@ function Write-Graph([string[]]$Pascal, [string[]]$Native, [bool]$DocsOnly) {
 
         $graph.AddRange([string[]]@(
             'rule cc'
-            "  command = gcc $($nativeFlags -join ' ') -I $lvgl -I $(Split-Path -Parent $lvgl) -I $lvglIntegration " +
+            "  command = $($target.CCompiler) $((Get-NativeFlags) -join ' ') -I $lvgl -I $(Split-Path -Parent $lvgl) -I $lvglIntegration " +
                 '-MMD -MF $out.d -c $in -o $out'
             '  description = CC $in'
             '  depfile = $out.d'
@@ -520,10 +551,8 @@ function Write-Graph([string[]]$Pascal, [string[]]$Native, [bool]$DocsOnly) {
         Add-Edge @($version) @($config, $units, "$buildPath/revision") 'version'
         Add-Edge @($dangling) (@($units, $version, $pascalInputs) + $Pascal) 'boot-units'
         Add-Edge @($stamp, $objects) (@($units, $config, $dangling, $version, $pascalInputs) + $Pascal) 'compile-pascal'
-        Add-Edge @("$buildPath/stub.o") @("src/arch/$arch/boot/stub.asm", $config) 'stub'
-        Add-Edge @("$buildPath/splash_tga.o") @(
-            'src/boot/splash_tga.asm', 'assets/embedded/asuro.tga', 'assets/embedded/teapot.tga', $config
-        ) 'splash'
+        Add-Edge @("$buildPath/stub.o") @($target.StubSource, $config) 'stub'
+        Add-Edge @("$buildPath/splash_tga.o") (@($target.SplashSource, $config) + $target.SplashAssets) 'splash'
 
         $nativeObjects = @(foreach ($source in $Native) {
             $object = Get-NativeObject $source
@@ -537,19 +566,72 @@ function Write-Graph([string[]]$Pascal, [string[]]$Native, [bool]$DocsOnly) {
         Add-Edge @("$buildPath/initcalls.o") @($stamp, $objects) 'initcalls'
         Add-Edge @($kernel) (@(
             $stamp, $objects, "$buildPath/initcalls.o", "$buildPath/stub.o",
-            "$buildPath/splash_tga.o", "$buildPath/liblvgl.a", 'toolchain/linker.script', $config
+            "$buildPath/splash_tga.o", "$buildPath/liblvgl.a", $target.LinkerScript, $config
         ) + $icons) 'link'
-        $isoFiles = @(Get-RelativePaths @('assets/iso'))
-        Write-BuildFile "$buildPath/iso.manifest" (($isoFiles -join "`n") + "`n")
-        Add-Edge @($iso) (@($kernel, "$buildPath/iso.manifest") + $isoFiles) 'iso'
         $graph.Add("build compile: phony $kernel")
-        $graph.Add("build iso: phony $iso")
-        $graph.Add('build all: phony iso docs')
-        $graph.Add('default all')
+        if ($target.PackageImage) {
+            $isoFiles = @(Get-RelativePaths @($target.ImageSource))
+            Write-BuildFile "$buildPath/iso.manifest" (($isoFiles -join "`n") + "`n")
+            Add-Edge @($iso) (@($kernel, "$buildPath/iso.manifest", $config) + $isoFiles) 'iso'
+            $graph.Add("build iso: phony $iso")
+            $graph.Add('build all: phony iso docs')
+            $graph.Add('default all')
+        } else {
+            $graph.Add('default compile')
+        }
     } else {
         $graph.Add('default docs')
     }
     Write-BuildFile "$buildPath/build.ninja" (($graph -join "`n") + "`n")
+}
+
+#endregion
+
+#region Command-line and Ninja stage dispatch
+
+# Dispatch a single Ninja stage using the configuration of its build directory.
+function Invoke-Stage {
+    param(
+        [ValidateSet('docs', 'version', 'boot-units', 'compile-pascal', 'stub', 'splash', 'lvgl', 'icons', 'initcalls', 'link', 'iso')]
+        [string]$Step,
+
+        [ValidatePattern('^build/(?:docs|[a-z0-9_]+/(?:debug|release|test-minimal|test-complex))$')]
+        [string]$Path
+    )
+
+    if ($Step -eq 'docs') {
+        Invoke-Tool python3 @('-m', 'mkdocs', 'build', '--strict')
+        return
+    }
+    if ($Path -eq 'build/docs') {
+        throw "Stage '$Step' requires an architecture and build profile."
+    }
+    $buildPath = $Path
+    $config = Get-Content -LiteralPath "$buildPath/toolchain.json" -Raw | ConvertFrom-Json
+    $arch, $buildProfile = $config.Arch, $config.Profile
+    if (!$buildProfile -or !$profiles.ContainsKey($buildProfile) -or
+        $buildPath -cne "build/$arch/$($buildProfile.Replace(':', '-'))") {
+        throw "Toolchain configuration does not match $buildPath."
+    }
+
+    $target = Get-TargetRecipe $arch
+    switch ($Step) {
+        'version'        { Write-Version }
+        'boot-units'     { Write-BootUnits }
+        'compile-pascal' { Build-Pascal }
+        'stub'           { & $target.Assemble $target.StubSource "$buildPath/stub.o" }
+        'splash'         { & $target.Assemble $target.SplashSource "$buildPath/splash_tga.o" }
+        'lvgl' {
+            $objects = @([IO.File]::ReadLines("$buildPath/native.manifest") | ForEach-Object { Get-NativeObject $_ })
+            [IO.File]::Delete("$buildPath/liblvgl.a")
+            Invoke-Tool $target.Archiver (@('rcs', "$buildPath/liblvgl.a") + $objects)
+        }
+        'icons'          { Build-Icons }
+        'initcalls'      { Build-InitCalls }
+        'link'           { Link-Kernel }
+        'iso'            { & $target.PackageImage }
+        default          { throw "Unknown build stage: $Step" }
+    }
 }
 
 # Parse the public Compose command syntax and environment defaults.
@@ -593,7 +675,7 @@ function Invoke-Build {
         [ValidateSet('compile', 'iso', 'docs', 'all')]
         [string]$Task,
 
-        [ValidateSet('x86', IgnoreCase = $false)]
+        [ValidatePattern('^[a-z0-9_]+$')]
         [string]$Arch,
 
         [ValidateSet('debug', 'test:minimal', 'test:complex', 'release')]
@@ -601,6 +683,10 @@ function Invoke-Build {
     )
 
     $Task = $Task.ToLowerInvariant()
+    $target = Get-TargetRecipe $Arch
+    if ($Task -in @('iso', 'all') -and !$target.PackageImage) {
+        throw "Architecture '$Arch' does not have a boot image recipe. Use compile."
+    }
     if (!(Get-Command ninja -ErrorAction SilentlyContinue)) {
         throw 'Ninja is missing. Rebuild the Docker builder image.'
     }
@@ -627,10 +713,10 @@ function Invoke-Build {
     $config = [ordered]@{
         Arch = $arch
         Profile = $buildProfile
-        Compiler = Invoke-Tool fpc @('-iV')
+        Compiler = Invoke-Tool $target.PascalCompiler @('-iV')
         PascalOptions = @(Get-PascalOptions)
-        GCC = Invoke-Tool gcc @('-dumpfullversion')
-        NASM = Invoke-Tool nasm @('-v')
+        GCC = Invoke-Tool $target.CCompiler @('-dumpfullversion')
+        NASM = Invoke-Tool $target.Assembler @('-v')
     }
     Write-BuildFile "$buildPath/toolchain.json" ($config | ConvertTo-Json)
     Write-Graph $pascal $native $false
@@ -642,12 +728,15 @@ function Invoke-Build {
     }
 }
 
+$architectureTable = Get-ArchitectureTable
+
 try {
     if ($args.Count -and $args[0] -eq '--stage') {
         if ($args.Count -ne 3) { throw '--stage requires a stage name and a build directory.' }
         Invoke-Stage -Step $args[1] -Path $args[2]
     } elseif ($args -contains '--help' -or $args -contains '-h') {
-        Write-Host 'Usage: build [compile|iso|docs|all] [--arch x86] [--profile debug|test:minimal|test:complex|release]'
+        $architectures = ($architectureTable.Keys | Sort-Object) -join '|'
+        Write-Host "Usage: build [compile|iso|docs|all] [--arch $architectures] [--profile debug|test:minimal|test:complex|release]"
     } else {
         $options = Get-BuildOptions -Arguments $args
         Invoke-Build @options
@@ -656,3 +745,5 @@ try {
     [Console]::Error.WriteLine("Build error: $_")
     exit 1
 }
+
+#endregion
