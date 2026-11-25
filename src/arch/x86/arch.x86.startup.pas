@@ -18,7 +18,7 @@ interface
 implementation
 uses
     app.edit, app.inio, proc.testprocs, driver.bus.usb, driver.storage.test,
-    app.mgr, app.vbeinfo, app.divzero, app.bsod, app.iotest, arch.x86.cpu,
+    app.mgr, app.vbeinfo, app.divzero, app.bsod, arch.x86.cpu,
     driver.net,
     driver.video.desktop, driver.timer.rtc, svc.gfxd,
     app.uidebug,
@@ -57,7 +57,6 @@ begin
     app.vbeinfo.init;
     app.divzero.init;
     app.bsod.init;
-    app.iotest.init;
 end;
 
 procedure consoleInit;
