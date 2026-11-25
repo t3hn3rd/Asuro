@@ -10,10 +10,7 @@ You need a local git-ignored localenv.json file with the following content:
 param (
   [Parameter(Mandatory=$true)]
   [ValidateSet('up', 'down')]
-  [String]$Command,
-  # Optional modes for bounded, script-driven boot validation (Aaron Hance).
-  [switch]$Headless,
-  [switch]$NoMonitor
+  [String]$Command
 )
 
 $Config = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../localenv.json') | ConvertFrom-Json
@@ -27,23 +24,10 @@ if ($Command -eq 'up') {
     Clear-Content $LogLocation
   }
 
-  if ($NoMonitor) {
-    if ($Headless) {
-      VBoxManage.exe startvm $MachineName --type headless
-    } else {
-      VBoxManage.exe startvm $MachineName
-    }
-    exit $LASTEXITCODE
-  }
-
-  $MonitorJob = Start-Job -ArgumentList $MachineName, $Headless.IsPresent -ScriptBlock {
-    param($MachineName, $Headless)
+  $MonitorJob = Start-Job -ArgumentList $MachineName -ScriptBlock {
+    param($MachineName)
     Write-Output "Starting $MachineName"
-    if ($Headless) {
-      VBoxManage.exe startvm $MachineName --type headless
-    } else {
-      VBoxManage.exe startvm $MachineName
-    }
+    VBoxManage.exe startvm $MachineName
     $running=$true
     while($running) {
       $status=(VBoxManage.exe list runningvms)
