@@ -41,6 +41,9 @@ var
     ahciControllers : PDList;
     page_base : puint32;
 
+{$ifdef UNIT_TESTS}
+function testDMA32(buffer: puint8): boolean;
+{$endif}
 procedure UnitTest;
 procedure init();
 function load(ptr : void) : boolean;
@@ -67,7 +70,7 @@ function send_read_capacity(device : PAHCI_Device; sectorCount : puint32; blockS
 
 implementation
 
-uses test.harness, arch.platform.process, arch.platform.diagnostics, io.stdio, core.strings;
+uses driver.dma, test.harness, arch.platform.process, arch.platform.diagnostics, io.stdio, core.strings;
 
 type
     PControllerSlot = ^PAHCI_Controller;
@@ -204,53 +207,26 @@ begin
                 if (port^.sata_status and $F) = 0 then continue;
                 { Present but not yet communicating: COMRESET below may recover it. }
             end;
-            //allocate memory for the command list and ensure it is aligned to 1024 bytes
-            // Need 32 command headers. Allocate extra (alignment-1) bytes for alignment.
-            listAlloc := kalloc(sizeof(THBA_CMD_HEADER) * 32 + 1023);
+            listAlloc := driver.dma.allocate(32 * sizeof(THBA_CMD_HEADER), 1024, not device^.supports64BitDMA);
             if listAlloc = nil then continue;
-            cmd_list_base := listAlloc;
-            cmd_list_base := puint32((PtrUInt(cmd_list_base) + 1023) and not PtrUInt(1023));
-
-            //set the command list base address
-            port^.cmdl_basel := arch.platform.memory.physicalAddress(PtrUInt(cmd_list_base)); //todo set virtual address in device
-            port^.cmdl_baseu := arch.platform.memory.physicalAddress(PtrUInt(cmd_list_base)) shr 32;
-
-            device^.command_list := PHBA_CMD_HEADER(cmd_list_base);
-
-            //allocate memory for the FIS and ensure it is aligned to 256 bytes
-            fisAlloc := kalloc(sizeof(THBA_FIS) + 255);
-            if fisAlloc = nil then begin
-                port^.cmdl_basel := 0;
-                port^.cmdl_baseu := 0;
-                kfree(listAlloc);
+            fisAlloc := driver.dma.allocate(sizeof(THBA_FIS), 256, not device^.supports64BitDMA);
+            tableAlloc := driver.dma.allocate(32 * 4096, 4096, not device^.supports64BitDMA);
+            if (fisAlloc = nil) or (tableAlloc = nil) then begin
+                driver.dma.release(listAlloc);
+                driver.dma.release(fisAlloc);
+                driver.dma.release(tableAlloc);
                 continue;
             end;
+            cmd_list_base := listAlloc;
             fis_base := fisAlloc;
-            fis_base := puint32((PtrUInt(fis_base) + 255) and not PtrUInt(255));
-
-            //set the FIS base address
+            cmd_table_base := tableAlloc;
+            device^.command_list := PHBA_CMD_HEADER(cmd_list_base);
+            device^.fis := PHBA_FIS(fis_base);
+            device^.command_table := PHBA_CMD_TABLE(cmd_table_base);
+            port^.cmdl_basel := arch.platform.memory.physicalAddress(PtrUInt(cmd_list_base));
+            port^.cmdl_baseu := arch.platform.memory.physicalAddress(PtrUInt(cmd_list_base)) shr 32;
             port^.fis_basel := arch.platform.memory.physicalAddress(PtrUInt(fis_base));
             port^.fis_baseu := arch.platform.memory.physicalAddress(PtrUInt(fis_base)) shr 32;
-
-
-            device^.fis := PHBA_FIS(fis_base);
-            //todo check how many simultaneous commands are supported
-
-            // Each command table must fit inside one physical page.
-            tableAlloc := kalloc(4096 * 32 + 4095);
-            if tableAlloc = nil then begin
-                port^.cmdl_basel := 0;
-                port^.cmdl_baseu := 0;
-                port^.fis_basel := 0;
-                port^.fis_baseu := 0;
-                kfree(listAlloc);
-                kfree(fisAlloc);
-                continue;
-            end;
-            cmd_table_base := tableAlloc;
-            cmd_table_base := puint32((PtrUInt(cmd_table_base) + 4095) and not PtrUInt(4095));
-
-            device^.command_table := PHBA_CMD_TABLE(cmd_table_base);
 
             //set the command table base address and setup command table
             for ii:=0 to 31 do begin
@@ -261,27 +237,6 @@ begin
                 command_header^.cmd_table_baseu := arch.platform.memory.physicalAddress(PtrUInt(cmd_table_base) + ii * 4096) shr 32;
             end;
 
-            if not device^.supports64BitDMA then begin
-                registered := (port^.cmdl_baseu <> 0) or (port^.fis_baseu <> 0);
-                for ii := 0 to 31 do begin
-                    command_header := PHBA_CMD_HEADER(PtrUInt(cmd_list_base) + ii * sizeof(THBA_CMD_HEADER));
-                    if command_header^.cmd_table_baseu <> 0 then registered := true;
-                end;
-                if registered then begin
-                    port^.cmdl_basel := 0;
-                    port^.cmdl_baseu := 0;
-                    port^.fis_basel := 0;
-                    port^.fis_baseu := 0;
-                    device^.command_list := nil;
-                    device^.fis := nil;
-                    device^.command_table := nil;
-                    kfree(listAlloc);
-                    kfree(fisAlloc);
-                    kfree(tableAlloc);
-                    io.syslog.logln('AHCI', 'Controller cannot address allocated DMA structures.');
-                    continue;
-                end;
-            end;
 
             registered := false;
             for attempt := 1 to 2 do begin
@@ -306,7 +261,9 @@ begin
                     if not stop_port(port) then fail_controller(controller,eIOTimeout);
                 begin
                     port^.cmdl_basel := 0; port^.fis_basel := 0;
-                    kfree(listAlloc); kfree(fisAlloc); kfree(tableAlloc);
+                    driver.dma.release(listAlloc);
+                    driver.dma.release(fisAlloc);
+                    driver.dma.release(tableAlloc);
                     device^.command_list := nil; device^.fis := nil; device^.command_table := nil;
                 end;
                 log_port_failure(i,port,'device unavailable after bounded retries');
@@ -347,9 +304,9 @@ begin
     device^.port^.int_enable := $0;   { disabled during IDENTIFY polling }
 
     // Allocate a 512-byte DMA buffer for the IDENTIFY d driver.storage.ctl.ide.ata
-    buffer := kalloc(512);
+    buffer := driver.dma.allocate(512, 16, not device^.supports64BitDMA);
     if buffer = nil then exit;
-    memset(PtrUInt(buffer), 0, 512);
+
 
     // Use command slot 0 for the IDENTIFY command.
     cmd_header := device^.command_list;  // Assuming slot 0 is at the beginning.
@@ -363,7 +320,7 @@ begin
     // Setup the command table (using slot 0)
     cmd_table := device^.command_table;
     if build_prdt(cmd_table, PtrUInt(buffer), 512, entries, device^.supports64BitDMA) <> eNone then begin
-        kfree(buffer);
+        driver.dma.release(buffer);
         exit;
     end;
     cmd_header^.prdtl := entries;
@@ -386,14 +343,14 @@ begin
     fis^.device   := $40;
 
     if not wait_register(@device^.port^.tfd,$88,0,2500) then begin
-        log_port_failure(portIndex,device^.port,'busy before IDENTIFY'); kfree(buffer); exit;
+        log_port_failure(portIndex,device^.port,'busy before IDENTIFY'); driver.dma.release(buffer); exit;
     end;
     device^.port^.cmd_issue := 1;
     if (not wait_register(@device^.port^.cmd_issue,1,0,2500)) or
        ((device^.port^.tfd and $1) <> 0) or ((device^.port^.int_status and $40000000) <> 0) then begin
         log_port_failure(portIndex,device^.port,'IDENTIFY timeout or task-file error');
         if not stop_port(device^.port) then fail_controller(controller,eIOTimeout);
-        kfree(buffer);
+        driver.dma.release(buffer);
         exit;
     end;
     device^.port^.int_status := $FFFFFFFF;
@@ -416,7 +373,7 @@ begin
         device^.queueDepth := 1;
     end;
 
-    kfree(buffer);
+    driver.dma.release(buffer);
 
     { For ATAPI devices, get capacity from SCSI READ CAPACITY instead of IDENTIFY }
     if isATAPI then begin
@@ -793,13 +750,65 @@ begin
     build_prdt := eNone;
 end;
 
+{ Limit low-memory use and copy work per hardware completion. Each original
+  request owns its staging area until the last command completes or is fenced. }
+const BOUNCE_BYTES = 128 * 1024;
+type
+    PBouncedCommand = ^TBouncedCommand;
+    TBouncedCommand = record
+        device: PAHCI_Device;
+        buffer, low: pointer;
+        offset, total, chunk, mode: uint32;
+        lba: uint64;
+        completion: TIOCompletion;
+        userdata: puint32;
+    end;
+
+function issue_direct(device: PAHCI_Device; lba: uint64; bytes: uint32; buffer: puint32;
+                      mode: uint32; completion: TIOCompletion; userdata: puint32): TError; forward;
+function issue_chunk(op: PBouncedCommand): TError; forward;
+
+procedure chunk_done(error: TError; userdata: puint32);
+var op: PBouncedCommand;
+    callback: TIOCompletion;
+    data: puint32;
+begin
+    op := PBouncedCommand(userdata);
+    if error = eNone then begin
+        if op^.mode <> 1 then
+            memcpy(PtrUInt(op^.low), PtrUInt(op^.buffer) + op^.offset, op^.chunk);
+        inc(op^.offset, op^.chunk);
+        if op^.offset < op^.total then begin
+            if op^.mode = 2 then inc(op^.lba, op^.chunk div 2048)
+            else inc(op^.lba, op^.chunk div 512);
+            error := issue_chunk(op);
+            if error = eNone then exit;
+        end;
+    end;
+    callback := op^.completion;
+    data := op^.userdata;
+    driver.dma.release(op^.low);
+    kfree(void(op));
+    if callback <> nil then callback(error, data);
+end;
+
+function issue_chunk(op: PBouncedCommand): TError;
+begin
+    op^.chunk := op^.total - op^.offset;
+    if op^.chunk > BOUNCE_BYTES then op^.chunk := BOUNCE_BYTES;
+    if op^.mode = 1 then
+        memcpy(PtrUInt(op^.buffer) + op^.offset, PtrUInt(op^.low), op^.chunk);
+    issue_chunk := issue_direct(op^.device, op^.lba, op^.chunk, op^.low,
+                                op^.mode, @chunk_done, puint32(op));
+end;
+
 { mode: 0 SATA read, 1 SATA write, 2 ATAPI READ(12), 3 READ CAPACITY. }
 function submit_command(device : PAHCI_Device; lba : uint64; bytes : uint32; buffer : puint32;
                         mode : uint32; completion : TIOCompletion; userdata : puint32) : TError;
 var
-    irqFlags: PtrUInt;
-    slot, entries, sectors, flags : uint32; header : PHBA_CMD_HEADER; table : PHBA_CMD_TABLE;
-    fis : PHBA_FIS_REG_H2D; err : TError;
+    sectors: uint32;
+    op: PBouncedCommand;
+    err: TError;
 begin
     submit_command := eInvalidArgument;
     if (device = nil) or (buffer = nil) or (bytes = 0) then exit;
@@ -817,8 +826,46 @@ begin
         if (mode <> 3) or (bytes <> 8) then exit;
         sectors := 0;
     end;
+    if not device^.supports64BitDMA then
+        case driver.dma.reach32(PtrUInt(buffer), bytes) of
+            dmaInvalid: exit;
+            dmaHigh: begin
+                op := PBouncedCommand(tryAlloc(sizeof(TBouncedCommand)));
+                if op = nil then begin
+                    submit_command := eOutOfMemory;
+                    exit;
+                end;
+                op^.device := device;
+                op^.buffer := buffer;
+                op^.mode := mode;
+                op^.lba := lba;
+                op^.total := bytes;
+                op^.completion := completion;
+                op^.userdata := userdata;
+                op^.low := driver.dma.allocateBounce(min_u32(bytes, BOUNCE_BYTES));
+                if op^.low <> nil then err := issue_chunk(op)
+                else err := eOutOfMemory;
+                if err <> eNone then begin
+                    driver.dma.release(op^.low);
+                    kfree(void(op));
+                end;
+                submit_command := err;
+                exit;
+            end;
+        end;
+    submit_command := issue_direct(device, lba, bytes, buffer, mode, completion, userdata);
+end;
+
+function issue_direct(device: PAHCI_Device; lba: uint64; bytes: uint32; buffer: puint32;
+                      mode: uint32; completion: TIOCompletion; userdata: puint32): TError;
+var
+    irqFlags: PtrUInt;
+    slot, entries, sectors, flags : uint32; header : PHBA_CMD_HEADER; table : PHBA_CMD_TABLE;
+    fis : PHBA_FIS_REG_H2D; err : TError;
+begin
+    if mode = 2 then sectors := bytes div 2048 else sectors := bytes div 512;
     slot := find_cmd_slot(device);
-    if slot = $FFFFFFFF then begin submit_command := eNoFreeSlot; exit; end;
+    if slot = $FFFFFFFF then begin issue_direct := eNoFreeSlot; exit; end;
     header := @device^.command_list[slot]; table := PHBA_CMD_TABLE(PtrUInt(device^.command_table) + slot * 4096);
     { Preserve the command-table pointer but reset every per-command header flag. }
     puint32(header)^ := 0; header^.prdbc := 0;
@@ -868,7 +915,7 @@ begin
         device^.port^.cmd_issue := uint32(1) shl slot;
     end else device^.pending[slot].inUse := false;
     arch.platform.cpu.unlock(irqFlags);
-    submit_command := err;
+    issue_direct := err;
 end;
 
 function send_read_dma_async(device : PAHCI_Device; lba : uint64; count : uint32; buffer : puint32; completion : TIOCompletion; userdata : puint32) : TError;
@@ -999,6 +1046,68 @@ procedure test_done(error : TError; data : puint32);
 begin
     Inc(PTestCompletion(data)^.Count); PTestCompletion(data)^.Error := error;
 end;
+
+{$ifdef UNIT_TESTS}
+function testDMA32(buffer: puint8): boolean;
+var device: PAHCI_Device;
+    op: PBouncedCommand;
+    done: TTestCompletion;
+    ok: boolean;
+begin
+    testDMA32 := false;
+    device := PAHCI_Device(tryAlloc(sizeof(TAHCI_Device)));
+    if device = nil then exit;
+    device^.port := PHBA_Port(tryAlloc(sizeof(THBA_Port)));
+    device^.command_list := PHBA_CMD_HEADER(tryAlloc(sizeof(THBA_CMD_HEADER)));
+    device^.command_table := PHBA_CMD_TABLE(tryAlloc(4096));
+    device^.slotCount := 1;
+    ok := (device^.port <> nil) and (device^.command_list <> nil) and (device^.command_table <> nil);
+    done.Count := 0;
+    buffer[0] := $57;
+    buffer[BOUNCE_BYTES] := $AB;
+    if ok then ok := send_write_dma_async(device, 5, BOUNCE_BYTES + 512, puint32(buffer),
+                                          @test_done, puint32(@done)) = eNone;
+    if ok then begin
+        op := PBouncedCommand(device^.pending[0].userdata);
+        ok := (pointer(op) <> pointer(@done)) and (op <> nil);
+        if ok then ok := (puint8(op^.low)[0] = $57) and
+            (device^.command_table^.prdt[0].dba = physicalAddress(PtrUInt(op^.low))) and
+            (device^.command_table^.prdt[0].dbau = 0);
+        device^.port^.cmd_issue := 0;
+        finish_slots(device, 1, eNone);
+        ok := ok and (done.Count = 0) and device^.pending[0].issued;
+        if device^.pending[0].issued then begin
+            op := PBouncedCommand(device^.pending[0].userdata);
+            ok := ok and (op^.chunk = 512) and (op^.lba = 5 + BOUNCE_BYTES div 512)
+                     and (puint8(op^.low)[0] = $AB);
+            device^.port^.cmd_issue := 0;
+            finish_slots(device, 1, eNone);
+        end;
+        ok := ok and (done.Count = 1);
+    end;
+    if ok then ok := send_read_dma_async(device, 0, 512, puint32(buffer), @test_done, puint32(@done)) = eNone;
+    if ok then begin
+        op := PBouncedCommand(device^.pending[0].userdata);
+        puint8(op^.low)[0] := $A7;
+        device^.port^.cmd_issue := 0;
+        finish_slots(device, 1, eNone);
+        ok := (buffer[0] = $A7) and (done.Count = 2);
+    end;
+    if ok then ok := send_read_dma_async(device, 0, 512, puint32(buffer), @test_done, puint32(@done)) = eNone;
+    if ok then begin
+        op := PBouncedCommand(device^.pending[0].userdata);
+        puint8(op^.low)[0] := $33;
+        device^.port^.cmd_issue := 0;
+        finish_slots(device, 1, eIOError);
+        ok := (buffer[0] = $A7) and (done.Count = 3) and (done.Error = eIOError);
+    end;
+    kfree(void(device^.command_table));
+    kfree(void(device^.command_list));
+    kfree(void(device^.port));
+    kfree(void(device));
+    testDMA32 := ok;
+end;
+{$endif}
 
 procedure run_ahci_tests(context : PTestContext; stdout_buf : POutBuf);
 var device : PAHCI_Device; port : PHBA_Port; table : PHBA_CMD_TABLE;

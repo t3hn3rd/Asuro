@@ -154,4 +154,4 @@ Issues a SCSI READ CAPACITY(10) command to query the device's sector count and b
 
 ## Native address handling
 
-Command tables fit within individual physical pages. The driver translates each data page and combines adjacent physical ranges into PRDs, up to 32 descriptors. It retains the upper address bits for 64-bit-capable controllers and rejects inaccessible DMA buffers on controllers limited to 32 bits. The native storage profile checks high-memory reads in a 6 GiB guest.
+Command tables fit within individual physical pages. The driver translates each data page and combines adjacent physical ranges into PRDs, up to 32 descriptors. It retains the upper address bits for 64-bit-capable controllers and uses low command structures and request-owned staging on controllers limited to 32 bits. High buffers are transferred in commands of at most 128 KiB. The native storage profile checks high-memory reads in a 6 GiB guest.
