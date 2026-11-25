@@ -4,5 +4,7 @@ services:
     build: .
     environment:
       ASURO_ARCH: ${ASURO_ARCH:-x86}
+      UNIT_TESTS: ${UNIT_TESTS:-0}
+      COMPLEX_TESTS: ${COMPLEX_TESTS:-0}
     volumes:
       - .:/code

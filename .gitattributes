@@ -1,8 +1,4 @@
 * text=auto eol=lf
-lvglh/** linguist-vendored
-lvgl/** linguist-vendored
-.vscode/* linguist-vendored
-lib/* linguist-generated
-release/* linguist-generated
-iso/* linguist-generated
+src/driver/video/.vscode/* linguist-vendored
+assets/iso/** linguist-generated
 *.asm linguist-detectable

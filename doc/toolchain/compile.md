@@ -1,44 +1,34 @@
-# compile.sh
+# Build Asuro with Docker, PowerShell and Ninja
 
-Top-level build orchestrator for the Asuro kernel.
+Build the builder image from the repository root with `docker compose build builder`. The builder runs `toolchain/build.ps1` using PowerShell and keeps its build cache in the mounted repository. The script generates the Ninja graph inside the container.
 
-## Overview
+```sh
+docker compose run --rm builder compile --arch x86 --profile debug
+docker compose run --rm builder iso --arch x86 --profile test:complex
+docker compose run --rm builder docs
+docker compose run --rm builder all --arch x86 --profile release
+```
 
-`compile.sh` is the main entry point for building the Asuro operating system. It sequentially invokes each stage of the build pipeline, halting on the first failure. After all stages complete (or a failure occurs), it calls `compile_finish.sh` to generate a build-status badge and set the exit code.
+| Task | Result |
+| --- | --- |
+| `compile` | Build and link the kernel. |
+| `iso` | Build the kernel as needed and package the ISO. |
+| `docs` | Build the documentation under `build/docs/site/`. |
+| `all` | Build the ISO and documentation. |
 
-## Prerequisites
+The default is `all --arch x86 --profile release`. The `x86` recipe builds an i386 kernel and BIOS GRUB ISO. See [Add a target architecture](architectures.md) for the compiler, linker, and boot recipes needed for another target.
 
-- All sub-scripts must be present in the same directory as `compile.sh`.
-- The Docker build container must provide: `bash`, `nasm`, `fpc`, `gcc`, `ld`, `grub-mkrescue`, `git`, `wget`, and standard POSIX utilities.
+| Profile | Configuration |
+| --- | --- |
+| `release` | Optimised kernel with stripped link output. |
+| `debug` | Unoptimised kernel with debug symbols. |
+| `test:minimal` | Optimised build with debug symbols and `UNIT_TESTS`. |
+| `test:complex` | Minimal tests plus `UNIT_TESTS_COMPLEX`. |
 
-## Inputs
+`ASURO_ARCH`, `UNIT_TESTS`, and `COMPLEX_TESTS` can also set defaults. Explicit flags take precedence. Drone uses `release` on master and `test:complex` on other branches.
 
-None directly. Each sub-script reads its own inputs from the source tree.
+## Build outputs
 
-## Outputs
+Kernel outputs, Pascal units, and Ninja state live under `build/<arch>/<profile>/`. An ISO build also copies the result to `Asuro.iso` for the existing VM launcher and CI. Profiles have separate compiler caches. The build uses `assets/iso/` as the ISO source tree and `assets/embedded/` for boot artwork and icon fonts. Wasuro and LVGL are cached under `build/vendor/`. Asuro’s LVGL integration sources live in `src/driver/video/lvgl/`.
 
-- All artifacts produced by the sub-scripts (object files, kernel binary, ISO image, version info, badges, documentation).
-- Final exit code: `0` on success, `1` on failure.
-
-## Behavior
-
-1. Clears the `lib/` directory to ensure a clean build.
-2. Defines a helper function `runOrFail` that runs a command and increments `ERRCOUNT` on failure.
-3. Resolves its own directory (`TOOLCHAIN_DIR`) so sub-scripts can be located by absolute path.
-4. Declares an ordered list of build steps (script name and error message pairs):
-   - `compile_stub.sh` -- Assemble boot stubs.
-   - `compile_vergen.sh` -- Generate version information.
-   - `compile_lvgl.sh` -- Compile the LVGL graphics library.
-   - `compile_wasuro.sh` -- Pull the Wasuro WASM runtime sources.
-   - `compile_sources.sh` -- Compile Free Pascal kernel sources.
-   - `compile_link.sh` -- Link all object files into `kernel.bin`.
-   - `compile_isogen.sh` -- Create the bootable ISO image.
-   - `compile_docs.sh` -- Generate project documentation.
-5. Iterates through the steps. If `ERRCOUNT` is non-zero, all remaining steps are skipped.
-6. Calls `compile_finish.sh` with either `"success"` or `"failed"` depending on whether any errors were recorded.
-7. Changes directory back up one level (`cd ..`).
-
-## Notes
-
-- `compile_finish.sh` is sourced (`. script`) rather than executed as a sub-process, so its `exit` call terminates the entire pipeline.
-- The build is fail-fast: the first failing step prevents all subsequent steps from running, but the finish step always runs to produce a status badge.
+The launcher refreshes its source inventory before starting Ninja. Deleted and moved units lose their cached objects and compiled units. Pascal inputs are checked by content. A changed unit is recompiled even if its size and timestamp match. FPC can reuse unaffected units. Changes to compiler options or shared includes trigger a full Pascal rebuild. The linker and `INITFINAL` generator use the same object list derived from FPC's compiled-unit dependencies starting at `asuro`. Native objects track headers through compiler-generated dependency files. The [boot-unit analysis](boot-units.md) still runs when Pascal sources change.

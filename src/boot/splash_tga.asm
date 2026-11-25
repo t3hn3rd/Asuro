@@ -17,11 +17,11 @@ global _panic_tga_end
 global _panic_tga_size
 
 _splash_tga_start:
-    incbin "img/asuro.tga"
+    incbin "assets/embedded/asuro.tga"
 _splash_tga_end:
 
 _panic_tga_start:
-    incbin "img/teapot.tga"
+    incbin "assets/embedded/teapot.tga"
 _panic_tga_end:
 
 _splash_tga_size: dd (_splash_tga_end - _splash_tga_start)

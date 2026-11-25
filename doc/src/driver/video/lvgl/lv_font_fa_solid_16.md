@@ -50,6 +50,6 @@ This is the font descriptor exposed for use in LVGL widget styles. Reference it 
 
 - This is a machine-generated file. Do not edit by hand; regenerate using the LVGL font converter if changes are needed.
 - The full 0--65535 Unicode range includes all Font Awesome solid icons. Since most code points in this range are blank (Font Awesome only defines glyphs for its icon set), the actual rendered glyph count is much smaller than the range suggests, but the descriptor tables still consume significant space.
-- The file is the largest in the `lvglh/` directory at approximately 1.6 MB. If binary size becomes a constraint, the Unicode range should be narrowed to only the icon code points actually used by the Asuro shell.
+- The file is the largest in the `src/driver/video/lvgl/` directory at approximately 1.6 MB. If binary size becomes a constraint, the Unicode range should be narrowed to only the icon code points actually used by the Asuro shell.
 - The font includes version-conditional compilation guards for compatibility across LVGL 6.x through 9.x, though Asuro targets LVGL 9.2.2.
 - The `LV_ATTRIBUTE_LARGE_CONST` annotation on the glyph bitmap array allows the linker to place it in an appropriate read-only section.

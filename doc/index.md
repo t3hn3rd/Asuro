@@ -2,31 +2,36 @@
 
 Asuro is a 32-bit x86 operating system kernel written in Free Pascal and x86 assembly.
 
-## Documentation Structure
+## Getting Started
 
-- **Kernel Entry** -- The `asuro.pas` main unit and boot sequence.
-- **Architecture (x86)** -- CPU initialization, descriptor tables, interrupt handling, fault handlers, memory management, and process scheduling for the i386 target.
-- **Boot** -- Splash screen and early boot visuals.
-- **Core** -- Foundational libraries including data structures, encoding algorithms, string handling, graphics primitives, and the kernel panic subsystem.
-- **Memory** -- Heap allocator (`kalloc`/`kfree`) and page-level allocation.
-- **Processes** -- Process lifecycle, round-robin scheduling, and inter-process messaging.
-- **I/O** -- Standard I/O (shell command dispatch) and the system log fan-out.
-- **Debug** -- Execution tracer with ring-buffer call stack recording.
-- **Drivers** -- Hardware abstraction covering PCI/USB buses, HID devices, networking (E1000, TCP/IP stack), storage (IDE, AHCI, VFS, file systems), video (VESA, LVGL, double-buffering), serial I/O, and timers.
-- **Services** -- Background daemons for graphics rendering and USB hotplug.
-- **Applications** -- Userland commands and utilities: terminal, text editor, disk tools, network tools, and a WebAssembly runtime.
-- **Compatibility** -- Shim layers for legacy code.
-- **LVGL Headers** -- Configuration and patches for the LVGL v9.2.2 GUI library.
-- **Planning** -- Design documents and architectural notes for subsystems under development.
-- **Toolchain** -- Build pipeline documentation covering compilation, linking, and ISO generation.
+Clone the repository, install Docker with Compose, and run the following from the repository root. The builder image supplies PowerShell, Ninja, Free Pascal and the boot-image tools.
 
-## Building
-
-The kernel is built inside Docker using a containerized FreePascal 3.2.2 toolchain:
-
-```bash
+```sh
 docker compose build builder
-docker compose run builder
 ```
 
-The documentation site will be available at `http://docs.asuro.xyz`.
+| Command | Outcome |
+| --- | --- |
+| `docker compose run --rm builder iso` | Builds a bootable release ISO and publishes it as `Asuro.iso` at the repository root. |
+| `docker compose run --rm builder iso --profile test:minimal` | Builds an ISO with standard boot tests enabled. |
+| `docker compose run --rm builder iso --profile test:complex` | Builds an ISO with standard and complex boot tests enabled. |
+| `docker compose run --rm builder compile --profile debug` | Builds and links a debug kernel at `build/x86/debug/kernel.bin`. |
+| `docker compose run --rm builder docs` | Generates the documentation site at `build/docs/site/`. |
+| `docker compose run --rm builder all` | Builds both the release ISO and documentation. |
+
+The default architecture is `x86`. Profiles keep independent build caches under `build/<arch>/<profile>/`. See the [build pipeline](toolchain/compile.md) for details on incremental builds and profiles.
+
+Boot the generated ISO as optical media in a BIOS-based VM. The repository includes a VirtualBox launcher at `tools/virtualbox-wrapper.ps1`.
+
+## Repository layout
+
+| Path | Contents |
+| --- | --- |
+| `src/` | Kernel, architecture code, drivers, services, apps, and compatibility units. |
+| `src/driver/video/lvgl/` | Asuro’s LVGL configuration and C integration. |
+| `assets/embedded/` | Artwork and fonts compiled into the kernel. |
+| `assets/iso/` | Files packaged into the boot image. |
+| `toolchain/` | PowerShell build launcher, linker script, and icon generator. |
+| `tools/` | Developer utilities, including the VirtualBox launcher. |
+| `doc/` | Documentation source, organised by the corresponding source area. |
+| `build/` | Generated artifacts, dependency caches, build logs, and the docs site. |
