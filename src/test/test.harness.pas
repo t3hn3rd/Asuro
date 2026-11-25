@@ -99,6 +99,8 @@ end;
 procedure Finish(TestContext: PTestContext);
 begin
     Summary(TestContext);
+    kfree(void(TestContext^.UnitPrefix));
+    TestContext^.UnitPrefix := nil;
     if TestContext^.FailedCount > 0 then
         inc(HarnessContext.UnitsFailed)
     else

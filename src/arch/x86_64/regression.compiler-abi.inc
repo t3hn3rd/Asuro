@@ -16,8 +16,10 @@ function signedDivide(d, n: int64): int64; external name 'FPC_DIV_INT64';
 function signedRemainder(d, n: int64): int64; external name 'FPC_MOD_INT64';
 function unsignedDivide(d, n: qword): qword; external name 'FPC_DIV_QWORD';
 function wideProduct(a, b: uint32): qword; external name 'FPC_MUL_DWORD_TO_QWORD';
+function unsignedRemainder(d, n: qword): qword; external name 'FPC_MOD_QWORD';
+function signedProduct(a, b: int64): int64; external name 'FPC_MUL_INT64';
 
-procedure testCompilerRuntime;
+procedure testCompilerRuntime(var ctx: TTestContext);
 var
     number: ^uint64;
     buf: jmp_buf;
@@ -25,24 +27,54 @@ var
     short: string[3];
     code: longint;
     bytes: SizeUInt;
+    saved: PtrUInt;
+    function moveResultMatches: boolean;
+    begin
+        moveResultMatches := (length(source) = 6) and
+            (source[1] = 'b') and (source[2] = 'c') and (source[3] = 'd') and
+            (source[4] = 'e') and (source[5] = 'e') and (source[6] = 'f');
+    end;
 begin
+    saved := arch.platform.cpu.lock;
     bytes := lmm_total_free;
     system.new(number);
     number^ := $100000001;
-    if number^ <> $100000001 then bootstrap_halt;
+    test.harness.Assert(@ctx, number^ = $100000001, 'New preserves 64-bit value');
     dispose(number);
-    if lmm_total_free <> bytes then bootstrap_halt;
+    test.harness.Assert(@ctx, lmm_total_free = bytes, 'Dispose restores free bytes');
+    arch.platform.cpu.unlock(saved);
     source := 'abcdef';
     short := source;
-    if (length(short) <> 3) or (short[3] <> 'c') then bootstrap_halt;
+    test.harness.Assert(@ctx, (length(short) = 3) and (short[3] = 'c'), 'Short string truncation');
     system.move(source[1], source[2], 4);
-    if source[5] <> 'd' then bootstrap_halt;
+    test.harness.Assert(@ctx, source[5] = 'd', 'Backward overlapping move');
+    source := 'abcdef';
+    system.move(source[2], source[1], 4);
+    test.harness.Assert(@ctx, moveResultMatches, 'Move overlapping bytes toward lower addresses');
+    system.move(source[1], source[2], 0);
+    system.move(source[1], source[2], -1);
+    system.move(source[1], source[1], length(source));
+    test.harness.Assert(@ctx, moveResultMatches, 'Move preserves bytes for empty and identical ranges');
+    source := '';
+    short := source;
+    test.harness.Assert(@ctx, length(short) = 0, 'Empty short string clears destination length');
     code := saveJump(buf);
     if code = 0 then restoreJump(buf, 42);
-    if code <> 42 then bootstrap_halt;
-    if (signedDivide(3, -10) <> -3) or (signedRemainder(3, -10) <> -1) or
-       (unsignedDivide(2, $200000002) <> $100000001) or
-       (wideProduct($FFFFFFFF, 2) <> $1FFFFFFFE) or
-       (Round(2.75) <> 3) or (Trunc(-2.75) <> -2) then bootstrap_halt;
-    puts('PASS: native FPC compiler runtime'#13#10);
+    test.harness.Assert(@ctx, code = 42, 'Longjmp preserves return value');
+    code := saveJump(buf);
+    if code = 0 then restoreJump(buf, 0);
+    test.harness.Assert(@ctx, code = 1, 'Longjmp maps zero to one');
+    test.harness.Assert(@ctx, signedProduct(-3, $100000001) = -12884901891, 'Signed multiply preserves upper bits');
+    test.harness.Assert(@ctx, signedDivide(-3, 10) = -3, 'Signed division with negative divisor');
+    test.harness.Assert(@ctx, signedRemainder(-3, 10) = 1, 'Signed remainder follows dividend sign');
+    test.harness.Assert(@ctx, unsignedDivide(uint64($8000000000000000), High(qword)) = 1,
+                 'Unsigned division with high-bit divisor');
+    test.harness.Assert(@ctx, unsignedRemainder(uint64($8000000000000000), High(qword)) = $7FFFFFFFFFFFFFFF,
+                 'Unsigned remainder with high-bit divisor');
+    test.harness.Assert(@ctx, signedDivide(3, -10) = -3, 'Signed division truncates toward zero');
+    test.harness.Assert(@ctx, signedRemainder(3, -10) = -1, 'Negative dividend remainder');
+    test.harness.Assert(@ctx, unsignedDivide(2, $200000002) = $100000001, 'Wide quotient');
+    test.harness.Assert(@ctx, wideProduct($FFFFFFFF, 2) = $1FFFFFFFE, 'Wide product');
+    test.harness.Assert(@ctx, Round(2.75) = 3, 'Round positive fraction');
+    test.harness.Assert(@ctx, Trunc(-2.75) = -2, 'Truncate negative fraction');
 end;

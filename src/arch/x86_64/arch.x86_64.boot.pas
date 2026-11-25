@@ -19,7 +19,7 @@ procedure kmain(info: pointer; magic: uint32); cdecl;
 implementation
 
 uses
-    {$ifdef UNIT_TESTS}arch.x86_64.regression,{$endif}
+    {$ifdef ASURO_TEST_STORAGE}arch.x86_64.regression,{$endif}
     app.mgr,
     driver.net, app.wasm.runner,
     driver.hid.ps2.keyboard, driver.hid.ps2.mouse,
@@ -160,7 +160,7 @@ end;
 procedure finish_boot(ctx: PProcessContext);
 begin
     registerNativeServices;
-    {$ifdef UNIT_TESTS}
+    {$ifdef ASURO_TEST_STORAGE}
     boot.mgr.registerBoot('storage.verify', @arch.x86_64.regression.validateStorage, 'Storage checks', 'driver.bus.usb.hosts');
     {$endif}
     boot.mgr.registerBoot('driver.video.desktop', @initDesktop, 'Desktop', BOOT_MGR_BARRIER_LATE);
@@ -217,7 +217,7 @@ begin
     {$endif}
     memory.heap.init;
     {$ifdef UNIT_TESTS}
-    arch.x86_64.regression.testSharedUnits;
+    memory.heap.UnitTest;
     {$endif}
     driver.storage.fs.mgr.init;
     io.stdio.init;

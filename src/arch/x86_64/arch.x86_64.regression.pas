@@ -14,32 +14,41 @@ unit arch.x86_64.regression;
 
 interface
 
-procedure testSharedUnits;
+procedure UnitTest;
+{$ifdef ASURO_TEST_STORAGE}
 procedure validateStorage;
+{$endif}
 
 implementation
 
 uses
-    driver.bus.pci, driver.bus.usb.core,
+    test.harness, arch.platform.cpu, driver.bus.pci, driver.bus.usb.core,
     driver.storage.types, driver.storage.fs.mgr, driver.storage.mgr, driver.storage.vfs,
     driver.storage.perftest, memory.heap, proc.mgr, debug.early,
     arch.x86_64.memory.physical, arch.x86_64.memory.virtual;
 
 {$i regression.compiler-abi.inc}
 
-procedure testSharedUnits;
+procedure UnitTest;
+var
+    ctx: TTestContext;
 begin
-    testCompilerRuntime;
-    memory.heap.UnitTest;
-    if (driver.bus.pci.memoryBAR($2004, 1) <> uint64($100002000)) or
-       (driver.bus.pci.memoryBAR($2000, 1) <> $2000) or
-       (driver.bus.pci.memoryBAR($2001, 1) <> 0) then begin
-        puts('FAIL: PCI memory BAR decoding'#13#10);
-        bootstrap_halt;
-    end;
-
+    test.harness.Start(@ctx, 'arch.x86_64.runtime');
+    testCompilerRuntime(ctx);
+    test.harness.Finish(@ctx);
+    test.harness.Start(@ctx, 'driver.bus.pci.memoryBAR');
+    test.harness.Assert(@ctx, driver.bus.pci.memoryBAR($2004, 1) = uint64($100002000), '64-bit address');
+    test.harness.Assert(@ctx, driver.bus.pci.memoryBAR($2000, 1) = $2000, '32-bit address');
+    test.harness.Assert(@ctx, driver.bus.pci.memoryBAR($2001, 1) = 0, 'I/O BAR rejected');
+    test.harness.Assert(@ctx, driver.bus.pci.memoryBAR($FFFFFFFC, $80000000) = uint64($80000000FFFFFFF0),
+                 'Prefetchable 64-bit BAR retains high address and strips flags');
+    test.harness.Assert(@ctx, driver.bus.pci.memoryBAR($FFFFFFF8, $FFFFFFFF) = uint64($FFFFFFF0),
+                 'Prefetchable 32-bit BAR ignores adjacent register');
+    test.harness.Assert(@ctx, driver.bus.pci.memoryBAR($200E, 1) = 0, 'Reserved BAR type rejected');
+    test.harness.Finish(@ctx);
 end;
 
+{$ifdef ASURO_TEST_STORAGE}
 procedure test_high_dma;
 var
     address: PtrUInt;
@@ -185,10 +194,9 @@ end;
 procedure validateStorage;
 begin
     test_storage_read;
-    {$ifdef ASURO_TEST_STORAGE}
     test_usb_read;
     test_high_dma;
-    {$endif}
 end;
+{$endif}
 
 end.
