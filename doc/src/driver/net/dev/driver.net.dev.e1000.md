@@ -54,3 +54,6 @@ Walks the receive descriptor ring, passes each completed frame to `driver.net.re
 ## Native DMA and validation
 
 The x86-64 driver maps the adapter registers through the platform memory interface and routes interrupts through the selected platform implementation. DMA objects fit within aligned 4 KiB pages and retain their owning allocations. VirtualBox NAT validation obtained DHCP leases at 64 MiB and 6 GiB of guest RAM and received ping replies in the 6 GiB guest.
+
+The `E1000` command prints the RX and TX descriptor ring bases as virtual
+addresses, using the full pointer width of the running kernel.

@@ -54,6 +54,7 @@ procedure bufWriteIntLn(buf: POutBuf; i: integer);
 procedure bufWriteHexPair(buf: POutBuf; b: uint8);
 procedure bufWriteHex(buf: POutBuf; i: uint32);
 procedure bufWriteHexLn(buf: POutBuf; i: uint32);
+procedure bufWriteAddress(buf: POutBuf; address: PtrUInt);
 procedure bufWriteBin8(buf: POutBuf; b: uint8);
 procedure bufWriteBin8Ln(buf: POutBuf; b: uint8);
 procedure bufWriteBin16(buf: POutBuf; b: uint16);
@@ -263,6 +264,14 @@ begin
     bufWriteHexPair(buf, uint8((i SHR 16) AND $FF));
     bufWriteHexPair(buf, uint8((i SHR 8) AND $FF));
     bufWriteHexPair(buf, uint8(i AND $FF));
+end;
+
+procedure bufWriteAddress(buf: POutBuf; address: PtrUInt);
+var byteIndex: integer;
+begin
+    bufWriteStr(buf, '0x');
+    for byteIndex := sizeof(PtrUInt) - 1 downto 0 do
+        bufWriteHexPair(buf, uint8(address shr (byteIndex * 8)));
 end;
 
 procedure bufWriteHexLn(buf: POutBuf; i: uint32);
@@ -665,6 +674,14 @@ begin
         bufClear(output);
         bufWriteHex(output, $89ABCDEF);
         Assert(stringEquals(output^.buf, '0x89ABCDEF'), 'hexadecimal formatting');
+        bufClear(output);
+        {$ifdef CPUX86_64}
+        bufWriteAddress(output, PtrUInt($FEDCBA9801234567));
+        Assert(stringEquals(output^.buf, '0xFEDCBA9801234567'), 'native address preserves the upper half');
+        {$else}
+        bufWriteAddress(output, PtrUInt($01234567));
+        Assert(stringEquals(output^.buf, '0x01234567'), 'native address preserves leading zeroes');
+        {$endif}
         bufClear(output);
         memset(PtrUInt(input), 0, sizeof(TCommandBuffer));
         memcpy(PtrUInt(pchar('echo  one two')), PtrUInt(input), 13);

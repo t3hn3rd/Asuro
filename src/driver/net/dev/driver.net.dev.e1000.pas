@@ -455,6 +455,13 @@ begin
 end;
 
 procedure terminal_command_e1000status(Params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
+    procedure writeRingAddress(labelText: pchar; address: PtrUInt);
+    begin
+        io.stdio.bufWriteStr(stdout_buf, labelText);
+        io.stdio.bufWriteAddress(stdout_buf, address);
+        io.stdio.bufWriteNewLine(stdout_buf);
+    end;
+
 begin
     io.stdio.bufWriteStr(stdout_buf, 'Card: ');
     case card_type of
@@ -481,11 +488,10 @@ begin
     io.stdio.bufWriteStr(stdout_buf, '/');
     io.stdio.bufWriteIntLn(stdout_buf, E1000_NUM_RX_DESC);
 
-    io.stdio.bufWriteStr(stdout_buf, 'RX MEM: ');
-    io.stdio.bufWriteHexLn(stdout_buf, uint32(@rx_descs[0]));
-
-    io.stdio.bufWriteStr(stdout_buf, 'TX MEM: ');
-    io.stdio.bufWriteHexLn(stdout_buf, uint32(@tx_descs[0]));
+    if loaded then begin
+        writeRingAddress('RX ring virtual address: ', PtrUInt(rx_descs[0]));
+        writeRingAddress('TX ring virtual address: ', PtrUInt(tx_descs[0]));
+    end;
 end;
 
 function load(ptr : void) : boolean;
@@ -504,13 +510,17 @@ begin
     writeCardType();
 
     PCI_Info:= PPCI_Device(ptr);
+    if (PCI_Info = nil) or (PCI_Info^.interrupt_line >= 16) or
+       not arch.platform.interrupts.supportsPCILine(PCI_Info^.interrupt_line) then begin
+        io.syslog.logln('E1000', 'Missing device or unsupported PCI interrupt line.');
+        exit;
+    end;
     bar_type:= PCI_Info^.address0 AND $00000001;
     io_base := PCI_Info^.address0 and $FFFFFFFC;
     if bar_type = 0 then begin
         mem_base := PtrUInt(mapDevice(driver.bus.pci.memoryBAR(PCI_Info^.address0, PCI_Info^.address1), $20000));
         if mem_base = 0 then exit;
     end;
-    if PCI_Info^.interrupt_line >= 16 then exit;
     writeCommand($D8, $FFFFFFFF);
     
     bus:= PCI_Info^.bus;
