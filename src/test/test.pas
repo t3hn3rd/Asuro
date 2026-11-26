@@ -30,6 +30,9 @@ procedure runAllTests();
 implementation
 
 uses
+    {$IFDEF TEST_ONLY}
+    arch.x86.power,
+    {$ENDIF}
     core.strings,
     core.strings.helpers,
     app.diskutil,
@@ -134,6 +137,9 @@ begin
 
     { Print the test harness results }
     test.harness.print;
+    {$IFDEF TEST_ONLY}
+        arch.x86.power.powerOff;
+    {$ENDIF}
 end;
 
 initialization

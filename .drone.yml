@@ -2,6 +2,9 @@ kind: pipeline
 type: docker
 name: build
 
+workspace:
+  path: /code
+
 steps:
   - name: build-image
     image: plugins/docker
@@ -15,7 +18,7 @@ steps:
       password:
         from_secret: docker_password
 
-  - name: compile
+  - name: compile-x86
     image: t3hn3rd/asuro-build:latest
     pull: always
     depends_on:
@@ -26,13 +29,25 @@ steps:
         if [ "$DRONE_BRANCH" = "master" ]; then
           pwsh -NoLogo -NoProfile -File toolchain/build.ps1 all --arch x86 --profile release
         else
-          pwsh -NoLogo -NoProfile -File toolchain/build.ps1 all --arch x86 --profile test:complex
+          pwsh -NoLogo -NoProfile -File toolchain/build.ps1 all --arch x86 --profile test:complex --testonly
         fi
-      
+
+  - name: run-tests
+    image: t3hn3rd/qemu-test-runner:latest
+    pull: always
+    depends_on:
+      - compile-x86
+    when:
+      branch:
+        - develop
+        - feature/test-only-mode
+    commands:
+      - /usr/local/bin/run-tests --arch x86
+
   - name: deploy-docs
     image: alpine:latest
     depends_on:
-      - compile
+      - compile-x86
     when:
       branch:
         - master
@@ -56,7 +71,7 @@ steps:
   - name: upload-iso-artifact
     image: alpine/git
     depends_on:
-      - compile
+      - compile-x86
     when:
       branch:
         - master
@@ -79,11 +94,12 @@ steps:
         curl -X PUT https://gitea.spexeah.com/api/packages/Spexeah/generic/asuro-iso/latest/Asuro.iso \
         -H "Authorization: token $GITEA_TOKEN" --upload-file "Asuro-$(git rev-parse --short HEAD).iso"
 
-  - name: msg status
+  - name: msg-status
     image: appleboy/drone-discord
     failure: ignore
     depends_on:
-      - compile
+      - compile-x86
+      - run-tests
     when:
       status: [success, failure, changed]
     settings:
