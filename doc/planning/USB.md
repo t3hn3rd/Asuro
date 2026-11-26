@@ -13,9 +13,9 @@
 - [8. Hub Driver (`usbhub.pas`)](#8-hub-driver-usbhubpas)
 - [9. USB Class Drivers](#9-usb-class-drivers)
 - [10. Integration with drivermanagement](#10-integration-with-drivermanagement)
-- [11. Memory & DMA Strategy](#11-memory--dma-strategy)
+- [11. Memory & DMA Strategy](#11-memory-dma-strategy)
 - [12. Transfer Scheduling](#12-transfer-scheduling)
-- [13. Implementation Phases](#13-implementation-phases)
+- [14. Implementation Phases](#14-implementation-phases)
 - [14. Progress Tracker](#14-progress-tracker)
 
 ---
