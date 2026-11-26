@@ -203,17 +203,53 @@ begin
     identityLeaf := @table[(page shr 21) and $1FF];
 end;
 
-procedure uncachedIdentity(first, last: PtrUInt);
-var page: PtrUInt;
-    slot: PUInt64;
+function splitIdentity(page: PtrUInt): boolean;
+const LARGE_ADDRESS = uint64($000FFFFFFFE00000);
+var entry, frame, flags, physical: uint64;
+    slot, table: PUInt64;
+    i: uint32;
 begin
+    slot := identityLeaf(page);
+    entry := slot^;
+    splitIdentity := true;
+    if (entry and $80) = 0 then exit;
+    splitIdentity := false;
+    frame := acquire(true);
+    if frame = 0 then exit;
+    table := PUInt64(PtrUInt(frame));
+    physical := entry and LARGE_ADDRESS;
+    flags := entry and not (LARGE_ADDRESS or $1080);
+    { The large-page PAT bit moves from bit 12 to bit 7 on a 4 KiB leaf. }
+    if (entry and $1000) <> 0 then flags := flags or $80;
+    for i := 0 to 511 do
+        table[i] := (physical + uint64(i) * 4096) or flags;
+    slot^ := frame or (entry and 7);
+    inc(tablePages);
+    invalidate(page);
+    splitIdentity := true;
+end;
+
+function uncachedIdentity(first, last: PtrUInt): boolean;
+var page: PtrUInt;
+    table, slot: PUInt64;
+begin
+    uncachedIdentity := false;
     page := first and not PtrUInt($1FFFFF);
+    { Finish allocating tables before changing a page's cache type. }
     while page <= last do begin
-        slot := identityLeaf(page);
-        slot^ := slot^ or MMIO_CACHE_FLAGS;
-        invalidate(page);
+        if not splitIdentity(page) then exit;
         inc(page, $200000);
     end;
+    page := first;
+    while page <= last do begin
+        table := PUInt64(PtrUInt(identityLeaf(page)^ and ADDRESS_MASK));
+        slot := @table[(page shr 12) and $1FF];
+        { Select the bootstrap UC PAT entry regardless of the old PAT bit. }
+        slot^ := (slot^ and not uint64($80)) or MMIO_CACHE_FLAGS;
+        invalidate(page);
+        inc(page, 4096);
+    end;
+    uncachedIdentity := true;
 end;
 
 function mapDevice(address: uint64; bytes: SizeUInt): pointer;
@@ -231,8 +267,7 @@ begin
     last := (address + bytes - 1) and ADDRESS_MASK;
     saved := lockIRQ;
     if last < $100000000 then begin
-        uncachedIdentity(first, last);
-        mapDevice := pointer(PtrUInt(address));
+        if uncachedIdentity(first, last) then mapDevice := pointer(PtrUInt(address));
         unlockIRQ(saved);
         exit;
     end;
@@ -271,8 +306,7 @@ begin
         inc(va, 4096);
         inc(page, 4096);
     end;
-    if page > last then begin
-        if first < $100000000 then uncachedIdentity(first, $FFFFFFFF);
+    if (page > last) and ((first >= $100000000) or uncachedIdentity(first, $FFFFFFFF)) then begin
         block^.ranges[block^.count].first := first;
         block^.ranges[block^.count].last := last;
         block^.ranges[block^.count].base := base;
@@ -571,7 +605,14 @@ begin
     invalidate(region);
     invalidate(region + 4096);
     prune(region);
+    Assert((translate($FFFFE000) = $FFFFE000) and
+           ((PUInt64(PtrUInt(identityLeaf($FFFFFFFC)^ and ADDRESS_MASK))[510] and MMIO_CACHE_FLAGS) =
+            (originalIdentity and MMIO_CACHE_FLAGS)), 'MMIO preserves neighboring identity page cache flags');
+    removed := identityLeaf($FFFFFFFC)^ and ADDRESS_MASK;
     identityLeaf($FFFFFFFC)^ := originalIdentity;
+    Assert(arch.x86_64.memory.physical.free_page(removed), 'MMIO test frees split identity table');
+    dec(tablePages);
+    invalidate($FFFFE000);
     invalidate($FFFFFFFC);
     arch.x86_64.memory.physical.free_page(PtrUInt(deviceRanges));
     deviceRanges := nil;
