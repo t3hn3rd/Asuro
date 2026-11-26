@@ -26,15 +26,27 @@ steps:
     commands:
       - git fetch --tags
       - |
-        build_arch=x86
-        if [ "$DRONE_BRANCH" = "64bit" ]; then build_arch=x86_64; fi
         if [ "$DRONE_BRANCH" = "master" ]; then
-          pwsh -NoLogo -NoProfile -File toolchain/build.ps1 all --arch "$build_arch" --profile release
+          pwsh -NoLogo -NoProfile -File toolchain/build.ps1 all --arch x86 --profile release
         else
-          pwsh -NoLogo -NoProfile -File toolchain/build.ps1 all --arch "$build_arch" --profile test:complex --testonly
+          pwsh -NoLogo -NoProfile -File toolchain/build.ps1 all --arch x86 --profile test:complex --testonly
         fi
 
-  - name: run-tests
+  - name: compile-x86_64
+    image: t3hn3rd/asuro-build:${DRONE_COMMIT}
+    pull: always
+    depends_on:
+      - compile-x86
+    commands:
+      - git fetch --tags
+      - |
+        if [ "$DRONE_BRANCH" = "master" ]; then
+          pwsh -NoLogo -NoProfile -File toolchain/build.ps1 all --arch x86_64 --profile release
+        else
+          pwsh -NoLogo -NoProfile -File toolchain/build.ps1 all --arch x86_64 --profile test:complex --testonly
+        fi
+
+  - name: run-tests-x86
     image: t3hn3rd/qemu-test-runner:latest
     pull: always
     depends_on:
@@ -44,13 +56,84 @@ steps:
         - develop
         - feature/test-only-mode
     commands:
-      - /usr/local/bin/run-tests --arch x86
+      - /usr/local/bin/run-tests --arch x86 /code/build/x86/test-complex-only/Asuro.iso
+
+  - name: run-tests-x86_64
+    image: t3hn3rd/qemu-test-runner:latest
+    pull: always
+    depends_on:
+      - compile-x86_64
+    when:
+      branch:
+        - develop
+        - feature/test-only-mode
+    commands:
+      - /usr/local/bin/run-tests --arch x86_64 /code/build/x86_64/test-complex-only/Asuro.iso
+
+  - name: upload-iso-artifact-x86
+    image: alpine/git
+    depends_on:
+      - compile-x86
+      - compile-x86_64
+    when:
+      event: [push]
+      branch:
+        - master
+    environment:
+      GITEA_TOKEN:
+        from_secret: gitea_token
+    commands:
+      - apk add --no-cache curl
+      - chmod +w build/x86/release/Asuro.iso
+      - cp build/x86/release/Asuro.iso "Asuro_x86-$(git rev-parse --short HEAD).iso"
+      - echo "Uploading Asuro_x86-$(git rev-parse --short HEAD).iso to Gitea Packages..."
+      - |
+         curl -X PUT "https://gitea.spexeah.com/api/packages/Spexeah/generic/asuro-iso/$(git rev-parse --short HEAD)/Asuro_x86.iso" \
+         -H "Authorization: token $GITEA_TOKEN" --upload-file "Asuro_x86-$(git rev-parse --short HEAD).iso"
+      - echo "Updating latest ISO reference..."
+      - |
+        curl -X DELETE https://gitea.spexeah.com/api/packages/Spexeah/generic/asuro-iso/latest/Asuro_x86.iso \
+        -H "Authorization: token $GITEA_TOKEN" || echo "No previous latest version found."
+      - |
+        curl -X PUT https://gitea.spexeah.com/api/packages/Spexeah/generic/asuro-iso/latest/Asuro_x86.iso \
+        -H "Authorization: token $GITEA_TOKEN" --upload-file "Asuro_x86-$(git rev-parse --short HEAD).iso"
+
+  - name: upload-iso-artifact-x86_64
+    image: alpine/git
+    depends_on:
+      - compile-x86_64
+      - compile-x86
+    when:
+      event: [push]
+      branch:
+        - master
+    environment:
+      GITEA_TOKEN:
+        from_secret: gitea_token
+    commands:
+      - apk add --no-cache curl
+      - chmod +w build/x86_64/release/Asuro.iso
+      - cp build/x86_64/release/Asuro.iso "Asuro_x86_64-$(git rev-parse --short HEAD).iso"
+      - echo "Uploading Asuro_x86_64-$(git rev-parse --short HEAD).iso to Gitea Packages..."
+      - |
+         curl -X PUT "https://gitea.spexeah.com/api/packages/Spexeah/generic/asuro-iso/$(git rev-parse --short HEAD)/Asuro_x86_64.iso" \
+         -H "Authorization: token $GITEA_TOKEN" --upload-file "Asuro_x86_64-$(git rev-parse --short HEAD).iso"
+      - echo "Updating latest ISO reference..."
+      - |
+        curl -X DELETE https://gitea.spexeah.com/api/packages/Spexeah/generic/asuro-iso/latest/Asuro_x86_64.iso \
+        -H "Authorization: token $GITEA_TOKEN" || echo "No previous latest version found."
+      - |
+        curl -X PUT https://gitea.spexeah.com/api/packages/Spexeah/generic/asuro-iso/latest/Asuro_x86_64.iso \
+        -H "Authorization: token $GITEA_TOKEN" --upload-file "Asuro_x86_64-$(git rev-parse --short HEAD).iso"
+
 
   - name: deploy-docs
     image: alpine:latest
     depends_on:
       - compile-x86
+      - compile-x86_64
     when:
+      event: [push]
       branch:
         - master
         - develop
@@ -70,38 +153,15 @@ steps:
       - rsync -a --delete build/docs/site/ "$DEST/"
       - echo "Documentation deployed to ${DRONE_BRANCH}"
 
-  - name: upload-iso-artifact
-    image: alpine/git
-    depends_on:
-      - compile-x86
-    when:
-      branch:
-        - master
-    environment:
-      GITEA_TOKEN:
-        from_secret: gitea_token
-    commands:
-      - apk add --no-cache curl
-      - chmod +w Asuro.iso
-      - cp Asuro.iso "Asuro-$(git rev-parse --short HEAD).iso"
-      - echo "Uploading Asuro-$(git rev-parse --short HEAD).iso to Gitea Packages..."
-      - |
-         curl -X PUT "https://gitea.spexeah.com/api/packages/Spexeah/generic/asuro-iso/$(git rev-parse --short HEAD)/Asuro.iso" \
-         -H "Authorization: token $GITEA_TOKEN" --upload-file "Asuro-$(git rev-parse --short HEAD).iso"
-      - echo "Updating latest ISO reference..."
-      - |
-        curl -X DELETE https://gitea.spexeah.com/api/packages/Spexeah/generic/asuro-iso/latest/Asuro.iso \
-        -H "Authorization: token $GITEA_TOKEN" || echo "No previous latest version found."
-      - |
-        curl -X PUT https://gitea.spexeah.com/api/packages/Spexeah/generic/asuro-iso/latest/Asuro.iso \
-        -H "Authorization: token $GITEA_TOKEN" --upload-file "Asuro-$(git rev-parse --short HEAD).iso"
-
   - name: msg-status
     image: appleboy/drone-discord
     failure: ignore
     depends_on:
-      - compile-x86
-      - run-tests
+      - run-tests-x86
+      - run-tests-x86_64
+      - upload-iso-artifact-x86
+      - upload-iso-artifact-x86_64
+      - deploy-docs
     when:
       status: [success, failure, changed]
     settings:
@@ -115,4 +175,3 @@ volumes:
   - name: docs-htdocs
     host:
       path: /mnt/user/htdocs/asuro_docs
-
