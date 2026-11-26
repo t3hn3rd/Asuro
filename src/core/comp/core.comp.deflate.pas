@@ -25,7 +25,10 @@ procedure UnitTest;
 
 implementation
 
-uses memory.heap, core.comp.match, io.syslog;
+uses
+    memory.heap,
+    core.comp.match,
+    test.harness;
 
 const
     lengthBase : array[0..28] of uint16 =
@@ -330,22 +333,37 @@ const
     dynamicBlock : array[0..19] of uint8 = ($05,$C1,$81,$00,$00,$00,$00,$00,$10,$FF,$D5,$00,$00,$00,$00,$00,$00,$00,$00,$08);
     fixedBlock : array[0..3] of uint8 = ($73,$44,$03,$00);
     stored : array[0..7] of uint8 = (1,3,0,$FC,$FF,65,66,67);
-var plain : array[0..63] of uint8;
+var
+    context : TTestContext;
+    plain : array[0..63] of uint8;
     packedBytes : array[0..15] of uint8;
     i, n : uint32;
     ok : boolean;
 begin
+    test.harness.Start(@context, 'core.comp.deflate');
     ok := decompress(@dynamicBlock,sizeof(dynamicBlock),@plain,64,n) and (n = 64);
-    for i := 0 to 63 do if plain[i] <> 0 then ok := false;
-    ok := ok and decompress(@stored,sizeof(stored),@plain,3,n) and (n = 3);
+    for i := 0 to 63 do
+        ok := ok and (plain[i] = 0);
+    test.harness.Assert(@context, ok, 'decode dynamic block');
+
+    ok := decompress(@stored,sizeof(stored),@plain,3,n) and (n = 3);
     ok := ok and (plain[0] = 65) and (plain[1] = 66) and (plain[2] = 67);
-    ok := ok and decompress(@fixedBlock,sizeof(fixedBlock),@plain,16,n) and (n = 16);
-    for i := 0 to 15 do if plain[i] <> 65 then ok := false;
-    ok := ok and compress(@plain,16,@packedBytes,16,n) and (n = sizeof(fixedBlock));
-    for i := 0 to sizeof(fixedBlock)-1 do if packedBytes[i] <> fixedBlock[i] then ok := false;
-    ok := ok and not decompress(@dynamicBlock,sizeof(dynamicBlock)-1,@plain,64,n);
-    ok := ok and not decompress(@fixedBlock,sizeof(fixedBlock),@plain,15,n);
-    if ok then io.syslog.logln('DEFLATE','Passed') else io.syslog.logln('DEFLATE','FAILED');
+    test.harness.Assert(@context, ok, 'decode stored block');
+
+    ok := decompress(@fixedBlock,sizeof(fixedBlock),@plain,16,n) and (n = 16);
+    for i := 0 to 15 do begin
+        ok := ok and (plain[i] = 65);
+        plain[i] := 65;
+    end;
+    test.harness.Assert(@context, ok, 'decode fixed block');
+
+    ok := compress(@plain,16,@packedBytes,16,n) and (n = sizeof(fixedBlock));
+    for i := 0 to sizeof(fixedBlock)-1 do
+        ok := ok and (packedBytes[i] = fixedBlock[i]);
+    test.harness.Assert(@context, ok, 'encode fixed block');
+    test.harness.Assert(@context, not decompress(@dynamicBlock,sizeof(dynamicBlock)-1,@plain,64,n), 'reject truncated block');
+    test.harness.Assert(@context, not decompress(@fixedBlock,sizeof(fixedBlock),@plain,15,n), 'reject insufficient output capacity');
+    test.harness.Finish(@context);
 end;
 
 end.

@@ -25,7 +25,10 @@ procedure UnitTest;
 
 implementation
 
-uses memory.heap, core.comp.match, io.syslog;
+uses
+    memory.heap,
+    core.comp.match,
+    test.harness;
 
 function compress(src : puint8; size : uint32; dst : puint8; capacity : uint32;
                   var written : uint32) : boolean;
@@ -164,18 +167,28 @@ end;
 
 procedure UnitTest;
 const known : array[0..9] of uint8 = ($16,65,1,0,$50,65,65,65,65,65);
-var plain : array[0..15] of uint8;
+var
+    context : TTestContext;
+    plain : array[0..15] of uint8;
     encoded : array[0..31] of uint8;
     n, i : uint32;
     ok : boolean;
 begin
+    test.harness.Start(@context, 'core.comp.lz4');
     ok := decompress(@known,sizeof(known),@plain,sizeof(plain),n) and (n = 16);
-    for i := 0 to 15 do if plain[i] <> 65 then ok := false;
-    ok := ok and compress(@plain,16,@encoded,sizeof(encoded),n) and (n = sizeof(known));
-    for i := 0 to 9 do if encoded[i] <> known[i] then ok := false;
-    ok := ok and not decompress(@known,9,@plain,16,n);
-    ok := ok and not decompress(@known,10,@plain,15,n);
-    if ok then io.syslog.logln('LZ4','Passed') else io.syslog.logln('LZ4','FAILED');
+    for i := 0 to 15 do begin
+        ok := ok and (plain[i] = 65);
+        plain[i] := 65;
+    end;
+    test.harness.Assert(@context, ok, 'decode known block');
+
+    ok := compress(@plain,16,@encoded,sizeof(encoded),n) and (n = sizeof(known));
+    for i := 0 to 9 do
+        ok := ok and (encoded[i] = known[i]);
+    test.harness.Assert(@context, ok, 'encode known block');
+    test.harness.Assert(@context, not decompress(@known,9,@plain,16,n), 'reject truncated block');
+    test.harness.Assert(@context, not decompress(@known,10,@plain,15,n), 'reject insufficient output capacity');
+    test.harness.Finish(@context);
 end;
 
 end.
