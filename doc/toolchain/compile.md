@@ -5,6 +5,7 @@ Build the builder image from the repository root with `docker compose build buil
 ```sh
 docker compose run --rm builder compile --arch x86 --profile debug
 docker compose run --rm builder iso --arch x86 --profile test:complex
+docker compose run --rm builder iso --arch x86_64 --profile test:complex
 docker compose run --rm builder docs
 docker compose run --rm builder all --arch x86 --profile release
 ```
@@ -16,7 +17,7 @@ docker compose run --rm builder all --arch x86 --profile release
 | `docs` | Build the documentation under `build/docs/site/`. |
 | `all` | Build the ISO and documentation. |
 
-The default is `all --arch x86 --profile release`. The `x86` recipe builds an i386 kernel and BIOS GRUB ISO. See [Add a target architecture](architectures.md) for the compiler, linker, and boot recipes needed for another target.
+The default is `all --arch x86 --profile release`. The `x86` and `x86_64` recipes build i386 and AMD64 kernels respectively. Both package a BIOS GRUB ISO. See [Add a target architecture](architectures.md) for the compiler, linker, and boot recipes needed for another target.
 
 | Profile | Configuration |
 | --- | --- |

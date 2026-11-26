@@ -22,7 +22,7 @@ Add an entry to `Get-ArchitectureTable` in `toolchain/build.ps1`. The table driv
 | --- | --- |
 | Pascal | Set `PascalCompiler`, `PascalFlags`, and `PpuDump`. Use a PPUDump compatible with the compiler's PPU format. |
 | Native objects | Set `CCompiler`, `CTargetFlags`, `Archiver`, and `SymbolReader`. The shared stages use these tools for LVGL, icons, and `INITFINAL`. |
-| Assembly | Set `Assemble` to a function reference such as `${function:Build-X86Assembly}`. Ninja tracks `StubSource`, `SplashSource`, and `SplashAssets`. The x86 handler uses `Assembler` and `AssemblerFlags` to assemble both inputs. |
+| Assembly | Set `Assemble` to a function reference such as `${function:Build-X86Assembly}`. Ninja tracks `StubSource` and any recipe-specific `SplashSource`, `SplashAssets`, or `InterruptSource`. The x86 handler uses `Assembler` and `AssemblerFlags` to assemble both inputs. |
 | Kernel link | Set `Linker`, `LinkerFlags`, `LinkerScript`, and `RuntimeFlags`. Match the entry symbol and memory layout to the boot stub. |
 | Boot image | Set `PackageImage` to a function reference and `ImageSource` to the asset directory. The handler produces `Asuro.iso` in the build directory for the launcher to publish. Use `$null` for `PackageImage` while bringing up a compile-only target. |
 

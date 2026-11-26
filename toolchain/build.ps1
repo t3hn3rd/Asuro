@@ -74,6 +74,29 @@ function Get-ArchitectureTable {
             PackageImage   = ${function:New-X86GrubIso}
             ImageSource    = 'assets/iso'
         }
+        x86_64 = @{
+            PascalCompiler = 'ppcx64'
+            PascalFlags    = @('-Rintel', '-Tlinux')
+            PpuDump        = 'ppudump'
+
+            CCompiler      = 'gcc'
+            CTargetFlags   = @('-m64', '-mno-red-zone')
+            Archiver       = 'ar'
+            SymbolReader   = 'nm'
+
+            Assembler      = 'nasm'
+            AssemblerFlags = @('-f', 'elf64')
+            Assemble       = ${function:Build-X86Assembly}
+            StubSource     = 'src/arch/x86_64/boot/stub.asm'
+            InterruptSource = 'src/arch/x86_64/isr/entry.asm'
+
+            Linker         = 'ld'
+            LinkerFlags    = @('-m', 'elf_x86_64')
+            LinkerScript   = 'toolchain/x86_64/linker.script'
+
+            PackageImage   = ${function:New-X86GrubIso}
+            ImageSource    = 'assets/iso'
+        }
     }
 }
 
@@ -175,12 +198,14 @@ function Initialize-Dependencies {
 # Refresh the profile’s source mirror while preserving generated Pascal files.
 function Sync-Sources {
     New-BuildDirectory "$buildPath/source/src/arch/$arch"
+    New-BuildDirectory "$buildPath/source/src/arch/common"
     New-BuildDirectory "$buildPath/source/wasuro"
     Invoke-Tool rsync @(
         '-a', '--checksum', '--delete', '--exclude=/core/core.version.pas',
-        '--exclude=/boot/dangling_units.inc', '--exclude=/arch/',
+        '--exclude=/boot/dangling_units.inc', '--exclude=/arch/', '--exclude=/include/',
         'src/', "$buildPath/source/src/"
     )
+    Invoke-Tool rsync @('-a', '--checksum', '--delete', "src/arch/common/", "$buildPath/source/src/arch/common/")
     Invoke-Tool rsync @('-a', '--checksum', '--delete', "src/arch/$arch/", "$buildPath/source/src/arch/$arch/")
     Invoke-Tool rsync @('-a', '--checksum', '--delete', "$wasuro/", "$buildPath/source/wasuro/")
 }
@@ -469,17 +494,24 @@ function Build-Icons {
     }
 }
 
+function Get-ExtraAssemblyObjects {
+    if ($target.SplashSource) { "$buildPath/splash_tga.o" }
+    if ($target.InterruptSource) { "$buildPath/interrupt_entry.o" }
+}
+
 # Link the Pascal, assembly, and native objects into the kernel image.
 function Link-Kernel {
     $objects = [IO.File]::ReadAllLines("$buildPath/pascal-objects.rsp")
-    $libgcc = Invoke-Tool $target.CCompiler $target.RuntimeFlags
+    $libraries = @("$buildPath/liblvgl.a")
+    if ($target.RuntimeFlags) { $libraries += Invoke-Tool $target.CCompiler $target.RuntimeFlags }
+    $assembly = @(Get-ExtraAssemblyObjects)
     $strip = @()
     if ($buildProfile -eq 'release') { $strip = @('-s') }
     Invoke-Tool $target.Linker ($target.LinkerFlags + $strip + @(
         '--gc-sections', '--no-warn-execstack', '-T', $target.LinkerScript,
         '-o', "$buildPath/kernel.bin", "$buildPath/stub.o"
-    ) + $objects + @("$buildPath/splash_tga.o", "$buildPath/initcalls.o") + @(Get-IconObjects) +
-        @('--start-group', "$buildPath/liblvgl.a", $libgcc, '--end-group'))
+    ) + $objects + $assembly + @("$buildPath/initcalls.o") + @(Get-IconObjects) +
+        @('--start-group') + $libraries + @('--end-group'))
 }
 
 # Assemble either of the x86 boot objects using the target's ELF format.
@@ -554,7 +586,12 @@ function Write-Graph([string[]]$Pascal, [string[]]$Native, [bool]$DocsOnly) {
         Add-Edge @($dangling) (@($units, $version, $pascalInputs) + $Pascal) 'boot-units'
         Add-Edge @($stamp, $objects) (@($units, $config, $dangling, $version, $pascalInputs) + $Pascal) 'compile-pascal'
         Add-Edge @("$buildPath/stub.o") @($target.StubSource, $config) 'stub'
-        Add-Edge @("$buildPath/splash_tga.o") (@($target.SplashSource, $config) + $target.SplashAssets) 'splash'
+        if ($target.SplashSource) {
+            Add-Edge @("$buildPath/splash_tga.o") (@($target.SplashSource, $config) + $target.SplashAssets) 'splash'
+        }
+        if ($target.InterruptSource) {
+            Add-Edge @("$buildPath/interrupt_entry.o") @($target.InterruptSource, $config) 'interrupt-entry'
+        }
 
         $nativeObjects = @(foreach ($source in $Native) {
             $object = Get-NativeObject $source
@@ -568,8 +605,8 @@ function Write-Graph([string[]]$Pascal, [string[]]$Native, [bool]$DocsOnly) {
         Add-Edge @("$buildPath/initcalls.o") @($stamp, $objects) 'initcalls'
         Add-Edge @($kernel) (@(
             $stamp, $objects, "$buildPath/initcalls.o", "$buildPath/stub.o",
-            "$buildPath/splash_tga.o", "$buildPath/liblvgl.a", $target.LinkerScript, $config
-        ) + $icons) 'link'
+            "$buildPath/liblvgl.a", $target.LinkerScript, $config
+        ) + @(Get-ExtraAssemblyObjects) + $icons) 'link'
         $graph.Add("build compile: phony $kernel")
         if ($target.PackageImage) {
             $isoFiles = @(Get-RelativePaths @($target.ImageSource))
@@ -594,7 +631,7 @@ function Write-Graph([string[]]$Pascal, [string[]]$Native, [bool]$DocsOnly) {
 # Dispatch a single Ninja stage using the configuration of its build directory.
 function Invoke-Stage {
     param(
-        [ValidateSet('docs', 'version', 'boot-units', 'compile-pascal', 'stub', 'splash', 'lvgl', 'icons', 'initcalls', 'link', 'iso')]
+        [ValidateSet('docs', 'version', 'boot-units', 'compile-pascal', 'stub', 'splash', 'interrupt-entry', 'lvgl', 'icons', 'initcalls', 'link', 'iso')]
         [string]$Step,
 
         [ValidatePattern('^build/(?:docs|[a-z0-9_]+/(?:debug|release|test-(?:minimal|complex)(?:-only)?))$')]
@@ -623,6 +660,7 @@ function Invoke-Stage {
         'compile-pascal' { Build-Pascal }
         'stub'           { & $target.Assemble $target.StubSource "$buildPath/stub.o" }
         'splash'         { & $target.Assemble $target.SplashSource "$buildPath/splash_tga.o" }
+        'interrupt-entry' { & $target.Assemble $target.InterruptSource "$buildPath/interrupt_entry.o" }
         'lvgl' {
             $objects = @([IO.File]::ReadLines("$buildPath/native.manifest") | ForEach-Object { Get-NativeObject $_ })
             [IO.File]::Delete("$buildPath/liblvgl.a")
@@ -715,7 +753,8 @@ function Invoke-Build {
     New-BuildDirectory "$buildPath/units"
     Initialize-Dependencies
     $pascal = @(Get-RelativePaths @('src', $wasuro) @('.pas', '.inc') | Where-Object {
-        ($_ -notlike 'src/arch/*' -or $_ -like "src/arch/$arch/*") -and
+        ($_ -notlike 'src/arch/*' -or $_ -like "src/arch/$arch/*" -or $_ -like 'src/arch/common/*') -and
+        $_ -notlike 'src/include/*' -and
         $_ -notin @('src/core/core.version.pas', 'src/boot/dangling_units.inc')
     })
     Update-UnitInventory $pascal
