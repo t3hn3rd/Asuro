@@ -10,7 +10,7 @@ steps:
     image: plugins/docker
     settings:
       repo: t3hn3rd/asuro-build
-      tags: latest
+      tags: ${DRONE_COMMIT}
       dockerfile: Dockerfile
       registry: docker.io
       username:
@@ -19,7 +19,7 @@ steps:
         from_secret: docker_password
 
   - name: compile-x86
-    image: t3hn3rd/asuro-build:latest
+    image: t3hn3rd/asuro-build:${DRONE_COMMIT}
     pull: always
     depends_on:
       - build-image
