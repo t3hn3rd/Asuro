@@ -71,7 +71,7 @@ uses
     core.comp.deflate,
     core.enc.fnv1a,
     core.enc.djb2, core.enc.sha1,
-    {$ifndef CPUX86_64}core.ds.bloom,{$endif}
+    core.ds.bloom,
     core.fmt.png,
     core.fmt.json,
     core.fmt.cbor.tests;
@@ -125,7 +125,7 @@ begin
     core.enc.fnv1a.UnitTest;
     core.enc.djb2.UnitTest;
     core.enc.sha1.UnitTest;
-    {$ifndef CPUX86_64}core.ds.bloom.UnitTest;{$endif}
+    core.ds.bloom.UnitTest;
 end;
 
 procedure runComplexTests();

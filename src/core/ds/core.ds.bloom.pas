@@ -91,7 +91,7 @@ procedure Bloom_SetBit(Filter : PBloomFilter; BitIdx : uint32); inline;
 var
   b : puint8;
 begin
-  b  := puint8(uint32(Filter^.Bits) + (BitIdx div 8));
+  b  := @puint8(Filter^.Bits)[BitIdx div 8];
   b^ := b^ or byte(1 shl (BitIdx mod 8));
 end;
 
@@ -100,7 +100,7 @@ function Bloom_GetBit(Filter : PBloomFilter; BitIdx : uint32) : boolean; inline;
 var
   b : puint8;
 begin
-  b            := puint8(uint32(Filter^.Bits) + (BitIdx div 8));
+  b            := @puint8(Filter^.Bits)[BitIdx div 8];
   Bloom_GetBit := (b^ and byte(1 shl (BitIdx mod 8))) <> 0;
 end;
 
@@ -113,20 +113,22 @@ var
   F         : PBloomFilter;
   ByteCount : uint32;
 begin
-  F := PBloomFilter(kalloc(sizeof(TBloomFilter)));
-  if F = nil then
-  begin
-    Bloom_New := nil;
+  Bloom_New := nil;
+  if BitCount = 0 then exit;
+  F := PBloomFilter(tryAlloc(sizeof(TBloomFilter)));
+  if F = nil then exit;
+
+  ByteCount := (BitCount - 1) div 8 + 1;
+
+  F^.Bits := tryAlloc(ByteCount);
+  if F^.Bits = nil then begin
+    kfree(void(F));
     exit;
   end;
-
-  ByteCount := (BitCount + 7) div 8;
-
-  F^.Bits      := kalloc(ByteCount);
   F^.BitCount  := BitCount;
   F^.HashCount := HashCount;
   F^.Count     := 0;
-  memset(uint32(F^.Bits), 0, ByteCount);
+  { tryAlloc returns zero-filled storage. }
 
   Bloom_New := F;
 end;
@@ -179,8 +181,8 @@ var
   ByteCount : uint32;
 begin
   if Filter = nil then exit;
-  ByteCount := (Filter^.BitCount + 7) div 8;
-  memset(uint32(Filter^.Bits), 0, ByteCount);
+  ByteCount := (Filter^.BitCount - 1) div 8 + 1;
+  memset(PtrUInt(Filter^.Bits), 0, ByteCount);
   Filter^.Count := 0;
 end;
 
@@ -203,6 +205,16 @@ begin
   { Two distinct 5-byte inputs: "hello" and "world" }
   buf1[0] := ord('h'); buf1[1] := ord('e'); buf1[2] := ord('l'); buf1[3] := ord('l'); buf1[4] := ord('o');
   buf2[0] := ord('w'); buf2[1] := ord('o'); buf2[2] := ord('r'); buf2[3] := ord('l'); buf2[4] := ord('d');
+
+  test.harness.Assert(@context, Bloom_New(0, 1) = nil, 'zero-bit filter rejected');
+  f := Bloom_New(9, 1);
+  if f <> nil then begin
+    Bloom_SetBit(f, 8);
+    test.harness.Assert(@context, Bloom_GetBit(f, 8), 'last bit in partial byte set');
+    Bloom_Clear(f);
+    test.harness.Assert(@context, not Bloom_GetBit(f, 8), 'last partial byte cleared');
+    Bloom_Free(f);
+  end else test.harness.Assert(@context, false, 'partial-byte filter allocation');
 
   { === New === }
   f := Bloom_New(1024, 7);

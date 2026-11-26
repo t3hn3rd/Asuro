@@ -24,7 +24,7 @@ False positives are possible at a rate determined by the filter size and the num
 ```pascal
 function Bloom_New(BitCount : uint32; HashCount : uint32) : PBloomFilter;
 ```
-Creates a new Bloom filter with `BitCount` bits and `HashCount` hash functions per element. The bit buffer is zero-initialised. Returns `nil` on allocation failure.
+Creates a new Bloom filter with `BitCount` bits and `HashCount` hash functions per element. The bit buffer is zero-initialised. Returns `nil` for zero bits or allocation failure.
 
 A common sizing guideline: `m = -n * ln(p) / (ln(2)^2)` for `n` expected elements and target false-positive rate `p`. Optimal `k = (m/n) * ln(2)`.
 
@@ -56,6 +56,8 @@ Frees the bit buffer and the filter structure. After this call the pointer is in
 ```pascal
 procedure UnitTest;
 ```
+The standard suite on i386 and x86-64 checks membership, clearing, and the final bit of a partial byte. Hashes and bit indexes use 32 bits on both targets.
+
 Runs the Bloom filter test suite and logs a pass/fail summary to syslog under the `'BLOOM'` channel.
 
 ## Notes
