@@ -1,4 +1,4 @@
-unit arch.x86.power;
+unit arch.common.power;
 
 interface
 
@@ -8,7 +8,7 @@ procedure powerOff;
 implementation
 
 uses
-    arch.x86.util;
+    arch.platform.cpu;
 
 const
     QEMU_PM1_CONTROL = $604;

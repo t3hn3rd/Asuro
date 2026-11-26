@@ -31,7 +31,7 @@ implementation
 
 uses
     {$IFDEF TEST_ONLY}
-    arch.x86.power,
+    arch.common.power,
     {$ENDIF}
     {$if defined(CPUX86_64) and defined(UNIT_TESTS)}arch.x86_64.regression,{$endif}
     core.strings,
@@ -149,7 +149,7 @@ begin
     { Print the test harness results }
     test.harness.print;
     {$IFDEF TEST_ONLY}
-        arch.x86.power.powerOff;
+        arch.common.power.powerOff;
     {$ENDIF}
 end;
 

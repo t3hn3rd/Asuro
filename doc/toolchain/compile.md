@@ -33,6 +33,7 @@ The default is `all --arch x86 --profile release`. The `x86` and `x86_64` recipe
 ```sh
 docker compose run --rm builder iso --arch x86 --testonly
 docker compose run --rm builder iso --arch x86 --profile test:complex --testonly
+docker compose run --rm builder iso --arch x86_64 --profile test:complex --testonly
 ```
 
 `--testonly` selects the standard test suite unless the effective profile is `test:complex`, which runs both suites. Test-only builds have separate caches. After printing the final test summary over COM1, the kernel requests power-off on a QEMU PC with SeaBIOS and ACPI enabled.
