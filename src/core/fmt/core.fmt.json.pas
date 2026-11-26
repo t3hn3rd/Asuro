@@ -113,6 +113,7 @@ uses
 { ============================================================================ }
 
 type
+    PPJSONValue = ^PJSONValue;
     PJSONParser = ^TJSONParser;
     TJSONParser = record
         buf    : pchar;
@@ -238,7 +239,6 @@ end;
 procedure freeValue(val : PJSONValue);
 var
     i   : uint32;
-    ptr : puint32;
 begin
     if val = nil then exit;
     case val^.Kind of
@@ -250,9 +250,7 @@ begin
             if val^.arrayVal <> nil then begin
                 i:= 0;
                 while i < DL_Size(val^.arrayVal) do begin
-                    ptr:= puint32(DL_Get(val^.arrayVal, i));
-                    if ptr <> nil then
-                        freeValue(PJSONValue(ptr^));
+                    freeValue(getArrayItem(val, i));
                     inc(i);
                 end;
                 DL_Free(val^.arrayVal);
@@ -503,18 +501,28 @@ begin
         setError(p, 'Invalid literal');
 end;
 
+function appendChild(arr, item: PJSONValue): boolean;
+var
+    slot: PPJSONValue;
+begin
+    slot:= PPJSONValue(DL_Add(arr^.arrayVal));
+    appendChild:= slot <> nil;
+    if slot <> nil then slot^:= item;
+end;
+
 function parseArray(var p : TJSONParser) : PJSONValue;
 var
     result : PJSONValue;
     item   : PJSONValue;
-    ptr    : puint32;
 begin
     parseArray:= nil;
     inc(p.pos); { skip '[' }
 
-    result:= PJSONValue(kalloc(sizeof(TJSONValue)));
-    result^.Kind:= JSON_ARRAY;
-    result^.arrayVal:= DL_New(sizeof(uint32));
+    result:= newArray;
+    if result = nil then begin
+        setError(p, 'Cannot allocate JSON array');
+        exit;
+    end;
 
     skipWS(p);
 
@@ -532,8 +540,12 @@ begin
             exit;
         end;
 
-        ptr:= puint32(DL_Add(result^.arrayVal));
-        ptr^:= uint32(item);
+        if not appendChild(result, item) then begin
+            setError(p, 'Cannot grow JSON array');
+            freeValue(item);
+            freeValue(result);
+            exit;
+        end;
 
         skipWS(p);
         if p.pos >= p.len then begin
@@ -747,13 +759,12 @@ end;
 
 function getArrayItem(val : PJSONValue; idx : uint32) : PJSONValue;
 var
-    ptr : puint32;
+    slot : PPJSONValue;
 begin
     getArrayItem:= nil;
     if (val <> nil) and (val^.Kind = JSON_ARRAY) and (val^.arrayVal <> nil) then begin
-        ptr:= puint32(DL_Get(val^.arrayVal, idx));
-        if ptr <> nil then
-            getArrayItem:= PJSONValue(ptr^);
+        slot:= PPJSONValue(DL_Get(val^.arrayVal, idx));
+        if slot <> nil then getArrayItem:= slot^;
     end;
 end;
 
@@ -777,7 +788,6 @@ var
     segLen   : uint32;
     key      : pchar;
     idx      : uint32;
-    ptr      : puint32;
 begin
     getByPath:= nil;
     if (root = nil) or (path = nil) then exit;
@@ -800,17 +810,7 @@ begin
             end;
             if pos < pathLen then inc(pos); { skip ']' }
 
-            if current^.Kind <> JSON_ARRAY then begin
-                getByPath:= nil;
-                exit;
-            end;
-
-            ptr:= puint32(DL_Get(current^.arrayVal, idx));
-            if ptr = nil then begin
-                getByPath:= nil;
-                exit;
-            end;
-            current:= PJSONValue(ptr^);
+            current:= getArrayItem(current, idx);
         end else begin
             { Object key: segment until '.', '[', or end }
             segStart:= pos;
@@ -936,7 +936,12 @@ var
 begin
     result:= PJSONValue(kalloc(sizeof(TJSONValue)));
     result^.Kind:= JSON_ARRAY;
-    result^.arrayVal:= DL_New(sizeof(uint32));
+    result^.arrayVal:= DL_New(sizeof(PJSONValue));
+    if result^.arrayVal = nil then begin
+        kfree(void(result));
+        newArray:= nil;
+        exit;
+    end;
     newArray:= result;
 end;
 
@@ -955,12 +960,9 @@ end;
 { ============================================================================ }
 
 procedure arrayAppend(arr : PJSONValue; item : PJSONValue);
-var
-    ptr : puint32;
 begin
     if (arr = nil) or (arr^.Kind <> JSON_ARRAY) or (arr^.arrayVal = nil) then exit;
-    ptr:= puint32(DL_Add(arr^.arrayVal));
-    ptr^:= uint32(item);
+    if not appendChild(arr, item) then freeValue(item);
 end;
 
 procedure objectSet(obj : PJSONValue; key : pchar; item : PJSONValue);
@@ -1097,7 +1099,6 @@ var
     result : pchar;
     tmp    : pchar;
     valStr : pchar;
-    ptr    : puint32;
     i      : uint32;
     state  : TStringifyState;
 begin
@@ -1133,8 +1134,7 @@ begin
                         kfree(void(result));
                         result:= tmp;
                     end;
-                    ptr:= puint32(DL_Get(val^.arrayVal, i));
-                    valStr:= stringify(PJSONValue(ptr^));
+                    valStr:= stringify(getArrayItem(val, i));
                     tmp:= stringConcat(result, valStr);
                     kfree(void(result));
                     kfree(void(valStr));
@@ -1382,7 +1382,9 @@ begin
     freeValue(v);
 
     v:= newArray;
-    arrayAppend(v, newNumber(1.0));
+    v2:= newNumber(1.0);
+    arrayAppend(v, v2);
+    test.harness.Assert(@context, getArrayItem(v, 0) = v2, 'array preserves child pointer');
     arrayAppend(v, newNumber(2.0));
     test.harness.Assert(@context, getArraySize(v) = 2, 'builder array size');
     test.harness.Assert(@context, getNumber(getArrayItem(v, 0)) = 1.0, 'builder array[0]');
@@ -1395,7 +1397,9 @@ begin
     freeValue(v);
 
     { === Stringify === }
-    s:= stringify(newNull);
+    v:= newNull;
+    s:= stringify(v);
+    freeValue(v);
     test.harness.Assert(@context, stringEquals(s, 'null'), 'stringify null');
     kfree(void(s));
 

@@ -186,6 +186,8 @@ Recursively frees a `PJSONValue` and all nested values it owns. Safe to call wit
 ```pascal
 procedure UnitTest;
 ```
+JSON arrays store native-width child pointers on i386 and x86-64. The complex test profile exercises both parsing and programmatic construction.
+
 Runs the complete JSON test suite and logs a pass/fail summary to syslog under the `'JSON'` channel. Tests cover parsing of all value types, escape handling, error reporting, path accessors, builders, stringify, and round-trip equivalence.
 
 ## Notes

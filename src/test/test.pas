@@ -133,7 +133,7 @@ begin
     io.syslog.logln('test', 'Running complex unit tests...');
 
     { Run complex unit tests }
-    {$ifndef CPUX86_64}core.fmt.json.UnitTest;{$endif}
+    core.fmt.json.UnitTest;
     core.fmt.cbor.tests.UnitTest;
     core.clock.UnitTest;
     driver.storage.bench.UnitTest;
