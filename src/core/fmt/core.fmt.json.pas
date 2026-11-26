@@ -248,10 +248,12 @@ begin
         end;
         JSON_ARRAY: begin
             if val^.arrayVal <> nil then begin
-                for i:= 0 to DL_Size(val^.arrayVal) - 1 do begin
+                i:= 0;
+                while i < DL_Size(val^.arrayVal) do begin
                     ptr:= puint32(DL_Get(val^.arrayVal, i));
                     if ptr <> nil then
                         freeValue(PJSONValue(ptr^));
+                    inc(i);
                 end;
                 DL_Free(val^.arrayVal);
             end;
@@ -1124,7 +1126,8 @@ begin
         JSON_ARRAY: begin
             result:= stringCopy('[');
             if val^.arrayVal <> nil then begin
-                for i:= 0 to DL_Size(val^.arrayVal) - 1 do begin
+                i:= 0;
+                while i < DL_Size(val^.arrayVal) do begin
                     if i > 0 then begin
                         tmp:= stringConcat(result, ',');
                         kfree(void(result));
@@ -1136,6 +1139,7 @@ begin
                     kfree(void(result));
                     kfree(void(valStr));
                     result:= tmp;
+                    inc(i);
                 end;
             end;
             tmp:= stringConcat(result, ']');
@@ -1267,6 +1271,9 @@ begin
     v:= parse('[]', 2);
     test.harness.Assert(@context, v^.Kind = JSON_ARRAY, 'parse empty array kind');
     test.harness.Assert(@context, getArraySize(v) = 0, 'parse empty array size');
+    s:= stringify(v);
+    test.harness.Assert(@context, stringEquals(s, '[]'), 'stringify empty array');
+    kfree(void(s));
     freeValue(v);
 
     v:= parse('[1, 2, 3]', 9);
