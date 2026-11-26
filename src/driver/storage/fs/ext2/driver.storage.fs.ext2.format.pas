@@ -186,6 +186,14 @@ function SetLabel(volume : PStorage_Volume; text : pchar) : TError;
 var op : PExt2Op; labelText : TVolumeLabel; g, first : uint32;
 begin
     SetLabel:=ValidateLabel(text,labelText); if SetLabel<>eNone then exit;
+    if volume = nil then begin
+        SetLabel := eInvalidArgument;
+        exit;
+    end;
+    if (volume^.fsPrivate = nil) and not Identify(volume) then begin
+        SetLabel := eDeviceNotReady;
+        exit;
+    end;
     op:=BeginOp(volume); if op=nil then begin SetLabel:=eOutOfMemory; exit; end;
     if BeginMutation(op) then begin
         memcpy(PtrUInt(@labelText),PtrUInt(op^.V^.Super)+120,16);

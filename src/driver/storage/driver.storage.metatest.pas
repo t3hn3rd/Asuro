@@ -134,7 +134,29 @@ var
             end;
             kfree(void(data));
         end;
+        if stringEquals(name, 'EXT2') then begin
+            test.harness.Assert(@context, InvalidateVolume(volume),
+                                'quiesce EXT2 volume before rename');
+            test.harness.Assert(@context, volume^.fsPrivate = nil,
+                                'unmount releases EXT2 filesystem state');
+            writes := mock^.Writes;
+            mock^.FailRead := true;
+            error := fs^.setLabelCallback(volume, 'NOT WRITTEN');
+            mock^.FailRead := false;
+            test.harness.Assert(@context, error = eDeviceNotReady,
+                                'EXT2 label reload reports an unavailable filesystem');
+            test.harness.Assert(@context, (volume^.fsPrivate = nil) and (mock^.Writes = writes),
+                                'failed EXT2 reload leaves state detached and issues no writes');
+            test.harness.Assert(@context, fs^.setLabelCallback(volume, 'NEW EXT2') = eNone,
+                                'rename quiesced EXT2 volume');
+        end;
         test.harness.Assert(@context, InvalidateVolume(volume), 'round-trip volume released');
+        if stringEquals(name, 'EXT2') then begin
+            test.harness.Assert(@context, fs^.identifyCallback(volume), 'reload renamed EXT2');
+            test.harness.Assert(@context, stringEquals(@volume^.labelText[0], 'NEW EXT2'),
+                                'EXT2 label persists after filesystem state is released');
+            fs^.releaseVolumeCallback(volume);
+        end;
         RemoveVirtualTree('/__storage_roundtrip__');
         volume^.filesystem := nil;
         kfree(void(fs));
