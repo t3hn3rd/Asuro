@@ -38,6 +38,11 @@ begin
     arch.x86.isr.tmr0.hook(PtrUInt(handler));
 end;
 
+function supportsPCILine(line: uint8): boolean;
+begin
+    supportsPCILine := line < 224;
+end;
+
 procedure routePCI(line, vector: uint8);
 begin
     arch.x86.isr.ioapic.init;

@@ -35,11 +35,16 @@ begin
         fatal('IRQ', 'Timer handler registration failed');
 end;
 
+function supportsPCILine(line: uint8): boolean;
+begin
+    supportsPCILine := (line < 16) and (line <> 2) and (line <> 0);
+end;
+
 procedure routePCI(line, vector: uint8);
 var
     flags: PtrUInt;
 begin
-    if (line >= 16) or (line = 2) or (vector <> line + 32) then
+    if not supportsPCILine(line) or (vector <> line + 32) then
         fatal('IRQ', 'Unsupported PCI legacy IRQ route');
     flags := lockIRQ;
     if line < 8 then

@@ -2166,6 +2166,10 @@ begin
     end;
 
     for i := 0 to count - 1 do begin
+        if not arch.platform.interrupts.supportsPCILine(devices[i].interrupt_line) then begin
+            io.syslog.logln('XHCI', 'Unsupported PCI interrupt line; controller skipped.');
+            continue;
+        end;
         if XHCIInstanceCount >= XHCI_MAX_INSTANCES then break;
         io.syslog.log('driver.bus.usb.xhci', 'Controller[');
         io.syslog.writeint(i);

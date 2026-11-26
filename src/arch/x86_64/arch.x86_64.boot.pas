@@ -34,6 +34,7 @@ uses
     driver.bus.usb.types,
     driver.bus.usb.core,
     driver.bus.usb.hub,
+    driver.bus.usb.uhci, driver.bus.usb.ehci,
     driver.bus.usb.ohci,
     driver.bus.usb.xhci,
     driver.storage.metatest,
@@ -111,6 +112,8 @@ end;
 
 procedure init_usb_hosts;
 begin
+    driver.bus.usb.uhci.load;
+    driver.bus.usb.ehci.load;
     driver.bus.usb.ohci.load;
     driver.bus.usb.xhci.load;
 end;

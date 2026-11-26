@@ -15,5 +15,6 @@ type
     TTimerHandler = procedure(data: void);
 procedure registerIRQ(vector: uint8; handler: TIRQHandler);
 procedure registerTimer(handler: TTimerHandler);
+function supportsPCILine(line: uint8): boolean;
 procedure routePCI(line, vector: uint8);
 function timerTicks: uint64;

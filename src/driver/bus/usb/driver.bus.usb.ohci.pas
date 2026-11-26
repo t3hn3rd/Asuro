@@ -1274,6 +1274,10 @@ begin
     end;
 
     for i := 0 to count - 1 do begin
+        if not arch.platform.interrupts.supportsPCILine(devices[i].interrupt_line) then begin
+            io.syslog.logln('OHCI', 'Unsupported PCI interrupt line; controller skipped.');
+            continue;
+        end;
         io.syslog.log('driver.bus.usb.ohci', 'Controller[');
         io.syslog.writeint(i);
         io.syslog.writestring(']: VID=');
