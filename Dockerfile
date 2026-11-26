@@ -14,6 +14,8 @@ RUN pip3 install --no-cache-dir --break-system-packages "mkdocs>=1.6,<2" mkdocs-
 
 SHELL ["/bin/bash", "-c"]
 ARG FPC_VERSION=3.2.2
+RUN apt-get update && apt-get install -y --no-install-recommends fp-compiler && \
+    rm -rf /var/lib/apt/lists/*
 RUN curl -sL https://sourceforge.net/projects/freepascal/files/Linux/$FPC_VERSION/fpc-$FPC_VERSION.i386-linux.tar/download | tar -xf - && \
 	pushd fpc-$FPC_VERSION.i386-linux && ./install.sh && popd && \
 	rm -rf fpc-$FPC_VERSION.i386-linux

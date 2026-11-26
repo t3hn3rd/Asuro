@@ -23,11 +23,12 @@ steps:
     commands:
       - git fetch --tags
       - |
-        if [ "$DRONE_BRANCH" = "64bit" ]; then export ASURO_ARCH=x86_64; fi
+        build_arch=x86
+        if [ "$DRONE_BRANCH" = "64bit" ]; then build_arch=x86_64; fi
         if [ "$DRONE_BRANCH" = "master" ]; then
-          pwsh -NoLogo -NoProfile -File toolchain/build.ps1 all --arch x86 --profile release
+          pwsh -NoLogo -NoProfile -File toolchain/build.ps1 all --arch "$build_arch" --profile release
         else
-          pwsh -NoLogo -NoProfile -File toolchain/build.ps1 all --arch x86 --profile test:complex
+          pwsh -NoLogo -NoProfile -File toolchain/build.ps1 all --arch "$build_arch" --profile test:complex
         fi
       
   - name: deploy-docs
