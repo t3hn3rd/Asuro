@@ -52,3 +52,10 @@ Populates the detail panel with properties for the selected device or volume res
 ## Notes
 
 Only one instance of the disk utility window may be open at a time. Destructive operations (partition deletion, formatting) present a confirmation message box before proceeding. The format dropdown is populated from all filesystems registered with `driver.storage.fs.mgr` at the time the detail panel is shown.
+
+Volume renames temporarily unmount the volume before the metadata update.
+EXT2 reloads its filesystem state for the label write after unmounting. A volume with open handles cannot be renamed.
+The volume is remounted under its updated label when it was mounted before
+the operation.
+
+If EXT2 cannot reload its metadata, the rename reports that the device is not ready. A later attempt can retry the reload.
