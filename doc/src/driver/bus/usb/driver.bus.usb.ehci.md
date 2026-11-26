@@ -47,5 +47,5 @@ procedure UnitTest;
 Verifies register offset calculations and bitfield constants.
 
 Native boot initializes this controller when PCI discovers it. Schedule
-structures use DMA32 allocations. The x86-64 driver stages payloads above
+structures use DMA32 allocations. Queue heads use 128-byte alignment and transfer descriptors use 64-byte alignment so their hardware fields, including the upper buffer-address words, fit in one 4 KiB page. The EHCI suite checks both allocated descriptors and the last permitted slot in a page. The x86-64 driver stages payloads above
 4 GiB in low memory and retains staging storage until completion.

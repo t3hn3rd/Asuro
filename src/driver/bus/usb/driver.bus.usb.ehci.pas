@@ -176,7 +176,7 @@ const
 
 { ========================= Queue Head (QH) ========================= }
 
-    EHCI_QH_ALIGN              = 32;       { 32-byte alignment }
+    EHCI_QH_ALIGN              = 128;      { keep the hardware prefix within one DMA page }
 
     { QH Endpoint Characteristics (DWord 1) }
     EHCI_QH_DEVADDR_MASK       = $0000007F; { Device Address (bits 6:0) }
@@ -208,7 +208,7 @@ const
 
 { ========================= Queue Transfer Descriptor (qTD) ========================= }
 
-    EHCI_QTD_ALIGN             = 32;       { 32-byte alignment }
+    EHCI_QTD_ALIGN             = 64;      { keep the hardware prefix within one DMA page }
 
     { qTD Token (DWord 2) }
     EHCI_QTD_STATUS_MASK       = $000000FF; { Status (bits 7:0) }
@@ -1784,7 +1784,10 @@ begin
     test.harness.Assert(@context, qh <> nil, 'alloc_qh not nil');
     test.harness.Assert(@context, driver.dma.reach32(PtrUInt(qh), sizeof(TEHCI_QH)) = dmaDirect,
                         'QH fits in DMA32 memory');
-    test.harness.Assert(@context, (PtrUInt(qh) AND $1F) = 0, 'alloc_qh 32-byte aligned');
+    test.harness.Assert(@context, (PtrUInt(qh) and (EHCI_QH_ALIGN - 1)) = 0, 'alloc_qh alignment');
+    test.harness.Assert(@context, ((PtrUInt(qh) and $FFF) +
+                        (PtrUInt(@qh^.OvlBufferHigh[4]) - PtrUInt(qh)) + sizeof(uint32)) <= 4096,
+                        'QH hardware prefix fits within one page');
     test.harness.Assert(@context, qh^.HorizLink = 0, 'alloc_qh zeroed HorizLink');
     test.harness.Assert(@context, qh^.EPChars = 0, 'alloc_qh zeroed EPChars');
     test.harness.Assert(@context, qh^.OvlToken = 0, 'alloc_qh zeroed OvlToken');
@@ -1794,7 +1797,10 @@ begin
     test.harness.Assert(@context, qtd <> nil, 'alloc_qtd not nil');
     test.harness.Assert(@context, driver.dma.reach32(PtrUInt(qtd), sizeof(TEHCI_qTD)) = dmaDirect,
                         'QTD fits in DMA32 memory');
-    test.harness.Assert(@context, (PtrUInt(qtd) AND $1F) = 0, 'alloc_qtd 32-byte aligned');
+    test.harness.Assert(@context, (PtrUInt(qtd) and (EHCI_QTD_ALIGN - 1)) = 0, 'alloc_qtd alignment');
+    test.harness.Assert(@context, ((PtrUInt(qtd) and $FFF) +
+                        (PtrUInt(@qtd^.BufferHigh[4]) - PtrUInt(qtd)) + sizeof(uint32)) <= 4096,
+                        'QTD hardware prefix fits within one page');
     test.harness.Assert(@context, qtd^.Token = 0, 'alloc_qtd zeroed Token');
     test.harness.Assert(@context, qtd^.NextqTD = 0, 'alloc_qtd zeroed NextqTD');
     test.harness.Assert(@context, qtd^.Buffer[0] = 0, 'alloc_qtd zeroed Buffer[0]');
@@ -1833,8 +1839,10 @@ begin
     test.harness.Assert(@context, EHCI_FL_T = $01, 'FL_T=$01');
     test.harness.Assert(@context, EHCI_FL_TYPE_QH = $02, 'FL_TYPE_QH=$02');
     test.harness.Assert(@context, EHCI_QTD_T = $01, 'QTD_T=$01');
-    test.harness.Assert(@context, EHCI_QH_ALIGN = 32, 'QH_ALIGN=32');
-    test.harness.Assert(@context, EHCI_QTD_ALIGN = 32, 'QTD_ALIGN=32');
+    test.harness.Assert(@context, (EHCI_QH_ALIGN >= PtrUInt(@PEHCI_QH(nil)^.SWNext)) and
+                        ((4096 mod EHCI_QH_ALIGN) = 0), 'QH alignment covers hardware prefix at last page slot');
+    test.harness.Assert(@context, (EHCI_QTD_ALIGN >= PtrUInt(@PEHCI_qTD(nil)^.SWNext)) and
+                        ((4096 mod EHCI_QTD_ALIGN) = 0), 'QTD alignment covers hardware prefix at last page slot');
 
     { --- HCSPARAMS Extraction Tests --- }
     test.harness.Assert(@context, (EHCI_HCS_N_PORTS_MASK AND $0F) = $0F, 'HCS N_PORTS mask');
