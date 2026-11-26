@@ -17,7 +17,7 @@ interface
 {$i ../../common/platform.diagnostics.inc}
 
 implementation
-uses debug.early, arch.x86_64.util;
+uses debug.early, debug.tracer, arch.x86_64.panic, arch.x86_64.util;
 
 procedure log(tag, message: pchar);
 begin
@@ -27,16 +27,17 @@ end;
 
 procedure push_trace(name: pchar);
 begin
+    debug.tracer.push_trace(name);
 end;
 
 procedure pop_trace;
 begin
+    debug.tracer.pop_trace;
 end;
 
 procedure fatal(tag, message: pchar);
 begin
-    log(tag, message);
-    bootstrap_halt;
+    arch.x86_64.panic.panic(tag, message, nil);
 end;
 
 procedure testSummary(tag, passedKey, failedKey: pchar; passed, failed: uint32);

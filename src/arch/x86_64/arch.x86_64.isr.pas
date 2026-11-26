@@ -20,7 +20,7 @@ procedure testFatal(vector: uint32);
 
 implementation
 
-uses debug.early, arch.x86_64.irq, arch.x86_64.context;
+uses debug.early, arch.x86_64.panic, arch.x86_64.irq, arch.x86_64.context;
 
 type
     TGate = packed record
@@ -140,6 +140,7 @@ const
 var
     i: uint32;
     registers: PUInt64;
+    reason: pchar;
 begin
     if (frame^.vector >= 32) and (frame^.vector <= 47) then begin
         arch.x86_64.irq.dispatch(frame^.vector);
@@ -185,15 +186,17 @@ begin
     fatalActive := true;
     puts('FATAL x86_64 exception: ');
     case frame^.vector of
-        2: puts('NMI');
-        6: puts('invalid opcode');
-        8: puts('double fault');
-        13: puts('general protection');
-        14: puts('page fault');
-        18: puts('machine check');
+        0: reason := 'divide error';
+        2: reason := 'NMI';
+        6: reason := 'invalid opcode';
+        8: reason := 'double fault';
+        13: reason := 'general protection';
+        14: reason := 'page fault';
+        18: reason := 'machine check';
     else
-        puts('unexpected vector');
+        reason := 'unexpected vector';
     end;
+    puts(reason);
     puts(#13#10);
     field('VECTOR', frame^.vector);
     field('ERROR', frame^.error);
@@ -216,7 +219,7 @@ begin
         puts('FAULT=bootstrap stack guard'#13#10);
     for i := 0 to 14 do field(names[i], registers[i]);
     puts('HALTED: exception diagnostics complete'#13#10);
-    bootstrap_halt;
+    arch.x86_64.panic.panic(reason, 'CPU exception', frame);
 end;
 
 procedure UnitTest;

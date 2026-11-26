@@ -38,6 +38,7 @@ procedure reinit(fb_addr : PtrUInt; width, height, pitch : uint32; bpp : uint8);
 function register(DriverIdentifier : pchar; EnableCallback : FEnableDriver) : boolean;
 function enable(DriverIdentifier : pchar) : boolean;
 
+function frontBufferInfo: PVideoBuffer;
 function frontBufferWidth : uint32;
 function frontBufferHeight : uint32;
 function frontBufferBpp : uint8;
@@ -323,6 +324,11 @@ end;
 procedure FillRect(x1,y1,x2,y2 : uint32; line_thickness : uint32; Line_Color : TRGB32; Fill_Color : TRGB32);
 begin
     VideoInterface.DrawRoutines.FillRect(VideoInterface.DefaultBuffer,x1,y1,x2,y2,line_thickness,Line_Color,Fill_Color);
+end;
+
+function frontBufferInfo: PVideoBuffer;
+begin
+    frontBufferInfo := @VideoInterface.FrontBuffer;
 end;
 
 function frontBufferWidth : uint32;

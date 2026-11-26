@@ -22,7 +22,7 @@ procedure validateStorage;
 implementation
 
 uses
-    test.harness, arch.platform.interrupts, driver.storage.ctl.ahci, driver.bus.usb.ohci, arch.platform.cpu, driver.bus.pci, driver.bus.usb.core,
+    test.harness, debug.tracer, arch.platform.diagnostics, io.stdio, arch.platform.interrupts, driver.storage.ctl.ahci, driver.bus.usb.ohci, arch.platform.cpu, driver.bus.pci, driver.bus.usb.core,
     driver.storage.types, driver.storage.fs.mgr, driver.storage.mgr, driver.storage.vfs,
     driver.storage.perftest, memory.heap, proc.mgr, debug.early,
     {$ifdef ASURO_TEST_STORAGE}arch.x86_64.irq, driver.dma,{$endif}
@@ -66,7 +66,22 @@ end;
 procedure UnitTest;
 var
     ctx: TTestContext;
+    saved: PtrUInt;
+    retained: boolean;
+const marker: pchar = 'trace adapter test';
 begin
+    test.harness.Start(@ctx, 'arch.x86_64.diagnostics');
+    test.harness.Assert(@ctx, (findCommand('TRACER') <> nil) and (findCommand('BSOD') <> nil)
+        and (findCommand('DIV0') <> nil) and (findCommand('PF') <> nil)
+        and (findCommand('CRASHGFXD') <> nil), 'native diagnostic commands registered');
+    saved := arch.platform.cpu.lock;
+    arch.platform.diagnostics.push_trace(marker);
+    arch.platform.diagnostics.pop_trace;
+    retained := debug.tracer.get_last_trace = marker;
+    arch.platform.cpu.unlock(saved);
+    test.harness.Assert(@ctx, retained,
+        'platform trace retained in history after pop');
+    test.harness.Finish(@ctx);
     test.harness.Start(@ctx, 'arch.x86_64.runtime');
     testCompilerRuntime(ctx);
     test.harness.Finish(@ctx);

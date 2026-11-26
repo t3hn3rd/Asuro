@@ -9,7 +9,7 @@
     @author(Kieron Morris <kjm@kieronmorris.me>)
 }
 unit app.divzero;
-{$DEFINE NOT_DANGLING} { Selected by i386 startup; requires the i386 platform. }
+{$DEFINE NOT_DANGLING} { Registered by each x86 startup. }
 
 interface
 
@@ -21,8 +21,7 @@ procedure init();
 implementation
 
 uses
-    arch.x86.bda, driver.net.types, driver.net.proto.icmp, driver.net.util, core.strings,
-    proc.mgr, core.util, arch.x86.util, memory.heap, svc.gfxd;
+    svc.gfxd;
 
 { ---- Command entry point (runs as a process) ---- }
 
@@ -37,8 +36,13 @@ end;
 procedure run_pf(Params : PParamList; stdin_buf, stdout_buf, stderr_buf : POutBuf);
 begin
     asm
+        {$ifdef CPUX86_64}
+        MOV RAX, $100000000  { first page beyond the bootstrap identity map }
+        MOV [RAX], EAX
+        {$else}
         MOV EAX, $DEADBEEF
-        MOV [EAX], EAX  { this will trigger a page fault (interrupt 14) }
+        MOV [EAX], EAX
+        {$endif}
     end;
 end;
 

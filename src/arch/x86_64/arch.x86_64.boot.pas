@@ -20,7 +20,7 @@ implementation
 
 uses
     {$ifdef ASURO_TEST_STORAGE}arch.x86_64.regression,{$endif}
-    app.mgr,
+    app.mgr, app.bsod, app.divzero,
     driver.net, app.wasm.runner,
     driver.hid.ps2.keyboard, driver.hid.ps2.mouse,
     driver.video.desktop, driver.timer.rtc, svc.gfxd, app.uidebug,
@@ -224,6 +224,9 @@ begin
     {$endif}
     driver.storage.fs.mgr.init;
     io.stdio.init;
+    debug.tracer.init;
+    app.bsod.init;
+    app.divzero.init;
     arch.x86_64.irq.init;
     {$ifdef UNIT_TESTS}
     arch.x86_64.irq.UnitTest;
