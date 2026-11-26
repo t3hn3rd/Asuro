@@ -43,6 +43,8 @@ $profiles = @{
     'test:minimal' = @('-O3', '-gw', '-g', '-gl', '-dUNIT_TESTS')
     'test:complex' = @('-O3', '-gw', '-g', '-gl', '-dUNIT_TESTS', '-dUNIT_TESTS_COMPLEX')
 }
+$profiles['test:minimal-only'] = $profiles['test:minimal'] + '-dTEST_ONLY'
+$profiles['test:complex-only'] = $profiles['test:complex'] + '-dTEST_ONLY'
 
 # Register target tools, their build inputs, and the handlers that vary by architecture.
 function Get-ArchitectureTable {
@@ -595,7 +597,7 @@ function Invoke-Stage {
         [ValidateSet('docs', 'version', 'boot-units', 'compile-pascal', 'stub', 'splash', 'lvgl', 'icons', 'initcalls', 'link', 'iso')]
         [string]$Step,
 
-        [ValidatePattern('^build/(?:docs|[a-z0-9_]+/(?:debug|release|test-minimal|test-complex))$')]
+        [ValidatePattern('^build/(?:docs|[a-z0-9_]+/(?:debug|release|test-(?:minimal|complex)(?:-only)?))$')]
         [string]$Path
     )
 
@@ -643,6 +645,7 @@ function Get-BuildOptions {
         Arch = if ($env:ASURO_ARCH) { $env:ASURO_ARCH } else { 'x86' }
         BuildProfile = if ($env:COMPLEX_TESTS -eq '1') { 'test:complex' }
             elseif ($env:UNIT_TESTS -eq '1') { 'test:minimal' } else { 'release' }
+        TestOnly = $false
     }
 
     $index = 0
@@ -653,6 +656,7 @@ function Get-BuildOptions {
     while ($index -lt $Arguments.Count) {
         $flag = $Arguments[$index++]
         switch ($flag) {
+            '--testonly' { $options.TestOnly = $true }
             { $_ -in '--arch', '--profile' } {
                 if ($index -ge $Arguments.Count -or
                     !$Arguments[$index] -or $Arguments[$index] -like '-*') {
@@ -678,12 +682,18 @@ function Invoke-Build {
         [ValidatePattern('^[a-z0-9_]+$')]
         [string]$Arch,
 
+        [Alias('BuildProfile')]
         [ValidateSet('debug', 'test:minimal', 'test:complex', 'release')]
-        [string]$BuildProfile
+        [string]$RequestedProfile,
+
+        [switch]$TestOnly
     )
 
     $Task = $Task.ToLowerInvariant()
     $target = Get-TargetRecipe $Arch
+    if ($TestOnly -and $Task -eq 'docs') {
+        throw '--testonly requires a kernel build target.'
+    }
     if ($Task -in @('iso', 'all') -and !$target.PackageImage) {
         throw "Architecture '$Arch' does not have a boot image recipe. Use compile."
     }
@@ -696,7 +706,11 @@ function Invoke-Build {
         Invoke-Tool ninja @('-f', "$buildPath/build.ninja", 'docs')
         return
     }
-    $buildProfile = $buildProfile.ToLowerInvariant()
+    $buildProfile = $RequestedProfile.ToLowerInvariant()
+    if ($TestOnly) {
+        if ($buildProfile -eq 'test:complex') { $buildProfile = 'test:complex-only' }
+        else { $buildProfile = 'test:minimal-only' }
+    }
     $buildPath = "build/$arch/$($buildProfile.Replace(':', '-'))"
     New-BuildDirectory "$buildPath/units"
     Initialize-Dependencies
@@ -736,7 +750,7 @@ try {
         Invoke-Stage -Step $args[1] -Path $args[2]
     } elseif ($args -contains '--help' -or $args -contains '-h') {
         $architectures = ($architectureTable.Keys | Sort-Object) -join '|'
-        Write-Host "Usage: build [compile|iso|docs|all] [--arch $architectures] [--profile debug|test:minimal|test:complex|release]"
+        Write-Host "Usage: build [compile|iso|docs|all] [--arch $architectures] [--profile debug|test:minimal|test:complex|release] [--testonly]"
     } else {
         $options = Get-BuildOptions -Arguments $args
         Invoke-Build @options

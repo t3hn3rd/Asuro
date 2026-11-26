@@ -27,6 +27,23 @@ The default is `all --arch x86 --profile release`. The `x86` recipe builds an i3
 
 `ASURO_ARCH`, `UNIT_TESTS`, and `COMPLEX_TESTS` can also set defaults. Explicit flags take precedence. Drone uses `release` on master and `test:complex` on other branches.
 
+## Run boot tests in QEMU
+
+```sh
+docker compose run --rm builder iso --arch x86 --testonly
+docker compose run --rm builder iso --arch x86 --profile test:complex --testonly
+```
+
+`--testonly` selects the standard test suite unless the effective profile is `test:complex`, which runs both suites. Test-only builds have separate caches. After printing the final test summary over COM1, the kernel requests power-off on a QEMU PC with SeaBIOS and ACPI enabled.
+
+The standard suite was verified with 2 GiB of guest RAM. Run QEMU under a host-side timeout for regression testing.
+
+```sh
+qemu-system-i386 -machine pc -m 2048 -cdrom Asuro.iso -display none -serial stdio -monitor none -no-reboot
+```
+
+Require QEMU to exit and the final `tests run` summary to report a nonzero test count and zero failures. The guest requests power-off after the summary on both passing and failing runs.
+
 ## Build outputs
 
 Kernel outputs, Pascal units, and Ninja state live under `build/<arch>/<profile>/`. An ISO build also copies the result to `Asuro.iso` for the existing VM launcher and CI. Profiles have separate compiler caches. The build uses `assets/iso/` as the ISO source tree and `assets/embedded/` for boot artwork and icon fonts. Wasuro and LVGL are cached under `build/vendor/`. Asuro’s LVGL integration sources live in `src/driver/video/lvgl/`.
