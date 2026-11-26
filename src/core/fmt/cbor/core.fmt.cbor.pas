@@ -151,7 +151,11 @@ begin
     fraction := head.Argument and ((QWord(1) shl fractionBits) - 1);
     exponent := (head.Argument shr fractionBits) and (bias * 2 + 1);
     if head.Kind = cborFloat16 then raw.Bits := (head.Argument shr 15) shl 63
-    else raw.Bits := (head.Argument shr 31) shl 63;
+    else begin
+        raw.Bits := 0;
+        if LongInt(uint32(head.Argument)) < 0 then
+            raw.Bits := QWord(1) shl 63;
+    end;
     if exponent = bias * 2 + 1 then exponent := 2047
     else if exponent <> 0 then exponent := exponent + 1023 - bias
     else if fraction <> 0 then begin

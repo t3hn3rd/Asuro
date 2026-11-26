@@ -128,7 +128,7 @@ begin
         Result := ReadString(buffer, size, scan, payload, length, chunkKind);
         if Result <> cborOK then Exit;
         value^.Data := PUInt8(kalloc(length + 1));
-        if length <> 0 then memcpy(uint32(payload), uint32(value^.Data), length);
+        if length <> 0 then memcpy(PtrUInt(payload), PtrUInt(value^.Data), length);
         value^.Data[length] := 0;
         offset := scan;
         Exit;
@@ -149,7 +149,7 @@ begin
     while offset < scan do begin
         Result := ReadString(buffer, size, offset, payload, length, chunkKind);
         if Result <> cborOK then Exit;
-        if length <> 0 then memcpy(uint32(payload), uint32(value^.Data + copied), length);
+        if length <> 0 then memcpy(PtrUInt(payload), PtrUInt(value^.Data + copied), length);
         Inc(copied, length);
     end;
     value^.Data[total] := 0;
@@ -241,7 +241,7 @@ begin
     Result := ReadHead(buffer, size, offset, head);
     if Result <> cborOK then Exit;
     value := PCBORValue(kalloc(SizeOf(TCBORValue)));
-    memset(uint32(value), 0, SizeOf(TCBORValue));
+    memset(PtrUInt(value), 0, SizeOf(TCBORValue));
     value^.Head := head;
     case head.Kind of
         cborBytes, cborText, cborIndefiniteBytes, cborIndefiniteText:
