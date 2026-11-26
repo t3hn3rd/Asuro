@@ -4,50 +4,28 @@ Unit test orchestrator.
 
 ## Overview
 
-This unit provides a central entry point for running all kernel unit tests. It registers two boot entries: an early stub (`asuro.test.init`) and a late runner (`asuro.test.run`) that invokes every unit's `UnitTest` procedure in sequence.
+This unit runs kernel unit tests during boot and prints their aggregate results through `test.harness`.
 
 ## Boot Registration
 
-- `asuro.test.init` at `middle` barrier — placeholder for future test framework setup.
-- `asuro.test.run` at `late` barrier — calls all unit test procedures after the full kernel is initialised.
+- `asuro.test.init` resets the harness counters at the middle barrier.
+- `asuro.test.run.standard` runs the standard suite at the late barrier.
+- `asuro.test.run.complex` runs after the standard suite when complex tests are enabled.
+- `asuro.test.finish` prints the summary after all enabled suites finish.
 
-## Dependencies
+## Suite selection
 
-- `boot.mgr`
-- All units whose `UnitTest` procedure is invoked (see list below)
+Builds with `UNIT_TESTS` register the boot tests. `runAllTests` calls the standard suites in sequence. Builds that also define `UNIT_TESTS_COMPLEX` run the additional suites in `runComplexTests` afterward.
 
-## Procedures
+To register a new suite, import its unit in `test.pas` and call its `UnitTest` procedure from the appropriate runner. Follow the [test harness guide](test.harness.md) when writing the procedure.
 
-### init
+## Serial reporting
 
-```pascal
-procedure init;
+The boot runner calls `test.harness.Init` before the suites and `test.harness.Print` after them. The final serial output includes one line for unit totals and one for assertion totals.
+
+```text
+[test] 2 units tested, 1 passed, 1 failed.
+[test] 8 tests run, 7 passed, 1 failed.
 ```
 
-Stub initialiser registered at the `middle` barrier. Currently a no-op; reserved for future test framework configuration.
-
-### runAllTests
-
-```pascal
-procedure runAllTests;
-```
-
-Invokes `UnitTest` on every registered test suite:
-
-- `core.strings`
-- `driver.bus.usb.types`, `driver.bus.usb.core`
-- `driver.bus.usb.uhci`, `driver.bus.usb.ohci`, `driver.bus.usb.ehci`, `driver.bus.usb.xhci`
-- `driver.bus.usb.hub`
-- `driver.hid.usb.keyboard`, `driver.hid.usb.mouse`
-- `core.ds.fifo`, `core.ds.cfifo`, `core.ds.cfifols`, `core.ds.lifo`, `core.ds.circ`
-- `wasm.test`
-- `core.ds.minh`, `core.ds.maxh`, `core.ds.prio`
-- `driver.storage.vfs`, `driver.storage.test`
-- `core.enc.fnv1a`, `core.enc.djb2`
-- `core.ds.bloom`
-- `core.fmt.json`
-
-## Notes
-
-- Each `UnitTest` procedure logs its own pass/fail counts via `io.syslog`.
-- The unit is included in `boot.mgr`'s `uses` clause as a silo unit to ensure its `initialization` section runs.
+CI reads the final `tests run` line for the aggregate assertion result. With `--testonly`, the x86 kernel requests power-off after printing both summaries.

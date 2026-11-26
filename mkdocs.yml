@@ -244,6 +244,7 @@ nav:
         - Test Driver: src/driver/exp/driver.exp.testdriver.md
     - Test:
       - Test Runner: src/test/test.md
+      - Test Harness: src/test/test.harness.md
     - Services:
       - Graphics Daemon: src/svc/svc.gfxd.md
       - USB Daemon: src/svc/svc.usbd.md
