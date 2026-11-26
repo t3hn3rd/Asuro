@@ -169,7 +169,7 @@ $lvglIntegration = 'src/driver/video/lvgl'
 
 # Fetch Wasuro and LVGL when their caches are absent.
 function Initialize-Dependencies {
-    if (!(Test-Path -LiteralPath $wasuro)) {
+    if (!(Test-Path -LiteralPath "$wasuro/.cache-ready")) {
         New-BuildDirectory 'build/vendor'
         $scratch = Join-Path 'build/vendor' ("wasuro." + [Guid]::NewGuid().ToString('N'))
         try {
@@ -178,7 +178,8 @@ function Initialize-Dependencies {
                 '--sparse', 'https://gitea.spexeah.com/Spexeah/Wasuro.git', $scratch
             )
             Invoke-Tool git @('-C', $scratch, 'sparse-checkout', 'set', 'src/wasm')
-            Move-Item -LiteralPath "$scratch/src/wasm" -Destination $wasuro
+            Invoke-Tool rsync @('-a', '--delete', "$scratch/src/wasm/", "$wasuro/")
+            Write-BuildFile "$wasuro/.cache-ready" "ready`n"
         } finally {
             if (Test-Path -LiteralPath $scratch) {
                 Remove-Item -LiteralPath $scratch -Recurse -Force
