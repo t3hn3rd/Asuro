@@ -1,4 +1,6 @@
 * text=auto eol=lf
 src/driver/video/.vscode/* linguist-vendored
-assets/iso/** linguist-generated
 *.asm linguist-detectable
+assets/** linguist-detectable=false
+assets/iso/** linguist-generated
+*.c linguist-detectable=false
