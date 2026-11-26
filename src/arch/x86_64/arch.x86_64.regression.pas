@@ -70,6 +70,11 @@ begin
     test.harness.Start(@ctx, 'arch.x86_64.runtime');
     testCompilerRuntime(ctx);
     test.harness.Finish(@ctx);
+    {$ifdef UNIT_TESTS}
+    test.harness.Start(@ctx, 'arch.x86_64.memory.physical');
+    test.harness.Assert(@ctx, testBootModuleGap, 'PMM fits bitmaps between firmware and high boot module');
+    test.harness.Finish(@ctx);
+    {$endif}
     test.harness.Start(@ctx, 'driver.dma');
     testHighDMA32(ctx);
     test.harness.Finish(@ctx);

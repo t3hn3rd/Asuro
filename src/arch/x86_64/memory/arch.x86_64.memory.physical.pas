@@ -28,7 +28,10 @@ function free_page(address: uint64): boolean;
 function reserve_range(address, bytes: uint64): boolean;
 function free_count: uint64;
 function total_count: uint64;
-procedure UnitTest;
+{$ifdef UNIT_TESTS}
+function testBootModuleGap: boolean;
+{$endif}
+procedure UnitTest(info: Pmultiboot_info_t);
 
 implementation
 uses arch.x86_64.util, debug.early;
@@ -36,9 +39,7 @@ var
     eligible, used: PUInt32;
     frameCount, wordCount, hint: uint32;
     freeFrames, totalFrames: uint64;
-    reservedEnd: uint64;
     kernelEnd: uint8; external name 'kernel_end';
-    mapStart, mapEnd: PtrUInt;
 
 procedure fail(message: pchar);
 begin
@@ -58,16 +59,6 @@ end;
 function nextEntry(entry: Pmemory_map_t): Pmemory_map_t;
 begin
     nextEntry := Pmemory_map_t(PtrUInt(entry) + entry^.size + 4);
-end;
-
-procedure preserve(address, bytes: uint64);
-var
-    finish: uint64;
-begin
-    if (address >= $100000000) or (bytes > $100000000 - address) then
-        fail('boot data outside initial mapping');
-    finish := address + bytes;
-    if finish > reservedEnd then reservedEnd := finish;
 end;
 
 procedure setAvailable(base, bytes: uint64; available: boolean);
@@ -100,73 +91,34 @@ begin
     end;
 end;
 
-function metadataAddress(bytes: uint64): uint64;
+{ Replay the bootloader's range descriptions in place before heap startup.
+  A nonempty query returns the next page after any intersecting boot range.
+  A zero-length query commits the same ranges to the eligibility bitmap. }
+function bootRanges(info: Pmultiboot_info_t; candidate, bytes: uint64): uint64;
 var
-    e, other: Pmemory_map_t;
-    candidate, finish, nextCandidate: uint64;
-begin
-    metadataAddress := 0;
-    e := Pmemory_map_t(mapStart);
-    while PtrUInt(e) < mapEnd do begin
-        if (e^.mtype = 1) and (e^.base_addr < $100000000) and (e^.length <> 0) then begin
-            candidate := (e^.base_addr + FRAME_SIZE - 1) and not uint64(FRAME_SIZE - 1);
-            if candidate < reservedEnd then candidate := reservedEnd;
-            finish := regionEnd(e^.base_addr, e^.length);
-            if finish > $100000000 then finish := $100000000;
-            while (candidate < finish) and (bytes <= finish - candidate) do begin
-                nextCandidate := candidate;
-                other := Pmemory_map_t(mapStart);
-                while PtrUInt(other) < mapEnd do begin
-                    if (other^.mtype <> 1) and (other^.base_addr < candidate + bytes) and
-                       (regionEnd(other^.base_addr, other^.length) > candidate) then begin
-                        nextCandidate := (regionEnd(other^.base_addr, other^.length) + FRAME_SIZE - 1) and not uint64(FRAME_SIZE - 1);
-                        break;
-                    end;
-                    other := nextEntry(other);
-                end;
-                if nextCandidate = candidate then begin
-                    metadataAddress := candidate;
-                    exit;
-                end;
-                candidate := nextCandidate; { strictly advances across a reserved interval }
-            end;
-        end;
-        e := nextEntry(e);
-    end;
-end;
-
-procedure init(info: Pmultiboot_info_t);
-var
-    e: Pmemory_map_t;
-    limit, bytes, storage: uint64;
-    i, entries: uint32;
+    next: uint64;
+    i: uint32;
     modules: Pmodule_t;
     sections: PtrUInt;
     sectionAddress, sectionBytes: uint64;
-begin
-    if (info = nil) or ((info^.flags and (1 shl 6)) = 0) then fail('memory map missing');
-    if (info^.mmap_length = 0) or (info^.mmap_length > $100000) or
-       (uint64(info^.mmap_addr) + info^.mmap_length > $100000000) then fail('invalid map length');
-    mapStart := info^.mmap_addr;
-    mapEnd := mapStart + info^.mmap_length;
-    limit := 0;
-    entries := 0;
-    e := Pmemory_map_t(mapStart);
-    while PtrUInt(e) < mapEnd do begin
-        if (mapEnd - PtrUInt(e) < 24) or (e^.size < 20) or
-           (uint64(e^.size) + 4 > mapEnd - PtrUInt(e)) then fail('malformed map entry');
-        inc(entries);
-        if entries > 4096 then fail('too many map entries');
-        if (e^.mtype = 1) and (e^.length <> 0) and (e^.base_addr < MAX_MANAGED) then
-            if regionEnd(e^.base_addr, e^.length) > limit then limit := regionEnd(e^.base_addr, e^.length);
-        e := nextEntry(e);
+
+    procedure preserve(address, length: uint64);
+    var finish: uint64;
+    begin
+        if length = 0 then exit;
+        if (address >= $100000000) or (length > $100000000 - address) then
+            fail('boot data outside initial mapping');
+        finish := address + length;
+        if bytes = 0 then setAvailable(address, length, false)
+        else if (address < candidate + bytes) and (finish > next) then
+            next := (finish + FRAME_SIZE - 1) and not uint64(FRAME_SIZE - 1);
     end;
-    frameCount := limit div FRAME_SIZE;
-    if frameCount = 0 then fail('no usable RAM');
-    reservedEnd := $1000000; { legacy low-memory devices and firmware }
+begin
+    next := candidate;
+    preserve(0, $1000000); { legacy low-memory devices and firmware }
     preserve(0, PtrUInt(@kernelEnd));
     preserve(PtrUInt(info), 4096);
-    preserve(mapStart, info^.mmap_length);
+    preserve(info^.mmap_addr, info^.mmap_length);
     if (info^.flags and (1 shl 2)) <> 0 then preserve(info^.cmdline, 4096);
     if (info^.flags and (1 shl 9)) <> 0 then preserve(info^.boot_loader_name, 4096);
     if (info^.flags and (1 shl 3)) <> 0 then begin
@@ -198,10 +150,75 @@ begin
             inc(sections, info^.elf_sec.size);
         end;
     end;
-    reservedEnd := (reservedEnd + FRAME_SIZE - 1) and not uint64(FRAME_SIZE - 1);
+    bootRanges := next;
+end;
+
+function metadataAddress(info: Pmultiboot_info_t; bytes: uint64): uint64;
+var
+    mapEnd: PtrUInt;
+    e, other: Pmemory_map_t;
+    candidate, finish, nextCandidate: uint64;
+begin
+    metadataAddress := 0;
+    mapEnd := PtrUInt(info^.mmap_addr) + info^.mmap_length;
+    e := Pmemory_map_t(PtrUInt(info^.mmap_addr));
+    while PtrUInt(e) < mapEnd do begin
+        if (e^.mtype = 1) and (e^.base_addr < $100000000) and (e^.length <> 0) then begin
+            candidate := (e^.base_addr + FRAME_SIZE - 1) and not uint64(FRAME_SIZE - 1);
+            finish := regionEnd(e^.base_addr, e^.length);
+            if finish > $100000000 then finish := $100000000;
+            while (candidate < finish) and (bytes <= finish - candidate) do begin
+                nextCandidate := bootRanges(info, candidate, bytes);
+                other := Pmemory_map_t(PtrUInt(info^.mmap_addr));
+                while PtrUInt(other) < mapEnd do begin
+                    if (other^.mtype <> 1) and (other^.base_addr < candidate + bytes) and
+                       (regionEnd(other^.base_addr, other^.length) > candidate) then begin
+                        if regionEnd(other^.base_addr, other^.length) > nextCandidate then
+                            nextCandidate := (regionEnd(other^.base_addr, other^.length) + FRAME_SIZE - 1) and not uint64(FRAME_SIZE - 1);
+                        break;
+                    end;
+                    other := nextEntry(other);
+                end;
+                if nextCandidate = candidate then begin
+                    metadataAddress := candidate;
+                    exit;
+                end;
+                candidate := nextCandidate; { strictly advances across a reserved interval }
+            end;
+        end;
+        e := nextEntry(e);
+    end;
+end;
+
+procedure init(info: Pmultiboot_info_t);
+var
+    e: Pmemory_map_t;
+    limit, bytes, storage: uint64;
+    entries: uint32;
+    mapStart, mapEnd: PtrUInt;
+begin
+    if (info = nil) or ((info^.flags and (1 shl 6)) = 0) then fail('memory map missing');
+    if (info^.mmap_length = 0) or (info^.mmap_length > $100000) or
+       (uint64(info^.mmap_addr) + info^.mmap_length > $100000000) then fail('invalid map length');
+    mapStart := info^.mmap_addr;
+    mapEnd := mapStart + info^.mmap_length;
+    limit := 0;
+    entries := 0;
+    e := Pmemory_map_t(mapStart);
+    while PtrUInt(e) < mapEnd do begin
+        if (mapEnd - PtrUInt(e) < 24) or (e^.size < 20) or
+           (uint64(e^.size) + 4 > mapEnd - PtrUInt(e)) then fail('malformed map entry');
+        inc(entries);
+        if entries > 4096 then fail('too many map entries');
+        if (e^.mtype = 1) and (e^.length <> 0) and (e^.base_addr < MAX_MANAGED) then
+            if regionEnd(e^.base_addr, e^.length) > limit then limit := regionEnd(e^.base_addr, e^.length);
+        e := nextEntry(e);
+    end;
+    frameCount := limit div FRAME_SIZE;
+    if frameCount = 0 then fail('no usable RAM');
     wordCount := (frameCount + 31) div 32;
     bytes := (uint64(wordCount) * 8 + FRAME_SIZE - 1) and not uint64(FRAME_SIZE - 1);
-    storage := metadataAddress(bytes);
+    storage := metadataAddress(info, bytes);
     if storage = 0 then fail('no low RAM for frame metadata');
     eligible := PUInt32(PtrUInt(storage));
     used := PUInt32(PtrUInt(storage + uint64(wordCount) * 4));
@@ -218,7 +235,7 @@ begin
         e := nextEntry(e);
     end;
     totalFrames := freeFrames;
-    setAvailable(0, reservedEnd, false);
+    bootRanges(info, 0, 0);
     setAvailable(storage, bytes, false);
     hint := 0;
     field('PMM_FREE_FRAMES', freeFrames);
@@ -382,7 +399,50 @@ begin
     total_count := totalFrames;
 end;
 
-procedure UnitTest;
+{$ifdef UNIT_TESTS}
+function testBootModuleGap: boolean;
+type
+    PFixture = ^TFixture;
+    TFixture = record
+        info: multiboot_info_t;
+        map: array[0..1] of memory_map_t;
+        modules: array[0..1] of module_t;
+    end;
+var
+    fixture: PFixture;
+    base: uint32;
+begin
+    testBootModuleGap := false;
+    fixture := PFixture(PtrUInt(alloc_page(true)));
+    if fixture = nil then exit;
+    zero(fixture, sizeof(TFixture));
+    base := $E0000000;
+    if (PtrUInt(fixture) >= base) and (PtrUInt(fixture) < base + 8 * FRAME_SIZE) then
+        base := $D0000000;
+    fixture^.info.flags := (1 shl 3) or (1 shl 6);
+    fixture^.info.mmap_addr := PtrUInt(@fixture^.map[0]);
+    fixture^.info.mmap_length := sizeof(fixture^.map);
+    fixture^.info.mods_addr := PtrUInt(@fixture^.modules[0]);
+    fixture^.info.mods_count := 2;
+    fixture^.map[0].size := sizeof(memory_map_t) - 4;
+    fixture^.map[0].mtype := 1;
+    fixture^.map[0].base_addr := base;
+    fixture^.map[0].length := 8 * FRAME_SIZE;
+    fixture^.map[1].size := sizeof(memory_map_t) - 4;
+    fixture^.map[1].mtype := 2;
+    fixture^.map[1].base_addr := base + 2 * FRAME_SIZE;
+    fixture^.map[1].length := 1;
+    fixture^.modules[0].mod_start := base + 7 * FRAME_SIZE;
+    fixture^.modules[0].mod_end := base + 8 * FRAME_SIZE;
+    fixture^.modules[1].mod_start := base + 1;
+    fixture^.modules[1].mod_end := base + FRAME_SIZE + 1;
+    testBootModuleGap := (metadataAddress(@fixture^.info, 4 * FRAME_SIZE) = base + 3 * FRAME_SIZE)
+        and (metadataAddress(@fixture^.info, 5 * FRAME_SIZE) = 0);
+    if not free_page(PtrUInt(fixture)) then fail('module gap fixture release');
+end;
+{$endif}
+
+procedure UnitTest(info: Pmultiboot_info_t);
 var
     before, a, b: uint64;
     passed, failed: uint32;
@@ -406,8 +466,8 @@ begin
     before := free_count;
     a := alloc_page(true);
     b := alloc_page(true);
-    Assert((a <> 0) and (b <> 0) and (a <> b) and (a >= reservedEnd) and
-        (b >= reservedEnd), 'PMM unique usable frames exclude boot reservations');
+    Assert((a <> 0) and (b <> 0) and (a <> b) and (bootRanges(info, a, FRAME_SIZE) = a) and
+        (bootRanges(info, b, FRAME_SIZE) = b), 'PMM unique usable frames exclude boot reservations');
     Assert(not free_page(0) and not free_page(a + 1), 'PMM rejects reserved/unaligned frees');
     Assert(free_page(a) and free_page(b), 'PMM releases owned frames');
     Assert(not free_page(a), 'PMM rejects double free');

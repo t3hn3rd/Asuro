@@ -212,7 +212,7 @@ begin
     {$endif}
     arch.x86_64.memory.physical.init(Pmultiboot_info_t(info));
     {$ifdef UNIT_TESTS}
-    arch.x86_64.memory.physical.UnitTest;
+    arch.x86_64.memory.physical.UnitTest(Pmultiboot_info_t(info));
     {$endif}
     arch.x86_64.memory.virtual.init;
     {$ifdef UNIT_TESTS}
