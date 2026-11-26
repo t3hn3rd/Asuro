@@ -28,7 +28,9 @@ procedure UnitTest;
 
 implementation
 
-uses memory.heap, io.syslog;
+uses
+    memory.heap,
+    test.harness;
 
 const
     ClearCode = 256;
@@ -214,31 +216,33 @@ procedure UnitTest;
 const
     { Clear, literal A, dictionary entry AA, end (four 9-bit codes). }
     encoded : array[0..4] of uint8 = ($00,$83,$08,$0C,$08);
-var plain : array[0..2] of uint8;
+var
+    context : TTestContext;
+    plain : array[0..2] of uint8;
     packedBytes : array[0..4] of uint8;
-    n, i, failures, seed, decodedSize : uint32;
+    n, i, seed, decodedSize : uint32;
     sample, stream : puint8;
     ok : boolean;
 
-    procedure Assert(ok : boolean; name : pchar);
-    begin
-        if not ok then begin
-            inc(failures);
-            io.syslog.logln('LZW FAIL', name);
-        end;
-    end;
-
 begin
-    failures := 0;
-    Assert(decompress(@encoded,5,@plain,3,n) and (n = 3), 'decode known stream');
-    Assert((plain[0] = 65) and (plain[1] = 65) and (plain[2] = 65), 'expand next code');
-    Assert(compress(@plain,3,@packedBytes,5,n) and (n = 5), 'encode known stream');
-    for i := 0 to 4 do Assert(packedBytes[i] = encoded[i], 'packed byte');
-    Assert(not decompress(@encoded,4,@plain,3,n), 'truncated end code');
-    Assert(not decompress(@encoded,5,@plain,2,n), 'output capacity');
-    Assert(not compress(@plain,3,@packedBytes,4,n), 'compressed capacity');
-    Assert(compress(nil,0,@packedBytes,5,n), 'empty input');
-    Assert(decompress(@packedBytes,n,nil,0,i) and (i = 0), 'empty output');
+    test.harness.Start(@context, 'core.comp.lzw');
+    ok := decompress(@encoded,5,@plain,3,n) and (n = 3);
+    test.harness.Assert(@context, ok, 'decode known stream');
+    test.harness.Assert(@context, ok and (plain[0] = 65) and (plain[1] = 65) and (plain[2] = 65), 'expand next code');
+    for i := 0 to 2 do
+        plain[i] := 65;
+    ok := compress(@plain,3,@packedBytes,5,n) and (n = 5);
+    test.harness.Assert(@context, ok, 'encode known stream');
+    for i := 0 to 4 do
+        test.harness.Assert(@context, ok and (packedBytes[i] = encoded[i]), 'packed byte');
+    test.harness.Assert(@context, not decompress(@encoded,4,@plain,3,n), 'reject truncated end code');
+    test.harness.Assert(@context, not decompress(@encoded,5,@plain,2,n), 'reject insufficient output capacity');
+    for i := 0 to 2 do
+        plain[i] := 65;
+    test.harness.Assert(@context, not compress(@plain,3,@packedBytes,4,n), 'reject insufficient compressed capacity');
+    ok := compress(nil,0,@packedBytes,5,n);
+    test.harness.Assert(@context, ok, 'empty input');
+    test.harness.Assert(@context, ok and decompress(@packedBytes,n,nil,0,i) and (i = 0), 'empty output');
     { Five KiB of deterministic input crosses every width and fills the table. }
     sample := puint8(kalloc(5120));
     stream := puint8(kalloc(8192));
@@ -249,22 +253,23 @@ begin
             sample[i] := seed shr 24;
         end;
         ok := compress(sample,5120,stream,8192,n);
-        Assert(ok, 'encode through dictionary reset');
+        test.harness.Assert(@context, ok, 'encode through dictionary reset');
         if ok then begin
             ok := decompress(stream,n,sample,5120,decodedSize);
-            Assert(ok and (decodedSize = 5120), 'decode through dictionary reset');
+            ok := ok and (decodedSize = 5120);
+            test.harness.Assert(@context, ok, 'decode through dictionary reset');
             seed := 1;
             for i := 0 to 5119 do begin
                 seed := seed * 1664525 + 1013904223;
                 if sample[i] <> seed shr 24 then ok := false;
             end;
-            Assert(ok, 'dictionary reset round trip');
+            test.harness.Assert(@context, ok, 'dictionary reset round trip');
         end;
-    end else Assert(false, 'test buffers');
+    end else
+        test.harness.Assert(@context, false, 'allocate test buffers');
     if sample <> nil then kfree(void(sample));
     if stream <> nil then kfree(void(stream));
-    io.syslog.log('LZW', 'Failures: ');
-    io.syslog.writeintln(failures);
+    test.harness.Finish(@context);
 end;
 
 end.
