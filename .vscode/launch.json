@@ -5,7 +5,7 @@
             "request": "launch",
             "type": "PowerShell",
             "preLaunchTask": "Build",
-            "script": "${workspaceFolder}/virtualbox-wrapper.ps1",
+            "script": "${workspaceFolder}/tools/virtualbox-wrapper.ps1",
             "args": ["-Command", "up"],
             "cwd": "${workspaceFolder}",
         }

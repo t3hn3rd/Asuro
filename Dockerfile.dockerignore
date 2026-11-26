@@ -2,7 +2,3 @@
 **/.gradle
 **/build
 **/.moderne
-wasuro
-site
-lib
-release

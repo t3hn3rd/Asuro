@@ -6,10 +6,13 @@
     "tasks": [
         {
             "label": "Build",
-            "command": "docker-compose",
+            "command": "docker",
             "args": [
+                "compose",
                 "run",
+                "--rm",
                 "builder",
+                "iso"
             ],
             "type": "shell",
             "problemMatcher": [],
@@ -24,8 +27,9 @@
         },
         {
             "label": "Build (Builder)",
-            "command": "docker-compose",
+            "command": "docker",
             "args": [
+                "compose",
                 "build",
                 "builder"
             ],
@@ -33,8 +37,9 @@
         },
         {
             "label": "Clean",
-            "command": "docker-compose",
+            "command": "docker",
             "args": [
+                "compose",
                 "down",
                 "--remove-orphans"
             ],
@@ -42,7 +47,7 @@
         },
         {
             "label": "Close VirtualBox",
-            "command": "./virtualbox-wrapper.ps1",
+            "command": "./tools/virtualbox-wrapper.ps1",
             "args": [
                 "-Command", 
                 "down"

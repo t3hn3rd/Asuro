@@ -22,13 +22,11 @@ steps:
       - build-image
     commands:
       - git fetch --tags
-      - find . -type f -print0 | xargs -0 dos2unix
-      - chmod +x /drone/src/toolchain/*.sh
       - |
         if [ "$DRONE_BRANCH" = "master" ]; then
-          UNIT_TESTS=0 COMPLEX_TESTS=0 /drone/src/toolchain/compile.sh
+          pwsh -NoLogo -NoProfile -File toolchain/build.ps1 all --arch x86 --profile release
         else
-          UNIT_TESTS=1 COMPLEX_TESTS=1 /drone/src/toolchain/compile.sh
+          pwsh -NoLogo -NoProfile -File toolchain/build.ps1 all --arch x86 --profile test:complex
         fi
       
   - name: deploy-docs
@@ -52,7 +50,7 @@ steps:
           DEST="/htdocs/develop"
         fi
       - mkdir -p "$DEST"
-      - rsync -a --delete site/ "$DEST/"
+      - rsync -a --delete build/docs/site/ "$DEST/"
       - echo "Documentation deployed to ${DRONE_BRANCH}"
 
   - name: upload-iso-artifact

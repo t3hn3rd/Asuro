@@ -13,7 +13,7 @@ param (
   [String]$Command
 )
 
-$Config = Get-Content .\localenv.json | ConvertFrom-Json
+$Config = Get-Content -LiteralPath (Join-Path $PSScriptRoot '../localenv.json') | ConvertFrom-Json
 $MachineName = $Config.virtualbox.MachineName
 $LogLocation = $Config.virtualbox.LogLocation
 $LogOutputEnabled = $LogLocation -ne $null

@@ -1,7 +1,7 @@
 site_name: Asuro OS Documentation
 site_description: Technical documentation for the Asuro operating system kernel
 docs_dir: doc
-site_dir: site
+site_dir: build/docs/site
 use_directory_urls: false
 
 theme:
@@ -229,7 +229,11 @@ nav:
         - Double Buffer: src/driver/video/driver.video.doublebuffer.md
         - Desktop: src/driver/video/driver.video.desktop.md
         - GPU: src/driver/video/driver.video.gpu.md
-        - LVGL: src/driver/video/driver.video.lvgl.md
+        - LVGL Integration:
+          - Driver: src/driver/video/driver.video.lvgl.md
+          - Configuration: src/driver/video/lvgl/lv_conf.md
+          - Hack 14: src/driver/video/lvgl/hack_14.md
+          - Font FA Solid 16: src/driver/video/lvgl/lv_font_fa_solid_16.md
         - BGA: src/driver/video/driver.video.bga.md
         - Windows: src/driver/video/driver.video.windows.md
       - I/O:
@@ -270,30 +274,15 @@ nav:
         - Shim: src/app/wasm/app.wasm.shim.md
         - Cleanup: src/app/wasm/app.wasm.cleanup.md
 
-  - Compatibility:
-    - Memory Manager: compat/lmemorymanager.md
-    - Types: compat/types.md
-    - LVGL Headers:
-      - Configuration: lvglh/lv_conf.md
-      - Hack 14: lvglh/hack_14.md
-      - Font FA Solid 16: lvglh/lv_font_fa_solid_16.md
+    - Compatibility:
+      - Memory Manager: src/compat/lmemorymanager.md
+      - Types: src/compat/types.md
 
   - Toolchain:
     - Build Pipeline: toolchain/compile.md
-    - Stub Compilation: toolchain/compile_stub.md
-    - Version Generation: toolchain/compile_vergen.md
-    - LVGL Compilation: toolchain/compile_lvgl.md
-    - Wasuro Pull: toolchain/compile_wasuro.md
-    - Automatic Boot Units: toolchain/dangling_units.md
-    - Source List: toolchain/compile_sourcelist.md
-    - Source Compilation: toolchain/compile_sources.md
-    - Checksum: toolchain/compile_checksum.md
-    - Linking: toolchain/compile_link.md
-    - ISO Generation: toolchain/compile_isogen.md
-    - Summary Generation: toolchain/compile_sumgen.md
-    - Documentation: toolchain/compile_docs.md
-    - Finish: toolchain/compile_finish.md
-    - Line Count: toolchain/loc.md
+    - Add a Target Architecture: toolchain/architectures.md
+    - Wasuro Dependency: toolchain/wasuro.md
+    - Automatic Boot Units: toolchain/boot-units.md
 
   - Planning:
     - Architecture: planning/architecture.md

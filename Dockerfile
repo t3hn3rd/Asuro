@@ -6,7 +6,7 @@ VOLUME ["/code"]
 ENV DEBIAN_FRONTEND=noninteractive
 RUN dpkg --add-architecture i386
 RUN apt-get update && apt-get install -y \
-	curl dos2unix wget git make nasm binutils xorriso grub-pc-bin gcc gcc-multilib \
+	curl dos2unix wget git make nasm binutils xorriso grub-pc-bin gcc gcc-multilib ninja-build rsync \
 	python3 python3-pip python3-pil && \
 	apt-get clean && rm -rf /var/lib/apt/lists/*
 
@@ -18,8 +18,10 @@ RUN curl -sL https://sourceforge.net/projects/freepascal/files/Linux/$FPC_VERSIO
 	pushd fpc-$FPC_VERSION.i386-linux && ./install.sh && popd && \
 	rm -rf fpc-$FPC_VERSION.i386-linux
 
-ADD https://raw.githubusercontent.com/fsaintjacques/semver-tool/master/src/semver /usr/bin/semver
-RUN chmod +x /usr/bin/semver
 WORKDIR /code
-ENTRYPOINT ["/bin/bash", "-c"]
-CMD ["find toolchain -name '*.sh' -exec dos2unix {} + 2>/dev/null; find toolchain -name '*.sh' -exec chmod +x {} +; bash toolchain/compile.sh"]
+RUN curl -fsSL https://packages.microsoft.com/config/ubuntu/24.04/packages-microsoft-prod.deb -o /tmp/packages-microsoft-prod.deb && \
+    dpkg -i /tmp/packages-microsoft-prod.deb && \
+    apt-get update && apt-get install -y --no-install-recommends powershell-lts && \
+    rm -rf /var/lib/apt/lists/* /tmp/packages-microsoft-prod.deb
+
+ENTRYPOINT ["pwsh", "-NoLogo", "-NoProfile", "-File", "/code/toolchain/build.ps1"]

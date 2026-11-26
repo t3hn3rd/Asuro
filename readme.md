@@ -2,48 +2,26 @@
 
 We welcome everyone to give building/breaking/fixing/shooting Asuro a go, feel free to follow the steps below and mess with Asuro for fun or profit.
 
-## Setting up your build environment
+## Getting Started
 
-### Prerequisites
-* [WSL2](https://docs.microsoft.com/en-us/windows/wsl/install-win10)
-    WSL2 is used in conjunction with Docker to predefine a build environment for Asuro.
-* [Docker for Windows](https://docs.docker.com/docker-for-windows/install/)
-    Docker is used to ensure a predefined environment with the correct versions of; Freepascal, Binutils, NASM, Make, xorriso & grub-mk-rescue installed is used for compilation. An ISO will be generated at the end of the build process.
-* [Git (Obviously)](https://git-scm.com/)
-    I don't think this needs an explaination.
-* [VSCode (Optional, but highly recommended)](https://code.visualstudio.com/)
-    Visual Studio code is our IDE of choice, and we have a number of recommended plugins.
-    * [PowerShell Plugin by Microsoft](https://marketplace.visualstudio.com/items?itemName=ms-vscode.powershell)
-        This plugin gives you the ability to use the 'PowerShell' task type, allowing the automatic launching of virtualbox with the resulting image generated during compilation of Asuro.
-* [VirtualBox](https://www.virtualbox.org/)
-    Virtualbox is our Virtualisation environment of choice, don't ask why, it just is.
+Install Docker with Compose and Git, then clone this repository. From the repository root, build the image and the bootable ISO.
 
-### Installation (correct as of 2021/06/20)
-1. Install WSL2 as described in the article linked above & ensure Virtualization is enabled in the BIOS.
-2. Ensure WSL2 is used by default with the following command:
-    ```powershell
-    wsl --set-default-version 2
-    ```
-3. Install Docker for Windows.
-4. Install Git for Windows.
-5. Install VSCode & the listed plugins.
-6. Install VirtualBox (v7+).
-7. Clone this repository. The builder inherits the published Moderne/Pascal
-   tooling image; see [boot-unit generation](doc/toolchain/dangling_units.md).
-8. Run the following command in the root of the repo to build the docker image:
-    ```powershell
-    docker compose build builder
-    ```
-9. Run the following command to compile Asuro:
-    ```powershell
-    docker compose run builder
-    ```
-10. Create a new virtual machine in Virtualbox and mount the `Asuro.iso` generated in step 9 as a boot image.
-11. Add the virtualbox installation directory to your `%PATH%` environment variable, usually:
+```sh
+docker compose build builder
+docker compose run --rm builder iso
+```
+
+Attach the generated root-level `Asuro.iso` as optical media in a BIOS-based VM. See the [build command reference](doc/index.md#getting-started) for test profiles, kernel-only builds and documentation. The [build pipeline](doc/toolchain/compile.md) explains the PowerShell and Ninja setup.
+
+### Optional VirtualBox integration
+
+Install VirtualBox and, if using VS Code, the PowerShell extension.
+
+1. Add the virtualbox installation directory to your `%PATH%` environment variable, usually:
     ```
     %PROGRAMFILES%\Oracle\VirtualBox
     ```
-12. Naviage to your virtualbox machines folder, this is usually the following
+2. Navigate to your virtualbox machines folder, this is usually the following
     ```
     %userprofile%\VirtualBox VMs\<VM Name>
     ```
@@ -71,9 +49,4 @@ We welcome everyone to give building/breaking/fixing/shooting Asuro a go, feel f
     }
     ```
     This will allow you to see the console output from Asuro in your host terminal.
-13. Open your project folder in VSCode, use CTRL+SHIFT+B to build & F5 to build + run in VBox.
-14. Congratulations! You can now play with Asuro!
-
-### Notes & Gotchas
-- The above process has been updated to be compatible with VirtualBox 7+, in which VBoxSDL was removed and vboxmanage should be used in its place. A small wrapper powershell script is used to achieve this.
-- It was noted that Windows builds above `20H2` seem to have issues installing WSL2. We may have to wait for a patch from Microsoft to fix this. Our devs are currently using build `20H2`.
+3. Open your project folder in VSCode, use CTRL+SHIFT+B to build & F5 to build + run in VBox.
