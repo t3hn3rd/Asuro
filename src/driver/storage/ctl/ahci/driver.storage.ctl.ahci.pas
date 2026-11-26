@@ -483,6 +483,11 @@ begin
     end;
 
     device := PPCI_Device(ptr);
+    load := false;
+    if (device = nil) or not arch.platform.interrupts.supportsPCILine(device^.interrupt_line) then begin
+        io.syslog.logln('AHCI', 'Missing device or unsupported PCI interrupt line.');
+        exit;
+    end;
 
     driver.bus.pci.enableDevice(device^.bus, device^.slot, device^.func);
     core.util.waitTicks(5);

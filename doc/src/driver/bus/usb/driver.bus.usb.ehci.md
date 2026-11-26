@@ -45,3 +45,7 @@ Driver load callback invoked by `driver.mgr` when a PCI EHCI device (class `$0C`
 procedure UnitTest;
 ```
 Verifies register offset calculations and bitfield constants.
+
+Native boot initializes this controller when PCI discovers it. Schedule
+structures use DMA32 allocations. The x86-64 driver stages payloads above
+4 GiB in low memory and retains staging storage until completion.

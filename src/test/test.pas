@@ -42,9 +42,9 @@ uses
     app.diskutil,
     driver.bus.usb.types,
     driver.bus.usb.core,
-    {$ifndef CPUX86_64}driver.bus.usb.uhci,{$endif}
+    driver.bus.usb.uhci,
     driver.bus.usb.ohci,
-    {$ifndef CPUX86_64}driver.bus.usb.ehci,{$endif}
+    driver.bus.usb.ehci,
     driver.bus.usb.xhci,
     driver.bus.usb.hub,
     driver.hid.usb.keyboard,
@@ -98,9 +98,9 @@ begin
     app.diskutil.UnitTest;
     driver.bus.usb.types.UnitTest;
     driver.bus.usb.core.UnitTest;
-    {$ifndef CPUX86_64}driver.bus.usb.uhci.UnitTest;{$endif}
+    driver.bus.usb.uhci.UnitTest;
     driver.bus.usb.ohci.UnitTest;
-    {$ifndef CPUX86_64}driver.bus.usb.ehci.UnitTest;{$endif}
+    driver.bus.usb.ehci.UnitTest;
     driver.bus.usb.xhci.UnitTest;
     driver.bus.usb.hub.UnitTest;
     driver.hid.usb.keyboard.UnitTest;

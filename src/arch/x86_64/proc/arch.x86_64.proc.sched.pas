@@ -44,7 +44,7 @@ end;
 procedure init;
 begin
     { Caller owns IRQ exclusion; proc.mgr.init must have installed idle. }
-    setSelector(@selectProcess);
+    setSelector(@selectProcess, 32);
 end;
 
 procedure cleanupResource(handle: void);

@@ -26,7 +26,7 @@
     @author(Kieron Morris <kjm@kieronmorris.me>)
 }
 unit driver.bus.usb.ehci;
-{$DEFINE NOT_DANGLING} { Selected by i386 startup; requires the i386 platform. }
+{$DEFINE NOT_DANGLING} { Host registration is explicit. }
 
 interface
 
@@ -35,14 +35,13 @@ uses
     io.syslog,
     driver.bus.pci,
     driver.types,
-    arch.x86.memory.physical,
-    arch.x86.memory.virtual,
+    arch.platform.memory, driver.dma,
     memory.heap,
-    core.util, arch.x86.util,
+    core.util, arch.platform.cpu,
     driver.mgr,
     driver.bus.usb.types,
     driver.bus.usb.core,
-    arch.x86.isr.mgr,
+    arch.platform.interrupts,
     core.ds.lists,
     core.strings;
 
@@ -246,21 +245,23 @@ const
 { ========================= driver.bus.usb.ehci Data Structures ========================= }
 
 type
-    { Queue Transfer Descriptor (qTD) - 32 bytes HC-visible, 32-byte aligned }
+    { Queue Transfer Descriptor (qTD) with optional high buffer dwords, 32-byte aligned }
     PEHCI_qTD = ^TEHCI_qTD;
     TEHCI_qTD = packed record
         NextqTD    : uint32; { Next qTD pointer (physical | T-bit) }
         AltNextqTD : uint32; { Alternate next qTD pointer }
         Token      : uint32; { Status, PID, error counter, bytes, toggle, IOC }
         Buffer     : array[0..4] of uint32; { Buffer page pointers (physical) }
-        { -- Software fields (beyond the 32 bytes the HC reads) -- }
+        BufferHigh : array[0..4] of uint32; { Zero for DMA32 data }
+        { -- Software fields -- }
         SWNext     : PEHCI_qTD;  { Software linked list }
         SWTransfer : Pointer;    { Back-pointer to owning TUSBTransfer }
         SWPad0     : uint32;
         SWPad1     : uint32;
+        Setup     : TUSBSetupPacket;
     end;
 
-    { Queue Head (QH) - 48 bytes HC-visible, 32-byte aligned, padded to 64 }
+    { Queue Head (QH) with optional high overlay dwords, 32-byte aligned }
     PEHCI_QH = ^TEHCI_QH;
     TEHCI_QH = packed record
         HorizLink   : uint32; { Horizontal link pointer (physical | type | T) }
@@ -272,18 +273,19 @@ type
         OvlAltNext  : uint32;
         OvlToken    : uint32;
         OvlBuffer   : array[0..4] of uint32;
+        OvlBufferHigh : array[0..4] of uint32;
         { -- Software fields -- }
         SWNext      : PEHCI_QH;   { Software linked list of QHs }
         SWTransfer  : Pointer;    { Back-pointer to owning TUSBTransfer }
         SWFirstqTD  : PEHCI_qTD; { First qTD in chain (for cleanup) }
-        SWPad       : uint32;
+        Bounce      : pointer;
     end;
 
     { Private data for an driver.bus.usb.ehci host controller instance }
     PEHCI_PrivData = ^TEHCI_PrivData;
     TEHCI_PrivData = record
-        MMIOBase     : uint32;     { BAR0 MMIO base (virtual = physical) }
-        OpBase       : uint32;     { Operational registers base (MMIOBase + CAPLENGTH) }
+        MMIOBase     : PtrUInt;     { BAR0 MMIO base (virtual = physical) }
+        OpBase       : PtrUInt;     { Operational registers base (MMIOBase + CAPLENGTH) }
         FrameList    : Pointer;    { 4KB-aligned periodic frame list }
         AsyncQH      : PEHCI_QH;  { Async schedule head (reclamation head) }
         IntrQH       : PEHCI_QH;  { Interrupt schedule sentinel QH }
@@ -301,22 +303,22 @@ type
 
 { ========================= MMIO Helpers ========================= }
 
-function ehci_readl(base : uint32; reg : uint32) : uint32;
+function ehci_readl(base : PtrUInt; reg : uint32) : uint32;
 begin
     ehci_readl := PUint32(base + reg)^;
 end;
 
-procedure ehci_writel(base : uint32; reg : uint32; val : uint32);
+procedure ehci_writel(base : PtrUInt; reg : uint32; val : uint32);
 begin
     PUint32(base + reg)^ := val;
 end;
 
-function ehci_readb(base : uint32; reg : uint32) : uint8;
+function ehci_readb(base : PtrUInt; reg : uint32) : uint8;
 begin
     ehci_readb := PUint8(base + reg)^;
 end;
 
-function ehci_readw(base : uint32; reg : uint32) : uint16;
+function ehci_readw(base : PtrUInt; reg : uint32) : uint16;
 begin
     ehci_readw := PUint16(base + reg)^;
 end;
@@ -325,28 +327,28 @@ end;
 
 function ehci_alloc_qtd : PEHCI_qTD;
 begin
-    ehci_alloc_qtd := PEHCI_qTD(kalloc_aligned(sizeof(TEHCI_qTD), EHCI_QTD_ALIGN));
+    ehci_alloc_qtd := PEHCI_qTD(driver.dma.allocate(sizeof(TEHCI_qTD), EHCI_QTD_ALIGN, true));
     if ehci_alloc_qtd <> nil then
-        memset(uint32(ehci_alloc_qtd), 0, sizeof(TEHCI_qTD));
+        memset(PtrUInt(ehci_alloc_qtd), 0, sizeof(TEHCI_qTD));
 end;
 
 procedure ehci_free_qtd(qtd : PEHCI_qTD);
 begin
     if qtd <> nil then
-        kfree_aligned(qtd);
+        driver.dma.release(qtd);
 end;
 
 function ehci_alloc_qh : PEHCI_QH;
 begin
-    ehci_alloc_qh := PEHCI_QH(kalloc_aligned(sizeof(TEHCI_QH), EHCI_QH_ALIGN));
+    ehci_alloc_qh := PEHCI_QH(driver.dma.allocate(sizeof(TEHCI_QH), EHCI_QH_ALIGN, true));
     if ehci_alloc_qh <> nil then
-        memset(uint32(ehci_alloc_qh), 0, sizeof(TEHCI_QH));
+        memset(PtrUInt(ehci_alloc_qh), 0, sizeof(TEHCI_QH));
 end;
 
 procedure ehci_free_qh(qh : PEHCI_QH);
 begin
     if qh <> nil then
-        kfree_aligned(qh);
+        driver.dma.release(qh);
 end;
 
 { ========================= qTD/QH Construction Helpers ========================= }
@@ -434,12 +436,13 @@ end;
   driver.bus.usb.ehci qTDs use up to 5 page pointers (each 4KB-aligned) plus
   the offset in the first page. }
 procedure ehci_fill_qtd_buffers(qtd : PEHCI_qTD; buf : Pointer; len : uint32);
-var address, span, page : uint32;
+var address: PtrUInt;
+    span, page: uint32;
 begin
-    address := uint32(buf);
+    address := PtrUInt(buf);
     page := 0;
     while (len <> 0) and (page < 5) do begin
-        qtd^.Buffer[page] := vtop(address);
+        qtd^.Buffer[page] := uint32(physicalAddress(address));
         span := 4096 - (address and $FFF);
         if span >= len then exit;
         inc(address, span);
@@ -528,7 +531,7 @@ end;
 function ehci_reset(hc : PUSBHCDriver) : boolean;
 var
     priv   : PEHCI_PrivData;
-    opbase : uint32;
+    opbase : PtrUInt;
     loops  : uint32;
     cmd    : uint32;
 begin
@@ -586,7 +589,8 @@ begin
     ehci_writel(opbase, EHCI_OP_USBSTS, $3F);
 
     { Set 4G segment to 0 (we are 32-bit) }
-    ehci_writel(opbase, EHCI_OP_CTRLDSSEGMENT, 0);
+    if (priv^.HCCPARAMS and 1) <> 0 then
+        ehci_writel(opbase, EHCI_OP_CTRLDSSEGMENT, 0);
 
     io.syslog.logln('driver.bus.usb.ehci', 'HC reset complete.');
     ehci_reset := true;
@@ -607,7 +611,7 @@ begin
     priv := PEHCI_PrivData(hc^.PrivData);
 
     { Allocate periodic frame list (4KB, page-aligned) }
-    priv^.FrameList := kalloc_aligned(EHCI_FL_BYTES, EHCI_FL_ALIGN);
+    priv^.FrameList := driver.dma.allocate(EHCI_FL_BYTES, EHCI_FL_ALIGN, true);
     if priv^.FrameList = nil then begin
         io.syslog.logln('driver.bus.usb.ehci', 'Failed to allocate frame list!');
         pop_trace;
@@ -639,8 +643,8 @@ begin
     { Fill periodic frame list: all entries point to the interrupt sentinel QH }
     framePtr := PUint32(priv^.FrameList);
     for i := 0 to EHCI_FL_SIZE - 1 do begin
-        PUint32(uint32(framePtr) + (i * 4))^ :=
-            vtop(uint32(intrQH)) OR EHCI_FL_TYPE_QH;
+        PUint32(PtrUInt(framePtr) + (i * 4))^ :=
+            uint32(physicalAddress(PtrUInt(intrQH))) OR EHCI_FL_TYPE_QH;
     end;
 
     { Create async schedule head QH (circular, reclamation head) }
@@ -653,7 +657,7 @@ begin
     priv^.AsyncQH := asyncQH;
 
     { Configure async head: H=1, points to self, empty overlay }
-    asyncQH^.HorizLink := vtop(uint32(asyncQH)) OR EHCI_FL_TYPE_QH;
+    asyncQH^.HorizLink := uint32(physicalAddress(PtrUInt(asyncQH))) OR EHCI_FL_TYPE_QH;
     asyncQH^.EPChars   := ehci_make_qh_epchars(0, 0, EHCI_QH_EPS_HIGH, 64,
                                                  false, true, false, 0);
     asyncQH^.EPCaps    := ehci_make_qh_epcaps(0, 0, 0, 0, 1);
@@ -666,8 +670,8 @@ begin
     asyncQH^.SWFirstqTD := nil;
 
     { Program the schedule base addresses }
-    ehci_writel(priv^.OpBase, EHCI_OP_PERIODICLISTBASE, vtop(uint32(priv^.FrameList)));
-    ehci_writel(priv^.OpBase, EHCI_OP_ASYNCLISTADDR, vtop(uint32(asyncQH)));
+    ehci_writel(priv^.OpBase, EHCI_OP_PERIODICLISTBASE, uint32(physicalAddress(PtrUInt(priv^.FrameList))));
+    ehci_writel(priv^.OpBase, EHCI_OP_ASYNCLISTADDR, uint32(physicalAddress(PtrUInt(asyncQH))));
 
     io.syslog.logln('driver.bus.usb.ehci', 'Schedule configured.');
     pop_trace;
@@ -678,7 +682,7 @@ end;
 function ehci_start(hc : PUSBHCDriver) : boolean;
 var
     priv   : PEHCI_PrivData;
-    opbase : uint32;
+    opbase : PtrUInt;
     cmd    : uint32;
     loops  : uint32;
     port   : uint32;
@@ -742,7 +746,7 @@ end;
 procedure ehci_stop(hc : PUSBHCDriver);
 var
     priv   : PEHCI_PrivData;
-    opbase : uint32;
+    opbase : PtrUInt;
     cmd    : uint32;
 begin
     push_trace('driver.bus.usb.ehci.ehci_stop');
@@ -792,7 +796,7 @@ end;
 function ehci_port_reset(hc : PUSBHCDriver; port : uint8) : boolean;
 var
     priv   : PEHCI_PrivData;
-    opbase : uint32;
+    opbase : PtrUInt;
     regOfs : uint32;
     status : uint32;
     loops  : uint32;
@@ -912,7 +916,7 @@ begin
     qh^.HorizLink   := head^.HorizLink;
     qh^.SWNext      := head^.SWNext;
     { Head now links to new QH }
-    head^.HorizLink  := vtop(uint32(qh)) OR EHCI_FL_TYPE_QH;
+    head^.HorizLink  := uint32(physicalAddress(PtrUInt(qh))) OR EHCI_FL_TYPE_QH;
     head^.SWNext     := qh;
 end;
 
@@ -944,7 +948,7 @@ begin
     head := priv^.IntrQH;
     qh^.HorizLink   := head^.HorizLink;
     qh^.SWNext      := head^.SWNext;
-    head^.HorizLink  := vtop(uint32(qh)) OR EHCI_FL_TYPE_QH;
+    head^.HorizLink  := uint32(physicalAddress(PtrUInt(qh))) OR EHCI_FL_TYPE_QH;
     head^.SWNext     := qh;
 end;
 
@@ -971,7 +975,7 @@ end;
 
 procedure ehci_free_qtd_chain(first : PEHCI_qTD); forward;
 
-function ehci_submit_control(hc : PUSBHCDriver; transfer : PUSBTransfer) : boolean;
+function ehci_submit_control(hc : PUSBHCDriver; transfer : PUSBTransfer; payload, bounce: pointer) : boolean;
 var
     priv     : PEHCI_PrivData;
     dev      : PUSBDevice;
@@ -1015,7 +1019,8 @@ begin
     if qtd = nil then begin ehci_free_qtd_chain(firstqTD); pop_trace; exit; end;
     firstqTD := qtd;
     qtd^.Token := ehci_make_qtd_token(EHCI_QTD_PID_SETUP, false, 8, false, 3);
-    ehci_fill_qtd_buffers(qtd, @transfer^.Setup, 8);
+    qtd^.Setup := transfer^.Setup;
+    ehci_fill_qtd_buffers(qtd, @qtd^.Setup, 8);
     qtd^.NextqTD    := EHCI_QTD_T;
     qtd^.AltNextqTD := EHCI_QTD_T;
     qtd^.SWTransfer := Pointer(transfer);
@@ -1043,14 +1048,14 @@ begin
 
         qtd^.Token := ehci_make_qtd_token(pid, toggle, pktLen, false, 3);
         qtd^.SWPad0 := pktLen; { Original data length, excluding SETUP/status }
-        ehci_fill_qtd_buffers(qtd, Pointer(uint32(transfer^.Buffer) + offset), pktLen);
+        ehci_fill_qtd_buffers(qtd, Pointer(PtrUInt(payload) + offset), pktLen);
         qtd^.NextqTD    := EHCI_QTD_T;
         qtd^.AltNextqTD := EHCI_QTD_T;
         qtd^.SWTransfer := Pointer(transfer);
         qtd^.SWNext     := nil;
 
         { Link to previous }
-        prevqTD^.NextqTD := vtop(uint32(qtd));
+        prevqTD^.NextqTD := uint32(physicalAddress(PtrUInt(qtd)));
         prevqTD^.SWNext  := qtd;
         prevqTD := qtd;
 
@@ -1074,7 +1079,7 @@ begin
     qtd^.SWTransfer := Pointer(transfer);
     qtd^.SWNext     := nil;
 
-    prevqTD^.NextqTD := vtop(uint32(qtd));
+    prevqTD^.NextqTD := uint32(physicalAddress(PtrUInt(qtd)));
     prevqTD^.SWNext  := qtd;
 
     { Build QH }
@@ -1096,7 +1101,7 @@ begin
     end;
 
     qh^.CurqTD     := 0;
-    qh^.OvlNextqTD  := vtop(uint32(firstqTD));
+    qh^.OvlNextqTD  := uint32(physicalAddress(PtrUInt(firstqTD)));
     qh^.OvlAltNext  := EHCI_QTD_T;
     qh^.OvlToken    := 0;
     qh^.SWNext      := nil;
@@ -1104,6 +1109,7 @@ begin
     qh^.SWFirstqTD  := firstqTD;
 
     transfer^.HCPriv := Pointer(qh);
+    qh^.Bounce := bounce;
     transfer^.Status := tsInProgress;
 
     { Insert into async schedule }
@@ -1113,7 +1119,7 @@ begin
     pop_trace;
 end;
 
-function ehci_submit_async(hc : PUSBHCDriver; transfer : PUSBTransfer) : boolean;
+function ehci_submit_async(hc : PUSBHCDriver; transfer : PUSBTransfer; payload, bounce: pointer) : boolean;
 var
     priv     : PEHCI_PrivData;
     dev      : PUSBDevice;
@@ -1173,14 +1179,14 @@ begin
         qtd^.Token := ehci_make_qtd_token(pid, toggle, pktLen, false, 3);
         qtd^.SWPad0 := pktLen; { Original data length, excluding SETUP/status }
         if pktLen > 0 then
-            ehci_fill_qtd_buffers(qtd, Pointer(uint32(transfer^.Buffer) + offset), pktLen);
+            ehci_fill_qtd_buffers(qtd, Pointer(PtrUInt(payload) + offset), pktLen);
         qtd^.NextqTD    := EHCI_QTD_T;
         qtd^.AltNextqTD := EHCI_QTD_T;
         qtd^.SWTransfer := Pointer(transfer);
         qtd^.SWNext     := nil;
 
         if prevqTD <> nil then begin
-            prevqTD^.NextqTD := vtop(uint32(qtd));
+            prevqTD^.NextqTD := uint32(physicalAddress(PtrUInt(qtd)));
             prevqTD^.SWNext  := qtd;
         end;
         prevqTD := qtd;
@@ -1230,7 +1236,7 @@ begin
     end;
 
     qh^.CurqTD     := 0;
-    qh^.OvlNextqTD  := vtop(uint32(firstqTD));
+    qh^.OvlNextqTD  := uint32(physicalAddress(PtrUInt(firstqTD)));
     qh^.OvlAltNext  := EHCI_QTD_T;
     qh^.OvlToken    := 0;
     qh^.SWNext      := nil;
@@ -1238,6 +1244,7 @@ begin
     qh^.SWFirstqTD  := firstqTD;
 
     transfer^.HCPriv := Pointer(qh);
+    qh^.Bounce := bounce;
     transfer^.Status := tsInProgress;
 
     { Insert into appropriate schedule }
@@ -1259,24 +1266,41 @@ begin
     ehci_bulk_limit := limit;
 end;
 
-function ehci_submit(hc : PUSBHCDriver; transfer : PUSBTransfer) : boolean;
+function ehci_inbound(transfer: PUSBTransfer): boolean;
 begin
-    push_trace('driver.bus.usb.ehci.ehci_submit');
-    ehci_submit := false;
-    if (hc = nil) or (transfer = nil) or (transfer^.Device = nil) then begin
-        pop_trace;
-        exit;
-    end;
-
-    case transfer^.PipeType of
-        ptControl:
-            ehci_submit := ehci_submit_control(hc, transfer);
-        ptBulk, ptInterrupt:
-            ehci_submit := ehci_submit_async(hc, transfer);
+    if transfer^.PipeType = ptControl then
+        ehci_inbound := (transfer^.Setup.bmRequestType and $80) <> 0
     else
-        io.syslog.logln('driver.bus.usb.ehci', 'Unsupported pipe type for submit.');
+        ehci_inbound := transfer^.Direction = dirIn;
+end;
+
+function ehci_submit(hc : PUSBHCDriver; transfer : PUSBTransfer) : boolean;
+var payload, bounce: pointer;
+    flags: PtrUInt;
+begin
+    ehci_submit := false;
+    if (hc = nil) or (transfer = nil) or (transfer^.Device = nil) then exit;
+    if not (transfer^.PipeType in [ptControl, ptBulk, ptInterrupt]) then exit;
+    if (transfer^.PipeType <> ptControl) and (transfer^.Endpoint = nil) then exit;
+    payload := transfer^.Buffer;
+    bounce := nil;
+    case driver.dma.reach32(PtrUInt(payload), transfer^.BufferLen) of
+        dmaInvalid: exit;
+        dmaHigh: begin
+            bounce := driver.dma.allocateBounce(transfer^.BufferLen);
+            if bounce = nil then exit;
+            payload := bounce;
+            if not ehci_inbound(transfer) then
+                memcpy(PtrUInt(transfer^.Buffer), PtrUInt(bounce), transfer^.BufferLen);
+        end;
     end;
-    pop_trace;
+    flags := arch.platform.cpu.lock;
+    case transfer^.PipeType of
+        ptControl: ehci_submit := ehci_submit_control(hc, transfer, payload, bounce);
+        ptBulk, ptInterrupt: ehci_submit := ehci_submit_async(hc, transfer, payload, bounce);
+    end;
+    arch.platform.cpu.unlock(flags);
+    if not ehci_submit then driver.dma.release(bounce);
 end;
 
 { ========================= Poll / Completion ========================= }
@@ -1395,7 +1419,7 @@ end;
 procedure ehci_poll(hc : PUSBHCDriver);
 var
     priv     : PEHCI_PrivData;
-    opbase   : uint32;
+    opbase   : PtrUInt;
     usbsts   : uint32;
     qh       : PEHCI_QH;
     nextQH   : PEHCI_QH;
@@ -1403,13 +1427,19 @@ var
     head     : PEHCI_QH;
     listIdx  : uint32;
     qtd      : PEHCI_qTD;
-    residual : uint32;
+    residual, command, enableBit, activeBit, attempts: uint32;
+    flags: PtrUInt;
+    resultStatus: TUSBTransferStatus;
 begin
     if (hc = nil) or (hc^.PrivData = nil) then exit;
     priv := PEHCI_PrivData(hc^.PrivData);
 
     { Re-entrancy guard }
-    if priv^.PollBusy then exit;
+    flags := arch.platform.cpu.lock;
+    if priv^.PollBusy then begin
+        arch.platform.cpu.unlock(flags);
+        exit;
+    end;
     priv^.PollBusy := true;
 
     opbase := priv^.OpBase;
@@ -1432,6 +1462,13 @@ begin
             head := nil;
         end;
         if head = nil then continue;
+        if listIdx = 0 then begin
+            enableBit := EHCI_CMD_ASE;
+            activeBit := EHCI_STS_ASS;
+        end else begin
+            enableBit := EHCI_CMD_PSE;
+            activeBit := EHCI_STS_PSS;
+        end;
 
         qh := head^.SWNext;
         while qh <> nil do begin
@@ -1440,7 +1477,18 @@ begin
                 transfer := PUSBTransfer(qh^.SWTransfer);
                 if transfer^.Status = tsInProgress then begin
                     if ehci_transfer_done(qh) then begin
-                        transfer^.Status := ehci_transfer_status(qh);
+                        { The controller may have prefetched a retired QH. Wait
+                          for schedule inactivity before reclaiming its storage. }
+                        command := ehci_readl(opbase, EHCI_OP_USBCMD);
+                        ehci_writel(opbase, EHCI_OP_USBCMD, command and not enableBit);
+                        attempts := 0;
+                        while ((ehci_readl(opbase, EHCI_OP_USBSTS) and activeBit) <> 0) and
+                              (attempts < 8192) do inc(attempts);
+                        if (ehci_readl(opbase, EHCI_OP_USBSTS) and activeBit) <> 0 then begin
+                            ehci_writel(opbase, EHCI_OP_USBCMD, command);
+                            break;
+                        end;
+                        resultStatus := ehci_transfer_status(qh);
                         transfer^.ActualLen := 0;
                         qtd := qh^.SWFirstqTD;
                         while qtd <> nil do begin
@@ -1455,8 +1503,16 @@ begin
                             ehci_remove_async_qh(priv, qh)
                         else
                             ehci_remove_intr_qh(priv, qh);
+                        ehci_writel(opbase, EHCI_OP_USBCMD, command);
+                        if qh^.Bounce <> nil then begin
+                            if ehci_inbound(transfer) and (transfer^.ActualLen <= transfer^.BufferLen) then
+                                memcpy(PtrUInt(qh^.Bounce), PtrUInt(transfer^.Buffer), transfer^.ActualLen);
+                            driver.dma.release(qh^.Bounce);
+                        end;
+                        transfer^.HCPriv := nil;
                         ehci_free_qtd_chain(qh^.SWFirstqTD);
                         ehci_free_qh(qh);
+                        transfer^.Status := resultStatus;
                     end;
                 end;
             end;
@@ -1464,6 +1520,7 @@ begin
         end;
     end;
     priv^.PollBusy := false;
+    arch.platform.cpu.unlock(flags);
 end;
 
 { ========================= Load / Init ========================= }
@@ -1476,9 +1533,9 @@ var
     priv     : PEHCI_PrivData;
     hc       : TUSBHCDriver;
     hcEntry  : PUSBHCDriver;
-    mmioBase : uint32;
-    opBase   : uint32;
-    block    : uint32;
+    mmioBase : PtrUInt;
+    opBase   : PtrUInt;
+    bar      : uint64;
     capLen   : uint8;
     hcsparams : uint32;
     hccparams : uint32;
@@ -1500,6 +1557,7 @@ begin
     end;
 
     for i := 0 to count - 1 do begin
+        if not arch.platform.interrupts.supportsPCILine(devices[i].interrupt_line) then continue;
         io.syslog.log('driver.bus.usb.ehci', 'Controller[');
         io.syslog.writeint(i);
         io.syslog.writestring(']: VID=');
@@ -1509,16 +1567,12 @@ begin
         io.syslog.writestring(' BAR0=');
         io.syslog.writehexln(devices[i].address0);
 
-        mmioBase := devices[i].address0 AND $FFFFFFF0;
+        bar := driver.bus.pci.memoryBAR(devices[i].address0, devices[i].address1);
+        mmioBase := PtrUInt(mapDevice(bar, 4096));
         if mmioBase = 0 then begin
             io.syslog.logln('driver.bus.usb.ehci', 'Invalid MMIO base (BAR0=0), skipping.');
             continue;
         end;
-
-        { Map the MMIO region into the identity-mapped address space }
-        block := mmioBase SHR 22;
-        force_alloc_block(block, 0);
-        map_page(block, block);
 
         { Enable bus mastering for DMA }
         driver.bus.pci.setBusMaster(devices[i].bus, devices[i].slot, devices[i].func, true);
@@ -1545,7 +1599,7 @@ begin
             io.syslog.logln('driver.bus.usb.ehci', 'Failed to allocate private data!');
             continue;
         end;
-        memset(uint32(priv), 0, sizeof(TEHCI_PrivData));
+        memset(PtrUInt(priv), 0, sizeof(TEHCI_PrivData));
         priv^.MMIOBase   := mmioBase;
         priv^.OpBase     := opBase;
         priv^.HCSPARAMS  := hcsparams;
@@ -1602,7 +1656,7 @@ begin
         { Start the controller }
         if not ehci_start(@hc) then begin
             io.syslog.logln('driver.bus.usb.ehci', 'Start failed, skipping controller.');
-            if priv^.FrameList <> nil then kfree_aligned(priv^.FrameList);
+            if priv^.FrameList <> nil then driver.dma.release(priv^.FrameList);
             if priv^.AsyncQH <> nil then ehci_free_qh(priv^.AsyncQH);
             if priv^.IntrQH <> nil then ehci_free_qh(priv^.IntrQH);
             kfree(void(priv));
@@ -1622,7 +1676,8 @@ begin
             { Register ISR on driver.bus.pci interrupt line }
             io.syslog.log('driver.bus.usb.ehci', 'Registering ISR on IRQ ');
             io.syslog.writeintln(devices[i].interrupt_line);
-            arch.x86.isr.mgr.registerISR(32 + devices[i].interrupt_line, @ehci_isr);
+            arch.platform.interrupts.registerIRQ(32 + devices[i].interrupt_line, @ehci_isr);
+            arch.platform.interrupts.routePCI(devices[i].interrupt_line, 32 + devices[i].interrupt_line);
 
             { Enable hardware interrupts }
             ehci_enable_interrupts(hcEntry);
@@ -1654,8 +1709,8 @@ begin
     test.harness.Start(@context, 'driver.bus.usb.ehci');
 
     { --- Structure Size Tests --- }
-    test.harness.Assert(@context, sizeof(TEHCI_qTD) = 48, 'sizeof qTD=48');
-    test.harness.Assert(@context, sizeof(TEHCI_QH) = 64, 'sizeof QH=64');
+    test.harness.Assert(@context, PtrUInt(@PEHCI_qTD(nil)^.SWNext) = 52, 'qTD hardware fields end at byte 52');
+    test.harness.Assert(@context, PtrUInt(@PEHCI_QH(nil)^.SWNext) = 68, 'QH hardware fields end at byte 68');
 
     { --- QH EPChars Construction Tests --- }
     epchars := ehci_make_qh_epchars(0, 0, EHCI_QH_EPS_HIGH, 64, true, true, false, 4);
@@ -1727,7 +1782,9 @@ begin
     { --- Allocation / Alignment Tests --- }
     qh := ehci_alloc_qh;
     test.harness.Assert(@context, qh <> nil, 'alloc_qh not nil');
-    test.harness.Assert(@context, (uint32(qh) AND $1F) = 0, 'alloc_qh 32-byte aligned');
+    test.harness.Assert(@context, driver.dma.reach32(PtrUInt(qh), sizeof(TEHCI_QH)) = dmaDirect,
+                        'QH fits in DMA32 memory');
+    test.harness.Assert(@context, (PtrUInt(qh) AND $1F) = 0, 'alloc_qh 32-byte aligned');
     test.harness.Assert(@context, qh^.HorizLink = 0, 'alloc_qh zeroed HorizLink');
     test.harness.Assert(@context, qh^.EPChars = 0, 'alloc_qh zeroed EPChars');
     test.harness.Assert(@context, qh^.OvlToken = 0, 'alloc_qh zeroed OvlToken');
@@ -1735,7 +1792,9 @@ begin
 
     qtd := ehci_alloc_qtd;
     test.harness.Assert(@context, qtd <> nil, 'alloc_qtd not nil');
-    test.harness.Assert(@context, (uint32(qtd) AND $1F) = 0, 'alloc_qtd 32-byte aligned');
+    test.harness.Assert(@context, driver.dma.reach32(PtrUInt(qtd), sizeof(TEHCI_qTD)) = dmaDirect,
+                        'QTD fits in DMA32 memory');
+    test.harness.Assert(@context, (PtrUInt(qtd) AND $1F) = 0, 'alloc_qtd 32-byte aligned');
     test.harness.Assert(@context, qtd^.Token = 0, 'alloc_qtd zeroed Token');
     test.harness.Assert(@context, qtd^.NextqTD = 0, 'alloc_qtd zeroed NextqTD');
     test.harness.Assert(@context, qtd^.Buffer[0] = 0, 'alloc_qtd zeroed Buffer[0]');

@@ -7,7 +7,7 @@
     @author(Kieron Morris <kjm@kieronmorris.me>)
 }
 unit driver.bus.usb.uhci;
-{$DEFINE NOT_DANGLING} { Selected by i386 startup; requires the i386 platform. }
+{$DEFINE NOT_DANGLING} { Host registration is explicit. }
 
 interface
 
@@ -16,14 +16,13 @@ uses
     io.syslog,
     driver.bus.pci,
     driver.types,
-    arch.x86.memory.physical,
-    arch.x86.memory.virtual,
+    arch.platform.memory, driver.dma,
     memory.heap,
-    core.util, arch.x86.util,
+    core.util, arch.platform.cpu,
     driver.mgr,
     driver.bus.usb.types,
     driver.bus.usb.core,
-    arch.x86.isr.mgr,
+    arch.platform.interrupts,
     core.ds.lists,
     core.strings;
 
@@ -139,6 +138,7 @@ type
         SWTransfer    : Pointer;   { Back-pointer to the owning TUSBTransfer }
         SWPad1        : uint32;
         SWPad2        : uint32;
+        Setup         : TUSBSetupPacket;
     end;
 
     { Queue Head - must be 16-byte aligned }
@@ -148,7 +148,8 @@ type
         ElementLink : uint32; { Vertical link to first TD (or Terminate) }
         { Software fields }
         SWNext      : PUHCI_QH; { Software pointer to next QH in our chain }
-        SWPad       : uint32;
+        ActiveTD    : PUHCI_TD;
+        Bounce      : pointer;
     end;
 
     { Private data for a driver.bus.usb.uhci host controller instance }
@@ -197,31 +198,31 @@ end;
 { Allocate a TD (16-byte aligned) }
 function uhci_alloc_td : PUHCI_TD;
 begin
-    uhci_alloc_td := PUHCI_TD(kalloc_aligned(sizeof(TUHCI_TD), 16));
+    uhci_alloc_td := PUHCI_TD(driver.dma.allocate(sizeof(TUHCI_TD), 16, true));
     if uhci_alloc_td <> nil then
-        memset(uint32(uhci_alloc_td), 0, sizeof(TUHCI_TD));
+        memset(PtrUInt(uhci_alloc_td), 0, sizeof(TUHCI_TD));
 end;
 
 { Free a TD }
 procedure uhci_free_td(td : PUHCI_TD);
 begin
     if td <> nil then
-        kfree_aligned(td);
+        driver.dma.release(td);
 end;
 
 { Allocate a QH (16-byte aligned) }
 function uhci_alloc_qh : PUHCI_QH;
 begin
-    uhci_alloc_qh := PUHCI_QH(kalloc_aligned(sizeof(TUHCI_QH), 16));
+    uhci_alloc_qh := PUHCI_QH(driver.dma.allocate(sizeof(TUHCI_QH), 16, true));
     if uhci_alloc_qh <> nil then
-        memset(uint32(uhci_alloc_qh), 0, sizeof(TUHCI_QH));
+        memset(PtrUInt(uhci_alloc_qh), 0, sizeof(TUHCI_QH));
 end;
 
 { Free a QH }
 procedure uhci_free_qh(qh : PUHCI_QH);
 begin
     if qh <> nil then
-        kfree_aligned(qh);
+        driver.dma.release(qh);
 end;
 
 { Build a TD token dword.
@@ -330,7 +331,7 @@ begin
     priv := PUHCI_PrivData(hc^.PrivData);
 
     { Allocate the frame list (4096 bytes, 4096-byte aligned) }
-    priv^.FrameList := kalloc_aligned(UHCI_FRAME_LIST_SIZE * 4, 4096);
+    priv^.FrameList := driver.dma.allocate(UHCI_FRAME_LIST_SIZE * 4, 4096, true);
     if priv^.FrameList = nil then begin
         io.syslog.logln('driver.bus.usb.uhci', 'Failed to allocate frame list!');
         pop_trace;
@@ -353,12 +354,12 @@ begin
       ElementLink starts as Terminate (no TDs yet). }
 
     { Interrupt QH -> Control QH }
-    priv^.QHInterrupt^.HeadLink    := uint32(priv^.QHControl) OR UHCI_LP_QH;
+    priv^.QHInterrupt^.HeadLink    := uint32(physicalAddress(PtrUInt(priv^.QHControl))) OR UHCI_LP_QH;
     priv^.QHInterrupt^.ElementLink := UHCI_LP_TERMINATE;
     priv^.QHInterrupt^.SWNext     := priv^.QHControl;
 
     { Control QH -> Bulk QH }
-    priv^.QHControl^.HeadLink    := uint32(priv^.QHBulk) OR UHCI_LP_QH;
+    priv^.QHControl^.HeadLink    := uint32(physicalAddress(PtrUInt(priv^.QHBulk))) OR UHCI_LP_QH;
     priv^.QHControl^.ElementLink := UHCI_LP_TERMINATE;
     priv^.QHControl^.SWNext     := priv^.QHBulk;
 
@@ -370,7 +371,7 @@ begin
     { Fill frame list: every entry points to the Interrupt QH }
     fl := priv^.FrameList;
     for i := 0 to UHCI_FRAME_LIST_SIZE - 1 do begin
-        PUint32(uint32(fl) + (i * 4))^ := uint32(priv^.QHInterrupt) OR UHCI_FL_PTR_QH;
+        PUint32(PtrUInt(fl) + (i * 4))^ := uint32(physicalAddress(PtrUInt(priv^.QHInterrupt))) OR UHCI_FL_PTR_QH;
     end;
 
     pop_trace;
@@ -391,7 +392,7 @@ begin
     priv := PUHCI_PrivData(hc^.PrivData);
 
     { Set frame list base address }
-    uhci_write32(priv^.IOBase, UHCI_REG_FRBASEADD, uint32(priv^.FrameList));
+    uhci_write32(priv^.IOBase, UHCI_REG_FRBASEADD, uint32(physicalAddress(PtrUInt(priv^.FrameList))));
 
     { Start at frame 0 }
     uhci_write16(priv^.IOBase, UHCI_REG_FRNUM, 0);
@@ -530,7 +531,17 @@ end;
 { ========================= Submit Transfer ========================= }
 
 { Build a chain of TDs for a control transfer and link to the control QH }
-function uhci_submit_control(hc : PUSBHCDriver; transfer : PUSBTransfer) : boolean;
+procedure uhci_free_chain(td: PUHCI_TD);
+var next: PUHCI_TD;
+begin
+    while td <> nil do begin
+        next := td^.SWNext;
+        uhci_free_td(td);
+        td := next;
+    end;
+end;
+
+function uhci_submit_control(hc : PUSBHCDriver; transfer : PUSBTransfer; payload, bounce: pointer) : boolean;
 var
     priv     : PUHCI_PrivData;
     dev      : PUSBDevice;
@@ -546,7 +557,6 @@ var
     pktLen   : uint16;
     toggle   : uint8;
     pid      : uint8;
-    setupBuf : Pointer;
 begin
     push_trace('UHCI.uhci_submit_control');
     uhci_submit_control := false;
@@ -562,17 +572,17 @@ begin
     prevTD := nil;
 
     { === SETUP TD === }
+    firstTD := nil;
     td := uhci_alloc_td;
-    if td = nil then begin pop_trace; exit; end;
+    if td = nil then begin uhci_free_chain(firstTD); pop_trace; exit; end;
     firstTD := td;
 
     { Allocate 8 bytes for setup packet and copy }
-    setupBuf := Pointer(kalloc(8));
-    memcpy(uint32(@transfer^.Setup), uint32(setupBuf), 8);
+    td^.Setup := transfer^.Setup;
 
     td^.Token         := uhci_make_token(UHCI_TD_PID_SETUP, devAddr, ep, 0, 8);
     td^.ControlStatus := uhci_make_control(isLS, false, 3);
-    td^.BufferPointer := uint32(setupBuf);
+    td^.BufferPointer := uint32(physicalAddress(PtrUInt(@td^.Setup)));
     td^.SWTransfer    := Pointer(transfer);
     td^.SWNext        := nil;
     prevTD := td;
@@ -584,7 +594,7 @@ begin
 
     while remaining > 0 do begin
         td := uhci_alloc_td;
-        if td = nil then begin pop_trace; exit; end;
+        if td = nil then begin uhci_free_chain(firstTD); pop_trace; exit; end;
 
         if remaining > maxPkt then
             pktLen := maxPkt
@@ -599,12 +609,12 @@ begin
 
         td^.Token         := uhci_make_token(pid, devAddr, ep, toggle, pktLen);
         td^.ControlStatus := uhci_make_control(isLS, false, 3);
-        td^.BufferPointer := uint32(transfer^.Buffer) + offset;
+        td^.BufferPointer := uint32(physicalAddress(PtrUInt(payload) + offset));
         td^.SWTransfer    := Pointer(transfer);
         td^.SWNext        := nil;
 
         { Link previous TD to this one }
-        prevTD^.LinkPointer := uint32(td) OR UHCI_LP_DEPTH;
+        prevTD^.LinkPointer := uint32(physicalAddress(PtrUInt(td))) OR UHCI_LP_DEPTH;
         prevTD^.SWNext      := td;
         prevTD := td;
 
@@ -615,7 +625,7 @@ begin
 
     { === STATUS TD === }
     td := uhci_alloc_td;
-    if td = nil then begin pop_trace; exit; end;
+    if td = nil then begin uhci_free_chain(firstTD); pop_trace; exit; end;
 
     { Status stage direction is opposite of data stage }
     if (transfer^.Setup.bmRequestType AND $80) <> 0 then
@@ -630,7 +640,7 @@ begin
     td^.SWNext        := nil;
     td^.LinkPointer   := UHCI_LP_TERMINATE;
 
-    prevTD^.LinkPointer := uint32(td) OR UHCI_LP_DEPTH;
+    prevTD^.LinkPointer := uint32(physicalAddress(PtrUInt(td))) OR UHCI_LP_DEPTH;
     prevTD^.SWNext      := td;
 
     { Store first TD in transfer HCPriv for later cleanup }
@@ -638,14 +648,16 @@ begin
     transfer^.Status := tsInProgress;
 
     { Link TD chain into Control QH }
-    priv^.QHControl^.ElementLink := uint32(firstTD);
+    priv^.QHControl^.Bounce := bounce;
+    priv^.QHControl^.ActiveTD := firstTD;
+    priv^.QHControl^.ElementLink := uint32(physicalAddress(PtrUInt(firstTD)));
 
     uhci_submit_control := true;
     pop_trace;
 end;
 
 { Build TDs for an interrupt or bulk transfer }
-function uhci_submit_async(hc : PUSBHCDriver; transfer : PUSBTransfer) : boolean;
+function uhci_submit_async(hc : PUSBHCDriver; transfer : PUSBTransfer; payload, bounce: pointer) : boolean;
 var
     priv     : PUHCI_PrivData;
     dev      : PUSBDevice;
@@ -687,7 +699,7 @@ begin
     { Build TD chain }
     repeat
         td := uhci_alloc_td;
-        if td = nil then begin pop_trace; exit; end;
+        if td = nil then begin uhci_free_chain(firstTD); pop_trace; exit; end;
 
         if firstTD = nil then firstTD := td;
 
@@ -700,13 +712,13 @@ begin
 
         td^.Token         := uhci_make_token(pid, devAddr, epNum, toggle, pktLen);
         td^.ControlStatus := uhci_make_control(isLS, false, 3);
-        td^.BufferPointer := uint32(transfer^.Buffer) + offset;
+        td^.BufferPointer := uint32(physicalAddress(PtrUInt(payload) + offset));
         td^.SWTransfer    := Pointer(transfer);
         td^.SWNext        := nil;
         td^.LinkPointer   := UHCI_LP_TERMINATE;
 
         if prevTD <> nil then begin
-            prevTD^.LinkPointer := uint32(td) OR UHCI_LP_DEPTH;
+            prevTD^.LinkPointer := uint32(physicalAddress(PtrUInt(td))) OR UHCI_LP_DEPTH;
             prevTD^.SWNext      := td;
         end;
         prevTD := td;
@@ -738,30 +750,74 @@ begin
     else
         qh := priv^.QHBulk;
 
-    qh^.ElementLink := uint32(firstTD);
+    qh^.Bounce := bounce;
+    qh^.ActiveTD := firstTD;
+    qh^.ElementLink := uint32(physicalAddress(PtrUInt(firstTD)));
 
     uhci_submit_async := true;
     pop_trace;
 end;
 
-function uhci_submit(hc : PUSBHCDriver; transfer : PUSBTransfer) : boolean;
+function uhci_inbound(transfer: PUSBTransfer): boolean;
 begin
-    push_trace('UHCI.uhci_submit');
-    uhci_submit := false;
-    if (hc = nil) or (transfer = nil) or (transfer^.Device = nil) then begin
-        pop_trace;
-        exit;
-    end;
-
-    case transfer^.PipeType of
-        ptControl:
-            uhci_submit := uhci_submit_control(hc, transfer);
-        ptInterrupt, ptBulk:
-            uhci_submit := uhci_submit_async(hc, transfer);
+    if transfer^.PipeType = ptControl then
+        uhci_inbound := (transfer^.Setup.bmRequestType and $80) <> 0
     else
-        io.syslog.logln('driver.bus.usb.uhci', 'Unsupported pipe type for submit.');
+        uhci_inbound := transfer^.Direction = dirIn;
+end;
+
+function uhci_submit(hc : PUSBHCDriver; transfer : PUSBTransfer) : boolean;
+var address, physical, flags: PtrUInt;
+    offset: uint32;
+    reach: TDMAReach;
+    payload, bounce: pointer;
+    priv: PUHCI_PrivData;
+    qh: PUHCI_QH;
+begin
+    uhci_submit := false;
+    if (hc = nil) or (transfer = nil) or (transfer^.Device = nil) then exit;
+    if not (transfer^.PipeType in [ptControl, ptBulk, ptInterrupt]) then exit;
+    if (transfer^.PipeType <> ptControl) and (transfer^.Endpoint = nil) then exit;
+    priv := PUHCI_PrivData(hc^.PrivData);
+    case transfer^.PipeType of
+        ptControl: qh := priv^.QHControl;
+        ptBulk: qh := priv^.QHBulk;
+        ptInterrupt: qh := priv^.QHInterrupt;
     end;
-    pop_trace;
+    if qh = nil then exit;
+    payload := transfer^.Buffer;
+    bounce := nil;
+    address := PtrUInt(payload);
+    reach := driver.dma.reach32(address, transfer^.BufferLen);
+    if reach = dmaInvalid then exit;
+    if (reach = dmaDirect) and (transfer^.BufferLen <> 0) then begin
+        physical := PtrUInt(physicalAddress(address));
+        offset := 4096 - (address and 4095);
+        while offset < transfer^.BufferLen do begin
+            if physicalAddress(address + offset) <> uint64(physical) + offset then begin
+                reach := dmaHigh;
+                break;
+            end;
+            if transfer^.BufferLen - offset <= 4096 then break;
+            inc(offset, 4096);
+        end;
+    end;
+    if reach = dmaHigh then begin
+        bounce := driver.dma.allocateBounce(transfer^.BufferLen);
+        if bounce = nil then exit;
+        payload := bounce;
+        if not uhci_inbound(transfer) then
+            memcpy(address, PtrUInt(bounce), transfer^.BufferLen);
+    end;
+    flags := arch.platform.cpu.lock;
+    if qh^.ActiveTD = nil then begin
+        if transfer^.PipeType = ptControl then
+            uhci_submit := uhci_submit_control(hc, transfer, payload, bounce)
+        else
+            uhci_submit := uhci_submit_async(hc, transfer, payload, bounce);
+    end;
+    arch.platform.cpu.unlock(flags);
+    if not uhci_submit then driver.dma.release(bounce);
 end;
 
 { ========================= Interrupt-Driven Completion ========================= }
@@ -828,12 +884,20 @@ var
     transfer  : PUSBTransfer;
     allDone   : boolean;
     hasError  : boolean;
+    flags: PtrUInt;
+    command: uint16;
+    attempts: uint32;
+    resultStatus: TUSBTransferStatus;
 begin
     if (hc = nil) or (hc^.PrivData = nil) then exit;
     priv := PUHCI_PrivData(hc^.PrivData);
 
     { Re-entrancy guard }
-    if priv^.PollBusy then exit;
+    flags := arch.platform.cpu.lock;
+    if priv^.PollBusy then begin
+        arch.platform.cpu.unlock(flags);
+        exit;
+    end;
     priv^.PollBusy := true;
 
     { Read and clear status register }
@@ -851,8 +915,8 @@ begin
     qh := priv^.QHInterrupt;
     while qh <> nil do begin
         { Check if QH has active TDs }
-        if (qh^.ElementLink AND UHCI_LP_TERMINATE) = 0 then begin
-            td := PUHCI_TD(qh^.ElementLink AND $FFFFFFF0);
+        if qh^.ActiveTD <> nil then begin
+            td := qh^.ActiveTD;
             if (td <> nil) and (td^.SWTransfer <> nil) then begin
                 transfer := PUSBTransfer(td^.SWTransfer);
                 if transfer^.Status = tsInProgress then begin
@@ -861,6 +925,7 @@ begin
                     totalLen := 0;
                     allDone := true;
                     hasError := false;
+                    resultStatus := tsSuccess;
                     while td <> nil do begin
                         cs := td^.ControlStatus;
                         if (cs AND UHCI_TD_ACTIVE) <> 0 then begin
@@ -869,47 +934,65 @@ begin
                         end;
                         if (cs AND UHCI_TD_STALLED) <> 0 then begin
                             hasError := true;
-                            transfer^.Status := tsStall;
+                            resultStatus := tsStall;
                             break;
                         end;
                         if (cs AND UHCI_TD_BABBLE) <> 0 then begin
                             hasError := true;
-                            transfer^.Status := tsBabble;
+                            resultStatus := tsBabble;
                             break;
                         end;
                         if (cs AND UHCI_TD_DBUF_ERR) <> 0 then begin
                             hasError := true;
-                            transfer^.Status := tsDataBufferError;
+                            resultStatus := tsDataBufferError;
                             break;
                         end;
                         if (cs AND UHCI_TD_CRC_TIMEOUT) <> 0 then begin
                             hasError := true;
-                            transfer^.Status := tsCRCError;
+                            resultStatus := tsCRCError;
                             break;
                         end;
                         if (cs AND UHCI_TD_BITSTUFF) <> 0 then begin
                             hasError := true;
-                            transfer^.Status := tsBitStuffError;
+                            resultStatus := tsBitStuffError;
                             break;
                         end;
                         actualLen := cs AND UHCI_TD_ACTLEN_MASK;
-                        if actualLen <> $7FF then
+                        if (actualLen <> $7FF) and ((td^.Token and $FF) <> UHCI_TD_PID_SETUP) then
                             totalLen := totalLen + actualLen + 1;
                         td := td^.SWNext;
                     end;
-                    if allDone and (not hasError) then begin
-                        transfer^.ActualLen := totalLen;
-                        transfer^.Status := tsSuccess;
-                    end;
-                    { If transfer is done (success or error), clear the QH element link }
-                    if transfer^.Status <> tsInProgress then
+                    if allDone or hasError then begin
+                        command := uhci_read16(priv^.IOBase, UHCI_REG_USBCMD);
+                        uhci_write16(priv^.IOBase, UHCI_REG_USBCMD, command and not UHCI_CMD_RS);
+                        attempts := 0;
+                        while ((uhci_read16(priv^.IOBase, UHCI_REG_USBSTS) and UHCI_STS_HCH) = 0) and
+                              (attempts < 8192) do inc(attempts);
+                        if (uhci_read16(priv^.IOBase, UHCI_REG_USBSTS) and UHCI_STS_HCH) = 0 then begin
+                            uhci_write16(priv^.IOBase, UHCI_REG_USBCMD, command);
+                            break;
+                        end;
                         qh^.ElementLink := UHCI_LP_TERMINATE;
+                        uhci_free_chain(qh^.ActiveTD);
+                        qh^.ActiveTD := nil;
+                        uhci_write16(priv^.IOBase, UHCI_REG_USBCMD, command);
+                        transfer^.ActualLen := totalLen;
+                        if qh^.Bounce <> nil then begin
+                            if uhci_inbound(transfer) and (totalLen <= transfer^.BufferLen) then
+                                memcpy(PtrUInt(qh^.Bounce), PtrUInt(transfer^.Buffer), totalLen);
+                            driver.dma.release(qh^.Bounce);
+                            qh^.Bounce := nil;
+                        end;
+                        transfer^.HCPriv := nil;
+                        transfer^.Status := resultStatus;
+                    end;
                 end;
             end;
         end;
         qh := qh^.SWNext;
     end;
     priv^.PollBusy := false;
+    arch.platform.cpu.unlock(flags);
 end;
 
 { ========================= Load / Init ========================= }
@@ -940,6 +1023,7 @@ begin
     end;
 
     for i := 0 to count - 1 do begin
+        if not arch.platform.interrupts.supportsPCILine(devices[i].interrupt_line) then continue;
         io.syslog.log('driver.bus.usb.uhci', 'Controller[');
         io.syslog.writeint(i);
         io.syslog.writestring(']: VID=');
@@ -965,7 +1049,7 @@ begin
             io.syslog.logln('driver.bus.usb.uhci', 'Failed to allocate private data!');
             continue;
         end;
-        memset(uint32(priv), 0, sizeof(TUHCI_PrivData));
+        memset(PtrUInt(priv), 0, sizeof(TUHCI_PrivData));
         priv^.IOBase  := uint16(iobase);
         priv^.PCIBus  := devices[i].bus;
         priv^.PCISlot := devices[i].slot;
@@ -1003,7 +1087,7 @@ begin
         { Start the controller }
         if not uhci_start(@hc) then begin
             io.syslog.logln('driver.bus.usb.uhci', 'Start failed, skipping controller.');
-            if priv^.FrameList <> nil then kfree_aligned(priv^.FrameList);
+            if priv^.FrameList <> nil then driver.dma.release(priv^.FrameList);
             if priv^.QHInterrupt <> nil then uhci_free_qh(priv^.QHInterrupt);
             if priv^.QHControl <> nil then uhci_free_qh(priv^.QHControl);
             if priv^.QHBulk <> nil then uhci_free_qh(priv^.QHBulk);
@@ -1026,7 +1110,8 @@ begin
             { Register ISR on driver.bus.pci interrupt line }
             io.syslog.log('driver.bus.usb.uhci', 'Registering ISR on IRQ ');
             io.syslog.writeintln(devices[i].interrupt_line);
-            arch.x86.isr.mgr.registerISR(32 + devices[i].interrupt_line, @uhci_isr);
+            arch.platform.interrupts.registerIRQ(32 + devices[i].interrupt_line, @uhci_isr);
+            arch.platform.interrupts.routePCI(devices[i].interrupt_line, 32 + devices[i].interrupt_line);
 
             { Enable hardware interrupts }
             uhci_enable_interrupts(hcEntry);
@@ -1057,8 +1142,8 @@ begin
     test.harness.Start(@context, 'driver.bus.usb.uhci');
 
     { === TD/QH Size and Alignment === }
-    test.harness.Assert(@context, sizeof(TUHCI_TD) = 32, 'sizeof TD=32');
-    test.harness.Assert(@context, sizeof(TUHCI_QH) = 16, 'sizeof QH=16');
+    test.harness.Assert(@context, PtrUInt(@PUHCI_TD(nil)^.SWNext) = 16, 'TD hardware prefix is 16 bytes');
+    test.harness.Assert(@context, PtrUInt(@PUHCI_QH(nil)^.SWNext) = 8, 'QH hardware prefix is 8 bytes');
 
     { === Token Building === }
     { SETUP to addr 0, EP0, toggle 0, 8 bytes }
@@ -1102,7 +1187,9 @@ begin
     { === TD Allocation & Alignment === }
     td := uhci_alloc_td;
     test.harness.Assert(@context, td <> nil, 'alloc_td not nil');
-    test.harness.Assert(@context, (uint32(td) AND $0F) = 0, 'alloc_td 16-byte aligned');
+    test.harness.Assert(@context, driver.dma.reach32(PtrUInt(td), sizeof(TUHCI_TD)) = dmaDirect,
+                        'TD fits in DMA32 memory');
+    test.harness.Assert(@context, (PtrUInt(td) AND $0F) = 0, 'alloc_td 16-byte aligned');
     test.harness.Assert(@context, td^.LinkPointer = 0, 'alloc_td zeroed link');
     test.harness.Assert(@context, td^.ControlStatus = 0, 'alloc_td zeroed ctrl');
     test.harness.Assert(@context, td^.Token = 0, 'alloc_td zeroed token');
@@ -1112,7 +1199,9 @@ begin
     { === QH Allocation & Alignment === }
     qh := uhci_alloc_qh;
     test.harness.Assert(@context, qh <> nil, 'alloc_qh not nil');
-    test.harness.Assert(@context, (uint32(qh) AND $0F) = 0, 'alloc_qh 16-byte aligned');
+    test.harness.Assert(@context, driver.dma.reach32(PtrUInt(qh), sizeof(TUHCI_QH)) = dmaDirect,
+                        'QH fits in DMA32 memory');
+    test.harness.Assert(@context, (PtrUInt(qh) AND $0F) = 0, 'alloc_qh 16-byte aligned');
     test.harness.Assert(@context, qh^.HeadLink = 0, 'alloc_qh zeroed head');
     test.harness.Assert(@context, qh^.ElementLink = 0, 'alloc_qh zeroed elem');
     uhci_free_qh(qh);

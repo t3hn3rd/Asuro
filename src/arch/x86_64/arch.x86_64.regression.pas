@@ -22,9 +22,10 @@ procedure validateStorage;
 implementation
 
 uses
-    test.harness, driver.storage.ctl.ahci, driver.bus.usb.ohci, arch.platform.cpu, driver.bus.pci, driver.bus.usb.core,
+    test.harness, arch.platform.interrupts, driver.storage.ctl.ahci, driver.bus.usb.ohci, arch.platform.cpu, driver.bus.pci, driver.bus.usb.core,
     driver.storage.types, driver.storage.fs.mgr, driver.storage.mgr, driver.storage.vfs,
     driver.storage.perftest, memory.heap, proc.mgr, debug.early,
+    {$ifdef ASURO_TEST_STORAGE}arch.x86_64.irq, driver.dma,{$endif}
     arch.x86_64.memory.physical, arch.x86_64.memory.virtual;
 
 {$i regression.compiler-abi.inc}
@@ -72,6 +73,13 @@ begin
     test.harness.Start(@ctx, 'driver.dma');
     testHighDMA32(ctx);
     test.harness.Finish(@ctx);
+    test.harness.Start(@ctx, 'arch.platform.interrupts');
+    test.harness.Assert(@ctx, supportsPCILine(11), 'Valid legacy PCI interrupt line');
+    test.harness.Assert(@ctx, not supportsPCILine(0), 'PCI cannot use scheduler timer line');
+    test.harness.Assert(@ctx, not supportsPCILine(2), 'PCI cannot use PIC cascade line');
+    test.harness.Assert(@ctx, not supportsPCILine(16), 'PIC cannot route PCI line 16');
+    test.harness.Assert(@ctx, not supportsPCILine(255), 'Unassigned PCI interrupt line');
+    test.harness.Finish(@ctx);
     test.harness.Start(@ctx, 'driver.bus.pci.memoryBAR');
     test.harness.Assert(@ctx, driver.bus.pci.memoryBAR($2004, 1) = uint64($100002000), '64-bit address');
     test.harness.Assert(@ctx, driver.bus.pci.memoryBAR($2000, 1) = $2000, '32-bit address');
@@ -86,13 +94,15 @@ end;
 
 {$ifdef ASURO_TEST_STORAGE}
 procedure test_high_dma;
+const SAMPLE_BYTES = 128 * 1024;
+      SAMPLES = 16;
 var
-    address: PtrUInt;
+    address, page: PtrUInt;
     frame, oldFrame: uint64;
     device: PStorage_Device;
     reference: puint8;
-    i, j, count: uint32;
-    ok: boolean;
+    i, j, count, sectors, sample: uint32;
+    ok, tested: boolean;
 begin
     frame := arch.x86_64.memory.physical.alloc_high;
     if frame = 0 then begin
@@ -105,35 +115,61 @@ begin
         puts('FAIL: DMA test mapping allocation'#13#10);
         exit;
     end;
-    if not unmap_page(address, oldFrame) then bootstrap_halt;
-    arch.x86_64.memory.physical.free_page(oldFrame);
-    if not map_page(address, frame, true) then bootstrap_halt;
-    reference := puint8(kalloc(4096));
-    ok := reference <> nil;
+    ok := true;
+    for j := 0 to SAMPLE_BYTES div 4096 - 1 do begin
+        if j <> 0 then frame := arch.x86_64.memory.physical.alloc_high;
+        if frame = 0 then begin
+            ok := false;
+            break;
+        end;
+        page := address + j * 4096;
+        if not unmap_page(page, oldFrame) then bootstrap_halt;
+        arch.x86_64.memory.physical.free_page(oldFrame);
+        if not map_page(page, frame, true) then bootstrap_halt;
+    end;
+    reference := puint8(driver.dma.allocate(SAMPLE_BYTES, 4096, true));
+    ok := ok and (reference <> nil);
+    tested := false;
     count := driver.storage.mgr.get_device_count;
-    if count = 0 then ok := false;
-    if ok then
+    if ok and (count > 0) then
         for i := 0 to count - 1 do begin
             device := driver.storage.mgr.get_device(i);
             if not (device^.controller in [ControllerAHCI, ControllerAHCI_ATAPI]) then continue;
-            if (device^.sectorSize = 0) or (device^.sectorSize > 4096) then begin
-                ok := false;
-                break;
-            end;
-            if (storage_read(device, 0, 1, puint32(reference)) <> eNone) or
-               (storage_read(device, 0, 1, puint32(address)) <> eNone) then begin
-                ok := false;
-                break;
-            end;
-            for j := 0 to device^.sectorSize - 1 do
-                if reference[j] <> puint8(address)[j] then ok := false;
+            if (device^.sectorSize = 0) or (SAMPLE_BYTES mod device^.sectorSize <> 0) then continue;
+            sectors := SAMPLE_BYTES div device^.sectorSize;
+            if device^.maxSectorCount < sectors then continue;
+            tested := true;
+            field('IRQ_DMA_TEST_DEVICE', i);
+            puts('IRQ DMA baseline: DMA32 buffer'#13#10);
+            startLatencySample;
+            for sample := 1 to SAMPLES do
+                if storage_read(device, 0, sectors, puint32(reference)) <> eNone then begin
+                    ok := false;
+                    break;
+                end;
+            reportLatencySample;
+            if not ok then break;
+            puts('IRQ DMA workload: high buffer'#13#10);
+            startLatencySample;
+            for sample := 1 to SAMPLES do
+                if storage_read(device, 0, sectors, puint32(address)) <> eNone then begin
+                    ok := false;
+                    break;
+                end;
+            reportLatencySample;
+            if not ok then break;
+            for j := 0 to SAMPLE_BYTES - 1 do
+                if reference[j] <> puint8(address)[j] then begin
+                    ok := false;
+                    break;
+                end;
+            if not ok then break;
         end;
-    if reference <> nil then kfree(void(reference));
+    driver.dma.release(reference);
     if not release_region(address, 1) then ok := false;
-    if ok then
-        puts('PASS: AHCI DMA above 4 GiB matches every disk sector'#13#10)
-    else
-        puts('FAIL: AHCI DMA above 4 GiB'#13#10);
+    if not ok then puts('FAIL: AHCI DMA above 4 GiB'#13#10)
+    else if tested then puts('PASS: AHCI DMA above 4 GiB matches reference data'#13#10)
+    else puts('SKIP: no AHCI device with enough sectors for IRQ sampling'#13#10);
 end;
 
 procedure test_storage_read;

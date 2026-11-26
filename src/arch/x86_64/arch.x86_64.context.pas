@@ -29,7 +29,7 @@ type
     end;
 
     TSelectContext = function(saved: PtrUInt): PtrUInt;
-procedure setSelector(selector: TSelectContext);
+procedure setSelector(selector: TSelectContext; timerVector: uint8);
 function prepare(stack: pointer; bytes: SizeUInt; entry: pointer; argument: PtrUInt): PtrUInt;
 procedure UnitTest;
 
@@ -37,6 +37,7 @@ implementation
 uses proc.types, proc.scheduler, arch.x86_64.util, arch.x86_64.irq, arch.common.legacyirq, memory.heap, debug.early;
 var
     choose: TSelectContext;
+    schedulerVector: uint8;
     testProcesses: array[0..2] of PProcessContext;
     testCurrent: PProcessContext;
     testCursor: uint32;
@@ -44,9 +45,10 @@ var
     testFailures: uint32;
     testSwitches: uint32;
 
-procedure setSelector(selector: TSelectContext);
+procedure setSelector(selector: TSelectContext; timerVector: uint8);
 begin
     { Caller owns IRQ exclusion and context lifetimes. }
+    schedulerVector := timerVector;
     choose := selector;
 end;
 
@@ -56,7 +58,7 @@ var
 begin
     selectContext := saved;
     frame := PFrame(PNative(saved + 512)^);
-    if (frame^.vector = 32) and assigned(choose) then
+    if (frame^.vector = schedulerVector) and assigned(choose) then
         selectContext := choose(saved);
 end;
 
@@ -130,14 +132,33 @@ begin
     end;
 end;
 
+function testVectorSelect(saved: PtrUInt): PtrUInt;
+begin
+    testVectorSelect := saved + 1;
+end;
+
 procedure UnitTest;
 var
     stackA, stackB: void;
+    fakeFrame: PFrame;
+    fakeContext: void;
     beforeFree: SizeUInt;
     attempts, i: uint32;
     saved: PtrUInt;
 begin
     beforeFree := lmm_total_free;
+    fakeFrame := PFrame(kalloc(sizeof(TFrame)));
+    fakeContext := kalloc(512 + sizeof(PtrUInt));
+    PNative(PtrUInt(fakeContext) + 512)^ := PtrUInt(fakeFrame);
+    setSelector(@testVectorSelect, 64);
+    fakeFrame^.vector := 32;
+    if selectContext(PtrUInt(fakeContext)) <> PtrUInt(fakeContext) then bootstrap_halt;
+    fakeFrame^.vector := 64;
+    if selectContext(PtrUInt(fakeContext)) <> PtrUInt(fakeContext) + 1 then bootstrap_halt;
+    setSelector(nil, 0);
+    kfree(fakeContext);
+    kfree(void(fakeFrame));
+    puts('PASS: scheduler honors configured timer vector'#13#10);
     stackA := kalloc(16384);
     stackB := kalloc(16384);
     for i := 0 to 2 do begin
@@ -159,7 +180,7 @@ begin
     testDone[1] := 0;
     testFailures := 0;
     testSwitches := 0;
-    setSelector(@testSelect);
+    setSelector(@testSelect, 32);
     masks($FE, $FF);
     asm
         sti
@@ -174,7 +195,7 @@ begin
     end;
     saved := lockIRQ;
     masks($FF, $FF);
-    setSelector(nil);
+    setSelector(nil, 0);
     if (testDone[0] = 0) or (testDone[1] = 0) or (testSwitches < 6) or
        ((saved and $200) = 0) then inc(testFailures);
     kfree(stackA);

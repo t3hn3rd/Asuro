@@ -4,4 +4,8 @@ The long-mode IDT and TSS give double fault, NMI and machine check separate inte
 
 Assembly entry stubs normalize exception frames, save registers and preserve x87/SSE state across the handler. Fatal diagnostics write the frame and registers to COM1. The `ud`, `pf` and `df` profiles exercise fatal paths in VirtualBox. A separate QEMU verifier checks unsupported CPUs and injects NMI and machine check. [Fault test commands](../../../planning/x86_64.md#repeatable-virtualbox-fault-checks)
 
-Hardware IRQs use the legacy PIC and PIT. The native scheduler adapter saves the interrupted kernel stack, lets the shared scheduler select a process and restores the selected context. Kernel preemption and process return are exercised on this path. User-mode transitions, per-process address spaces and AVX context switching remain outside the supported configuration.
+Hardware IRQs use the legacy PIC and PIT. OHCI, xHCI, AHCI and E1000 check the PCI interrupt line before starting their controllers. Native routing rejects IRQ0 (PIT), IRQ2 (PIC cascade), and lines outside the PIC range. The scheduler supplies its timer vector when it registers the context selector. The current PIT route uses vector 32. The native scheduler adapter saves the interrupted kernel stack, lets the shared scheduler select a process and restores the selected context. Kernel preemption and process return are exercised on this path. User-mode transitions, per-process address spaces and AVX context switching remain outside the supported configuration.
+
+The native IRQ registry supports detaching individual handlers with
+`unregisterIRQ`. Call it after quiescing the device and outside dispatch.
+Removal leaves other handlers on the shared line registered.
