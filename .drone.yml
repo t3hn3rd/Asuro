@@ -18,33 +18,50 @@ steps:
       password:
         from_secret: docker_password
 
-  - name: compile-x86
-    image: t3hn3rd/asuro-build:${DRONE_COMMIT}
-    pull: always
+  - name: prepare-checkouts
+    image: alpine/git
     depends_on:
       - build-image
     commands:
       - git fetch --tags
+      - git worktree add --detach /code/.ci/x86 HEAD
+      - git worktree add --detach /code/.ci/x86_64 HEAD
+
+  - name: compile-x86
+    image: t3hn3rd/asuro-build:${DRONE_COMMIT}
+    pull: always
+    depends_on:
+      - prepare-checkouts
+    commands:
+      - cd /code/.ci/x86
       - |
         if [ "$DRONE_BRANCH" = "master" ]; then
-          pwsh -NoLogo -NoProfile -File toolchain/build.ps1 all --arch x86 --profile release
+          profile=release
+          pwsh -NoLogo -NoProfile -File toolchain/build.ps1 iso --arch x86 --profile release
         else
-          pwsh -NoLogo -NoProfile -File toolchain/build.ps1 all --arch x86 --profile test:complex --testonly
+          profile=test-complex-only
+          pwsh -NoLogo -NoProfile -File toolchain/build.ps1 iso --arch x86 --profile test:complex --testonly
         fi
+        mkdir -p "/code/build/x86/$profile"
+        cp "build/x86/$profile/Asuro.iso" "/code/build/x86/$profile/"
 
   - name: compile-x86_64
     image: t3hn3rd/asuro-build:${DRONE_COMMIT}
     pull: always
     depends_on:
-      - compile-x86
+      - prepare-checkouts
     commands:
-      - git fetch --tags
+      - cd /code/.ci/x86_64
       - |
         if [ "$DRONE_BRANCH" = "master" ]; then
-          pwsh -NoLogo -NoProfile -File toolchain/build.ps1 all --arch x86_64 --profile release
+          profile=release
+          pwsh -NoLogo -NoProfile -File toolchain/build.ps1 iso --arch x86_64 --profile release
         else
-          pwsh -NoLogo -NoProfile -File toolchain/build.ps1 all --arch x86_64 --profile test:complex --testonly
+          profile=test-complex-only
+          pwsh -NoLogo -NoProfile -File toolchain/build.ps1 iso --arch x86_64 --profile test:complex --testonly
         fi
+        mkdir -p "/code/build/x86_64/$profile"
+        cp "build/x86_64/$profile/Asuro.iso" "/code/build/x86_64/$profile/"
 
   - name: run-tests-x86
     image: t3hn3rd/qemu-test-runner:latest
@@ -55,6 +72,7 @@ steps:
       branch:
         - develop
         - feature/test-only-mode
+        - feature/multi-arch-cicd
     commands:
       - /usr/local/bin/run-tests --arch x86 /code/build/x86/test-complex-only/Asuro.iso
 
@@ -67,6 +85,7 @@ steps:
       branch:
         - develop
         - feature/test-only-mode
+        - feature/multi-arch-cicd
     commands:
       - /usr/local/bin/run-tests --arch x86_64 /code/build/x86_64/test-complex-only/Asuro.iso
 
@@ -126,12 +145,26 @@ steps:
         curl -X PUT https://gitea.spexeah.com/api/packages/Spexeah/generic/asuro-iso/latest/Asuro_x86_64.iso \
         -H "Authorization: token $GITEA_TOKEN" --upload-file "Asuro_x86_64-$(git rev-parse --short HEAD).iso"
 
+  - name: build-docs
+    image: t3hn3rd/asuro-build:${DRONE_COMMIT}
+    pull: always
+    depends_on:
+      - build-image
+    when:
+      event: [push]
+      branch:
+        - master
+        - develop
+        - feature/mkdocs
+    commands:
+      - pwsh -NoLogo -NoProfile -File toolchain/build.ps1 docs
 
   - name: deploy-docs
     image: alpine:latest
     depends_on:
       - compile-x86
       - compile-x86_64
+      - build-docs
     when:
       event: [push]
       branch:
