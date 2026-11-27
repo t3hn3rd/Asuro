@@ -13,6 +13,7 @@
 unit arch.x86_64.util;
 
 interface
+function physicalBits: uint32;
 function lockIRQ: PtrUInt;
 procedure unlockIRQ(flags: PtrUInt);
 procedure zero(dest: pointer; bytes: SizeUInt);
@@ -22,6 +23,23 @@ procedure outb(port: uint16; value: uint8);
 function inb(port: uint16): uint8;
 
 implementation
+
+function physicalBits: uint32; assembler; nostackframe;
+asm
+    push rbx
+    mov eax, $80000000
+    cpuid
+    cmp eax, $80000008
+    jb @fallback
+    mov eax, $80000008
+    cpuid
+    and eax, $ff
+    jmp @done
+@fallback:
+    mov eax, 36
+@done:
+    pop rbx
+end;
 
 function lockIRQ: PtrUInt; assembler; nostackframe;
 asm

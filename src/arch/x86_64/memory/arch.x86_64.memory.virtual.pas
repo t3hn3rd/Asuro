@@ -486,23 +486,6 @@ begin
     unlockIRQ(saved);
 end;
 
-function physicalBits: uint32; assembler; nostackframe;
-asm
-    push rbx
-    mov eax, $80000000
-    cpuid
-    cmp eax, $80000008
-    jb @fallback
-    mov eax, $80000008
-    cpuid
-    and eax, $ff
-    jmp @done
-@fallback:
-    mov eax, 36
-@done:
-    pop rbx
-end;
-
 procedure init;
 var
     storage: uint64;

@@ -19,7 +19,6 @@ interface
 uses boot.multiboot;
 const
     FRAME_SIZE = 4096;
-    MAX_MANAGED = uint64(64) shl 30;
 procedure init(info: Pmultiboot_info_t);
 function alloc_page(lowOnly: boolean): uint64;
 function alloc_low_run(pages: uint32): uint64;
@@ -30,14 +29,23 @@ function free_count: uint64;
 function total_count: uint64;
 {$ifdef UNIT_TESTS}
 function testBootModuleGap: boolean;
+function testSparseFrames: boolean;
 {$endif}
 procedure UnitTest(info: Pmultiboot_info_t);
 
 implementation
 uses arch.x86_64.util, debug.early;
+type
+    PSpan = ^TSpan;
+    TSpan = record
+        first, limit, slot: uint64; { physical frame interval and compact bitmap offset }
+    end;
 var
+    spans: PSpan;
+    spanCount: uint32;
+    physicalLimit, descriptorBytes: uint64;
     eligible, used: PUInt32;
-    frameCount, wordCount, hint: uint32;
+    frameCount, wordCount, hint, lowFrames: uint64;
     freeFrames, totalFrames: uint64;
     kernelEnd: uint8; external name 'kernel_end';
 
@@ -51,8 +59,8 @@ end;
 
 function regionEnd(base, bytes: uint64): uint64;
 begin
-    if (base >= MAX_MANAGED) or (bytes > MAX_MANAGED - base) then
-        regionEnd := MAX_MANAGED
+    if (base >= physicalLimit) or (bytes > physicalLimit - base) then
+        regionEnd := physicalLimit
     else regionEnd := base + bytes;
 end;
 
@@ -61,13 +69,97 @@ begin
     nextEntry := Pmemory_map_t(PtrUInt(entry) + entry^.size + 4);
 end;
 
+{ Return the bitmap offset of the first managed frame at or above frame. }
+function slotAt(frame: uint64): uint64;
+var lo, hi, mid: uint32;
+begin
+    lo := 0;
+    hi := spanCount;
+    while lo < hi do begin
+        mid := (lo + hi) div 2;
+        if spans[mid].limit <= frame then lo := mid + 1 else hi := mid;
+    end;
+    if lo = spanCount then slotAt := frameCount
+    else if frame <= spans[lo].first then slotAt := spans[lo].slot
+    else slotAt := spans[lo].slot + (frame - spans[lo].first);
+end;
+
+function spanForSlot(slot: uint64): uint32;
+var lo, hi, mid: uint32;
+begin
+    lo := 0;
+    hi := spanCount - 1;
+    while lo < hi do begin
+        mid := (lo + hi + 1) div 2;
+        if spans[mid].slot <= slot then lo := mid else hi := mid - 1;
+    end;
+    spanForSlot := lo;
+end;
+
+function physicalFrame(slot: uint64): uint64;
+var span: PSpan;
+begin
+    span := @spans[spanForSlot(slot)];
+    physicalFrame := span^.first + (slot - span^.slot);
+end;
+
+{ Boot-only insertion into a sorted union of available frame intervals.
+  Adjacent entries share one span so DMA runs may cross their boundary. }
+procedure addSpan(base, bytes: uint64);
+var first, finish: uint64;
+    i, j, k: uint32;
+begin
+    finish := regionEnd(base, bytes) div FRAME_SIZE;
+    if base >= physicalLimit then exit;
+    first := (base + FRAME_SIZE - 1) div FRAME_SIZE;
+    if first >= finish then exit;
+    i := 0;
+    while (i < spanCount) and (spans[i].limit < first) do inc(i);
+    j := i;
+    while (j < spanCount) and (spans[j].first <= finish) do begin
+        if spans[j].first < first then first := spans[j].first;
+        if spans[j].limit > finish then finish := spans[j].limit;
+        inc(j);
+    end;
+    if i = j then begin
+        k := spanCount;
+        while k > i do begin
+            spans[k] := spans[k - 1];
+            dec(k);
+        end;
+        inc(spanCount);
+    end else begin
+        k := i + 1;
+        while j < spanCount do begin
+            spans[k] := spans[j];
+            inc(k);
+            inc(j);
+        end;
+        spanCount := k;
+    end;
+    spans[i].first := first;
+    spans[i].limit := finish;
+end;
+
+procedure indexSpans;
+var i: uint32;
+begin
+    frameCount := 0;
+    if spanCount > 0 then for i := 0 to spanCount - 1 do begin
+        spans[i].slot := frameCount;
+        inc(frameCount, spans[i].limit - spans[i].first);
+    end;
+    lowFrames := slotAt($100000);
+end;
+
 procedure setAvailable(base, bytes: uint64; available: boolean);
 var
-    first, last, i, mask: uint32;
+    first, last, i: uint64;
+    mask: uint32;
     finish: uint64;
 begin
     finish := regionEnd(base, bytes);
-    if (base >= finish) or (base >= uint64(frameCount) * FRAME_SIZE) then exit;
+    if base >= finish then exit;
     if available then begin
         first := (base + FRAME_SIZE - 1) div FRAME_SIZE;
         last := finish div FRAME_SIZE;
@@ -75,7 +167,8 @@ begin
         first := base div FRAME_SIZE;
         last := (finish + FRAME_SIZE - 1) div FRAME_SIZE;
     end;
-    if last > frameCount then last := frameCount;
+    first := slotAt(first);
+    last := slotAt(last);
     if first >= last then exit;
     for i := first to last - 1 do begin
         mask := uint32(1) shl (i and 31);
@@ -115,6 +208,7 @@ var
     end;
 begin
     next := candidate;
+    if spans <> nil then preserve(PtrUInt(spans), descriptorBytes);
     preserve(0, $1000000); { legacy low-memory devices and firmware }
     preserve(0, PtrUInt(@kernelEnd));
     preserve(PtrUInt(info), 4096);
@@ -193,7 +287,7 @@ end;
 procedure init(info: Pmultiboot_info_t);
 var
     e: Pmemory_map_t;
-    limit, bytes, storage: uint64;
+    bytes, storage: uint64;
     entries: uint32;
     mapStart, mapEnd: PtrUInt;
 begin
@@ -202,7 +296,7 @@ begin
        (uint64(info^.mmap_addr) + info^.mmap_length > $100000000) then fail('invalid map length');
     mapStart := info^.mmap_addr;
     mapEnd := mapStart + info^.mmap_length;
-    limit := 0;
+    physicalLimit := uint64(1) shl physicalBits;
     entries := 0;
     e := Pmemory_map_t(mapStart);
     while PtrUInt(e) < mapEnd do begin
@@ -210,11 +304,19 @@ begin
            (uint64(e^.size) + 4 > mapEnd - PtrUInt(e)) then fail('malformed map entry');
         inc(entries);
         if entries > 4096 then fail('too many map entries');
-        if (e^.mtype = 1) and (e^.length <> 0) and (e^.base_addr < MAX_MANAGED) then
-            if regionEnd(e^.base_addr, e^.length) > limit then limit := regionEnd(e^.base_addr, e^.length);
         e := nextEntry(e);
     end;
-    frameCount := limit div FRAME_SIZE;
+    descriptorBytes := (uint64(entries) * sizeof(TSpan) + FRAME_SIZE - 1) and not uint64(FRAME_SIZE - 1);
+    storage := metadataAddress(info, descriptorBytes);
+    if storage = 0 then fail('no low RAM for frame spans');
+    spans := PSpan(PtrUInt(storage));
+    spanCount := 0;
+    e := Pmemory_map_t(mapStart);
+    while PtrUInt(e) < mapEnd do begin
+        if e^.mtype = 1 then addSpan(e^.base_addr, e^.length);
+        e := nextEntry(e);
+    end;
+    indexSpans;
     if frameCount = 0 then fail('no usable RAM');
     wordCount := (frameCount + 31) div 32;
     bytes := (uint64(wordCount) * 8 + FRAME_SIZE - 1) and not uint64(FRAME_SIZE - 1);
@@ -239,14 +341,15 @@ begin
     setAvailable(storage, bytes, false);
     hint := 0;
     field('PMM_FREE_FRAMES', freeFrames);
-    field('PMM_MANAGED_LIMIT', uint64(frameCount) * FRAME_SIZE);
+    field('PMM_MANAGED_LIMIT', spans[spanCount - 1].limit * FRAME_SIZE);
     field('PMM_METADATA', storage);
 end;
 
-function allocateBetween(first, last: uint32): uint64;
+function allocateBetween(first, last: uint64): uint64;
 var
     saved: PtrUInt;
-    pass, start, finish, idx, bits, mask, bit: uint32;
+    start, finish, idx: uint64;
+    pass, bits, mask, bit: uint32;
 begin
     allocateBetween := 0;
     saved := lockIRQ;
@@ -263,17 +366,17 @@ begin
                 if bits <> 0 then begin
                     bit := 0;
                     while (bits and (uint32(1) shl bit)) = 0 do inc(bit);
-                    idx := (idx and not uint32(31)) + bit;
+                    idx := (idx and not uint64(31)) + bit;
                     if idx >= finish then break;
                     mask := uint32(1) shl bit;
                     used[idx shr 5] := used[idx shr 5] or mask;
                     dec(freeFrames);
                     hint := idx + 1;
-                    allocateBetween := uint64(idx) * FRAME_SIZE;
+                    allocateBetween := physicalFrame(idx) * FRAME_SIZE;
                     unlockIRQ(saved);
                     exit;
                 end;
-                idx := (idx and not uint32(31)) + 32;
+                idx := (idx and not uint64(31)) + 32;
             end;
             finish := start;
             start := first;
@@ -284,17 +387,23 @@ end;
 
 function alloc_page(lowOnly: boolean): uint64;
 begin
-    if lowOnly then alloc_page := allocateBetween(0, $100000)
+    if lowOnly then alloc_page := allocateBetween(0, lowFrames)
     else alloc_page := allocateBetween(0, frameCount);
 end;
 
 function findLowRun(first, limit, pages: uint32): uint32;
-var i, run, bits: uint32;
+var i, run, bits, span: uint32;
 begin
     findLowRun := High(uint32);
+    if first >= limit then exit;
+    span := spanForSlot(first);
     run := 0;
     i := first;
     while i < limit do begin
+        while (span + 1 < spanCount) and (spans[span + 1].slot <= i) do begin
+            inc(span);
+            run := 0;
+        end;
         bits := eligible[i shr 5] and not used[i shr 5];
         if bits = 0 then begin
             i := (i and not uint32(31)) + 32;
@@ -322,12 +431,11 @@ begin
         alloc_low_run := alloc_page(true);
         exit;
     end;
-    limit := frameCount;
-    if limit > $100000 then limit := $100000;
+    limit := lowFrames;
     if (pages = 0) or (pages > limit) then exit;
     saved := lockIRQ;
-    first := hint;
-    if first >= limit then first := 0;
+    first := 0;
+    if hint < limit then first := hint;
     start := findLowRun(first, limit, pages);
     if (start = High(uint32)) and (first > 0) then begin
         endOfPrefix := first + pages - 1;
@@ -339,25 +447,30 @@ begin
             used[i shr 5] := used[i shr 5] or (uint32(1) shl (i and 31));
         dec(freeFrames, pages);
         hint := start + pages;
-        alloc_low_run := uint64(start) * FRAME_SIZE;
+        alloc_low_run := physicalFrame(start) * FRAME_SIZE;
     end;
     unlockIRQ(saved);
 end;
 
 function alloc_high: uint64;
 begin
-    alloc_high := allocateBetween($100000, frameCount);
+    alloc_high := allocateBetween(lowFrames, frameCount);
 end;
 
 function free_page(address: uint64): boolean;
 var
-    idx, mask: uint32;
+    idx: uint64;
+    mask: uint32;
     saved: PtrUInt;
 begin
     free_page := false;
-    if (address and (FRAME_SIZE - 1) <> 0) or (address div FRAME_SIZE >= frameCount) then exit;
+    if (address and (FRAME_SIZE - 1) <> 0) or (address >= physicalLimit) then exit;
     saved := lockIRQ;
-    idx := address div FRAME_SIZE;
+    idx := slotAt(address div FRAME_SIZE);
+    if (idx = frameCount) or (physicalFrame(idx) <> address div FRAME_SIZE) then begin
+        unlockIRQ(saved);
+        exit;
+    end;
     mask := uint32(1) shl (idx and 31);
     if ((eligible[idx shr 5] and used[idx shr 5]) and mask) <> 0 then begin
         used[idx shr 5] := used[idx shr 5] and not mask;
@@ -370,14 +483,13 @@ end;
 
 function reserve_range(address, bytes: uint64): boolean;
 var
-    first, last, i: uint32;
+    first, last, i: uint64;
     saved: PtrUInt;
 begin
     reserve_range := false;
-    if (bytes = 0) or (address >= MAX_MANAGED) or (bytes > MAX_MANAGED - address) then exit;
-    first := address div FRAME_SIZE;
-    last := (address + bytes + FRAME_SIZE - 1) div FRAME_SIZE;
-    if last > frameCount then last := frameCount;
+    if (bytes = 0) or (address >= physicalLimit) or (bytes > physicalLimit - address) then exit;
+    first := slotAt(address div FRAME_SIZE);
+    last := slotAt((address + bytes + FRAME_SIZE - 1) div FRAME_SIZE);
     saved := lockIRQ;
     if first < last then for i := first to last - 1 do
         if (used[i shr 5] and (uint32(1) shl (i and 31))) <> 0 then begin
@@ -400,6 +512,70 @@ begin
 end;
 
 {$ifdef UNIT_TESTS}
+{ Exercise the real PMM on a private bitmap with interrupts masked. Only
+  metadata is accessed; fixture frame addresses never enter a page table. }
+function testSparseFrames: boolean;
+const
+    boundary = uint64(64) shl 30;
+    distant = uint64(1) shl 46;
+var
+    localSpans: array[0..3] of TSpan;
+    localEligible, localUsed: uint32;
+    saved: PtrUInt;
+    priorSpans: PSpan;
+    priorCount: uint32;
+    priorEligible, priorUsed: PUInt32;
+    priorLimit, priorFrames, priorLow, priorFree, priorHint: uint64;
+    a, b, c: uint64;
+begin
+    saved := lockIRQ;
+    priorSpans := spans;
+    priorCount := spanCount;
+    priorEligible := eligible;
+    priorUsed := used;
+    priorLimit := physicalLimit;
+    priorFrames := frameCount;
+    priorLow := lowFrames;
+    priorFree := freeFrames;
+    priorHint := hint;
+    spans := @localSpans[0];
+    spanCount := 0;
+    physicalLimit := distant * 2;
+    addSpan(distant, FRAME_SIZE);
+    addSpan(boundary, FRAME_SIZE * 2);
+    addSpan(boundary - FRAME_SIZE, FRAME_SIZE * 2);
+    addSpan($1000000, FRAME_SIZE);
+    addSpan($2000000, FRAME_SIZE);
+    indexSpans;
+    eligible := @localEligible;
+    used := @localUsed;
+    localEligible := 0;
+    localUsed := 0;
+    freeFrames := 0;
+    hint := 0;
+    setAvailable(0, physicalLimit, true);
+    testSparseFrames := (frameCount = 6) and (alloc_low_run(2) = 0)
+        and reserve_range(boundary + FRAME_SIZE + 1, 1);
+    a := alloc_high;
+    b := alloc_high;
+    c := alloc_high;
+    testSparseFrames := testSparseFrames and (a = boundary - FRAME_SIZE)
+        and (b = boundary) and (c = distant) and (alloc_high = 0)
+        and not reserve_range(b, 1) and not free_page(distant - FRAME_SIZE)
+        and free_page(b) and (alloc_high = b) and free_page(a)
+        and free_page(b) and free_page(c) and (freeFrames = 5);
+    spans := priorSpans;
+    spanCount := priorCount;
+    eligible := priorEligible;
+    used := priorUsed;
+    physicalLimit := priorLimit;
+    frameCount := priorFrames;
+    lowFrames := priorLow;
+    freeFrames := priorFree;
+    hint := priorHint;
+    unlockIRQ(saved);
+end;
+
 function testBootModuleGap: boolean;
 type
     PFixture = ^TFixture;

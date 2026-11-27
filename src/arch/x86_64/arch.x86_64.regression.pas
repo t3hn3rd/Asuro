@@ -113,6 +113,7 @@ begin
     test.harness.Finish(@ctx);
     {$ifdef UNIT_TESTS}
     test.harness.Start(@ctx, 'arch.x86_64.memory.physical');
+    test.harness.Assert(@ctx, testSparseFrames, 'PMM allocates sparse high RAM across 64 GiB and preserves DMA32 boundaries');
     test.harness.Assert(@ctx, testBootModuleGap, 'PMM fits bitmaps between firmware and high boot module');
     test.harness.Finish(@ctx);
     {$endif}
