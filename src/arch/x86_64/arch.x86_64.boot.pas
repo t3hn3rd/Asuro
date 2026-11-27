@@ -182,6 +182,7 @@ var
 begin
     boot.multiboot.multibootinfo := Pmultiboot_info_t(info);
     arch.x86_64.debug.init;
+    driver.io.serial.initSecondaryPorts;
     arch.x86_64.isr.init;
     io.syslog.init;
     system.init;

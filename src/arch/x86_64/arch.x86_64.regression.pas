@@ -23,7 +23,7 @@ implementation
 
 uses
     test.harness, debug.tracer, arch.platform.diagnostics, io.stdio, arch.platform.interrupts, driver.storage.ctl.ahci, driver.bus.usb.ohci, arch.platform.cpu, driver.bus.pci, driver.bus.usb.core,
-    driver.storage.types, driver.storage.fs.mgr, driver.storage.mgr, driver.storage.vfs,
+    driver.io.serial, driver.storage.types, driver.storage.fs.mgr, driver.storage.mgr, driver.storage.vfs,
     driver.storage.perftest, memory.heap, proc.mgr, debug.early,
     {$ifdef ASURO_TEST_STORAGE}arch.x86_64.irq, driver.dma,{$endif}
     arch.x86_64.memory.physical, arch.x86_64.memory.virtual;
@@ -63,6 +63,27 @@ begin
     if not free_page(frame) then bootstrap_halt;
 end;
 
+procedure checkSecondaryPort(var ctx: TTestContext; port: uint16; name: pchar);
+var
+    saved: PtrUInt;
+    lineControl, lowDivisor, highDivisor: uint8;
+begin
+    lineControl := sinb(port + 3);
+    if (lineControl = $FF) and (sinb(port + 5) = $FF) then begin
+        puts('SKIP: UART absent ');
+        puts(name);
+        puts(#13#10);
+        exit;
+    end;
+    saved := arch.platform.cpu.lock;
+    soutb(port + 3, lineControl or $80);
+    lowDivisor := sinb(port);
+    highDivisor := sinb(port + 1);
+    soutb(port + 3, lineControl);
+    arch.platform.cpu.unlock(saved);
+    test.harness.Assert(@ctx, (lineControl = 3) and (lowDivisor = 3) and (highDivisor = 0), name);
+end;
+
 procedure UnitTest;
 var
     ctx: TTestContext;
@@ -70,6 +91,11 @@ var
     retained: boolean;
 const marker: pchar = 'trace adapter test';
 begin
+    test.harness.Start(@ctx, 'driver.io.serial');
+    checkSecondaryPort(ctx, COM2, 'COM2');
+    checkSecondaryPort(ctx, COM3, 'COM3');
+    checkSecondaryPort(ctx, COM4, 'COM4');
+    test.harness.Finish(@ctx);
     test.harness.Start(@ctx, 'arch.x86_64.diagnostics');
     test.harness.Assert(@ctx, (findCommand('TRACER') <> nil) and (findCommand('BSOD') <> nil)
         and (findCommand('DIV0') <> nil) and (findCommand('PF') <> nil)

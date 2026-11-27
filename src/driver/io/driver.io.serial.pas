@@ -1,4 +1,5 @@
 //  Copyright 2021 Kieron Morris
+//  Copyright 2026 Aaron Hance
 //
 //  Licensed under the Apache License, Version 2.0 (the "License");
 //  you may not use this file except in compliance with the License.
@@ -31,6 +32,7 @@ const
     COM4 = $2E8;
 
 procedure init();
+procedure initSecondaryPorts;
 function receive(PORT : uint16; timeout : uint32) : uint8;
 function send(PORT : uint16; data : uint8; timeout : uint32) : boolean;
 function sendString(str : pchar) : boolean;
@@ -70,12 +72,17 @@ begin
     soutb(PORT + 4, $0B);
 end;
 
-procedure init();
+procedure initSecondaryPorts;
 begin
-    initPort(COM1);
     initPort(COM2);
     initPort(COM3);
     initPort(COM4);
+end;
+
+procedure init();
+begin
+    initPort(COM1);
+    initSecondaryPorts;
 end;
 
 function serial_received(PORT : uint16) : uint32;
