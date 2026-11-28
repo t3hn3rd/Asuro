@@ -34,6 +34,7 @@ uses
     arch.common.power,
     {$ENDIF}
     {$if defined(CPUX86_64) and defined(UNIT_TESTS)}arch.x86_64.regression,{$endif}
+    {$if defined(CPUX86_64) and defined(UNIT_TESTS_COMPLEX)}arch.x86_64.test.storage,{$endif}
     core.strings,
     core.strings.helpers,
     core.ds.lists,
@@ -139,6 +140,7 @@ begin
     driver.storage.bench.UnitTest;
     driver.storage.metatest.UnitTest;
     driver.storage.perftest.UnitTest;
+    {$if defined(CPUX86_64) and defined(UNIT_TESTS_COMPLEX)}arch.x86_64.test.storage.run;{$endif}
 end;
 
 procedure finish();

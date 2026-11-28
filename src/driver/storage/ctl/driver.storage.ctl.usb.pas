@@ -24,12 +24,16 @@
 unit driver.storage.ctl.usb;
 
 interface
+{$ifdef UNIT_TESTS_COMPLEX}
+procedure watchStaging(caller: pointer);
+function stagedBytes: uint32;
+{$endif}
 procedure init;
 procedure UnitTest;
 
 implementation
 
-uses {$ifdef ASURO_TEST_STORAGE}core.clock,{$endif} driver.mgr, memory.heap, driver.storage.types,
+uses {$ifdef UNIT_TESTS_COMPLEX}driver.dma,{$endif} {$ifdef ASURO_TEST_STORAGE}core.clock,{$endif} driver.mgr, memory.heap, driver.storage.types,
      driver.storage.mgr, driver.bus.usb.core, driver.bus.usb.types,
      proc.mgr, proc.types, arch.common.legacyirq, arch.platform.process, arch.platform.interrupts,
      core.util, arch.platform.cpu, io.syslog, io.stdio, core.strings,
@@ -330,6 +334,22 @@ begin
     submit_bulk(c, c^.InEP, @c^.CSW, sizeof(TCSW));
 end;
 
+{$ifdef UNIT_TESTS_COMPLEX}
+var watchedCaller: pointer;
+    watchedBytes: uint32;
+
+procedure watchStaging(caller: pointer);
+begin
+    watchedCaller := caller;
+    watchedBytes := 0;
+end;
+
+function stagedBytes: uint32;
+begin
+    stagedBytes := watchedBytes;
+end;
+{$endif}
+
 procedure bot_data(c : PMSDevice);
 var ep : PUSBEndpoint; count, limit : uint32; buffer : pointer;
 begin
@@ -357,6 +377,12 @@ begin
         memcpy(PtrUInt(c^.Request^.Buffer) + c^.RequestOffset + c^.DataOffset,
                PtrUInt(buffer), count);
     c^.Phase := bpData;
+    {$ifdef UNIT_TESTS_COMPLEX}
+    if (watchedCaller <> nil) and (c^.RequestPhase = rpData) and
+       (c^.Request^.Buffer = watchedCaller) and (c^.USB^.HC^.HCType = USB_HC_OHCI) and
+       (buffer <> watchedCaller) and (driver.dma.reach32(PtrUInt(buffer), count) = dmaDirect) then
+        inc(watchedBytes, count);
+    {$endif}
     submit_bulk(c, ep, buffer, count);
 end;
 
