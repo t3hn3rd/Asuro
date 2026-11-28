@@ -9,7 +9,7 @@ procedure Put16(p : pointer; offset : uint32; value : uint16);
 procedure Put32(p : pointer; offset, value : uint32);
 function HasSuper(group, features : uint32) : boolean;
 function Identify(volume : PStorage_Volume) : boolean;
-procedure ReleaseVolume(volume : PStorage_Volume);
+function ReleaseVolume(volume : PStorage_Volume): TError;
 function BeginOp(volume : PStorage_Volume) : PExt2Op;
 procedure EndOp(op : PExt2Op);
 function BeginMutation(op : PExt2Op) : boolean;
@@ -32,7 +32,7 @@ function Transfer(volume : PStorage_Volume; fileCtx : PExt2File; offset : uint32
                   buffer : puint32; count : uint32; writing : boolean; var error : TError) : uint32;
 function OpenFile(volume : PStorage_Volume; directory, name : pchar;
                   allowCreate : boolean; var size : uint32) : pointer;
-procedure CloseFile(ctx : pointer);
+function CloseFile(ctx : pointer): TError;
 procedure FreeEntries(entries : PLinkedListBase);
 
 implementation
@@ -304,9 +304,10 @@ begin
     Identify := true;
 end;
 
-procedure ReleaseVolume(volume : PStorage_Volume);
+function ReleaseVolume(volume : PStorage_Volume): TError;
 var v : PExt2Volume;
 begin
+    ReleaseVolume := eNone;
     if volume = nil then exit;
     v := PExt2Volume(volume^.fsPrivate);
     if v = nil then exit;
@@ -838,11 +839,13 @@ begin
     EndOp(op);
 end;
 
-procedure CloseFile(ctx : pointer);
+function CloseFile(ctx : pointer): TError;
 var f, cur, prev : PExt2File; op : PExt2Op;
 begin
+    CloseFile := eNone;
     f:=PExt2File(ctx); if f=nil then exit;
-    op:=BeginOp(f^.Volume^.Volume); if op=nil then exit;
+    op:=BeginOp(f^.Volume^.Volume);
+    if op=nil then begin CloseFile := eDeviceNotReady; exit; end;
     prev:=nil; cur:=op^.V^.Files;
     while cur<>nil do begin
         if cur=f then begin

@@ -1,4 +1,4 @@
-"""Run the native FAT32 differential on disposable VirtualBox disks (Windows + WSL)."""
+"""Run the native storage differential on disposable VirtualBox disks (Windows + WSL)."""
 import argparse
 from contextlib import contextmanager
 from pathlib import Path
@@ -34,15 +34,19 @@ def expected(worker, size):
                  for p in range(size))
 
 
-def fixture(folder, high, serial):
-    part = folder / "fat.raw"
+def fixture(folder, high, serial, filesystem):
+    part = folder / "partition.raw"
     with part.open("wb") as f:
         f.truncate(SECTORS * 512)
-    wsl("mkfs.fat", "-F", "32", "-s", "1", "-n", "ASURODIFF", "-h", "2048", linux(part))
+    if filesystem == "ext2":
+        wsl("mkfs.ext2", "-F", "-b", "4096", "-I", "128", "-O", "none,filetype,sparse_super",
+            "-L", "ASURODIFF", linux(part))
+    else:
+        wsl("mkfs.fat", "-F", "32", "-s", "1", "-n", "ASURODIFF", "-h", "2048", linux(part))
     raw = folder / "disk.raw"
     mbr = bytearray(512)
     mbr[:10] = b"ASRODIF1" + bytes([high, serial])
-    struct.pack_into("<B3xB3xII", mbr, 446, 0, 0x0c, 2048, SECTORS)
+    struct.pack_into("<B3xB3xII", mbr, 446, 0, 0x83 if filesystem == "ext2" else 0x0c, 2048, SECTORS)
     mbr[510:] = b"\x55\xaa"
     with raw.open("wb") as dst, part.open("rb") as src:
         dst.write(mbr)
@@ -52,13 +56,26 @@ def fixture(folder, high, serial):
     return raw
 
 
-def verify_disk(folder, vdi):
+def verify_disk(folder, vdi, filesystem):
     raw = folder / "result.raw"
     command("VBoxManage", "clonemedium", "disk", vdi, raw, "--format", "RAW")
     command("VBoxManage", "closemedium", "disk", raw)
+    if filesystem == "fat32":
+        with raw.open("rb") as disk:
+            disk.seek(PARTITION)
+            boot = disk.read(512)
+            sector_size, _, reserved, copies = struct.unpack_from("<HBHB", boot, 11)
+            fat_bytes = sector_size * struct.unpack_from("<I", boot, 36)[0]
+            if copies < 2 or not fat_bytes:
+                raise RuntimeError("fixture requires mirrored FATs")
+            disk.seek(PARTITION + reserved * sector_size)
+            primary = disk.read(fat_bytes)
+            for _ in range(1, copies):
+                if len(primary) != fat_bytes or disk.read(fat_bytes) != primary:
+                    raise RuntimeError("offline FAT copies differ")
     mount = wsl("mktemp", "-d")
     try:
-        wsl("mount", "-t", "vfat", "-o", f"ro,loop,offset={PARTITION}", linux(raw), mount)
+        wsl("mount", "-t", "ext2" if filesystem == "ext2" else "vfat", "-o", f"ro,loop,offset={PARTITION}", linux(raw), mount)
         try:
             errors = []
             for worker, name in enumerate(("WORKA.BIN", "WORKB.BIN")):
@@ -101,13 +118,13 @@ def scratch_folder():
                 time.sleep(0.5)
 
 
-def case(iso, results, controller, high, serial):
+def case(iso, results, controller, high, serial, filesystem):
     tag = f"{controller}-{'high' if high else 'low'}"
     log = results / (tag + ".log")
     with scratch_folder() as folder:
         machine = "asuro-diff-" + uuid.uuid4().hex
         vdi = folder / "fixture.vdi"
-        raw = fixture(folder, high, serial)
+        raw = fixture(folder, high, serial, filesystem)
         command("VBoxManage", "createvm", "--name", machine, "--ostype", "Linux_64",
                 "--basefolder", folder, "--register")
         started = False
@@ -141,9 +158,11 @@ def case(iso, results, controller, high, serial):
             started = False
             # Read files even after a guest failure to distinguish persisted
             # corruption from a transient read or descriptor problem.
-            verify_disk(folder, vdi)
+            verify_disk(folder, vdi, filesystem)
             if "DIFF_PASS" not in trace or f"DIFF_HIGH={int(high):016X}" not in trace:
                 raise RuntimeError("missing guest pass or wrong placement")
+            if f"DIFF_FS={filesystem.upper()}\n" not in trace:
+                raise RuntimeError("unexpected guest filesystem")
             expected_controller = 2 if controller == "ohci" else 3
             if (f"DIFF_SERIAL={int(serial):016X}" not in trace or
                     f"DIFF_CONTROLLER={expected_controller:016X}" not in trace):
@@ -161,15 +180,16 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--iso", type=Path, default=ROOT / "build/x86_64/test-complex/Asuro.iso")
     parser.add_argument("--controller", choices=("ahci", "ohci", "both"), default="both")
+    parser.add_argument("--filesystem", choices=("fat32", "ext2"), default="fat32")
     parser.add_argument("--serial", action="store_true", help="run one file worker at a time")
     args = parser.parse_args()
-    results = Path(tempfile.mkdtemp(prefix="storage-diff-", dir=args.iso.resolve().parent))
+    results = Path(tempfile.mkdtemp(prefix=f"storage-diff-{args.filesystem}-", dir=args.iso.resolve().parent))
     print("Serial logs:", results, flush=True)
     failures = []
     for ctl in ("ahci", "ohci") if args.controller == "both" else (args.controller,):
         for high in (False, True):
             try:
-                case(args.iso.resolve(), results, ctl, high, args.serial)
+                case(args.iso.resolve(), results, ctl, high, args.serial, args.filesystem)
             except (OSError, subprocess.CalledProcessError, RuntimeError) as exc:
                 print(ctl, "high" if high else "low", "FAIL", exc, getattr(exc, "stderr", ""), flush=True)
                 failures.append((ctl, high))

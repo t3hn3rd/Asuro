@@ -66,6 +66,81 @@ var
     err : TError;
     context : TTestContext;
 
+    procedure TestFATDirectoryErrors;
+    var root: PDirectory;
+        primary, secondary: puint32;
+        boot: PBootRecord;
+        status, beforeWrites: uint32;
+
+        procedure makeEntry(idx: uint32; shortName: pchar; cluster: uint32; attr: uint8);
+        begin
+            memcpy(PtrUInt(shortName), PtrUInt(@root[idx].fileName[0]), 11);
+            root[idx].clusterLow := cluster;
+            root[idx].attributes := attr;
+            root[idx].byteSize := 1;
+        end;
+    begin
+        FAT32ReleaseVolumeCtx(volume);
+        memset(PtrUInt(mock^.Data), 0, 128 * 512);
+        volume^.sectorStart := 0;
+        volume^.sectorCount := 128;
+        if create_volume(volume, 128, 0, @params) <> eNone then begin
+            test.harness.Assert(@context, false, 'format mirrored FAT fixture');
+            exit;
+        end;
+        boot := PBootRecord(mock^.Data);
+        boot^.numFats := 2;
+        boot^.spc := 1;
+        primary := puint32(PtrUInt(mock^.Data) + 32 * 512);
+        secondary := puint32(PtrUInt(primary) + 512);
+        root := PDirectory(PtrUInt(secondary) + 512);
+        memset(PtrUInt(root), 0, 512);
+        primary[3] := $0FFFFFFF;
+        primary[4] := $0FFFFFFF;
+        primary[5] := $0FFFFFFF;
+        memcpy(PtrUInt(primary), PtrUInt(secondary), 512);
+        makeEntry(0, 'ONE     BIN', 3, 0);
+        makeEntry(1, 'TWO     BIN', 4, 0);
+        makeEntry(2, 'DIR        ', 5, $10);
+        mock^.Data[35 * 512] := $A7;
+        beforeWrites := mock^.Writes;
+        FAT32RenameFile(volume, 'ONE.BIN', 'two.bin', @status);
+        test.harness.Assert(@context, (status = ord(eAlreadyExists)) and (mock^.Writes = beforeWrites),
+            'rename rejects existing short name without changing directory');
+        mock^.FailWrite := mock^.Writes + 1;
+        FAT32RenameFile(volume, 'ONE.BIN', 'NEW.BIN', @status);
+        test.harness.Assert(@context, (status = ord(eIOError)) and (root[0].fileName[0] = 'O'),
+            'rename propagates sector write failure');
+        mock^.FailWrite := mock^.Writes + 1;
+        FAT32DeleteFile(volume, 'ONE.BIN', @status);
+        test.harness.Assert(@context, (status = ord(eIOError)) and (root[0].fileName[0] = 'O') and
+            (primary[3] = $0FFFFFFF) and (mock^.Data[35 * 512] = $A7), 'failed unlink retains entry, allocation and content');
+        mock^.FailWrite := 0;
+        mock^.FailReadLBA := 37;
+        beforeWrites := mock^.Writes;
+        FAT32DeleteDir(volume, 'DIR', @status);
+        test.harness.Assert(@context, (status = ord(eIOError)) and (mock^.Writes = beforeWrites) and
+            (primary[5] = $0FFFFFFF), 'rmdir refuses an unreadable child sector');
+        mock^.FailReadLBA := 0;
+        mock^.FailWrite := mock^.Writes + 3;
+        FAT32DeleteFile(volume, 'ONE.BIN', @status);
+        test.harness.Assert(@context, (status = ord(eIOError)) and (root[0].fileName[0] = char($E5)) and
+            (primary[3] = 0) and (secondary[3] = $0FFFFFFF), 'failed mirror write reported after unlink');
+        mock^.FailWrite := mock^.Writes + 1;
+        test.harness.Assert(@context, FAT32ReleaseVolumeCtx(volume) = eIOError,
+            'release retains dirty cache when retry fails');
+        mock^.FailWrite := 0;
+        test.harness.Assert(@context, (FAT32Flush(volume) = eNone) and (secondary[3] = 0),
+            'flush retry completes all FAT copies');
+        FAT32ReleaseVolumeCtx(volume);
+        boot^.flags := $81;
+        primary[4] := $0FFFFFF7;
+        FAT32DeleteFile(volume, 'TWO.BIN', @status);
+        test.harness.Assert(@context, (status = ord(eNone)) and (secondary[4] = 0) and
+            (primary[4] = $0FFFFFF7), 'active FAT used for reads and writes when mirroring disabled');
+        FAT32ReleaseVolumeCtx(volume);
+    end;
+
     procedure FileRoundTrip(name: pchar);
     var
         fs, sourceFS: PFilesystem;
@@ -130,6 +205,17 @@ var
                     test.harness.Assert(@context, matches, 'read-back bytes match written pattern');
                     test.harness.Assert(@context, FileSizeFromHandle(handle) = 8192, 'reopened file size persists');
                     test.harness.Assert(@context, CloseFile(handle) = eNone, 'close read file');
+                end;
+            end;
+            if stringEquals(name, 'FAT32') then begin
+                handle := OpenFile('/__storage_roundtrip__/FAULT.BIN', omCreate, @error);
+                test.harness.Assert(@context, error = eNone, 'open writeback failure fixture');
+                if error = eNone then begin
+                    test.harness.Assert(@context, WriteFile(handle, 0, data, 512) = 512, 'prepare dirty file');
+                    mock^.FailWrite := mock^.Writes + 1;
+                    test.harness.Assert(@context, CloseFile(handle) = eIOError, 'VFS close reports failed FAT writeback');
+                    mock^.FailWrite := 0;
+                    test.harness.Assert(@context, FAT32Flush(volume) = eNone, 'dirty FAT can be retried after close error');
                 end;
             end;
             kfree(void(data));
@@ -344,6 +430,7 @@ begin
         mock^.FailReadLBA := 1;
         test.harness.Assert(@context, identify_volume(volume),'optional FSInfo read failure does not prevent mount');
         mock^.FailReadLBA := 0;
+        TestFATDirectoryErrors;
         FileRoundTrip('FAT32');
         FileRoundTrip('EXT2');
     end else test.harness.Assert(@context, false,'allocate multi-batch FAT fixture');

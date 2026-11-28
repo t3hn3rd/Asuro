@@ -22,3 +22,9 @@ Each worker verifies all 33 physical pages of its high virtual buffer are in the
 On 2026-11-27, all four serialized cases passed. All four concurrent cases failed on the same ISO. One worker's first 4095-byte read returned zero after a successful write and close. The other worker's file matched in full. Offline inspection found the affected file empty or missing. The failure reproduced with both controllers and both physical placements. In traced AHCI runs with both physical placements, FAT32EnsureDirEntry selected slot 1 of root directory sector 0x1002 for both files. Both creates wrote a full sector from a private snapshot. When WORKA.BIN closed, its saved slot already held WORKB.BIN, and FAT32CloseFile updated that entry with the first file's size and starting cluster. The host found WORKA.BIN missing in both runs.
 
 After the FAT32 metadata locking fix on 2026-11-28, all four concurrent cases passed. On AHCI and OHCI, with both low and high physical backing, each guest reopened and verified both files. The host independently verified all 143361 bytes of each file after shutdown.
+
+### Ext2 coverage
+
+Run `python tools/test-storage-differential.py --filesystem ext2` to repeat the concurrent workload on an ext2 partition created with WSL Ubuntu's `mkfs.ext2`. The fixture uses 4 KiB blocks, 128-byte inodes and the filetype and sparse_super features. The runner checks the filesystem reported by the guest and independently mounts the result as ext2, read-only. FAT32 remains the default.
+
+On 2026-11-28 all four concurrent ext2 cases passed on x86-64, covering AHCI and OHCI with both low and high physical backing. Both files matched all 143361 expected bytes after shutdown in every case.

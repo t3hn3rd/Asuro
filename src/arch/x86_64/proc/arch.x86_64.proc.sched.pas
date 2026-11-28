@@ -18,7 +18,7 @@ procedure init;
 procedure UnitTest;
 
 implementation
-uses proc.mgr, proc.types, io.stdio, core.strings, driver.storage.fdtable, arch.x86_64.context, arch.x86_64.util,
+uses driver.storage.types, proc.mgr, proc.types, io.stdio, core.strings, driver.storage.fdtable, arch.x86_64.context, arch.x86_64.util,
      arch.x86_64.irq, arch.common.legacyirq, memory.heap, memory.raw,
      core.ds.dynamic, debug.early;
 var
@@ -79,8 +79,9 @@ begin
     inc(forbidden);
 end;
 
-procedure closeChildFD(data: pointer);
+function closeChildFD(data: pointer): TError;
 begin
+    closeChildFD := eNone;
     inc(fdReleased);
     kfree(void(data));
 end;

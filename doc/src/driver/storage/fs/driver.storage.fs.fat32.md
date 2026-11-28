@@ -122,3 +122,11 @@ Not used for FAT32 on partitioned disks (partition table parsing is handled by t
 Each mounted FAT32 volume serializes directory mutations and cluster allocation or release. A file creator holds the volume's metadata lock from slot selection through completion of the directory-sector write. Closing a dirty file takes the same lock while trimming the cluster chain and updating the directory entry. File payload transfers run outside the lock.
 
 The [native storage differential](../../../arch/x86_64/memory.md#fat32-high-memory-differential) exercises two writers creating separate files in one directory and checks both files after shutdown.
+
+## Metadata I/O failures
+
+File and directory deletion write the deleted directory entry before releasing its clusters. Failure to write the parent directory leaves the entry and cluster chain intact. Failure during subsequent chain cleanup can leave orphaned clusters and is reported to the caller. Removing a directory requires a successful emptiness scan. Renaming to an existing short name returns `eAlreadyExists`.
+
+Dirty FAT sectors remain eligible for retry until all required copies have been written. A volume with mirroring disabled uses the active FAT selected in the boot record. Explicit VFS close reports filesystem writeback errors, and a failed flush prevents normal volume release.
+
+For quick native checks, run `python tools/test-storage-differential.py --controller ahci`. The full run also exercises OHCI. The FAT32 runner checks both file contents and equality of the mirrored FATs on the offline image.

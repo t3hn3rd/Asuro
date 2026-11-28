@@ -86,6 +86,7 @@ function  fd_has_async(entry : PFileDescriptor) : boolean;
 { Close a single file descriptor: free its buffers and core.strings,
   mark the slot as not-in-use.
   Returns true if the handle was valid and open, false otherwise. }
+function fd_close_checked(table: PFDTable; handle: uint32): TError;
 function  fd_close(table : PFDTable; handle : uint32) : boolean;
 
 { Close ALL open file descriptors in the table.
@@ -119,23 +120,21 @@ begin
     fd_table_new := PFDTable(kalloc(SizeOf(TFDTable)));
 end;
 
-type
-    TFSPrivateClose = procedure(data : pointer);
-
-procedure releaseEntry(entry: PFileDescriptor);
+function releaseEntry(entry: PFileDescriptor): TError;
 var
     data: pointer;
-    hook: TFSPrivateClose;
+    hook: PPCloseFileHook;
     flags: PtrUInt;
     wake: boolean;
 begin
     { Entry is already claimed under IRQ exclusion. Never publish it for reuse
       while its close callback can still re-enter the descriptor API. }
     data := entry^.FSPrivate;
-    hook := TFSPrivateClose(entry^.FSCloseHook);
+    hook := PPCloseFileHook(entry^.FSCloseHook);
     entry^.FSPrivate := nil;
     entry^.FSCloseHook := nil;
-    if (data <> nil) and assigned(hook) then hook(data);
+    releaseEntry := eNone;
+    if (data <> nil) and assigned(hook) then releaseEntry := hook(data);
     if entry^.Directory <> nil then kfree(void(entry^.Directory));
     if entry^.FileName <> nil then kfree(void(entry^.FileName));
     if entry^.VFSDir <> nil then kfree(void(entry^.VFSDir));
@@ -146,21 +145,21 @@ begin
     arch.platform.cpu.unlock(flags);
 end;
 
-function fd_free_entry(entry: PFileDescriptor): boolean;
+function fd_free_entry(entry: PFileDescriptor): TError;
 var
     flags: PtrUInt;
 begin
-    fd_free_entry := false;
+    fd_free_entry := eInvalidHandle;
     if entry = nil then exit;
     flags := arch.platform.cpu.lock;
     if (not entry^.InUse) or entry^.Closing or (entry^.AsyncRefs <> 0) then begin
+        if entry^.AsyncRefs <> 0 then fd_free_entry := eFileInUse;
         arch.platform.cpu.unlock(flags);
         exit;
     end;
     entry^.Closing := true;
     arch.platform.cpu.unlock(flags);
-    releaseEntry(entry);
-    fd_free_entry := true;
+    fd_free_entry := releaseEntry(entry);
 end;
 
 function fd_table_begin_close(table: PFDTable): boolean;
@@ -264,14 +263,19 @@ begin
     fd_has_async := PUInt32(@entry^.AsyncRefs)^ > 0;
 end;
 
-function fd_close(table : PFDTable; handle : uint32) : boolean;
+function fd_close_checked(table: PFDTable; handle: uint32): TError;
 begin
-    fd_close := false;
+    fd_close_checked := eInvalidHandle;
     if table = nil then exit;
     if (handle = 0) or (handle > MAX_FDS) then exit;
     if table^.Closing or table^.Entries[handle - 1].Closing then exit;
     if not table^.Entries[handle - 1].InUse then exit;
-    fd_close := fd_free_entry(@table^.Entries[handle - 1]);
+    fd_close_checked := fd_free_entry(@table^.Entries[handle - 1]);
+end;
+
+function fd_close(table : PFDTable; handle : uint32) : boolean;
+begin
+    fd_close := fd_close_checked(table, handle) = eNone;
 end;
 
 procedure fd_close_all(table : PFDTable);
@@ -302,8 +306,9 @@ var
     testHandle, testClosed: uint32;
     testReentry: boolean;
 
-procedure testClose(data: pointer);
+function testClose(data: pointer): TError;
 begin
+    testClose := eNone;
     inc(testClosed);
     testReentry := not fd_close(testTable, testHandle);
     kfree(void(data));

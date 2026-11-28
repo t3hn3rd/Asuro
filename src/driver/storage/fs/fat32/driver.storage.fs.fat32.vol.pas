@@ -94,7 +94,7 @@ begin
     while sectorIdx < sectors do begin
         batch := sectors - sectorIdx;
         if batch > 8 then batch := 8;
-        if storage_read(volume^.device, volume^.sectorStart + br^.rsvSectors + sectorIdx, batch, buffer) <> eNone then begin
+        if storage_read(volume^.device, volume^.sectorStart + FAT32FirstFAT(br) + sectorIdx, batch, buffer) <> eNone then begin
             kfree(buffer); exit;
         end;
         for entryIdx := 0 to batch * 128 - 1 do begin

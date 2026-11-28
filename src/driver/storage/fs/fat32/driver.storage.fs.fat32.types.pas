@@ -91,7 +91,7 @@ type
         Data     : puint32;
         EvictBuf : puint32;
         Busy     : boolean;
-        FatStart : uint32;
+        FatStart, CopyStride, WriteCopies: uint32;
         Device   : PStorage_Device;
     end;
 
@@ -240,7 +240,16 @@ type
 { Exclusive cluster bound, constrained by both data area and FAT capacity. }
 function FAT32ClusterLimit(br : PBootRecord) : uint32;
 
+function FAT32FirstFAT(br: PBootRecord): uint32;
+
 implementation
+
+function FAT32FirstFAT(br: PBootRecord): uint32;
+begin
+    FAT32FirstFAT := br^.rsvSectors;
+    if (br^.flags and $80) <> 0 then
+        inc(FAT32FirstFAT, (br^.flags and $F) * br^.FATSize);
+end;
 
 function FAT32ClusterLimit(br : PBootRecord) : uint32;
 var overhead, total, capacity, limit : uint64;
@@ -250,6 +259,7 @@ begin
     if (br^.sectorSize <> 512) or (br^.spc = 0) or (br^.spc > 128) or
        ((br^.spc and (br^.spc - 1)) <> 0) or (br^.rsvSectors = 0) or
        (br^.numFats = 0) or (br^.FATSize = 0) then exit;
+    if ((br^.flags and $80) <> 0) and ((br^.flags and $F) >= br^.numFats) then exit;
     total := br^.manySectors;
     if total = 0 then total := br^.numSectors;
     overhead := uint64(br^.rsvSectors) + uint64(br^.numFats) * br^.FATSize;

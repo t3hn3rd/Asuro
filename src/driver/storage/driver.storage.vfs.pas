@@ -565,11 +565,6 @@ begin
         debug.tracer.push_trace('driver.storage.vfs.InvalidateVolume.busy');
         exit;
     end;
-    driver.storage.vol.mgr.volume_set_mounted(vol, false);
-
-    { 1. Evict all directory cache entries for this volume }
-    DirCache_Invalidate(vol, nil);
-
     { 2. Close all FDs referencing this volume across every process }
     pCount := proc.mgr.processCount();
     if pCount > 0 then begin
@@ -580,6 +575,13 @@ begin
             fd_close_for_volume(tbl, vol);
         end;
     end;
+
+    if (vol^.filesystem <> nil) and (vol^.filesystem^.releaseVolumeCallback <> nil) then
+        if vol^.filesystem^.releaseVolumeCallback(vol) <> eNone then exit;
+    driver.storage.vol.mgr.volume_set_mounted(vol, false);
+
+    { 1. Evict all directory cache entries for this volume }
+    DirCache_Invalidate(vol, nil);
 
     { 3. Remove VFS mount objects referencing this volume.
       Volumes are mounted as otDRIVE children of /disk/ and optionally /boot. }
@@ -618,10 +620,6 @@ begin
         kfree(void(bootObj));
     end;
 
-    if vol^.filesystem <> nil then begin
-        if vol^.filesystem^.releaseVolumeCallback <> nil then
-            vol^.filesystem^.releaseVolumeCallback(vol);
-    end;
 
     InvalidateVolume := true;
     debug.tracer.push_trace('driver.storage.vfs.InvalidateVolume.exit');
@@ -1465,19 +1463,9 @@ begin
 end;
 
 function CloseFile(Filehandle : TFileHandle) : TError;
-var
-    fd : PFileDescriptor;
 begin
     debug.tracer.push_trace('driver.storage.vfs.CloseFile.enter');
-    fd := fd_get(currentFDTable, FileHandle);
-    if fd = nil then
-        CloseFile := eInvalidHandle
-    else if fd_has_async(fd) then
-        CloseFile := eFileInUse
-    else if fd_close(currentFDTable, FileHandle) then
-        CloseFile := eNone
-    else
-        CloseFile := eInvalidHandle;
+    CloseFile := fd_close_checked(currentFDTable, FileHandle);
     debug.tracer.push_trace('driver.storage.vfs.CloseFile.exit');
 end;
 

@@ -16,11 +16,11 @@ uses
 
 function FAT32GetVolumeCtx(volume : PStorage_Volume) : PFATVolumeCtx;
 function FAT32GetVolumeInfo(volume : PStorage_Volume) : PFATVolumeInfo;
-procedure FAT32Flush(volume : PStorage_Volume);
-procedure FAT32ReleaseVolumeCtx(volume : PStorage_Volume);
+function FAT32Flush(volume : PStorage_Volume): TError;
+function FAT32ReleaseVolumeCtx(volume : PStorage_Volume): TError;
 
 function FAT32OpenFile(volume : PStorage_Volume; directory : pchar; fileName : pchar; var fileSize : uint32) : pointer;
-procedure FAT32CloseFile(ctx : pointer);
+function FAT32CloseFile(ctx : pointer): TError;
 function FAT32GetFileSize(volume : PStorage_Volume; directory : pchar; fileName : pchar) : uint32;
 function FAT32ReadDirectory(volume : PStorage_Volume; directory : pchar; statusOut : puint32) : PLinkedListBase;
 procedure FAT32CreateDirectory(volume : PStorage_Volume; directory : pchar; dirName : pchar; attributes : uint32; statusOut : puint32);
@@ -80,8 +80,8 @@ begin
 end;
 
 function readFat(volume : PStorage_Volume; cluster : uint32; bootRecord : PBootRecord) : uint32; forward;
-procedure writeFat(volume : PStorage_Volume; cluster : uint32; value : uint32; bootRecord : PBootRecord); forward;
-procedure fatFreeClusterChain(volume : PStorage_Volume; info : PFATVolumeInfo; startCluster : uint32); forward;
+function writeFat(volume : PStorage_Volume; cluster : uint32; value : uint32; bootRecord : PBootRecord): TError; forward;
+function fatFreeClusterChain(volume : PStorage_Volume; info : PFATVolumeInfo; startCluster : uint32): TError; forward;
 function fatInitDirectoryCluster(volume : PStorage_Volume; info : PFATVolumeInfo; cluster : uint32; parentCluster : uint32) : boolean; forward;
 
 function isEndOfChain(value : uint32) : boolean;
@@ -749,7 +749,10 @@ begin
     memset(PtrUInt(ctx^.Cache.Data), 0, FAT_CACHE_LINES * 512);
     memset(PtrUInt(ctx^.Cache.EvictBuf), 0, 512);
     ctx^.Cache.Busy := false;
-    ctx^.Cache.FatStart := volume^.sectorStart + ctx^.Info.BootRecord.rsvSectors;
+    ctx^.Cache.FatStart := volume^.sectorStart + FAT32FirstFAT(@ctx^.Info.BootRecord);
+    ctx^.Cache.CopyStride := ctx^.Info.BootRecord.FATSize;
+    ctx^.Cache.WriteCopies := ctx^.Info.BootRecord.numFats;
+    if (ctx^.Info.BootRecord.flags and $80) <> 0 then ctx^.Cache.WriteCopies := 1;
     ctx^.Cache.Device := volume^.device;
     for i := 0 to FAT_CACHE_LINES - 1 do begin
         ctx^.Cache.Lines[i].Valid := false;
@@ -812,241 +815,124 @@ begin
         FAT32GetVolumeInfo := @ctx^.Info;
 end;
 
-procedure fatCacheFlush(cache : PFATCache; volume : PStorage_Volume);
-var
-    savedIRQ: PtrUInt;
-
-    i       : uint32;
-    lba     : uint32;
-    doFlush : boolean;
+{ Caller owns Busy until all copies complete. A failed write leaves the
+  original cache line intact for a later flush or eviction retry. }
+function flushLine(cache: PFATCache; slot: uint32): TError;
+var copyIndex, lba: uint32;
+    data: puint32;
 begin
-    if cache = nil then exit;
+    flushLine := eNone;
+    if not cache^.Lines[slot].Dirty then exit;
+    data := puint32(PtrUInt(cache^.Data) + slot * 512);
+    lba := cache^.FatStart + cache^.Lines[slot].SectorIdx;
+    for copyIndex := 1 to cache^.WriteCopies do begin
+        flushLine := storage_write(cache^.Device, lba, 1, data);
+        if flushLine <> eNone then exit;
+        inc(lba, cache^.CopyStride);
+    end;
+    cache^.Lines[slot].Dirty := false;
+end;
 
-    while true do begin
-        savedIRQ := arch.platform.cpu.lock;
+procedure lockCache(cache: PFATCache);
+var flags: PtrUInt;
+begin
+    repeat
+        flags := arch.platform.cpu.lock;
         if not cache^.Busy then begin
-            Inc(cache^.Device^.Stats.FatCacheMisses);
             cache^.Busy := true;
-            arch.platform.cpu.unlock(savedIRQ);
-            break;
+            arch.platform.cpu.unlock(flags);
+            exit;
         end;
-        arch.platform.cpu.unlock(savedIRQ);
+        arch.platform.cpu.unlock(flags);
         arch.platform.cpu.idle;
-    end;
-
-    for i := 0 to FAT_CACHE_LINES - 1 do begin
-        savedIRQ := arch.platform.cpu.lock;
-        doFlush := cache^.Lines[i].Valid and cache^.Lines[i].Dirty;
-        if doFlush then begin
-            lba := cache^.FatStart + cache^.Lines[i].SectorIdx;
-            cache^.Lines[i].Dirty := false;
-            memcpy(PtrUInt(cache^.Data) + (i * 512), PtrUInt(cache^.EvictBuf), 512);
-        end;
-        arch.platform.cpu.unlock(savedIRQ);
-        if doFlush then
-            driver.storage.mgr.storage_write(volume^.device, lba, 1, cache^.EvictBuf);
-    end;
-
-    savedIRQ := arch.platform.cpu.lock;
-    cache^.Busy := false;
-    arch.platform.cpu.unlock(savedIRQ);
+    until false;
 end;
 
-procedure FAT32Flush(volume : PStorage_Volume);
-var
-    ctx : PFATVolumeCtx;
+function FAT32Flush(volume : PStorage_Volume): TError;
+var ctx: PFATVolumeCtx;
+    i: uint32;
 begin
-    ctx := FAT32GetVolumeCtx(volume);
+    FAT32Flush := eNone;
+    ctx := fatCtxLookup(volume);
     if ctx = nil then exit;
-    fatCacheFlush(@ctx^.Cache, volume);
+    lockCache(@ctx^.Cache);
+    for i := 0 to FAT_CACHE_LINES - 1 do begin
+        FAT32Flush := flushLine(@ctx^.Cache, i);
+        if FAT32Flush <> eNone then break;
+    end;
+    ctx^.Cache.Busy := false;
 end;
 
-procedure FAT32ReleaseVolumeCtx(volume : PStorage_Volume);
+function FAT32ReleaseVolumeCtx(volume : PStorage_Volume): TError;
 var
     ctx : PFATVolumeCtx;
 begin
+    FAT32ReleaseVolumeCtx := eNone;
     if volume = nil then exit;
+    if (volume^.device <> nil) and not volume^.device^.removed then
+        FAT32ReleaseVolumeCtx := FAT32Flush(volume);
+    if FAT32ReleaseVolumeCtx <> eNone then exit;
     ctx := fatCtxDetach(volume);
     if ctx = nil then exit;
-    fatCacheFlush(@ctx^.Cache, volume);
+
     fatCtxFree(ctx);
 end;
 
-function readFat(volume : PStorage_Volume; cluster : uint32; bootRecord : PBootRecord) : uint32;
-var
-    savedIRQ: PtrUInt;
-
-    ctx        : PFATVolumeCtx;
-    cache      : PFATCache;
-    fatSecIdx  : uint32;
-    setIdx     : uint32;
-    baseSlot   : uint32;
-    entryOff   : uint32;
-    dataPtr    : puint32;
-    lba        : uint32;
-    doEvict    : boolean;
-    evictLBA   : uint32;
-    victim     : uint32;
-    w          : uint32;
+function accessFat(volume: PStorage_Volume; cluster: uint32; writing: boolean;
+    var value: uint32): TError;
+var ctx: PFATVolumeCtx;
+    cache: PFATCache;
+    sector, base, slot, way: uint32;
+    data: puint32;
 begin
+    accessFat := eCorruptFilesystem;
     ctx := FAT32GetVolumeCtx(volume);
-    if ctx = nil then begin
-        readFat := 0;
-        exit;
-    end;
+    if (ctx = nil) or (cluster >= ctx^.Info.MaxCluster) then exit;
     cache := @ctx^.Cache;
-    fatSecIdx := cluster div 128;
-    setIdx := fatSecIdx mod FAT_CACHE_SETS;
-    baseSlot := setIdx * FAT_CACHE_WAYS;
-    entryOff := cluster mod 128;
-
-    savedIRQ := arch.platform.cpu.lock;
-    for w := 0 to FAT_CACHE_WAYS - 1 do
-        if cache^.Lines[baseSlot + w].Valid and (cache^.Lines[baseSlot + w].SectorIdx = fatSecIdx) then begin
-            Inc(cache^.Device^.Stats.FatCacheHits);
-            dataPtr := puint32(PtrUInt(cache^.Data) + ((baseSlot + w) * 512));
-            readFat := dataPtr[entryOff] and $0FFFFFFF;
-            cacheTouch(cache,baseSlot,baseSlot+w);
-            arch.platform.cpu.unlock(savedIRQ);
+    sector := cluster div 128;
+    base := (sector mod FAT_CACHE_SETS) * FAT_CACHE_WAYS;
+    lockCache(cache);
+    slot := base;
+    for way := 0 to FAT_CACHE_WAYS - 1 do begin
+        slot := base + way;
+        if cache^.Lines[slot].Valid and (cache^.Lines[slot].SectorIdx = sector) then break;
+    end;
+    if cache^.Lines[slot].Valid and (cache^.Lines[slot].SectorIdx = sector) then
+        inc(cache^.Device^.Stats.FatCacheHits)
+    else begin
+        inc(cache^.Device^.Stats.FatCacheMisses);
+        slot := cacheVictim(cache, base);
+        accessFat := flushLine(cache, slot);
+        if accessFat = eNone then
+            accessFat := storage_read(cache^.Device, cache^.FatStart + sector, 1, cache^.EvictBuf);
+        if accessFat <> eNone then begin
+            cache^.Busy := false;
             exit;
         end;
-    arch.platform.cpu.unlock(savedIRQ);
-
-    while true do begin
-        savedIRQ := arch.platform.cpu.lock;
-        if not cache^.Busy then begin
-            for w := 0 to FAT_CACHE_WAYS - 1 do
-                if cache^.Lines[baseSlot + w].Valid and (cache^.Lines[baseSlot + w].SectorIdx = fatSecIdx) then begin
-                    Inc(cache^.Device^.Stats.FatCacheHits);
-                    dataPtr := puint32(PtrUInt(cache^.Data) + ((baseSlot + w) * 512));
-                    readFat := dataPtr[entryOff] and $0FFFFFFF;
-                    cacheTouch(cache,baseSlot,baseSlot+w);
-                    arch.platform.cpu.unlock(savedIRQ);
-                    exit;
-                end;
-            Inc(cache^.Device^.Stats.FatCacheMisses);
-            cache^.Busy := true;
-            victim := cacheVictim(cache,baseSlot);
-            dataPtr := puint32(PtrUInt(cache^.Data) + (victim * 512));
-            doEvict := cache^.Lines[victim].Valid and cache^.Lines[victim].Dirty;
-            if doEvict then begin
-                evictLBA := cache^.FatStart + cache^.Lines[victim].SectorIdx;
-                memcpy(PtrUInt(dataPtr), PtrUInt(cache^.EvictBuf), 512);
-            end;
-            cache^.Lines[victim].Valid := false;
-            arch.platform.cpu.unlock(savedIRQ);
-            break;
-        end;
-        arch.platform.cpu.unlock(savedIRQ);
-        arch.platform.cpu.idle;
+        memcpy(PtrUInt(cache^.EvictBuf), PtrUInt(cache^.Data) + slot * 512, 512);
+        cache^.Lines[slot].SectorIdx := sector;
+        cache^.Lines[slot].Valid := true;
     end;
-
-    if doEvict then
-        driver.storage.mgr.storage_write(cache^.Device, evictLBA, 1, cache^.EvictBuf);
-    lba := cache^.FatStart + fatSecIdx;
-    driver.storage.mgr.storage_read(cache^.Device, lba, 1, dataPtr);
-
-    savedIRQ := arch.platform.cpu.lock;
-    cache^.Lines[victim].SectorIdx := fatSecIdx;
-    cache^.Lines[victim].Valid := true;
-    cache^.Lines[victim].Dirty := false;
-    cacheTouch(cache,baseSlot,victim);
-    readFat := dataPtr[entryOff] and $0FFFFFFF;
+    data := puint32(PtrUInt(cache^.Data) + slot * 512);
+    if writing then begin
+        data[cluster mod 128] := (data[cluster mod 128] and $F0000000) or (value and $0FFFFFFF);
+        cache^.Lines[slot].Dirty := true;
+    end else value := data[cluster mod 128] and $0FFFFFFF;
+    cacheTouch(cache, base, slot);
     cache^.Busy := false;
-    arch.platform.cpu.unlock(savedIRQ);
+    accessFat := eNone;
 end;
 
-procedure writeFat(volume : PStorage_Volume; cluster : uint32; value : uint32; bootRecord : PBootRecord);
-var
-    savedIRQ: PtrUInt;
-
-    ctx        : PFATVolumeCtx;
-    cache      : PFATCache;
-    fatSecIdx  : uint32;
-    setIdx     : uint32;
-    baseSlot   : uint32;
-    entryOff   : uint32;
-    dataPtr    : puint32;
-    lba        : uint32;
-    doEvict    : boolean;
-    evictLBA   : uint32;
-    victim     : uint32;
-    w          : uint32;
+function readFat(volume : PStorage_Volume; cluster : uint32; bootRecord : PBootRecord) : uint32;
+var value: uint32;
 begin
-    ctx := FAT32GetVolumeCtx(volume);
-    if ctx = nil then exit;
-    cache := @ctx^.Cache;
-    fatSecIdx := cluster div 128;
-    setIdx := fatSecIdx mod FAT_CACHE_SETS;
-    baseSlot := setIdx * FAT_CACHE_WAYS;
-    entryOff := cluster mod 128;
+    if accessFat(volume, cluster, false, value) = eNone then readFat := value
+    else readFat := $0FFFFFF7;
+end;
 
-    savedIRQ := arch.platform.cpu.lock;
-    for w := 0 to FAT_CACHE_WAYS - 1 do
-        if cache^.Lines[baseSlot + w].Valid and (cache^.Lines[baseSlot + w].SectorIdx = fatSecIdx) then begin
-            Inc(cache^.Device^.Stats.FatCacheHits);
-            dataPtr := puint32(PtrUInt(cache^.Data) + ((baseSlot + w) * 512));
-            if value = 0 then
-                dataPtr[entryOff] := 0
-            else
-                dataPtr[entryOff] := (dataPtr[entryOff] and $F0000000) or (value and $0FFFFFFF);
-            cache^.Lines[baseSlot + w].Dirty := true;
-            cacheTouch(cache,baseSlot,baseSlot+w);
-            arch.platform.cpu.unlock(savedIRQ);
-            exit;
-        end;
-    arch.platform.cpu.unlock(savedIRQ);
-
-    while true do begin
-        savedIRQ := arch.platform.cpu.lock;
-        if not cache^.Busy then begin
-            for w := 0 to FAT_CACHE_WAYS - 1 do
-                if cache^.Lines[baseSlot + w].Valid and (cache^.Lines[baseSlot + w].SectorIdx = fatSecIdx) then begin
-                    Inc(cache^.Device^.Stats.FatCacheHits);
-                    dataPtr := puint32(PtrUInt(cache^.Data) + ((baseSlot + w) * 512));
-                    if value = 0 then
-                        dataPtr[entryOff] := 0
-                    else
-                        dataPtr[entryOff] := (dataPtr[entryOff] and $F0000000) or (value and $0FFFFFFF);
-                    cache^.Lines[baseSlot + w].Dirty := true;
-                    cacheTouch(cache,baseSlot,baseSlot+w);
-                    arch.platform.cpu.unlock(savedIRQ);
-                    exit;
-                end;
-            Inc(cache^.Device^.Stats.FatCacheMisses);
-            cache^.Busy := true;
-            victim := cacheVictim(cache,baseSlot);
-            dataPtr := puint32(PtrUInt(cache^.Data) + (victim * 512));
-            doEvict := cache^.Lines[victim].Valid and cache^.Lines[victim].Dirty;
-            if doEvict then begin
-                evictLBA := cache^.FatStart + cache^.Lines[victim].SectorIdx;
-                memcpy(PtrUInt(dataPtr), PtrUInt(cache^.EvictBuf), 512);
-            end;
-            cache^.Lines[victim].Valid := false;
-            arch.platform.cpu.unlock(savedIRQ);
-            break;
-        end;
-        arch.platform.cpu.unlock(savedIRQ);
-        arch.platform.cpu.idle;
-    end;
-
-    if doEvict then
-        driver.storage.mgr.storage_write(cache^.Device, evictLBA, 1, cache^.EvictBuf);
-    lba := cache^.FatStart + fatSecIdx;
-    driver.storage.mgr.storage_read(cache^.Device, lba, 1, dataPtr);
-
-    savedIRQ := arch.platform.cpu.lock;
-    cache^.Lines[victim].SectorIdx := fatSecIdx;
-    cache^.Lines[victim].Valid := true;
-    cache^.Lines[victim].Dirty := false;
-    if value = 0 then
-        dataPtr[entryOff] := 0
-    else
-        dataPtr[entryOff] := (dataPtr[entryOff] and $F0000000) or (value and $0FFFFFFF);
-    cache^.Lines[victim].Dirty := true;
-    cacheTouch(cache,baseSlot,victim);
-    cache^.Busy := false;
-    arch.platform.cpu.unlock(savedIRQ);
+function writeFat(volume : PStorage_Volume; cluster : uint32; value : uint32; bootRecord : PBootRecord): TError;
+begin
+    writeFat := accessFat(volume, cluster, true, value);
 end;
 
 function runMapEnsureCapacity(var runMap : TFATRunMap; needed : uint32) : boolean;
@@ -1228,7 +1114,7 @@ begin
     end;
 
     while bestSlot >= 0 do begin
-        driver.storage.mgr.storage_read(volume^.device, ctx^.DirHints[uint32(bestSlot)].SectorLBA, 1, buffer);
+        if storage_read(volume^.device, ctx^.DirHints[uint32(bestSlot)].SectorLBA, 1, buffer) <> eNone then exit;
         entryIdx := findFreeEntryInSector(buffer, info^.BootRecord.sectorSize div sizeof(TDirectory));
         if (entryIdx >= 0) and (uint32(entryIdx) = ctx^.DirHints[uint32(bestSlot)].EntryIdx) then begin
             loc.Valid := true;
@@ -1269,8 +1155,8 @@ begin
         fatForgetDirHintsForParent(volume, parentCluster);
 end;
 
-function locateDirEntry(volume : PStorage_Volume; info : PFATVolumeInfo; parentCluster : uint32;
-    cleanName : byteArray8; ext : pchar; var loc : TFATDirEntryLocation; buffer : puint32) : boolean;
+function findDirEntry(volume : PStorage_Volume; info : PFATVolumeInfo; parentCluster : uint32;
+    cleanName : byteArray8; ext : pchar; var loc : TFATDirEntryLocation; buffer : puint32) : TError;
 var
     currentCluster : uint32;
     nextCluster    : uint32;
@@ -1281,7 +1167,7 @@ var
     clusterLBA     : uint32;
     iterCount      : uint32;
 begin
-    locateDirEntry := false;
+    findDirEntry := eCorruptFilesystem;
     loc.Valid := false;
     if (info = nil) or (parentCluster < 2) then exit;
 
@@ -1297,23 +1183,30 @@ begin
 
         clusterLBA := FAT32ClusterToLBA(info, currentCluster);
         for ds := 0 to info^.BootRecord.spc - 1 do begin
-            driver.storage.mgr.storage_read(volume^.device, clusterLBA + ds, 1, buffer);
+            findDirEntry := storage_read(volume^.device, clusterLBA + ds, 1, buffer);
+            if findDirEntry <> eNone then exit;
             entryIdx := findEntryInSector(buffer, entriesPerSec, cleanName, ext, hitEnd);
             if entryIdx >= 0 then begin
                 loc.Valid := true;
                 loc.ParentCluster := parentCluster;
                 loc.SectorLBA := clusterLBA + ds;
                 loc.EntryIdx := uint32(entryIdx);
-                locateDirEntry := true;
+                findDirEntry := eNone;
                 exit;
             end;
-            if hitEnd then
+            if hitEnd then begin
+                findDirEntry := eFileDoesNotExist;
                 exit;
+            end;
         end;
 
-        nextCluster := readFat(volume, currentCluster, @info^.BootRecord);
-        if isEndOfChain(nextCluster) or isBadCluster(nextCluster) or (nextCluster = 0) then
+        findDirEntry := accessFat(volume, currentCluster, false, nextCluster);
+        if findDirEntry <> eNone then exit;
+        if isEndOfChain(nextCluster) then begin
+            findDirEntry := eFileDoesNotExist;
             exit;
+        end;
+        findDirEntry := eCorruptFilesystem;
         currentCluster := nextCluster;
         iterCount := iterCount + 1;
     end;
@@ -1350,7 +1243,7 @@ begin
 
         clusterLBA := FAT32ClusterToLBA(info, currentCluster);
         for ds := 0 to info^.BootRecord.spc - 1 do begin
-            driver.storage.mgr.storage_read(volume^.device, clusterLBA + ds, 1, buffer);
+            if storage_read(volume^.device, clusterLBA + ds, 1, buffer) <> eNone then exit;
             entryIdx := findFreeEntryInSector(buffer, entriesPerSec);
             if entryIdx >= 0 then begin
                 loc.Valid := true;
@@ -1402,7 +1295,7 @@ begin
             continue;
         splitFileNameParts(partName, namePart, extPart);
         cleanName := cleanString(namePart);
-        if not locateDirEntry(volume, info, parentCluster, cleanName, extPart, loc, sectorBuf) then begin
+        if findDirEntry(volume, info, parentCluster, cleanName, extPart, loc, sectorBuf) <> eNone then begin
             if namePart <> nil then kfree(void(namePart));
             if extPart <> nil then kfree(void(extPart));
             LL_Free(parts);
@@ -1446,11 +1339,12 @@ begin
     end;
 
     { Another opener can publish this name between open and first write. }
-    if locateDirEntry(ofi^.Volume, ofi^.VolumeInfo, ofi^.DirLoc.ParentCluster,
-        ofi^.CleanName, ofi^.ExtPart, ofi^.DirLoc, sectorBuf) then begin
+    ensureEntryLocked := findDirEntry(ofi^.Volume, ofi^.VolumeInfo, ofi^.DirLoc.ParentCluster,
+        ofi^.CleanName, ofi^.ExtPart, ofi^.DirLoc, sectorBuf);
+    if ensureEntryLocked <> eFileDoesNotExist then begin
         ofi^.DirLoc.Valid := false;
         kfree(sectorBuf);
-        ensureEntryLocked := eAlreadyExists;
+        if ensureEntryLocked = eNone then ensureEntryLocked := eAlreadyExists;
         exit;
     end;
     if not locateFreeDirEntry(ofi^.Volume, ofi^.VolumeInfo, ofi^.DirLoc.ParentCluster, ofi^.DirLoc, sectorBuf) then begin
@@ -1549,27 +1443,32 @@ begin
         fatFindContiguousFreeRange := true;
 end;
 
-procedure fatLinkContiguousRange(volume : PStorage_Volume; info : PFATVolumeInfo;
-    previousTail : uint32; firstCluster : uint32; clusterCount : uint32; var lastCluster : uint32);
-var
-    cur : uint32;
-    i   : uint32;
+function fatLinkContiguousRange(volume: PStorage_Volume; info: PFATVolumeInfo;
+    previousTail, firstCluster, clusterCount: uint32; var lastCluster: uint32): TError;
+var cur, next, i: uint32;
 begin
     lastCluster := previousTail;
+    fatLinkContiguousRange := eNone;
     if clusterCount = 0 then exit;
     fatInvalidateAllocRange(volume, firstCluster, clusterCount);
-    if previousTail <> 0 then
-        writeFat(volume, previousTail, firstCluster, @info^.BootRecord);
     cur := firstCluster;
-    i := 1;
-    while i < clusterCount do begin
-        writeFat(volume, cur, cur + 1, @info^.BootRecord);
-        cur := cur + 1;
-        i := i + 1;
+    for i := 1 to clusterCount do begin
+        if i = clusterCount then next := $0FFFFFF8 else next := cur + 1;
+        fatLinkContiguousRange := writeFat(volume, cur, next, @info^.BootRecord);
+        if fatLinkContiguousRange <> eNone then break;
+        inc(cur);
     end;
-    writeFat(volume, cur, $0FFFFFF8, @info^.BootRecord);
-    lastCluster := cur;
-    fatUpdateAllocHint(volume, info, lastCluster + 1);
+    if (fatLinkContiguousRange = eNone) and (previousTail <> 0) then
+        fatLinkContiguousRange := writeFat(volume, previousTail, firstCluster, @info^.BootRecord);
+    if fatLinkContiguousRange <> eNone then begin
+        while cur > firstCluster do begin
+            dec(cur);
+            if writeFat(volume, cur, 0, @info^.BootRecord) <> eNone then break;
+        end;
+        exit;
+    end;
+    lastCluster := cur - 1;
+    fatUpdateAllocHint(volume, info, cur);
 end;
 
 function findFreeClusterRuns(volume : PStorage_Volume; info : PFATVolumeInfo; amount : uint32) : PLinkedListBase;
@@ -1749,7 +1648,8 @@ begin
         lastCluster := 0;
 
     if fatFindContiguousFreeRange(ofi^.Volume, ofi^.VolumeInfo, extraClusters, firstNew) then begin
-        fatLinkContiguousRange(ofi^.Volume, ofi^.VolumeInfo, lastCluster, firstNew, extraClusters, lastTail);
+        ensureCapacityLocked := fatLinkContiguousRange(ofi^.Volume, ofi^.VolumeInfo, lastCluster, firstNew, extraClusters, lastTail);
+        if ensureCapacityLocked <> eNone then exit;
         if not runMapAppend(ofi^.RunMap, firstNew, extraClusters) then begin
             { Undo: free the newly linked clusters and restore the previous chain tail to EOC }
             fatFreeClusterChain(ofi^.Volume, ofi^.VolumeInfo, firstNew);
@@ -1775,8 +1675,13 @@ begin
         for i := 0 to LL_Size(tempRuns) - 1 do begin
             tempRun := PFATTempRun(LL_Get(tempRuns, i));
             prevLastCluster := lastCluster;
-            fatLinkContiguousRange(ofi^.Volume, ofi^.VolumeInfo, lastCluster,
+            ensureCapacityLocked := fatLinkContiguousRange(ofi^.Volume, ofi^.VolumeInfo, lastCluster,
                 tempRun^.StartCluster, tempRun^.ClusterCount, lastTail);
+            if ensureCapacityLocked <> eNone then begin
+                ofi^.AllocClusters := ofi^.RunMap.TotalClusters;
+                LL_Free(tempRuns);
+                exit;
+            end;
             lastCluster := lastTail;
             if not runMapAppend(ofi^.RunMap, tempRun^.StartCluster, tempRun^.ClusterCount) then begin
                 { Undo: free the current run and restore the previous tail to EOC }
@@ -1920,7 +1825,7 @@ begin
         exit;
     end;
     if sectorBuf <> nil then begin
-        if locateDirEntry(volume, info, parentCluster, cleanName, extPart, ofi^.DirLoc, sectorBuf) then begin
+        if findDirEntry(volume, info, parentCluster, cleanName, extPart, ofi^.DirLoc, sectorBuf) = eNone then begin
             ofi^.Exists := true;
             ofi^.FirstCluster := dirFirstCluster(@PDirectory(sectorBuf)[ofi^.DirLoc.EntryIdx]);
             ofi^.ByteSize := PDirectory(sectorBuf)[ofi^.DirLoc.EntryIdx].byteSize;
@@ -1942,7 +1847,7 @@ begin
     FAT32OpenFile := ofi;
 end;
 
-procedure FAT32CloseFile(ctx : pointer);
+function FAT32CloseFile(ctx : pointer): TError;
 var
     ofi          : PFATOpenFile;
     rawDir       : PDirectory;
@@ -1957,6 +1862,7 @@ var
     isLastWriter : boolean;
     mutation: PFATVolumeCtx;
 begin
+    FAT32CloseFile := eNone;
     if ctx = nil then exit;
     ofi := PFATOpenFile(ctx);
     mutation := nil;
@@ -1988,7 +1894,7 @@ begin
                 { File has no data — free the entire chain }
                 if ofi^.RunMap.Count > 0 then begin
                     nextCluster := ofi^.RunMap.Runs[0].StartCluster;
-                    fatFreeClusterChain(ofi^.Volume, ofi^.VolumeInfo, nextCluster);
+                    FAT32CloseFile := fatFreeClusterChain(ofi^.Volume, ofi^.VolumeInfo, nextCluster);
                 end;
                 ofi^.FirstCluster := 0;
             end else begin
@@ -2011,26 +1917,28 @@ begin
                     ri := ri + 1;
                 end;
                 if tailCluster >= 2 then
-                    writeFat(ofi^.Volume, tailCluster, $0FFFFFF8, @ofi^.VolumeInfo^.BootRecord);
-                if nextCluster >= 2 then
-                    fatFreeClusterChain(ofi^.Volume, ofi^.VolumeInfo, nextCluster);
+                    FAT32CloseFile := writeFat(ofi^.Volume, tailCluster, $0FFFFFF8, @ofi^.VolumeInfo^.BootRecord);
+                if (FAT32CloseFile = eNone) and (nextCluster >= 2) then
+                    FAT32CloseFile := fatFreeClusterChain(ofi^.Volume, ofi^.VolumeInfo, nextCluster);
             end;
             ofi^.AllocClusters := keepClusters;
             ofi^.FatDirty := true;
         end;
     end;
 
-    if ofi^.FatDirty and (ofi^.Volume <> nil) then
-        FAT32Flush(ofi^.Volume);
+    if (FAT32CloseFile = eNone) and ofi^.FatDirty then FAT32CloseFile := FAT32Flush(ofi^.Volume);
 
     { Use the already-allocated ScratchSector (same size as a disk sector) to avoid
       a kalloc in close; an allocation failure here would silently lose metadata. }
-    if ofi^.MetaDirty and ofi^.DirLoc.Valid and (ofi^.ScratchSector <> nil) and
-       (storage_read(ofi^.Volume^.device, ofi^.DirLoc.SectorLBA, 1, ofi^.ScratchSector) = eNone) then begin
-        rawDir := @PDirectory(ofi^.ScratchSector)[ofi^.DirLoc.EntryIdx];
-        rawDir^.byteSize := ofi^.ByteSize;
-        setDirFirstCluster(rawDir, ofi^.FirstCluster);
-        driver.storage.mgr.storage_write(ofi^.Volume^.device, ofi^.DirLoc.SectorLBA, 1, ofi^.ScratchSector);
+    if (FAT32CloseFile = eNone) and ofi^.MetaDirty and ofi^.DirLoc.Valid then begin
+        if ofi^.ScratchSector = nil then FAT32CloseFile := eOutOfMemory
+        else FAT32CloseFile := storage_read(ofi^.Volume^.device, ofi^.DirLoc.SectorLBA, 1, ofi^.ScratchSector);
+        if FAT32CloseFile = eNone then begin
+            rawDir := @PDirectory(ofi^.ScratchSector)[ofi^.DirLoc.EntryIdx];
+            rawDir^.byteSize := ofi^.ByteSize;
+            setDirFirstCluster(rawDir, ofi^.FirstCluster);
+            FAT32CloseFile := storage_write(ofi^.Volume^.device, ofi^.DirLoc.SectorLBA, 1, ofi^.ScratchSector);
+        end;
     end;
 
     if mutation <> nil then unlockMetadata(mutation);
@@ -2056,7 +1964,7 @@ begin
     LL_Free(entries);
 end;
 
-procedure fatFreeClusterChain(volume : PStorage_Volume; info : PFATVolumeInfo; startCluster : uint32);
+function fatFreeClusterChain(volume : PStorage_Volume; info : PFATVolumeInfo; startCluster : uint32): TError;
 var
     currentCluster : uint32;
     nextCluster    : uint32;
@@ -2064,6 +1972,7 @@ var
     runCount       : uint32;
     iterCount      : uint32;
 begin
+    fatFreeClusterChain := eCorruptFilesystem;
     if (volume = nil) or (info = nil) or (startCluster < 2) then exit;
     currentCluster := startCluster;
     runStart := 0;
@@ -2076,8 +1985,14 @@ begin
         if iterCount >= info^.MaxCluster then
             break;
 
-        nextCluster := readFat(volume, currentCluster, @info^.BootRecord);
-        writeFat(volume, currentCluster, 0, @info^.BootRecord);
+        fatFreeClusterChain := accessFat(volume, currentCluster, false, nextCluster);
+        if fatFreeClusterChain <> eNone then exit;
+        if not isEndOfChain(nextCluster) and ((nextCluster < 2) or (nextCluster >= info^.MaxCluster)) then begin
+            fatFreeClusterChain := eCorruptFilesystem;
+            exit;
+        end;
+        fatFreeClusterChain := writeFat(volume, currentCluster, 0, @info^.BootRecord);
+        if fatFreeClusterChain <> eNone then exit;
 
         if runCount = 0 then begin
             runStart := currentCluster;
@@ -2093,6 +2008,7 @@ begin
         iterCount := iterCount + 1;
         if isEndOfChain(nextCluster) or isBadCluster(nextCluster) or (nextCluster = 0) then
             break;
+        fatFreeClusterChain := eCorruptFilesystem;
         currentCluster := nextCluster;
     end;
 
@@ -2100,7 +2016,7 @@ begin
         fatRememberAllocHint(volume, runStart, runCount);
 end;
 
-function fatDirectoryHasChildren(volume : PStorage_Volume; info : PFATVolumeInfo; firstCluster : uint32) : boolean;
+function checkDirectoryEmpty(volume : PStorage_Volume; info : PFATVolumeInfo; firstCluster : uint32) : TError;
 var
     buffer       : puint32;
     currentCluster : uint32;
@@ -2112,12 +2028,12 @@ var
     entriesPerSec: uint32;
     dir          : PDirectory;
 begin
-    fatDirectoryHasChildren := false;
+    checkDirectoryEmpty := eCorruptFilesystem;
     if (volume = nil) or (info = nil) or (firstCluster < 2) then exit;
 
     buffer := puint32(kalloc(info^.BootRecord.sectorSize));
     if buffer = nil then begin
-        fatDirectoryHasChildren := true;
+        checkDirectoryEmpty := eOutOfMemory;
         exit;
     end;
 
@@ -2130,7 +2046,11 @@ begin
             break;
         clusterLBA := FAT32ClusterToLBA(info, currentCluster);
         for ds := 0 to info^.BootRecord.spc - 1 do begin
-            driver.storage.mgr.storage_read(volume^.device, clusterLBA + ds, 1, buffer);
+            checkDirectoryEmpty := storage_read(volume^.device, clusterLBA + ds, 1, buffer);
+            if checkDirectoryEmpty <> eNone then begin
+                kfree(buffer);
+                exit;
+            end;
             for idx := 0 to entriesPerSec - 1 do begin
                 dir := @PDirectory(buffer)[idx];
                 if dir^.fileName[0] = char(0) then begin
@@ -2143,14 +2063,14 @@ begin
                     continue;
                 if fatIsDotEntry(dir) then
                     continue;
-                fatDirectoryHasChildren := true;
+                checkDirectoryEmpty := eDirectoryNotEmpty;
                 kfree(buffer);
                 exit;
             end;
         end;
-        nextCluster := readFat(volume, currentCluster, @info^.BootRecord);
-        if isEndOfChain(nextCluster) or isBadCluster(nextCluster) or (nextCluster = 0) then
-            break;
+        checkDirectoryEmpty := accessFat(volume, currentCluster, false, nextCluster);
+        if (checkDirectoryEmpty <> eNone) or isEndOfChain(nextCluster) then break;
+        checkDirectoryEmpty := eCorruptFilesystem;
         currentCluster := nextCluster;
         iterCount := iterCount + 1;
     end;
@@ -2340,7 +2260,7 @@ begin
 end;
 
 procedure FAT32CreateDirectoryLocked(volume : PStorage_Volume; directory : pchar; dirName : pchar; attributes : uint32; statusOut : puint32);
-var
+var lookupError: TError;
     info          : PFATVolumeInfo;
     parentCluster : uint32;
     namePart      : pchar;
@@ -2379,8 +2299,10 @@ begin
         exit;
     end;
 
-    if locateDirEntry(volume, info, parentCluster, cleanName, extPart, loc, sectorBuf) then begin
-        if statusOut <> nil then statusOut^ := ord(eDirectoryAlreadyExists);
+    lookupError := findDirEntry(volume, info, parentCluster, cleanName, extPart, loc, sectorBuf);
+    if lookupError <> eFileDoesNotExist then begin
+        if lookupError = eNone then lookupError := eDirectoryAlreadyExists;
+        if statusOut <> nil then statusOut^ := ord(lookupError);
         kfree(sectorBuf);
         if namePart <> nil then kfree(void(namePart));
         if extPart <> nil then kfree(void(extPart));
@@ -2397,7 +2319,7 @@ begin
 
     cluster := 0;
     if fatFindContiguousFreeRange(volume, info, 1, cluster) then
-        fatLinkContiguousRange(volume, info, 0, cluster, 1, lastTail)
+        lookupError := fatLinkContiguousRange(volume, info, 0, cluster, 1, lastTail)
     else begin
         tempRuns := findFreeClusterRuns(volume, info, 1);
         if (tempRuns = nil) or (LL_Size(tempRuns) = 0) then begin
@@ -2410,10 +2332,17 @@ begin
         end;
         tempRun := PFATTempRun(LL_Get(tempRuns, 0));
         cluster := tempRun^.StartCluster;
-        fatLinkContiguousRange(volume, info, 0, cluster, 1, lastTail);
+        lookupError := fatLinkContiguousRange(volume, info, 0, cluster, 1, lastTail);
         LL_Free(tempRuns);
     end;
 
+    if lookupError <> eNone then begin
+        if statusOut <> nil then statusOut^ := ord(lookupError);
+        kfree(sectorBuf);
+        if namePart <> nil then kfree(void(namePart));
+        if extPart <> nil then kfree(void(extPart));
+        exit;
+    end;
     if not fatInitDirectoryCluster(volume, info, cluster, parentCluster) then begin
         { OOM in fatInitDirectoryCluster: free the allocated cluster and bail out }
         fatFreeClusterChain(volume, info, cluster);
@@ -2433,10 +2362,10 @@ begin
     setDirFirstCluster(rawDir, cluster);
     fatRememberFreeEntryFromBuffer(volume, parentCluster, loc.SectorLBA, sectorBuf,
         info^.BootRecord.sectorSize div sizeof(TDirectory));
-    driver.storage.mgr.storage_write(volume^.device, loc.SectorLBA, 1, sectorBuf);
-    FAT32Flush(volume);
-
-    if statusOut <> nil then statusOut^ := ord(eNone);
+    lookupError := FAT32Flush(volume);
+    if lookupError = eNone then lookupError := storage_write(volume^.device, loc.SectorLBA, 1, sectorBuf);
+    if lookupError <> eNone then fatFreeClusterChain(volume, info, cluster);
+    if statusOut <> nil then statusOut^ := ord(lookupError);
     kfree(sectorBuf);
     if namePart <> nil then kfree(void(namePart));
     if extPart <> nil then kfree(void(extPart));
@@ -2454,6 +2383,24 @@ begin
     unlockMetadata(ctx);
 end;
 
+{ Publish the deletion before making any of the object's clusters reusable. }
+function unlinkEntry(volume: PStorage_Volume; info: PFATVolumeInfo; parent: uint32;
+    var loc: TFATDirEntryLocation; sector: puint32): TError;
+var entry: PDirectory;
+    first: uint32;
+begin
+    entry := @PDirectory(sector)[loc.EntryIdx];
+    first := dirFirstCluster(entry);
+    entry^.fileName[0] := char($E5);
+    unlinkEntry := storage_write(volume^.device, loc.SectorLBA, 1, sector);
+    if unlinkEntry <> eNone then exit;
+    fatRememberDirHint(volume, parent, loc.SectorLBA, loc.EntryIdx);
+    if first >= 2 then begin
+        unlinkEntry := fatFreeClusterChain(volume, info, first);
+        if unlinkEntry = eNone then unlinkEntry := FAT32Flush(volume);
+    end;
+end;
+
 procedure FAT32DeleteFileLocked(volume : PStorage_Volume; filePath : pchar; statusOut : puint32);
 var
     info          : PFATVolumeInfo;
@@ -2467,7 +2414,6 @@ var
     sectorBuf     : puint32 = nil;
     loc           : TFATDirEntryLocation;
     rawDir        : PDirectory;
-    firstCluster  : uint32;
     resultErr     : TError;
 begin
     resultErr := eUnknown;
@@ -2486,23 +2432,12 @@ begin
         sectorBuf := puint32(kalloc(info^.BootRecord.sectorSize));
         if sectorBuf = nil then
             resultErr := eOutOfMemory
-        else if not locateDirEntry(volume, info, parentCluster, cleanName, extPart, loc, sectorBuf) then
-            resultErr := eFileDoesNotExist
-        else begin
+        else resultErr := findDirEntry(volume, info, parentCluster, cleanName, extPart, loc, sectorBuf);
+        if resultErr = eNone then begin
             rawDir := @PDirectory(sectorBuf)[loc.EntryIdx];
             if (rawDir^.attributes and $10) = $10 then
                 resultErr := eNotADirectory
-            else begin
-                firstCluster := dirFirstCluster(rawDir);
-                if firstCluster >= 2 then
-                    fatFreeClusterChain(volume, info, firstCluster);
-                rawDir^.fileName[0] := char($E5);
-                fatRememberDirHint(volume, parentCluster, loc.SectorLBA, loc.EntryIdx);
-                driver.storage.mgr.storage_write(volume^.device, loc.SectorLBA, 1, sectorBuf);
-                if firstCluster >= 2 then
-                    FAT32Flush(volume);
-                resultErr := eNone;
-            end;
+            else resultErr := unlinkEntry(volume, info, parentCluster, loc, sectorBuf);
         end;
     end;
     if sectorBuf <> nil then kfree(sectorBuf);
@@ -2557,26 +2492,16 @@ begin
         sectorBuf := puint32(kalloc(info^.BootRecord.sectorSize));
         if sectorBuf = nil then
             resultErr := eOutOfMemory
-        else if not locateDirEntry(volume, info, parentCluster, cleanName, extPart, loc, sectorBuf) then
-            resultErr := eDirectoryDoesNotExist
-        else begin
+        else resultErr := findDirEntry(volume, info, parentCluster, cleanName, extPart, loc, sectorBuf);
+        if resultErr = eFileDoesNotExist then resultErr := eDirectoryDoesNotExist;
+        if resultErr = eNone then begin
             rawDir := @PDirectory(sectorBuf)[loc.EntryIdx];
             if (rawDir^.attributes and $10) <> $10 then
                 resultErr := eNotADirectory
             else begin
                 firstCluster := dirFirstCluster(rawDir);
-                if fatDirectoryHasChildren(volume, info, firstCluster) then
-                    resultErr := eDirectoryNotEmpty
-                else begin
-                    if firstCluster >= 2 then
-                        fatFreeClusterChain(volume, info, firstCluster);
-                    rawDir^.fileName[0] := char($E5);
-                    fatRememberDirHint(volume, parentCluster, loc.SectorLBA, loc.EntryIdx);
-                    driver.storage.mgr.storage_write(volume^.device, loc.SectorLBA, 1, sectorBuf);
-                    if firstCluster >= 2 then
-                        FAT32Flush(volume);
-                    resultErr := eNone;
-                end;
+                resultErr := checkDirectoryEmpty(volume, info, firstCluster);
+                if resultErr = eNone then resultErr := unlinkEntry(volume, info, parentCluster, loc, sectorBuf);
             end;
         end;
     end;
@@ -2616,6 +2541,7 @@ var
     sectorBuf     : puint32 = nil;
     loc           : TFATDirEntryLocation;
     rawDir        : PDirectory;
+    targetLoc: TFATDirEntryLocation;
     resultErr     : TError;
 begin
     resultErr := eUnknown;
@@ -2639,16 +2565,23 @@ begin
         sectorBuf := puint32(kalloc(info^.BootRecord.sectorSize));
         if sectorBuf = nil then
             resultErr := eOutOfMemory
-        else if not locateDirEntry(volume, info, parentCluster, cleanName, extPart, loc, sectorBuf) then
-            resultErr := eFileDoesNotExist
-        else begin
-            rawDir := @PDirectory(sectorBuf)[loc.EntryIdx];
+        else resultErr := findDirEntry(volume, info, parentCluster, cleanName, extPart, loc, sectorBuf);
+        if resultErr = eNone then begin
             splitFileNameParts(newName, newNamePart, newExtPart);
             newCleanName := cleanString(newNamePart);
-            rawDir^.fileName := newCleanName;
-            fillFatExt(rawDir^.fileExtension, newExtPart);
-            driver.storage.mgr.storage_write(volume^.device, loc.SectorLBA, 1, sectorBuf);
-            resultErr := eNone;
+            resultErr := findDirEntry(volume, info, parentCluster, newCleanName, newExtPart, targetLoc, sectorBuf);
+            if resultErr = eNone then begin
+                if (targetLoc.SectorLBA <> loc.SectorLBA) or (targetLoc.EntryIdx <> loc.EntryIdx) then
+                    resultErr := eAlreadyExists;
+            end else if resultErr = eFileDoesNotExist then begin
+                resultErr := storage_read(volume^.device, loc.SectorLBA, 1, sectorBuf);
+                if resultErr = eNone then begin
+                    rawDir := @PDirectory(sectorBuf)[loc.EntryIdx];
+                    rawDir^.fileName := newCleanName;
+                    fillFatExt(rawDir^.fileExtension, newExtPart);
+                    resultErr := storage_write(volume^.device, loc.SectorLBA, 1, sectorBuf);
+                end;
+            end;
         end;
     end;
     if sectorBuf <> nil then kfree(sectorBuf);

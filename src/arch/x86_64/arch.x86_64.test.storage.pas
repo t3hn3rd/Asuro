@@ -239,7 +239,8 @@ begin
         vol := get_volume(i);
         if (vol = nil) or (vol^.filesystem = nil) or (vol^.device = nil) then continue;
         if not stringEquals(@vol^.labelText[0], 'ASURODIFF') or
-           not stringEquals(vol^.filesystem^.sName, 'FAT32') then continue;
+           not (stringEquals(vol^.filesystem^.sName, 'FAT32') or
+                stringEquals(vol^.filesystem^.sName, 'EXT2')) then continue;
         if (vol^.sectorStart <> 2048) or (vol^.device^.sectorSize <> 512) then continue;
         header := puint8(tryAlloc(512));
         if header = nil then exit;
@@ -249,10 +250,13 @@ begin
         serialControl := header[9] = 1;
         kfree(void(header));
         if not valid then continue;
+        puts('DIFF_FS=');
+        puts(vol^.filesystem^.sName);
+        puts(#13#10);
         test.harness.Start(@ctx, 'storage.differential');
         valid := mountVolume('/disk/ASURODIFF-TEST', vol) = pvRegistered;
         if valid then valid := exercise(vol, highPages);
-        test.harness.Assert(@ctx, valid, 'guarded concurrent FAT32 round trips and controller oracle');
+        test.harness.Assert(@ctx, valid, 'guarded concurrent file round trips and controller oracle');
         test.harness.Finish(@ctx);
         if valid then puts('DIFF_PASS'#13#10) else puts('DIFF_FAIL'#13#10);
         exit;
