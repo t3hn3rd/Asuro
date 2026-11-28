@@ -116,3 +116,9 @@ Not used for FAT32 on partitioned disks (partition table parsing is handled by t
 - The `spc` (sectors per cluster) value is calculated during format based on partition size to keep cluster count within FAT32 valid bounds.
 - Timestamps for directory entries are obtained from `driver.timer.rtc`.
 - The async format path allocates `TFmtContext` on the heap; it is freed in the final state-machine step after firing the callback.
+
+## Concurrent metadata updates
+
+Each mounted FAT32 volume serializes directory mutations and cluster allocation or release. A file creator holds the volume's metadata lock from slot selection through completion of the directory-sector write. Closing a dirty file takes the same lock while trimming the cluster chain and updating the directory entry. File payload transfers run outside the lock.
+
+The [native storage differential](../../../arch/x86_64/memory.md#fat32-high-memory-differential) exercises two writers creating separate files in one directory and checks both files after shutdown.

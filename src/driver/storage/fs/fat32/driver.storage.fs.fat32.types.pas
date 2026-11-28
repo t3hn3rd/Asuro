@@ -224,6 +224,7 @@ type
     end;
 
     TFATVolumeCtx = record
+        NextMetadataTicket, ServingMetadataTicket: uint32;
         Cache             : TFATCache;
         Info              : TFATVolumeInfo;
         InfoValid         : boolean;

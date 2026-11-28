@@ -44,6 +44,8 @@ function FAT32ClusterToLBA(info : PFATVolumeInfo; cluster : uint32) : uint32;
 
 implementation
 
+uses proc.mgr;
+
 type
     PFATTempRun = ^TFATRun;
     PFATVolumeCtxNode = ^TFATVolumeCtxNode;
@@ -638,19 +640,25 @@ begin
     end;
 end;
 
-function fatCtxRegister(volume : PStorage_Volume; ctx : PFATVolumeCtx) : boolean;
-var
-    node : PFATVolumeCtxNode;
+{ Two first opens can both sleep while loading the boot sector. Publish
+  only one cache and metadata lock for this volume. }
+function fatCtxRegister(volume : PStorage_Volume; ctx : PFATVolumeCtx) : PFATVolumeCtx;
+var node : PFATVolumeCtxNode;
+    saved : PtrUInt;
 begin
-    fatCtxRegister := false;
     node := PFATVolumeCtxNode(kalloc(sizeof(TFATVolumeCtxNode)));
-    if node = nil then exit;
-    memset(PtrUInt(node), 0, sizeof(TFATVolumeCtxNode));
-    node^.Volume := volume;
-    node^.Ctx := ctx;
-    node^.Next := fatCtxListHead;
-    fatCtxListHead := node;
-    fatCtxRegister := true;
+    saved := arch.platform.cpu.lock;
+    fatCtxRegister := fatCtxLookup(volume);
+    if (fatCtxRegister = nil) and (node <> nil) then begin
+        node^.Volume := volume;
+        node^.Ctx := ctx;
+        node^.Next := fatCtxListHead;
+        fatCtxListHead := node;
+        fatCtxRegister := ctx;
+        node := nil;
+    end;
+    arch.platform.cpu.unlock(saved);
+    if node <> nil then kfree(void(node));
 end;
 
 function fatCtxDetach(volume : PStorage_Volume) : PFATVolumeCtx;
@@ -767,11 +775,30 @@ begin
         end;
     end;
 
-    if not fatCtxRegister(volume, ctx) then begin
-        fatCtxFree(ctx);
-        exit;
-    end;
-    FAT32GetVolumeCtx := ctx;
+    FAT32GetVolumeCtx := fatCtxRegister(volume, ctx);
+    if FAT32GetVolumeCtx <> ctx then fatCtxFree(ctx);
+end;
+
+{ Task-context metadata transactions span blocking disk I/O. Mask IRQs
+  only to assign a ticket; queued writers yield with interrupts enabled. }
+function lockMetadata(volume: PStorage_Volume): PFATVolumeCtx;
+var ctx: PFATVolumeCtx;
+    flags: PtrUInt;
+    ticket: uint32;
+begin
+    ctx := FAT32GetVolumeCtx(volume);
+    lockMetadata := ctx;
+    if ctx = nil then exit;
+    flags := arch.platform.cpu.lock;
+    ticket := ctx^.NextMetadataTicket;
+    inc(ctx^.NextMetadataTicket);
+    arch.platform.cpu.unlock(flags);
+    while puint32(@ctx^.ServingMetadataTicket)^ <> ticket do proc_yield;
+end;
+
+procedure unlockMetadata(ctx: PFATVolumeCtx);
+begin
+    inc(ctx^.ServingMetadataTicket);
 end;
 
 function FAT32GetVolumeInfo(volume : PStorage_Volume) : PFATVolumeInfo;
@@ -1400,27 +1427,35 @@ begin
     resolveDirectoryCluster := true;
 end;
 
-function FAT32EnsureDirEntry(ofi : PFATOpenFile) : TError;
+function ensureEntryLocked(ofi : PFATOpenFile) : TError;
 var
     sectorBuf : puint32;
     rawDir    : PDirectory;
 begin
-    FAT32EnsureDirEntry := eNone;
+    ensureEntryLocked := eNone;
     if ofi = nil then begin
-        FAT32EnsureDirEntry := eInvalidArgument;
+        ensureEntryLocked := eInvalidArgument;
         exit;
     end;
     if ofi^.DirLoc.Valid then exit;
 
     sectorBuf := puint32(kalloc(ofi^.VolumeInfo^.BootRecord.sectorSize));
     if sectorBuf = nil then begin
-        FAT32EnsureDirEntry := eOutOfMemory;
+        ensureEntryLocked := eOutOfMemory;
         exit;
     end;
 
+    { Another opener can publish this name between open and first write. }
+    if locateDirEntry(ofi^.Volume, ofi^.VolumeInfo, ofi^.DirLoc.ParentCluster,
+        ofi^.CleanName, ofi^.ExtPart, ofi^.DirLoc, sectorBuf) then begin
+        ofi^.DirLoc.Valid := false;
+        kfree(sectorBuf);
+        ensureEntryLocked := eAlreadyExists;
+        exit;
+    end;
     if not locateFreeDirEntry(ofi^.Volume, ofi^.VolumeInfo, ofi^.DirLoc.ParentCluster, ofi^.DirLoc, sectorBuf) then begin
         kfree(sectorBuf);
-        FAT32EnsureDirEntry := eDirectoryFull;
+        ensureEntryLocked := eDirectoryFull;
         exit;
     end;
 
@@ -1431,11 +1466,13 @@ begin
     fillFatExt(rawDir^.fileExtension, ofi^.ExtPart);
     rawDir^.byteSize := 0;
     setDirFirstCluster(rawDir, 0);
-    fatRememberFreeEntryFromBuffer(ofi^.Volume, ofi^.DirLoc.ParentCluster, ofi^.DirLoc.SectorLBA,
+    ensureEntryLocked := storage_write(ofi^.Volume^.device, ofi^.DirLoc.SectorLBA, 1, sectorBuf);
+    if ensureEntryLocked = eNone then begin
+        ofi^.Exists := true;
+        fatRememberFreeEntryFromBuffer(ofi^.Volume, ofi^.DirLoc.ParentCluster, ofi^.DirLoc.SectorLBA,
         sectorBuf, ofi^.VolumeInfo^.BootRecord.sectorSize div sizeof(TDirectory));
-    driver.storage.mgr.storage_write(ofi^.Volume^.device, ofi^.DirLoc.SectorLBA, 1, sectorBuf);
+    end else ofi^.DirLoc.Valid := false;
     kfree(sectorBuf);
-    ofi^.Exists := true;
 end;
 
 procedure fatUpdateAllocHint(volume : PStorage_Volume; info : PFATVolumeInfo; nextCluster : uint32);
@@ -1661,7 +1698,7 @@ begin
     FAT32FindRunForOffset := true;
 end;
 
-function FAT32EnsureCapacityForWrite(ofi : PFATOpenFile; offset : uint32; byteCount : uint32) : TError;
+function ensureCapacityLocked(ofi : PFATOpenFile; offset : uint32; byteCount : uint32) : TError;
 var
     newEnd         : uint32;
     needClusters   : uint32;
@@ -1676,16 +1713,16 @@ var
     lastTail         : uint32;
     prevLastCluster  : uint32;
 begin
-    FAT32EnsureCapacityForWrite := eNone;
+    ensureCapacityLocked := eNone;
     if (ofi = nil) or (ofi^.VolumeInfo = nil) then begin
-        FAT32EnsureCapacityForWrite := eInvalidArgument;
+        ensureCapacityLocked := eInvalidArgument;
         exit;
     end;
 
     if byteCount = 0 then exit;
 
-    FAT32EnsureCapacityForWrite := FAT32EnsureDirEntry(ofi);
-    if FAT32EnsureCapacityForWrite <> eNone then
+    ensureCapacityLocked := ensureEntryLocked(ofi);
+    if ensureCapacityLocked <> eNone then
         exit;
 
     { Register as a writer the first time we extend this file (DirLoc is now valid) }
@@ -1718,7 +1755,7 @@ begin
             fatFreeClusterChain(ofi^.Volume, ofi^.VolumeInfo, firstNew);
             if lastCluster >= 2 then
                 writeFat(ofi^.Volume, lastCluster, $0FFFFFF8, @ofi^.VolumeInfo^.BootRecord);
-            FAT32EnsureCapacityForWrite := eOutOfMemory;
+            ensureCapacityLocked := eOutOfMemory;
             exit;
         end;
         if ofi^.FirstCluster = 0 then
@@ -1732,7 +1769,7 @@ begin
             tempRuns := findFreeClusterRuns(ofi^.Volume, ofi^.VolumeInfo, extraClusters);
         end;
         if tempRuns = nil then begin
-            FAT32EnsureCapacityForWrite := eDiskFull;
+            ensureCapacityLocked := eDiskFull;
             exit;
         end;
         for i := 0 to LL_Size(tempRuns) - 1 do begin
@@ -1753,7 +1790,7 @@ begin
                     ofi^.MetaDirty := true;
                 end;
                 LL_Free(tempRuns);
-                FAT32EnsureCapacityForWrite := eOutOfMemory;
+                ensureCapacityLocked := eOutOfMemory;
                 exit;
             end;
             if ofi^.FirstCluster = 0 then
@@ -1765,6 +1802,28 @@ begin
     ofi^.AllocClusters := ofi^.RunMap.TotalClusters;
     ofi^.FatDirty := true;
     ofi^.MetaDirty := true;
+end;
+
+function FAT32EnsureCapacityForWrite(ofi: PFATOpenFile; offset, byteCount: uint32): TError;
+var ctx: PFATVolumeCtx;
+begin
+    FAT32EnsureCapacityForWrite := eInvalidArgument;
+    if ofi = nil then exit;
+    ctx := lockMetadata(ofi^.Volume);
+    if ctx = nil then exit;
+    FAT32EnsureCapacityForWrite := ensureCapacityLocked(ofi, offset, byteCount);
+    unlockMetadata(ctx);
+end;
+
+function FAT32EnsureDirEntry(ofi: PFATOpenFile): TError;
+var ctx: PFATVolumeCtx;
+begin
+    FAT32EnsureDirEntry := eInvalidArgument;
+    if ofi = nil then exit;
+    ctx := lockMetadata(ofi^.Volume);
+    if ctx = nil then exit;
+    FAT32EnsureDirEntry := ensureEntryLocked(ofi);
+    unlockMetadata(ctx);
 end;
 
 function FAT32TransferAlloc(volume : PStorage_Volume) : PFATTransferCtx;
@@ -1896,9 +1955,14 @@ var
     volCtx       : PFATVolumeCtx;
     oldCount     : uint32;
     isLastWriter : boolean;
+    mutation: PFATVolumeCtx;
 begin
     if ctx = nil then exit;
     ofi := PFATOpenFile(ctx);
+    mutation := nil;
+    if ofi^.Registered or ofi^.FatDirty or ofi^.MetaDirty then
+        mutation := lockMetadata(ofi^.Volume);
+
 
     { Determine whether this is the last writer for this file.
       Unregister unconditionally so the slot is freed even when we skip truncation. }
@@ -1961,14 +2025,15 @@ begin
 
     { Use the already-allocated ScratchSector (same size as a disk sector) to avoid
       a kalloc in close; an allocation failure here would silently lose metadata. }
-    if ofi^.MetaDirty and ofi^.DirLoc.Valid and (ofi^.ScratchSector <> nil) then begin
-        driver.storage.mgr.storage_read(ofi^.Volume^.device, ofi^.DirLoc.SectorLBA, 1, ofi^.ScratchSector);
+    if ofi^.MetaDirty and ofi^.DirLoc.Valid and (ofi^.ScratchSector <> nil) and
+       (storage_read(ofi^.Volume^.device, ofi^.DirLoc.SectorLBA, 1, ofi^.ScratchSector) = eNone) then begin
         rawDir := @PDirectory(ofi^.ScratchSector)[ofi^.DirLoc.EntryIdx];
         rawDir^.byteSize := ofi^.ByteSize;
         setDirFirstCluster(rawDir, ofi^.FirstCluster);
         driver.storage.mgr.storage_write(ofi^.Volume^.device, ofi^.DirLoc.SectorLBA, 1, ofi^.ScratchSector);
     end;
 
+    if mutation <> nil then unlockMetadata(mutation);
     runMapFree(ofi^.RunMap);
     if ofi^.ExtPart <> nil then
         kfree(void(ofi^.ExtPart));
@@ -2274,7 +2339,7 @@ begin
     FAT32ReadDirectory := entries;
 end;
 
-procedure FAT32CreateDirectory(volume : PStorage_Volume; directory : pchar; dirName : pchar; attributes : uint32; statusOut : puint32);
+procedure FAT32CreateDirectoryLocked(volume : PStorage_Volume; directory : pchar; dirName : pchar; attributes : uint32; statusOut : puint32);
 var
     info          : PFATVolumeInfo;
     parentCluster : uint32;
@@ -2377,7 +2442,19 @@ begin
     if extPart <> nil then kfree(void(extPart));
 end;
 
-procedure FAT32DeleteFile(volume : PStorage_Volume; filePath : pchar; statusOut : puint32);
+procedure FAT32CreateDirectory(volume : PStorage_Volume; directory : pchar; dirName : pchar; attributes : uint32; statusOut : puint32);
+var ctx: PFATVolumeCtx;
+begin
+    ctx := lockMetadata(volume);
+    if ctx = nil then begin
+        if statusOut <> nil then statusOut^ := ord(eUnknown);
+        exit;
+    end;
+    FAT32CreateDirectoryLocked(volume, directory, dirName, attributes, statusOut);
+    unlockMetadata(ctx);
+end;
+
+procedure FAT32DeleteFileLocked(volume : PStorage_Volume; filePath : pchar; statusOut : puint32);
 var
     info          : PFATVolumeInfo;
     parentDir     : pchar = nil;
@@ -2436,7 +2513,19 @@ begin
     if statusOut <> nil then statusOut^ := ord(resultErr);
 end;
 
-procedure FAT32DeleteDir(volume : PStorage_Volume; path : pchar; statusOut : puint32);
+procedure FAT32DeleteFile(volume : PStorage_Volume; filePath : pchar; statusOut : puint32);
+var ctx: PFATVolumeCtx;
+begin
+    ctx := lockMetadata(volume);
+    if ctx = nil then begin
+        if statusOut <> nil then statusOut^ := ord(eUnknown);
+        exit;
+    end;
+    FAT32DeleteFileLocked(volume, filePath, statusOut);
+    unlockMetadata(ctx);
+end;
+
+procedure FAT32DeleteDirLocked(volume : PStorage_Volume; path : pchar; statusOut : puint32);
 var
     info          : PFATVolumeInfo;
     parentDir     : pchar = nil;
@@ -2499,7 +2588,19 @@ begin
     if statusOut <> nil then statusOut^ := ord(resultErr);
 end;
 
-procedure FAT32RenameFile(volume : PStorage_Volume; filePath : pchar; newName : pchar; statusOut : puint32);
+procedure FAT32DeleteDir(volume : PStorage_Volume; path : pchar; statusOut : puint32);
+var ctx: PFATVolumeCtx;
+begin
+    ctx := lockMetadata(volume);
+    if ctx = nil then begin
+        if statusOut <> nil then statusOut^ := ord(eUnknown);
+        exit;
+    end;
+    FAT32DeleteDirLocked(volume, path, statusOut);
+    unlockMetadata(ctx);
+end;
+
+procedure FAT32RenameFileLocked(volume : PStorage_Volume; filePath : pchar; newName : pchar; statusOut : puint32);
 var
     info          : PFATVolumeInfo;
     parentDir     : pchar = nil;
@@ -2558,6 +2659,18 @@ begin
     if newNamePart <> nil then kfree(void(newNamePart));
     if newExtPart <> nil then kfree(void(newExtPart));
     if statusOut <> nil then statusOut^ := ord(resultErr);
+end;
+
+procedure FAT32RenameFile(volume : PStorage_Volume; filePath : pchar; newName : pchar; statusOut : puint32);
+var ctx: PFATVolumeCtx;
+begin
+    ctx := lockMetadata(volume);
+    if ctx = nil then begin
+        if statusOut <> nil then statusOut^ := ord(eUnknown);
+        exit;
+    end;
+    FAT32RenameFileLocked(volume, filePath, newName, statusOut);
+    unlockMetadata(ctx);
 end;
 
 function FAT32GetFileSize(volume : PStorage_Volume; directory : pchar; fileName : pchar) : uint32;
